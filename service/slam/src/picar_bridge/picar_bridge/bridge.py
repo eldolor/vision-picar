@@ -17,6 +17,12 @@ and the other direction:
     POST /goal {x_m, y_m, yaw_rad}   R6: a nav2 NavigateToPose goal, map frame
     GET /goal            its state and the planned path (map frame)
     DELETE /goal         cancel it
+    POST /nav/keepout {spots: [{x_m, y_m, r_m, ttl_s}]}   3.68: the whole set
+                         of discs nav2 must not plan through (map frame),
+                         replacing the last; published as a latched mask for
+                         nav2's KeepoutFilter. The robot server decides them
+                         (robot/wedge_watch.py); this only draws them and
+                         drops each when its ttl_s runs out.
     GET /nav/stats, POST /nav/stats/reset   R6's criteria 5 and 6: angular
                          reversals in what REACHED the wheels, and how often
                          collision_monitor stopped or slowed what it was given
@@ -61,6 +67,7 @@ from action_msgs.msg import GoalStatus
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Point, PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
+from nav2_msgs.msg import CostmapFilterInfo
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -72,7 +79,7 @@ from std_msgs.msg import String
 from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
-from picar_bridge import brain_view, convert
+from picar_bridge import brain_view, convert, keepout
 from picar_bridge.keepalive import KeepAliveClient
 
 # Driver (robot/interface.py DRIVER_PRIORITY names) -> twist_mux input.
@@ -199,6 +206,21 @@ class Bridge(Node):
         self.create_subscription(Twist, "/diff_drive_controller/cmd_vel_unstamped",
                                  self._on_applied, 10)
         self._reset_stats()
+        # ---- 3.68: keepout spots, for nav2's KeepoutFilter ----
+        latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                             reliability=ReliabilityPolicy.RELIABLE)
+        self.keepout_spots = []
+        self.keepout_info_pub = self.create_publisher(CostmapFilterInfo, "/costmap_filter_info", latched)
+        self.keepout_mask_pub = self.create_publisher(OccupancyGrid, "/keepout_mask", latched)
+        info = CostmapFilterInfo()
+        info.header.frame_id = "map"
+        info.header.stamp = self.get_clock().now().to_msg()
+        info.type = 0                    # keepout
+        info.filter_mask_topic = "/keepout_mask"
+        info.base, info.multiplier = 0.0, 1.0
+        self.keepout_info_pub.publish(info)
+        self._publish_keepout([])
+        self.create_timer(1.0, self._expire_keepout)
         # Its own callback group (PLAN-ros-alignment.md 3.36): the poll is a
         # BLOCKING HTTP read, and in the node's default (mutually exclusive)
         # group it starved every subscription -- on the Jetson a full scan
@@ -552,6 +574,39 @@ class Bridge(Node):
             return 200, {"session": self.session, "goal": g, "plan": list(self.plan),
                          "cancelling": len(self.cancelling)}
 
+    # ---------- 3.68: keepout spots ----------
+
+    def set_keepout(self, body):
+        try:
+            spots = keepout.parse(body.get("spots") or [], time.time())
+        except (KeyError, TypeError, ValueError) as e:
+            return 400, {"error": str(e)}
+        with self.lock:
+            self.keepout_spots = spots
+        self._publish_keepout(spots)
+        return 200, {"spots": len(spots)}
+
+    def _expire_keepout(self):
+        with self.lock:
+            kept = keepout.live(self.keepout_spots, time.time())
+            changed = len(kept) != len(self.keepout_spots)
+            self.keepout_spots = kept
+        if changed:
+            self._publish_keepout(kept)
+
+    def _publish_keepout(self, spots):
+        m = keepout.mask(spots)
+        msg = OccupancyGrid()
+        msg.header.frame_id = "map"
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.info.resolution = m["resolution_m"]
+        msg.info.width, msg.info.height = m["width"], m["height"]
+        msg.info.origin.position.x = m["origin_x_m"]
+        msg.info.origin.position.y = m["origin_y_m"]
+        msg.info.origin.orientation.w = 1.0
+        msg.data = m["data"]
+        self.keepout_mask_pub.publish(msg)
+
     # ---------- R6: what reached the wheels ----------
 
     def _reset_stats(self):
@@ -864,6 +919,8 @@ def _handler(bridge):
                 return self._send(*bridge.cmd_vel(body))
             if path == "/goal":
                 return self._send(*bridge.send_goal(body))
+            if path == "/nav/keepout":
+                return self._send(*bridge.set_keepout(body))
             if path == "/nav/stats/reset":
                 with bridge.lock:
                     bridge._reset_stats()

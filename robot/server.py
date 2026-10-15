@@ -110,6 +110,7 @@ from robot.interface import (
 # The ROS container's driver name on POST /wheels (R2b, R4).
 DRIVER_ROS = "ros"
 from robot.safety import SafetyController, SafetyViolation, path_zone_indices
+from robot.wedge_watch import HOLD_S, SPOT_R_M, SpotBook, WedgeWatch, spot_ahead
 from world.bridge_faults import classify as bridge_fault, headers_for
 from world.factory import get_world
 
@@ -446,6 +447,33 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     # /stop takes only this one and never waits on the bridge (3.76 A8).
     goal_gen_lock = threading.Lock()
     verbs_lock = threading.Lock()       # guards state["verbs_running"] (3.76 A1)
+    # 3.68: nav2 cannot hear a refusal, so when its forward moves keep being
+    # refused (robot/wedge_watch.py), this server -- which owns the refusal
+    # -- marks a keepout spot ahead of the robot and its planner routes
+    # around it. Fed under motion_lock; the mark itself goes out on its own
+    # thread so the plugin's 20 Hz post never waits on the bridge.
+    wedge = WedgeWatch()
+    spot_book = SpotBook()
+    spot_lock = threading.Lock()
+
+    def mark_wedge():
+        if not hasattr(world_model, "set_keepout") or goal_in_progress() is None:
+            return
+        try:
+            pose = world_model.get_pose()
+            if not pose.get("usable") or pose.get("heading_deg") is None:
+                return
+            x, y = spot_ahead(pose["x_m"], pose["y_m"], pose["heading_deg"])
+            with spot_lock:
+                spots = spot_book.add(time.monotonic(), x, y)
+            world_model.set_keepout(spots)
+        except Exception as e:  # noqa: BLE001 -- a lost mark costs a replan, not safety
+            logger.warning(f"keepout: not marked ({e})")
+            return
+        logger.warning(
+            f"keepout: marked ({x:.2f}, {y:.2f}) r {SPOT_R_M:g} m after {HOLD_S:g} s of "
+            f"refused forward moves; robot at ({pose['x_m']:.2f}, {pose['y_m']:.2f}) "
+            f"heading {pose['heading_deg']:.0f}; {len(spots)} live")
 
     # 3.84: answers that name a fault of the robot itself, never renamed
     # `person_stop` (the mission ends `failed`, naming it).
@@ -937,6 +965,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             if refused:
                 return lapse_refused_claim(driver, refused, now)
             left, right, reason = safety.vet_wheel_velocity(req.left_rad_s, req.right_rad_s)
+            wedged = driver == DRIVER_ROS and wedge.wheel(now, req.left_rad_s,
+                                                          req.right_rad_s, reason)
             try:
                 robot.set_wheel_velocity(left, right)
                 if not by_velocity and getattr(robot, "stop_count", 0) != stops0:
@@ -955,6 +985,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 return refuse("no_feedback", str(e), driver)
         if reason:
             refuse("safety_distance", reason, driver)
+        if wedged:
+            threading.Thread(target=mark_wedge, daemon=True, name="keepout").start()
         return {"executed": True, "driver": driver,
                 "applied": {"left_rad_s": left, "right_rad_s": right},
                 "clamped": reason}

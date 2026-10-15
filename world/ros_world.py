@@ -435,6 +435,23 @@ class RosWorld(WorldInterface):
         # and a 200 that is not a JSON object is never a goal nav2 took.
         return {"accepted": True, **_json_object(r)}
 
+    def set_keepout(self, spots: list) -> dict:
+        """3.68: the whole set of keepout spots nav2 must plan around
+        ({x_m, y_m, r_m, ttl_s}, house frame), replacing the last. The
+        robot server decides them (robot/wedge_watch.py); the bridge only
+        publishes them as a mask for nav2's KeepoutFilter."""
+        if self._session is None:
+            self.get_pose()                  # anchor first
+        if self._session is None:
+            return {"accepted": False, "reason": "no SLAM session yet"}
+        out = []
+        for s in spots:
+            rx, ry = _ours_to_ros(*self._unapply(s["x_m"], s["y_m"]))
+            out.append({"x_m": rx, "y_m": ry, "r_m": s["r_m"], "ttl_s": s["ttl_s"]})
+        r = self._http.post("/nav/keepout", json={"spots": out})
+        r.raise_for_status()
+        return {"accepted": True, **r.json()}
+
     def cancel_goal(self) -> dict:
         # Raises on an error status (a 401, a 5xx) rather than returning its
         # body as an answer: the stop's goal-ending loop retries on a raise,

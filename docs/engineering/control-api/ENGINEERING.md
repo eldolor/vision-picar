@@ -132,6 +132,24 @@ a direct verb), `/stop`, and `/wheels` (an actuator post under ROS drive, or
 an accepted non-zero direct command; a zero direct command never feeds it).
 Sensing reads never feed it.
 
+### Wedge watch (3.68)
+
+nav2 never sees a refusal, so a plan the safety layer will not drive is
+kept until the goal times out. `robot/wedge_watch.py`'s `WedgeWatch` is fed
+every `/wheels` post from driver `ros`, under `motion_lock`, with the
+command and `vet_wheel_velocity()`'s reason. `HOLD_S` (3.0 s) of forward
+commands clamped by the safety layer, with no forward command executed
+between and no silence over `GAP_S` (1.0 s), is a wedge; it re-arms for
+another `HOLD_S`. On a wedge the server starts a thread (`mark_wedge`, so
+the 20 Hz post never waits) that, only while `goal_in_progress()` and on a
+world with `set_keepout`, reads the pose and adds a disc of `SPOT_R_M`
+(0.15 m) centred `SPOT_AHEAD_M` (0.25 m) ahead to `SpotBook` (`SPOT_TTL_S`
+300 s, at most `MAX_SPOTS` 8), then sends the whole live set through
+`RosWorld.set_keepout` to the bridge's `POST /nav/keepout`. It logs one
+`keepout: marked ...` warning a mark, or `keepout: not marked (...)` on a
+failure. It moves nothing and changes no vetting: a mark only takes effect
+if nav2's costmaps list the `KeepoutFilter`.
+
 ## Parameters and configuration
 
 | Key / variable | Default | Read | Why / effect |
