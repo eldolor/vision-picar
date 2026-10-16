@@ -1414,14 +1414,17 @@ def test_a_stop_that_never_reached_the_robot_stands_out(browser, twin_server):
     page.click("#btn-stop")
     line = page.locator("#log .entry", has_text="NOT SENT")
     sync_api.expect(line).to_have_class(re.compile(r"\bfault\b"), timeout=5000)
-    # The aborted request's own console line is expected; nothing else may fail.
-    assert not [e for e in errors if "Failed to fetch" not in e and "ERR_FAILED" not in e], errors
+    assert not errors, errors
     page.close()
 
 
-@pytest.mark.parametrize("reason,cls", [("safety_distance", "alert"), ("no_feedback", "warn"),
-                                        ("person_stop", None), ("watchdog", None)])
-def test_the_refusal_readout_colours_by_kind(browser, twin_server, reason, cls):
+@pytest.mark.parametrize("reason,driver,cls", [
+    ("safety_distance", "brain", "alert"), ("no_feedback", "brain", "warn"),
+    ("person_stop", "brain", None),
+    ("watchdog", "twin-dpad", None),       # a person's silence: routine
+    ("watchdog", "brain", "warn"),         # B3.1: the brain went quiet mid-mission
+])
+def test_the_refusal_readout_colours_by_kind(browser, twin_server, reason, driver, cls):
     page, errors = open_twin(browser, twin_server)
 
     def health(route):
@@ -1429,7 +1432,7 @@ def test_the_refusal_readout_colours_by_kind(browser, twin_server, reason, cls):
             "status": "ok", "seconds_since_last_command": 0.1,
             "watchdog_timeout_s": 1.0, "min_distance_cm": 20, "mode": "sim",
             "env_label": "", "driver": "twin-dpad", "authority_holder": None,
-            "last_refusal": {"reason": reason, "detail": "d", "driver": "brain",
+            "last_refusal": {"reason": reason, "detail": "d", "driver": driver,
                              "at": 1.0, "seconds_ago": 1.0},
         }))
 
@@ -1439,7 +1442,7 @@ def test_the_refusal_readout_colours_by_kind(browser, twin_server, reason, cls):
     page.click("#btn-connect")
     page.click('.tab-btn[data-tab="sim"]')
     readout = page.locator("#brain-tel-refusal")
-    sync_api.expect(readout).to_contain_text("brain", timeout=5000)
+    sync_api.expect(readout).to_contain_text(driver, timeout=5000)
     classes = (readout.get_attribute("class") or "").split()
     for other in ("alert", "warn"):
         assert (other in classes) == (other == cls), (reason, classes)

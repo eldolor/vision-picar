@@ -489,6 +489,9 @@
   // differently: a person tapping the pad outranks the JS loop, and both
   // are only meaningful because the server now knows the difference.
   const DRIVER_DPAD = "twin-dpad";
+  // 3.86: how long the Safety line shows VETOED after a safety veto. Declared
+  // here, above every caller.
+  const SAFETY_FLASH_MS = 350;
   const DRIVER_LOCAL_BRAIN = "twin-local-brain";
 
   // `extra` carries the per-action parameters /action accepts beyond the
@@ -1002,7 +1005,7 @@
     const resp = await sendAction(action, driver, extra);
     const executed = resp.executed !== false;
     if (!executed && refusalKind(resp.reason) === "veto") {
-      state.safetyFlashUntil = Date.now() + SAFETY_FLASH_MS;
+      state.safetyFlashUntil = performance.now() + SAFETY_FLASH_MS;   // monotonic, as the timer
       // 3.86: drawn now, not when the next frame lands -- over the tunnel a
       // frame can take longer than the flash, and a veto then never showed --
       // and cleared by one timer when it ends.
@@ -1059,15 +1062,20 @@
   // Safety line flashes VETOED. "veto" (the alarm colour, and the flash) for
   // a safety veto, or a server too old to name its refusals; "calm" (no
   // colour) when nothing is wrong -- a Stop, someone else driving, the
-  // watchdog's routine stop after a second of silence; "fault" (the warning
-  // colour) for everything else: a fault of the robot, a press that never
-  // reached it or was answered an error (a lost STOP must stand out, 3.76 D),
-  // a reason the twin does not know.
+  // watchdog's stop once a person's or nobody's commands went quiet for
+  // `watchdog_timeout_s`; "fault" (the warning colour) for everything else: a
+  // fault of the robot, the watchdog stopping the BRAIN (B3.1: a brain that
+  // stopped commanding mid-mission), a press that never reached the robot or
+  // was answered an error (a lost STOP must stand out, 3.76 D), a reason the
+  // twin does not know. `driver` is who was refused, when known.
   const CALM_REFUSALS = { stopped: true, person_stop: true, preempted: true, watchdog: true };
+  const AUTONOMOUS_DRIVERS = { brain: true, teleop: true };
   const REFUSAL_KIND_CLASS = { veto: "alert", fault: "warn", calm: null };   // the readout
-  const SAFETY_FLASH_MS = 350;
-  function refusalKind(reason) {
+  function refusalKind(reason, driver) {
     if (!reason || reason === "safety_distance") return "veto";
+    if (reason === "watchdog" && Object.prototype.hasOwnProperty.call(AUTONOMOUS_DRIVERS, driver)) {
+      return "fault";
+    }
     return Object.prototype.hasOwnProperty.call(CALM_REFUSALS, reason) ? "calm" : "fault";
   }
 
@@ -1481,7 +1489,7 @@
   // collar vetoed, and what the mission has searched.
   function renderTelemetry(frame) {
     const safetyEl = document.getElementById("tel-safety");
-    const vetoedRecently = Date.now() < state.safetyFlashUntil;
+    const vetoedRecently = performance.now() < state.safetyFlashUntil;
     safetyEl.innerHTML = vetoedRecently
       ? 'Safety: <span class="alert">VETOED</span>'
       : 'Safety: <span class="safe">OK</span>';
@@ -2232,7 +2240,7 @@
     setBrainText("brain-tel-refusal",
       label + " \u00b7 " + (refusal.driver || "no driver") + " \u00b7 " +
       refusal.seconds_ago.toFixed(1) + "s ago",
-      REFUSAL_KIND_CLASS[refusalKind(refusal.reason)]);   // 3.86
+      REFUSAL_KIND_CLASS[refusalKind(refusal.reason, refusal.driver)]);   // 3.86
   }
 
   // ---------- brain liveness: reconnect on its own ----------
