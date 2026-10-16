@@ -1507,7 +1507,8 @@
     // the warning colour for a fault or a failed press, none for a Stop. (A
     // press is never answered `watchdog`: that reason is only /health's.)
     const kind = entry.executed === false ? refusalKind(entry.reason) : "calm";
-    div.className = "entry" + (kind === "calm" ? "" : kind === "fault" ? " fault" : " veto");
+    // The log's classes follow the readout's: one kind-to-colour map.
+    div.className = "entry" + ({ alert: " veto", warn: " fault" }[REFUSAL_KIND_CLASS[kind]] || "");
     // Phase M4: name the refusal rather than stamping every one of them
     // VETOED. The reason was already being carried here and thrown away,
     // so a preemption and a wall produced identical lines -- which is the
