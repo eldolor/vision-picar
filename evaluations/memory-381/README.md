@@ -26,3 +26,4 @@ these; this file says what each one is.
 * `C2-old/`, `C2-new/`: amendment 2, the new-target peak (a target switch at 60 s and 210 s of the window), old perception against new; NOTE.md in each.
 * `C3/`: 3.81.E, C2's window with the previous pipeline released before each switch (`SWITCH=release`).
 * `G1/`, `G2/`: 3.81.G, criterion 4 (amendments 5-6): a tiered mission in `home_first_floor` with VE resident, and without; NOTE.md in each.
+* `G3/`: amendment 7, criterion 4 under 3.80.G's cloud-free search (`5a3fe53`); NOTE.md.

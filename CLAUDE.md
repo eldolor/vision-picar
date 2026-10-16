@@ -163,9 +163,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   ~100 MB; 3.81 (memory budget) raised it to ~500 MB; D deferred to the Rover.
 * **Memory budget (3.81), steps A-C and E merged 2026-10-15; D deferred
   (amendment 4, the user): measure on the Rover first (step F).**
-  Criterion 4 FAILED on the board 2026-10-16 (3.81.G: `out_of_budget`
-  with and without VE, cause navigation; sim tiered loads no YOLOE/CLIP,
-  so only the Rover's step F tests perception's memory with VE). A: under VE the VLM driver holds 3.97 GB (engines
+  Criterion 4 FAILED on `dev`'s cloud-off search (3.81.G G1-G2), then met
+  under 3.80.G's search (G3, `found`, VE confirmed; 1,196 late wheel ticks
+  on that branch, unexplained). Sim tiered loads no YOLOE/CLIP, so only
+  the Rover's step F tests perception's memory with VE. A: under VE the VLM driver holds 3.97 GB (engines
   3.05, visual encoder 1.29), perception 1.94, Python services ~0.2, ROS
   0.25; a torch GPU process costs ~0.6 GB before any model. C (amendment 1):
   text features come from a disk cache or a CPU-only child
