@@ -85,6 +85,10 @@ TIERS = [  # (tier, file, field, sets)
     ("Qwen VE: identity box", "qwen-VE.jsonl", "box_answer", ("S1", "S2")),
     ("Qwen full: direction question", "qwen-full.jsonl", "direction", ("S1", "S2", "S3")),
     ("Qwen full: identity box", "qwen-full.jsonl", "box_answer", ("S1", "S2")),
+    ("llama.cpp Q4 Qwen2.5-VL-3B: direction", "../J/qwen-q4.jsonl", "direction", ("S1", "S2", "S3")),
+    ("llama.cpp Q4 Qwen2.5-VL-3B: box", "../J/qwen-q4.jsonl", "box_answer", ("S1", "S2")),
+    ("llama.cpp Q4 RoboBrain2.0-3B: direction", "../J/robobrain-q4.jsonl", "direction", ("S1", "S2", "S3")),
+    ("llama.cpp Q4 RoboBrain2.0-3B: box", "../J/robobrain-q4.jsonl", "box_answer", ("S1", "S2")),
     ("Opus 4.5: action", "opus.jsonl", "action", ("S1", "S2", "S3")),
     ("Opus 4.5: target_direction", "opus.jsonl", "target_third", ("S1",)),
 ]
