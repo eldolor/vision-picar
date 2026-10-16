@@ -12,7 +12,7 @@ holds the heavy-run lock and three load checks a minute apart are all under
 then had to wait for another run's lock is marked invalid. Refuses to start
 without the branch's environment, so a run never lands on the shared
 `:latest` image or another session's ports. Appends one line per room to
-rooms.jsonl: the image, the 1-minute load at start, the exit code and
+rooms.jsonl (or $ROOMS_OUT): the image, the 1-minute load at start, the exit code and
 demo_explore's row."""
 import json
 import os
@@ -52,7 +52,7 @@ def main(rooms):
             # Another live run took the lock between the gate and this run's
             # own lock: it started without amendment 1's quiet checks.
             rec["invalid"] = "amendment 1: waited for another live run after the gate"
-        with open(HERE / "rooms.jsonl", "a") as f:
+        with open(os.environ.get("ROOMS_OUT") or HERE / "rooms.jsonl", "a") as f:
             f.write(json.dumps(rec) + "\n")
 
 

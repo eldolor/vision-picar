@@ -271,9 +271,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   criterion FAILED:** ProcTHOR usable 200-299 98/100 (bar 90, pinned);
   `home_first_floor` from an empty map 10 of 13 rooms (median 612 s,
   0 contacts) -- hall, laundry and living room ran out 1800 s in the
-  dining room, cycling frontier goals among the chairs (failures counted
-  per point; not yet tested). No run entered the laundry.
-  `evaluations/unsurveyed-370/`.
+  dining room, wedged under the table between its legs and the chairs.
+  No run entered the laundry. `evaluations/unsurveyed-370/`. **The fix
+  (3.83), records merged 2026-10-16, FAILED and not adopted:** 3.68's
+  refusal keepout (nav2's global costmap) marked once per spot, plus a
+  20 s stall cut that backs explore out; the three rooms are found, but
+  11/13 overall -- breakfast pinned in a pocket under the table, pantry an
+  explore livelock ("already facing it", not 3.83's code). Code on branch
+  `plan/3.83-dining-room-trap`; the user agreed to keep it off `dev`.
 * **Review of the code written before the review rule (3.76), all nine
   batches merged by 2026-10-14; the review is done.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
