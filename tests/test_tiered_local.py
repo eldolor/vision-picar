@@ -527,3 +527,14 @@ def test_d9_client_box_comes_back_as_fractions_of_the_image_qwen_saw(tmp_path, m
         assert client.ask(_jpeg_frame_sized(640, 480)).get("box") is None
     finally:
         tc.__exit__(None, None, None)
+
+
+def test_3_80_i_a_large_frame_is_sized_as_the_engines_see_it():
+    """3.80.I: the board's engines are built with max_image_tokens 512 and
+    min_image_tokens 128 (visual/config.json), so Qwen sees a 1280x720 frame
+    at 840x448, not the stock limit's 1288x728 -- every box on such a frame
+    read 0.65x its true position."""
+    from brain.local_vlm import model_size
+    assert model_size(1280, 720) == (840, 448)
+    assert model_size(640, 480) == (644, 476)          # under both limits: unchanged
+    assert model_size(320, 200) == (420, 252)          # renders: lifted to 128 tokens

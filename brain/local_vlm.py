@@ -39,8 +39,13 @@ TAIL_S = 2.0
 # A 640x480 frame is seen at 644x476. Checked on the board in 3.80.E (D10:
 # the box's bearing against perception's).
 PATCH = 28
-MIN_PIXELS = 56 * 56
-MAX_PIXELS = 28 * 28 * 16384
+# The bounds are the ENGINES' (3.80.I): built with min_image_tokens 128 and
+# max_image_tokens 512 (each token one 28 x 28 patch; visual/config.json,
+# preprocessor_config.json's shortest_edge 100,352), not the model's stock
+# 56 x 56 .. 28 x 28 x 16384. A 1280x720 frame is seen at 840x448; with the
+# stock bound every box on it read 0.65x its true position.
+MIN_PIXELS = 28 * 28 * 128
+MAX_PIXELS = 28 * 28 * 512
 
 
 def model_size(width: int, height: int) -> tuple:
