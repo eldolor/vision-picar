@@ -1348,6 +1348,8 @@ def test_a_press_a_stop_overtook_reads_as_stopped_not_a_veto(browser, twin_serve
     log = page.locator("#log")
     sync_api.expect(log).to_contain_text("[STOPPED]", timeout=5000)
     assert not _flashed(page), "the Safety line flashed VETOED for a Stop"
+    assert "veto" not in (log.locator(".entry").last.get_attribute("class") or ""), \
+        "a Stop's log line in the veto colour"
     text = log.inner_text()
     assert "VETOED" not in text and "SAFETY VETO" not in text, text
     assert not errors, errors
@@ -1356,7 +1358,8 @@ def test_a_press_a_stop_overtook_reads_as_stopped_not_a_veto(browser, twin_serve
 
 @pytest.mark.parametrize("reason,label", [("preempted", "[PREEMPTED]"),
                                           ("no_feedback", "[NO WHEEL FEEDBACK]"),
-                                          ("a_reason_from_later", "[A REASON FROM LATER]")])
+                                          ("a_reason_from_later", "[A REASON FROM LATER]"),
+                                          ("constructor", "[CONSTRUCTOR]")])
 def test_a_refusal_that_is_no_veto_never_flashes_vetoed(browser, twin_server, reason, label):
     """3.86 review: the flash was turned off for a list of exceptions, so a
     preemption or a fault still flashed VETOED; and a reason the twin did not
@@ -1404,6 +1407,7 @@ def test_the_refusal_readout_names_a_persons_stop(browser, twin_server):
     page.click('.tab-btn[data-tab="sim"]')
     readout = page.locator("#brain-tel-refusal")
     sync_api.expect(readout).to_contain_text("STOPPED BY A PERSON", timeout=5000)
+    assert "alert" not in (readout.get_attribute("class") or ""), "a person's Stop as an alarm"
     assert not errors, errors
     page.close()
 

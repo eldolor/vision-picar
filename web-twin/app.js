@@ -134,6 +134,7 @@
     sightings: [], found: false, foundSighting: null,
     log: [], step: 0,
     safetyFlashUntil: 0,
+    safetyFlashLoop: false,
     guidanceMode: "guide", // "guide" -> /guidance (steer a person); "robot" -> /navigate (what would the robot do)
     guidanceRunning: false, guidanceStarting: false, guidanceTimerId: null, guidanceTarget: null,
     guidanceInFlight: 0, guidanceSeq: 0, guidanceLastRenderedSeq: 0,
@@ -1049,7 +1050,8 @@
   // send a reason (every refusal then was a veto) reads VETOED.
   function refusalLabel(reason) {
     if (!reason) return "VETOED";
-    return REFUSAL_LABEL[reason] || String(reason).replace(/_/g, " ").toUpperCase();
+    return Object.prototype.hasOwnProperty.call(REFUSAL_LABEL, reason)
+      ? REFUSAL_LABEL[reason] : String(reason).replace(/_/g, " ").toUpperCase();
   }
 
   // 3.86: the Safety line's VETOED flash is for a safety veto only (or a
@@ -1472,8 +1474,14 @@
     safetyEl.innerHTML = vetoedRecently
       ? 'Safety: <span class="alert">VETOED</span>'
       : 'Safety: <span class="safe">OK</span>';
-    if (vetoedRecently) {
-      requestAnimationFrame(function () { renderTelemetry(state.lastFrame); });
+    // One redraw loop at a time while the flash lasts (3.86: a veto also
+    // draws it at once, before the frame's own render).
+    if (vetoedRecently && !state.safetyFlashLoop) {
+      state.safetyFlashLoop = true;
+      requestAnimationFrame(function () {
+        state.safetyFlashLoop = false;
+        renderTelemetry(state.lastFrame);
+      });
     }
 
     const rooms = Array.from(state.searchedRooms).sort();
@@ -1486,7 +1494,9 @@
     clearEmptyState(el);
     const entry = state.log[state.log.length - 1];
     const div = document.createElement("div");
-    div.className = "entry" + (entry.executed === false ? " veto" : "");
+    // 3.86: the veto colour for a safety veto only; a Stop, a preemption or
+    // a fault is a refusal, not a veto.
+    div.className = "entry" + (entry.executed === false && isSafetyVeto(entry.reason) ? " veto" : "");
     // Phase M4: name the refusal rather than stamping every one of them
     // VETOED. The reason was already being carried here and thrown away,
     // so a preemption and a wall produced identical lines -- which is the
@@ -2218,7 +2228,7 @@
     setBrainText("brain-tel-refusal",
       label + " \u00b7 " + (refusal.driver || "no driver") + " \u00b7 " +
       refusal.seconds_ago.toFixed(1) + "s ago",
-      "alert");
+      isSafetyVeto(refusal.reason) ? "alert" : null);     // 3.86: only a veto alarms
   }
 
   // ---------- brain liveness: reconnect on its own ----------
