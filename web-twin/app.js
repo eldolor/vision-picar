@@ -1001,7 +1001,7 @@
   async function commitAction(action, driver, extra) {
     const resp = await sendAction(action, driver, extra);
     const executed = resp.executed !== false;
-    if (!executed) state.safetyFlashUntil = Date.now() + 350;
+    if (!executed && !NOT_A_VETO[resp.reason]) state.safetyFlashUntil = Date.now() + 350;
     // Phase M4: the reason is what a person can act on. "SAFETY VETO" was
     // the only thing this ever said, so a move refused because someone
     // else had taken the robot looked identical to one refused for being
@@ -1028,7 +1028,14 @@
     unreachable: "NOT SENT",       // 3.76: the press never reached the robot
     rejected: "REJECTED",          // 3.76: the server answered with an error
     watchdog: "WATCHDOG",
+    // 3.82/3.84: a Stop overtook the press (or the goal) after it was sent,
+    // so it was not carried out -- a Stop, not a veto.
+    stopped: "STOPPED",
+    // 3.84: the brain, refused because a person pressed Stop.
+    person_stop: "STOPPED BY A PERSON",
   };
+  // 3.86: the Safety readout's VETOED is for a veto; a Stop's refusal is not one.
+  const NOT_A_VETO = { stopped: true, person_stop: true };
 
   function refusalText(resp) {
     const label = REFUSAL_LABEL[resp.reason];

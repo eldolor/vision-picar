@@ -1318,6 +1318,83 @@ def test_a_preemption_does_not_read_as_a_safety_veto_in_the_log(browser, twin_se
     page.close()
 
 
+def _press_answered(browser, twin_server, answer):
+    """The D-pad's FORWARD, answered `answer` by the robot server."""
+    page, errors = open_twin(browser, twin_server)
+    page.route("**/action", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(answer)))
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.click("#btn-forward")
+    return page, errors
+
+
+def _safety_flashed(page, seconds=1.0):
+    """Whether the Safety readout showed VETOED at any point in `seconds`."""
+    return page.evaluate("""(ms) => new Promise((done) => {
+        const el = document.getElementById("tel-safety");
+        let seen = el.textContent.includes("VETOED");
+        const t = setInterval(() => { if (el.textContent.includes("VETOED")) seen = true; }, 10);
+        setTimeout(() => { clearInterval(t); done(seen); }, ms);
+    })""", int(seconds * 1000))
+
+
+def test_a_press_a_stop_overtook_reads_as_stopped_not_a_veto(browser, twin_server):
+    """3.86: `stopped` (3.82/3.84: a press a Stop overtook after it was sent)
+    was unknown to the twin, so the log tagged it [VETOED] and the Safety
+    readout flashed VETOED: a person's own Stop read as a safety veto."""
+    page, errors = _press_answered(browser, twin_server, {
+        "executed": False, "reason": "stopped",
+        "detail": "a stop was pressed after this FORWARD was sent; it was not carried out"})
+    log = page.locator("#log")
+    sync_api.expect(log).to_contain_text("[STOPPED]", timeout=5000)
+    flashed = _safety_flashed(page)
+    text = log.inner_text()
+    assert "VETOED" not in text and "SAFETY VETO" not in text, text
+    assert not flashed, "the Safety readout flashed VETOED for a Stop"
+    assert not errors, errors
+    page.close()
+
+
+def test_a_safety_veto_still_flashes_vetoed(browser, twin_server):
+    """The guard for the change above: a real veto still flashes."""
+    page, errors = _press_answered(browser, twin_server, {
+        "executed": False, "reason": "safety_distance", "detail": "Blocked FORWARD: 12 cm"})
+    sync_api.expect(page.locator("#log")).to_contain_text("SAFETY VETO", timeout=5000)
+    page.wait_for_timeout(50)
+    assert "VETOED" in page.locator("#tel-safety").inner_text() or _safety_flashed(page, 0.3)
+    assert not errors, errors
+    page.close()
+
+
+def test_the_refusal_readout_names_a_persons_stop(browser, twin_server):
+    """3.86: the brain refused because a person pressed Stop (3.84's
+    `person_stop`) read as the bare reason string."""
+    page, errors = open_twin(browser, twin_server)
+
+    def health(route):
+        route.fulfill(status=200, content_type="application/json", body=_json({
+            "status": "ok", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0, "min_distance_cm": 20, "mode": "sim",
+            "env_label": "", "driver": "twin-dpad", "authority_holder": None,
+            "last_refusal": {"reason": "person_stop",
+                             "detail": "twin-dpad pressed Stop -- autonomy stays stopped",
+                             "driver": "brain", "at": 1.0, "seconds_ago": 1.0},
+        }))
+
+    page.route("**/health", health)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    readout = page.locator("#brain-tel-refusal")
+    sync_api.expect(readout).to_contain_text("STOPPED BY A PERSON", timeout=5000)
+    assert not errors, errors
+    page.close()
+
+
 def test_the_refusal_readout_names_the_reason_and_who_was_refused(browser, twin_server):
     """Which party was refused matters as much as why: "the brain was
     preempted" and "the pad was preempted" are different stories about the

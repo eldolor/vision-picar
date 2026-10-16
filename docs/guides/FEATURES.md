@@ -640,7 +640,9 @@ finished map at mission start; N1's discovered map replaced it.)
   defaults to 90, what every tap sent before.
 - **Action log and Safety line** -- each move, its angle for turns
   (`RIGHT 45°`), and why a refused one was refused (SAFETY VETO, PREEMPTED,
-  WATCHDOG).
+  WATCHDOG, STOPPED -- a Stop overtook the press after it was sent -- and,
+  for the brain, STOPPED BY A PERSON). The Safety line flashes VETOED only
+  for a veto, never for a Stop (3.86).
 
 ### Remote brain
 
