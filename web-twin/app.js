@@ -1001,7 +1001,12 @@
   async function commitAction(action, driver, extra) {
     const resp = await sendAction(action, driver, extra);
     const executed = resp.executed !== false;
-    if (!executed && isSafetyVeto(resp.reason)) state.safetyFlashUntil = Date.now() + 350;
+    if (!executed && isSafetyVeto(resp.reason)) {
+      state.safetyFlashUntil = Date.now() + 350;
+      // 3.86: drawn now, not when the next frame lands -- over the tunnel a
+      // frame can take longer than the flash, and a veto then never showed.
+      renderTelemetry(state.lastFrame);
+    }
     // Phase M4: the reason is what a person can act on. "SAFETY VETO" was
     // the only thing this ever said, so a move refused because someone
     // else had taken the robot looked identical to one refused for being
@@ -1040,11 +1045,11 @@
   };
 
   // 3.86: what a refusal is called. A reason the twin does not know is shown
-  // by its own name, never as a veto; only a server too old to send a reason
-  // (every refusal then was a veto) reads VETOED.
+  // by its own name, in words, never as a veto; only a server too old to
+  // send a reason (every refusal then was a veto) reads VETOED.
   function refusalLabel(reason) {
     if (!reason) return "VETOED";
-    return REFUSAL_LABEL[reason] || String(reason).toUpperCase();
+    return REFUSAL_LABEL[reason] || String(reason).replace(/_/g, " ").toUpperCase();
   }
 
   // 3.86: the Safety line's VETOED flash is for a safety veto only (or a

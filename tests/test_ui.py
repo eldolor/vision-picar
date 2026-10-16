@@ -1356,7 +1356,7 @@ def test_a_press_a_stop_overtook_reads_as_stopped_not_a_veto(browser, twin_serve
 
 @pytest.mark.parametrize("reason,label", [("preempted", "[PREEMPTED]"),
                                           ("no_feedback", "[NO WHEEL FEEDBACK]"),
-                                          ("a_reason_from_later", "[A_REASON_FROM_LATER]")])
+                                          ("a_reason_from_later", "[A REASON FROM LATER]")])
 def test_a_refusal_that_is_no_veto_never_flashes_vetoed(browser, twin_server, reason, label):
     """3.86 review: the flash was turned off for a list of exceptions, so a
     preemption or a fault still flashed VETOED; and a reason the twin did not
@@ -1377,7 +1377,7 @@ def test_a_safety_veto_still_flashes_vetoed(browser, twin_server):
     page, errors = _press_answered(browser, twin_server, {
         "executed": False, "reason": "safety_distance", "detail": "Blocked FORWARD: 12 cm"})
     sync_api.expect(page.locator("#log")).to_contain_text("SAFETY VETO", timeout=5000)
-    assert _flashed(page), "a safety veto no longer flashes VETOED"
+    page.wait_for_function("() => window.__vetoed", timeout=2000)   # fails: no flash
     assert not errors, errors
     page.close()
 
