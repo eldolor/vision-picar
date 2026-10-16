@@ -87,3 +87,13 @@ def test_a_house_sized_map_matches_too():
     m = slam_map(rng, 253, 263, 0.0)          # the board's home_first_floor map, 2026-10-16
     a = Anchor(session="s1", alpha=90.0, t=(3.2, 4.1), anchored_at=None)
     assert RosWorld.__new__(RosWorld)._resample(m, a) == reference(m, a)
+
+
+def test_values_off_the_int8_range_classify_as_before():
+    """The bridge sends int8 occupancy; a float or out-of-range value must
+    classify as the loop did (-0.5 stays unknown, never free)."""
+    rng = random.Random(3)
+    m = slam_map(rng, 9, 7, 0.0)
+    m["data"] = [rng.choice((-0.5, -128, 127, 24.9, 25.0, 64.9, 65.0, 0.0)) for _ in range(63)]
+    a = Anchor(session="s1", alpha=37.0, t=(0.4, -0.2), anchored_at=None)
+    assert RosWorld.__new__(RosWorld)._resample(m, a) == reference(m, a)

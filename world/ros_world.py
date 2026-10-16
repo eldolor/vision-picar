@@ -370,7 +370,7 @@ class RosWorld(WorldInterface):
         i = np.floor(gx / res).astype(np.int64).ravel()
         j = np.floor(gy / res).astype(np.int64).ravel()
         inside = (i >= 0) & (i < w) & (j >= 0) & (j < h)
-        v = np.asarray(data, dtype=np.int64)[j[inside] * w + i[inside]]
+        v = np.asarray(data)[j[inside] * w + i[inside]]    # as sent: never truncated
         cells = np.full(out_w * out_h, CELL_UNKNOWN, dtype=np.int64)
         cells[inside] = np.where(v < 0, CELL_UNKNOWN,
                                  np.where(v >= OCCUPIED_AT, CELL_OCCUPIED,
