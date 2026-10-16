@@ -381,6 +381,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   domain 0; `git push origin :dev` passed unchecked. `tools/plan_claims.py`
   and `tools/nightly_suite.sh` joined the risky list (the user). Handoff:
   `HANDOFF-2026-10-13-3.76-legacy-review.md`.
+* **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
+  3.81's G3: explore fetches `/world/map` every tick, and the robot server
+  ran late on 9.7% of wheel ticks on the Jetson (dev's own explore, H1).
+  Two causes, both on the event loop's GIL: FastAPI encoded the map reply
+  with `jsonable_encoder` on the loop (131-218 ms; now a `JSONResponse`
+  built in the route), and `RosWorld._resample` was a per-cell Python loop
+  (141 ms a map version; now numpy, 11 ms, cell-for-cell the old loop).
+  H3: 0 late in 18,273 (max 99 ms, a thin margin). A sync route returning
+  a big dict blocks the wheel loop: return a built `JSONResponse`.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,

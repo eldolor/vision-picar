@@ -1,0 +1,14 @@
+== desktop: inactive; twin units: inactive inactive; runtime none
+== run L 12:05:50 rev 9f8f849 image vision-picar-ros:plan-3.78 NV Power Mode: 15W
+== policy explore; vlm none; cloud off; ros from tree 1; text cache empty
+== MemAvailable before anything: 5954 MB
+OK: robot and brain both running 9f8f849 (log: /home/picar/.vision-picar-tunnel.log)
+WARNING: ngrok is not running -- the deployed twin cannot reach this machine. Start it with: ngrok start picar
+== stack up 12:06:02; MemAvailable with the stack: 5567 MB
+== mission start 12:06:02; wheel: 0 0 0.0
+start 200 {"started":true,"status":{"running":true,"outcome":"running","end_state":null,"end_reason":null,"cancelled_by":null,"report":null,"budget":{"time_limit_s":1200,"elapsed_s":0.0,"battery_floor_v":10.5,"
+mission end {"outcome": "found", "step": 37, "report": null}
+== mission end 12:21:34; wheel: 12344 578 0.2047
+== local VLM at the end: none 
+== summary: {"valid": true, "mission_exit": 0, "mission_end": {"running": false, "outcome": "found", "step": 37, "end_reason": "Breakfast, den, family room, foyer, garage, garage hall, half bath, hall, kitchen, living room, pantry searched. Found.", "arrival": null, "tier": null, "error": null}, "window_s": 932, "mem_min_mb": 5380, "mem_median_mb": 5421, "mem_first_min_median_mb": 5487.5, "mem_last_min_median_mb": 5387.0, "drift_mb": 100.5, "oom_events": 0, "wheel_moving_ticks": 12344, "wheel_late_ticks": 578}
+== torn down; desktop: active

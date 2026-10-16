@@ -1,0 +1,14 @@
+== desktop: inactive; twin units: inactive inactive; runtime none
+== run L 12:22:24 rev cf44419 image vision-picar-ros:plan-3.78 NV Power Mode: 15W
+== policy explore; vlm none; cloud off; ros from tree 1; text cache empty
+== MemAvailable before anything: 5953 MB
+OK: robot and brain both running cf44419 (log: /home/picar/.vision-picar-tunnel.log)
+WARNING: ngrok is not running -- the deployed twin cannot reach this machine. Start it with: ngrok start picar
+== stack up 12:22:37; MemAvailable with the stack: 5557 MB
+== mission start 12:22:37; wheel: 0 0 0.0
+start 200 {"started":true,"status":{"running":true,"outcome":"running","end_state":null,"end_reason":null,"cancelled_by":null,"report":null,"budget":{"time_limit_s":1200,"elapsed_s":0.0,"battery_floor_v":10.5,"
+mission end {"outcome": "out_of_budget", "step": 33, "report": {"rooms_entered": ["den", "dining room", "family room", "foyer", "half bath", "hall", "living room"], "goals_reached": [[5.79, 11.79, "frontier"], [4.82, 12.55, "frontier"], [4.82, 12.2, "frontier"], [4.02, 10.95, "frontier"], [1.62, 11.35, "frontier"], [1.22, 11.4, "frontier"], [1.97, 8.65, "frontier"], [2.32, 7.85, "frontier"], [4.42, 6.85, "frontier"], [7.51, 7.0, "frontier"], [8.31, 8.6, "frontier"], [8.91, 8.3, "frontier"], [8.31, 8.6, "frontier"], [8.86, 8.3, "frontier"], [8.61, 10.2, "frontier"], [8.61, 10.55, "frontier"], [8.11, 11.0, 
+== mission end 12:42:39; wheel: 18273 0 0.0994
+== local VLM at the end: none 
+== summary: {"valid": true, "mission_exit": 0, "mission_end": {"running": false, "outcome": "out_of_budget", "step": 33, "end_reason": "time limit of 1200 s reached (1200.5 s)", "arrival": null, "tier": null, "error": null}, "window_s": 1202, "mem_min_mb": 5343, "mem_median_mb": 5404.0, "mem_first_min_median_mb": 5485.0, "mem_last_min_median_mb": 5349.0, "drift_mb": 136.0, "oom_events": 0, "wheel_moving_ticks": 18273, "wheel_late_ticks": 0}
+== torn down; desktop: active

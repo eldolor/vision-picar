@@ -1,0 +1,22 @@
+{
+ "valid": true,
+ "mission_exit": 0,
+ "mission_end": {
+  "running": false,
+  "outcome": "found",
+  "step": 37,
+  "end_reason": "Breakfast, den, family room, foyer, garage, garage hall, half bath, hall, kitchen, living room, pantry searched. Found.",
+  "arrival": null,
+  "tier": null,
+  "error": null
+ },
+ "window_s": 932,
+ "mem_min_mb": 5380,
+ "mem_median_mb": 5421,
+ "mem_first_min_median_mb": 5487.5,
+ "mem_last_min_median_mb": 5387.0,
+ "drift_mb": 100.5,
+ "oom_events": 0,
+ "wheel_moving_ticks": 12344,
+ "wheel_late_ticks": 578
+}

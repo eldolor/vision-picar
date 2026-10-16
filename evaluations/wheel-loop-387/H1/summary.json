@@ -1,0 +1,22 @@
+{
+ "valid": true,
+ "mission_exit": 0,
+ "mission_end": {
+  "running": false,
+  "outcome": "out_of_budget",
+  "step": 30,
+  "end_reason": "time limit of 1200 s reached (1200.4 s)",
+  "arrival": null,
+  "tier": null,
+  "error": null
+ },
+ "window_s": 1202,
+ "mem_min_mb": 5339,
+ "mem_median_mb": 5368.0,
+ "mem_first_min_median_mb": 5468.5,
+ "mem_last_min_median_mb": 5342.0,
+ "drift_mb": 126.5,
+ "oom_events": 0,
+ "wheel_moving_ticks": 13592,
+ "wheel_late_ticks": 1316
+}
