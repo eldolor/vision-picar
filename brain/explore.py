@@ -672,9 +672,13 @@ class ExploreAgent(MissionAgent):
             return "WAIT", True, "at the target; looking"
         gx, gy = self._approach_point(pose, tx, ty, d)
         self._cancel()
-        self._approach = (tx, ty)
         out = self._send(gx, gy, "approach", now)
         if out[0] == "GOAL":
+            # Only an approach nav2 took counts as made (3.85): one refused
+            # `preempted` and recorded anyway kept every later sighting of
+            # the spot from re-sending it -- 3.83's pantry run faced the
+            # target from outside the door for 1,145 s.
+            self._approach = (tx, ty)
             self._goal["target"] = (tx, ty)
             self._close_in_refused = 0
         return out

@@ -760,3 +760,43 @@ def test_a_failing_reading_never_stops_the_creep():
     agent._pending = [("CREEP", ["FORWARD"])]
     agent._do_pending()
     assert asked == ["FORWARD"]
+
+
+class FirstRefusedNav(FakeNav):
+    """Refuses each new approach goal once with `preempted`, then takes it --
+    live, the brain's own FACE turn still held driving authority when the
+    approach after it was sent (3.83's pantry run)."""
+
+    def __init__(self, robot):
+        super().__init__(robot)
+        self.refused = set()
+
+    def set_goal(self, x_m, y_m):
+        key = (round(x_m, 1), round(y_m, 1))
+        if key not in self.refused:
+            self.refused.add(key)
+            self.calls.append(("set", round(x_m, 2), round(y_m, 2)))
+            return {"accepted": False, "reason": "preempted"}
+        return super().set_goal(x_m, y_m)
+
+
+def test_a_refused_approach_is_tried_again_not_given_up_for_a_look():
+    """3.85: in 3.83's pantry run an approach refused `preempted` (the
+    brain's own FACE turn still held authority) was still recorded as made,
+    so the next frames' sightings of the same spot never re-sent it, and
+    `_back_to_sighting` only faced the target from outside the door --
+    "already facing it" for 1,145 s, the backpack half behind the jamb."""
+    grid = build_world("home_first_floor")
+    grid.move_object((46, 19), (40, 23))                 # 3.83's pantry spot
+    grid.x, grid.y = 12.928 / CELL, 7.321 / CELL
+    grid.theta = math.radians(299.47) - math.pi / 2
+    robot = MockRobot(grid, render=False)
+    nav = FirstRefusedNav(robot)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="red backpack"),
+                         navigator=nav, clock=lambda: grid.sim_time, world=MockWorld(grid))
+    target = (12.15, 7.05)
+    first = agent._send_approach(*target, grid.sim_time)
+    assert first[0] == "WAIT" and "preempted" in first[2]
+    # The same sighting on the next frame: the approach goes out again.
+    again = agent._send_approach(*target, grid.sim_time) if agent._approach is None else None
+    assert again is not None and again[0] == "GOAL"
