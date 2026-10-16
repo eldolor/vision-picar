@@ -338,7 +338,17 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   right after a Stop: 0 cm true vs 128 cm on `dev`); a bridge that refuses
   the secret ends explore `failed` naming the 401 (one retry rule,
   `world/bridge_faults.py`). Open items:
-  `HANDOFF-2026-10-15-3.82-refused-goal-hold.md`. **Batches F and G (recorded walks, the inventory and the late
+  `HANDOFF-2026-10-15-3.82-refused-goal-hold.md`. **A person's Stop is
+  the last word over autonomy (3.84), merged 2026-10-16:** a `/stop` from
+  a person (`twin-dpad`, `teleop-operator`, unnamed) latches the brain out
+  -- its verbs, wheels and `brain`-named goals refused `person_stop`, the
+  mission ending `cancelled`/`stop` -- until a mission starts
+  (`POST /autonomy/resume`); explore names itself on its goals. Live, a
+  D-pad Stop during explore: 0.0 cm true vs 29.8 cm on `dev`. A verb under
+  `drive: ros` lifts the Stop's hold only under its lock and only if no
+  Stop came after it; a verb's stop baseline is the server's
+  (`VERB_STOP_BASELINE`). Open: the twin labels the new refusals
+  `[VETOED]` (a deploy). `HANDOFF-2026-10-15-3.84-person-stop-last-word.md`. **Batches F and G (recorded walks, the inventory and the late
   identity check), merged and deployed 2026-10-14** (walks Lambda and
   consoles from `5fcb7bb`; G runs in the brain, no deploy). F: 20 fixed,
   one a security bug -- the metrics console put stored text into
