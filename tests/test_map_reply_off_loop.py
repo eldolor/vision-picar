@@ -6,10 +6,9 @@ loop. FastAPI encodes a sync route's plain return value there
 Jetson -- a late wheel tick on every explore tick (3.80.H, 3.87).
 """
 import asyncio
-import json
 import time
 
-from fastapi.encoders import jsonable_encoder
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import robot.server as server
@@ -46,26 +45,36 @@ def test_a_big_map_reply_never_stalls_the_event_loop(monkeypatch):
     with client:
         gaps = []
 
-        async def probe(stop_at):
+        done = []
+
+        async def probe():
             last = time.monotonic()
-            while time.monotonic() < stop_at:
+            while not done:
                 await asyncio.sleep(0.005)
                 now = time.monotonic()
                 gaps.append(now - last)
                 last = now
 
         client.get("/world/map")            # warm: imports, first-call costs
-        fut = client.portal.start_task_soon(probe, time.monotonic() + 1.5)
+        fut = client.portal.start_task_soon(probe)
+        time.sleep(0.05)                     # the probe is ticking first
         for _ in range(3):
             assert client.get("/world/map").status_code == 200
+        done.append(True)                    # the probe spans every request
         fut.result()
     assert gaps and max(gaps) < PERIOD_S, f"event loop stalled {max(gaps) * 1000:.0f} ms"
 
 
 def test_the_map_reply_is_the_json_fastapi_would_have_sent(monkeypatch):
     client, world = _client(monkeypatch)
+    plain = FastAPI()                        # FastAPI's own default encoding
+
+    @plain.get("/m")
+    def m():
+        return world.map
+
     with client:
         r = client.get("/world/map")
-    assert r.headers["content-type"] == "application/json"
-    assert r.content == json.dumps(jsonable_encoder(world.map), ensure_ascii=False,
-                                   allow_nan=False, separators=(",", ":")).encode()
+    want = TestClient(plain).get("/m")
+    assert r.headers["content-type"] == want.headers["content-type"]
+    assert r.content == want.content

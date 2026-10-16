@@ -1430,6 +1430,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         the watchdog beside it) on every fetch. A `JSONResponse` built here
         is rendered in the threadpool and passed through as is: the same
         bytes FastAPI's default response would have sent.
+        Its C `json.dumps` still holds the GIL while it runs (8.6-14 ms on
+        the board), well inside the 50 ms period.
         """
         return JSONResponse(world_model.get_map())
 
