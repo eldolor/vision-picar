@@ -167,6 +167,11 @@ DEFAULTS = {
     # real frames); it cannot act in the simulator, whose perception has no
     # such crops.
     "tier_steer_on_candidate": True,
+    # 3.80.G (the user, 2026-10-16): who chooses where a tiered mission
+    # searches. `cloud`: the cloud's direction, as before. `explore`:
+    # explore's nav2 goals (needs nav2, as the explore policy does), the
+    # tiers deciding identity and the last approach.
+    "tier_search": "cloud",
     # 3.70 E4 (decided by the user 2026-10-11): a mission's budget is a time
     # limit and a battery floor; the step count is only a backstop derived
     # from the limit (control/mission_runner.py's derived_max_steps()).
@@ -300,6 +305,8 @@ def load_brain_config(config_path=None) -> dict:
         merged["vision_url"] = os.environ["VISION_URL"]
     if "LOCAL_VLM_URL" in os.environ:
         merged["tier_local_vlm_url"] = os.environ["LOCAL_VLM_URL"].strip()
+    if os.environ.get("TIER_SEARCH", "").strip():
+        merged["tier_search"] = os.environ["TIER_SEARCH"].strip()
     # 3.80.F: the criterion-2 arms switch these per stack.
     for key, env in (("tier_local_direction", "TIER_LOCAL_DIRECTION"),
                      ("tier_steer_on_candidate", "TIER_STEER_ON_CANDIDATE")):
@@ -373,6 +380,9 @@ def load_brain_config(config_path=None) -> dict:
     if isinstance(unable, bool) or not isinstance(unable, int) or unable < 1:
         raise ValueError(f"brain.tier_local_max_unable must be a whole number >= 1; "
                          f"got {unable!r}")
+    if merged["tier_search"] not in ("cloud", "explore"):
+        raise ValueError(f"brain.tier_search must be 'cloud' or 'explore'; "
+                         f"got {merged['tier_search']!r}")
     band_low = float(merged["tier_local_band_low"])
     if not 0.0 < band_low < 0.8:
         raise ValueError(f"brain.tier_local_band_low must be in (0, 0.8), below the "

@@ -29,7 +29,10 @@ file is true only until the code changes and is updated in the same commit.
 | `brain/rooms.py` | `ROOM_FEATURES`, `identify_room()`. Tested, but nothing in the mission path calls it: sim frames carry a room label and real frames take the cloud's `room_guess`. |
 
 **Which agent runs.** `control/mission_runner.py` builds `VisionAgent` for
-`vision` and `tiered` and `ObjectSearchAgent` for `frontier`. The difference
+`vision` and `tiered` and `ObjectSearchAgent` for `frontier` -- except a
+`tiered` mission with `tier_search: explore` (3.80.G), which runs
+`ExploreAgent(sight_from="perception")` (below, "Explore drives a tiered
+search"). The difference
 between `vision` and `tiered` is only which `vision_fn` is bound. How the
 tiered `vision_fn` and its perception pipeline are built at mission start is
 described once, in [mission](../mission/ENGINEERING.md) ("How a tiered
@@ -317,6 +320,7 @@ with `close()`, `reset_epoch()`, `set_searched_rooms()`, `confirm_arrival(frame)
 | `tier_hold_bearing_max_m` | 1.0 | m | a starting value, not derived |
 | `tier_stale_after` | 8 | frames | 6.1's figure; contributed 5.7% of triggers there |
 | `tier_max_calls` | 0 (no cap) | calls | `max_steps` bounds the mission |
+| `tier_search` | `cloud` | -- | 3.80.G: `explore` = explore's nav2 goals choose where to search; env `TIER_SEARCH` |
 
 `oov_cold_search_after` exists on `TieredVision` but has no config key.
 `tier_corroboration_bar` is also passed to `TieredVision`; it changes no
@@ -368,6 +372,38 @@ the median, unless the window is an edge (`ArrivalCheck._is_edge`: two
 surfaces), when it takes the nearest return, which is short of the target,
 never past it. A view goal (`ViewGap.face`) turns toward the part of the
 patch it was chosen to see.
+
+**Explore drives a tiered search (3.80.G).** `brain.tier_search` (env
+`TIER_SEARCH`, `cloud` | `explore`, default `cloud`). Under `explore` the
+runner (`MissionRunner(tier_search=...)`, `self.explores`) builds
+`ExploreAgent(sight_from="perception")` with the tiered `vision_fn`, and
+the brain server builds the `RemoteNavigator` (refusing the start with no
+nav2, and with no local tier: every question would be a cloud call whose
+direction is unused) before any tier client exists. The tiered `vision_fn`
+runs every step as before; its `safest_direction` is never executed, and
+`cloud_errors_fatal=False` (a cloud failure on an escalated question is
+logged and counted in `stats.cloud_errors`, not raised into B3.2).
+* `_hits()` reads the step's scene (`self._scene`, set in `_choose`):
+  `_perception` detected with a bearing (less its `pan_deg`, so the in-frame
+  bearing, to which explore adds the camera's pan as for a detection), else
+  the local VLM's located yes on the frame it landed
+  (`_tier.local_landed.bearing_deg`, a body bearing, less the pan). Never
+  `frame["detections"]`. The `frame` mode (the `explore` policy) is
+  unchanged.
+* `_close_in()`: with no goal live and a sighting within `_at_target()`
+  (the 0.7 m band `_back_to_sighting` calls "here"), and the retry rule
+  allowing it, turn by perception's bearing (`tiered.turn_for`, outside
+  `STEER_BAND_DEG`) or FORWARD, through `_verb()`. Holds still while the
+  arrival readout is arrived/checking/refused. A verb that waits on the
+  mission's own goal is dropped (the next frame re-sizes it); a refused one
+  counts toward `CLOSE_IN_REFUSED` (3: the sighting fails, REVERSE), and a
+  refused turn over `FACE_MIN_TURN_DEG` queues explore's FACE.
+* `_note_refusal()`: an arrival REFUSED drops the place it was at
+  (`RetryBook` failed to its limit), once per refusal, and explore searches
+  on.
+* Found only through `MissionAgent._review_scene` (the arrival rule and
+  the identity verdict); the runner's status reports `tier_search`, the
+  `explore` block, and no `last_turn_deg` from the tiers' scene.
 
 **Explore's learned goal choice (3.65 phase 2).** `explore_goal_policy`
 (`brain:` block; `rule` | `learned` | `network`, default `rule`; the

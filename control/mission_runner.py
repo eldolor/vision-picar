@@ -130,6 +130,10 @@ POLICIES = ("frontier", "vision", "tiered", "explore")
 # learns that perception grew a tier (2.6's first invariant), it only
 # learns that this policy, like "vision", cannot run without one.
 VISION_POLICIES = ("vision", "tiered")
+# 3.80.G: who chooses where a `tiered` mission searches -- the cloud's
+# direction (`cloud`, as before) or explore's nav2 goals (`explore`), with
+# the tiers deciding identity and the last approach.
+TIER_SEARCHES = ("cloud", "explore")
 
 # 3.70 Part A: what a mission is for. `find` looks for a target (or goes to a
 # room); `survey` (decided by the user 2026-10-11) has no target: explore's
@@ -543,6 +547,7 @@ class MissionRunner:
         stuck_after: Optional[int] = DEFAULT_STUCK_AFTER,
         navigator=None,
         explore_goal_policy: str = "rule",
+        tier_search: str = "cloud",
         clock: Optional[Callable[[], float]] = None,
         idle: Optional[Callable[[float], None]] = None,
         retry_cooldown_s: float = RETRY_COOLDOWN_S,
@@ -559,6 +564,9 @@ class MissionRunner:
     ):
         if job not in JOBS:
             raise ValueError(f"Unknown job: {job!r}. Known: {', '.join(JOBS)}")
+        if tier_search not in TIER_SEARCHES:
+            raise ValueError(f"Unknown tier_search: {tier_search!r}. "
+                             f"Known: {', '.join(TIER_SEARCHES)}")
         if policy not in POLICIES:
             raise ValueError(f"Unknown policy: {policy!r}. Known: {', '.join(POLICIES)}")
         if policy in VISION_POLICIES and vision_fn is None:
@@ -696,18 +704,26 @@ class MissionRunner:
         # The agent drives a gated robot; self.robot stays the raw one so
         # stop() is never gated. The policy decides which agent class runs;
         # everything else about the mission is identical either way.
-        agent_class = (VisionAgent if policy in VISION_POLICIES
-                       else ExploreAgent if policy == "explore" else ObjectSearchAgent)
+        # 3.80.G: explore's goal loop also drives a tiered mission whose
+        # search is explore's; its sightings then come from the tiers'
+        # perception, never from the frame's simulator detections.
+        self.tier_search = tier_search if policy == "tiered" else None
+        self.explores = policy == "explore" or self.tier_search == "explore"
+        agent_class = (ExploreAgent if self.explores
+                       else VisionAgent if policy in VISION_POLICIES else ObjectSearchAgent)
         extra = {}
         self._navigator: Optional[_GatedNavigator] = None
-        if policy == "explore":
+        if self.explores:
             if navigator is None:
-                raise ValueError("The explore policy needs a navigator -- nav2's goals "
-                                 "(control/remote_navigator.py), PLAN-ros-alignment.md 3.31")
+                raise ValueError(f"The {policy} policy's explore search needs a navigator "
+                                 "-- nav2's goals (control/remote_navigator.py), "
+                                 "PLAN-ros-alignment.md 3.31")
             self._navigator = _GatedNavigator(navigator, self.is_running)
             extra = {"navigator": self._navigator, "clock": self.clock,
                      # 3.65 phase 2: "rule" (None) or the learned goal choice.
                      "goal_policy": goal_policy_for(explore_goal_policy)}
+            if policy == "tiered":
+                extra["sight_from"] = "perception"
         self._gated = _HaltGate(robot, self.is_running,
                                 on_frame=self._observe if self.inventory else None)
         self.agent = agent_class(
@@ -881,7 +897,7 @@ class MissionRunner:
             self._failed_arrival_frame = None
             self._last_action = result.action
             self._last_reasoning = self._describe(result)
-            if self.policy == "explore":
+            if self.explores:
                 # The explore policy's 'why' is its goal bookkeeping (sent,
                 # reached, aborted and set aside, waiting on a cooldown), not
                 # the scene -- 3.31's first house runs could not be read
@@ -897,7 +913,8 @@ class MissionRunner:
                 # for the executor's default quarter turn (a scan, a cloud
                 # answer with nothing local to size it by).
                 size = scene.get("turn_deg")
-                self._last_turn_deg = int(size) if size else None
+                # 3.80.G: explore's own turns are not the tiers' scene's.
+                self._last_turn_deg = int(size) if size and not self.explores else None
             # Held rather than overwritten with None: a tiered mission's
             # counters must survive a frame whose scene arrived from
             # somewhere else, or 6.3's "single number" would blink out
@@ -1200,7 +1217,8 @@ class MissionRunner:
                                                      * (self.agent.seen_res or 0) ** 2, 2),
                              # 3.77: goal-choice wall time, every choice.
                              "choice_ms": self.agent.choice_stats()}
-                            if self.policy == "explore" else None),
+                            if self.explores else None),
+                "tier_search": self.tier_search,
                 # 3.46: counts only; the list is GET /mission/inventory.
                 "inventory": (self.inventory.counts()
                               if self.inventory is not None else None),

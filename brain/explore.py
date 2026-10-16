@@ -45,7 +45,9 @@ import time
 from typing import Callable, Optional, Protocol
 
 from brain.agent import MissionAgent, StepResult
-from brain.arrival import ArrivalCheck
+from brain.arrival import ARRIVED, CHECKING, REFUSED, ArrivalCheck
+from brain.perceive import DETECTED
+from brain.tiered import STEER_BAND_DEG, turn_for
 from brain.frontier import (RetryBook, camera_seen, find_frontiers, find_view_gaps,
                             known_near, reach, reachable)
 from brain.goal_policy import LinearGoalPolicy
@@ -110,6 +112,14 @@ OWN_GOAL_HOLDER = "ros is driving"
 # A goal read back through the SLAM anchor (world/ros_world.py) comes back a
 # little moved; within this it is still the mission's own (3.76).
 OWN_GOAL_TOLERANCE_M = 0.05
+# 3.80.G: where sightings come from. `frame`: the frame's `detections`,
+# which only the simulator provides (the explore policy). `perception`: the
+# tiered policy's own perception on the scene (`_perception`), which is what
+# a real camera has -- and found then comes only from the arrival rule and
+# the tiers' identity verdict.
+SIGHT_FROM = ("frame", "perception")
+# Refused close-in FORWARDs in a row before the sighting counts a failure.
+CLOSE_IN_REFUSED = 3
 # Transient goal-call failures in a row before the search gives up (3.76):
 # about ten seconds of ticks.
 BRIDGE_BLIPS_MAX = 40
@@ -167,11 +177,19 @@ class ExploreAgent(MissionAgent):
         goal_timeout_s: float = GOAL_TIMEOUT_S,
         retry: Optional[RetryBook] = None,
         goal_policy: Optional[LinearGoalPolicy] = None,
+        sight_from: str = "frame",
         **kwargs,
     ):
         super().__init__(robot, memory, **kwargs)
         if navigator is None:
             raise ValueError("the explore policy needs a Navigator (nav2's goals)")
+        if sight_from not in SIGHT_FROM:
+            raise ValueError(f"sight_from must be one of {SIGHT_FROM}; got {sight_from!r}")
+        self.sight_from = sight_from
+        self.close_ins = 0             # 3.80.G: last-approach verbs executed
+        self._close_in_refused = 0
+        self._refusal_noted = False
+        self._scene: dict = {}         # 3.80.G: this step's scene (sight_from perception)
         self.navigator = navigator
         self.clock = clock
         self.goal_timeout_s = goal_timeout_s
@@ -311,6 +329,9 @@ class ExploreAgent(MissionAgent):
         # Never over an escape still queued: a wedged robot backs out first.
         escaping = any(p == "REVERSE" or (isinstance(p, tuple) and p[0] in ("OPEN", "CREEP"))
                        for p in self._pending)
+        # 3.80.G: the tiers' scene, for sightings read from their perception.
+        self._scene = scene
+        self._note_refusal(scene)
         glimpse = self._glimpse(frame) if self._goal is None and not escaping else None
         if glimpse is not None:
             self._pending = ["LOOK_CENTER", ("FACE", glimpse, 90, False, "glimpse")]
@@ -327,7 +348,13 @@ class ExploreAgent(MissionAgent):
             moved = (self._approach is None
                      or math.hypot(tx - self._approach[0], ty - self._approach[1]) > APPROACH_MOVED_M)
             if moved and self.retry.available(tx, ty, now):
-                return self._send_approach(tx, ty, now)
+                return self._send_approach(tx, ty, now, scene)
+            if (self._goal is None and self._at_target(tx, ty)
+                    and self.retry.available(tx, ty, now)):
+                # 3.80.G: here already, and still in sight -- close in.
+                closed = self._close_in(scene, (tx, ty))
+                if closed is not None:
+                    return closed
 
         if self._goal is not None:
             return "WAIT", True, f"nav2 {state}: {self._goal['kind']}"
@@ -443,7 +470,98 @@ class ExploreAgent(MissionAgent):
         self._event("goal_sent", kind=kind, goal=[round(x_m, 2), round(y_m, 2)], **info)
         return "GOAL", True, self.last_event
 
-    def _send_approach(self, tx: float, ty: float, now: float):
+    def _note_refusal(self, scene: dict) -> None:
+        """3.80.G: an arrival whose identity was refused is at an object that
+        is not the target. Explore drops that place for good -- never
+        approached, closed in on or gone back to again -- and searches on:
+        approaching it again would only ask (and perhaps pay for) the same
+        question (review, 2026-10-16). Once per refusal."""
+        if self.sight_from != "perception":
+            return
+        arrival = scene.get("_arrival") or {}
+        if arrival.get("state") != REFUSED:
+            self._refusal_noted = False
+            return
+        if self._refusal_noted:
+            return
+        self._refusal_noted = True
+        place = self._last_seen or self._approach
+        if place is None:
+            return
+        while not self.retry.dropped(*place):
+            self.retry.fail(place[0], place[1], self.clock(), known=self._known_at)
+        self._event("identity_refused", target=[round(place[0], 2), round(place[1], 2)])
+        self._last_seen = None
+        self._approach = None
+        self._close_in_refused = 0
+
+    def _at_target(self, tx: float, ty: float) -> bool:
+        """Anywhere an approach could have stood the robot -- the band
+        `_back_to_sighting` calls "here" (3.69 B). 3.80.G's first live run
+        stood 0.6 m out, in sight, and the narrower standoff test sent it to
+        "here and not seeing it" on every frame."""
+        pose = self._pose()
+        return bool(pose.get("usable")) and math.hypot(
+            tx - pose["x_m"], ty - pose["y_m"]) <= APPROACH_FAR_M + 0.1
+
+    def _close_in(self, scene: dict, target: tuple):
+        """3.80.G: the last half metre. With sightings from the tiers'
+        perception, explore's approach stops up to 0.6 m short and the
+        arrival rule wants 0.40 m, centred: turn by perception's measured
+        bearing (`brain/tiered.py`'s `turn_for`, outside `STEER_BAND_DEG`),
+        FORWARD when centred -- computed here from the bearing, never the
+        scene's direction, which on a frame the cloud answered is the
+        cloud's. Through the safety layer like every verb. None when not in
+        that mode or the target is not detected this frame.
+
+        A verb that waits (the mission's own goal still holds the robot) is
+        dropped, not queued: the next frame decides afresh, sized by its own
+        bearing. A refused verb counts toward CLOSE_IN_REFUSED; a refused
+        turn of more than FACE_MIN_TURN_DEG also becomes explore's FACE
+        toward the target (smaller turns, then back off once, 3.69 B). At
+        CLOSE_IN_REFUSED in a row the sighting counts a failure and the
+        robot backs off (the in-process sweep, 2026-10-16: a refused verb
+        passes no time, and one house turned, refused, 7,894 times)."""
+        if self.sight_from != "perception":
+            return None
+        if (scene.get("_arrival") or {}).get("state") in (ARRIVED, CHECKING, REFUSED):
+            # Arrived: identity is being (or was) judged on this spot. Hold
+            # still -- on the frame it is confirmed, memory records found only
+            # after this step.
+            return "WAIT", True, "arrived; holding for the identity check"
+        perception = scene.get("_perception") or {}
+        bearing = perception.get("bearing_deg")
+        if perception.get("status") != DETECTED or bearing is None:
+            return None
+        bearing = float(bearing) - float(perception.get("pan_deg") or 0.0)
+        kwargs = {}
+        if abs(bearing) > STEER_BAND_DEG:
+            action = "LEFT" if bearing < 0 else "RIGHT"
+            kwargs["angle"] = turn_for(bearing)
+        else:
+            action = "FORWARD"
+        out = self._verb(action, **kwargs)
+        self.close_ins += bool(out[1])
+        if out[0] == "WAIT":
+            if self._pending and self._pending[0] == action:
+                self._pending.pop(0)      # _verb queued it bare; the next frame re-sizes it
+            return out
+        if out[1]:
+            self._close_in_refused = 0
+            return out[0], out[1], f"closing in: {out[2]}"
+        self._close_in_refused += 1
+        if self._close_in_refused >= CLOSE_IN_REFUSED:
+            self._close_in_refused = 0
+            self.retry.fail(target[0], target[1], self.clock(), known=self._known_at)
+            self._last_seen = None
+            self._approach = None
+            self._pending.insert(0, "REVERSE")
+        elif action != "FORWARD" and kwargs["angle"] > FACE_MIN_TURN_DEG:
+            self._pending.insert(0, ("FACE", target, max(FACE_MIN_TURN_DEG, kwargs["angle"] / 2),
+                                     False, True))
+        return out[0], out[1], f"closing in: {out[2]}"
+
+    def _send_approach(self, tx: float, ty: float, now: float, scene: Optional[dict] = None):
         pose = self._pose()
         if not pose.get("usable"):
             return "WAIT", False, "no pose to approach from"
@@ -454,6 +572,9 @@ class ExploreAgent(MissionAgent):
             # live would drive it away from the target before arrival fires.
             self._cancel()
             self._approach = (tx, ty)
+            closed = self._close_in(scene or {}, (tx, ty))
+            if closed is not None:
+                return closed
             return "WAIT", True, "at the target; looking"
         gx, gy = self._approach_point(pose, tx, ty, d)
         self._cancel()
@@ -461,6 +582,7 @@ class ExploreAgent(MissionAgent):
         out = self._send(gx, gy, "approach", now)
         if out[0] == "GOAL":
             self._goal["target"] = (tx, ty)
+            self._close_in_refused = 0
         return out
 
     def _back_to_sighting(self, now: float):
@@ -480,8 +602,7 @@ class ExploreAgent(MissionAgent):
         # spot the approach left 0.6 m out, once more, sent the same goal
         # again and again -- reached at once, never facing it -- until the
         # step budget ran out.
-        if pose.get("usable") and math.hypot(tx - pose["x_m"], ty - pose["y_m"]) \
-                <= APPROACH_FAR_M + 0.1:
+        if self._at_target(tx, ty):
             # Here and not seeing it: look once, then let it go. A fresh
             # sighting brings it back.
             self._last_seen = None
@@ -1107,15 +1228,41 @@ class ExploreAgent(MissionAgent):
 
     # ---------- perception ----------
 
+    def _hits(self, frame: dict) -> list:
+        """The target's in-frame bearings this frame, as `[{"bearing_deg"}]`.
+        `frame`: the simulator's detections. `perception` (3.80.G): the
+        tiers' perception, when it detected the target -- its bearing less
+        the pan it carries (a real pipeline's bearing includes the pan; the
+        simulator's report carries pan 0 and an in-frame bearing), so the
+        caller adds the camera's pan as it does for a detection."""
+        target = self.memory.target_object
+        if not target:
+            return []
+        if self.sight_from == "perception":
+            scene = self._scene or {}
+            p = scene.get("_perception") or {}
+            if p.get("status") == DETECTED and p.get("bearing_deg") is not None:
+                return [{"bearing_deg": float(p["bearing_deg"]) - float(p.get("pan_deg") or 0.0)}]
+            # The local VLM's located yes, on the frame it landed: a BODY
+            # bearing now (brain/tiered.py `_bearing_of`), so less the
+            # camera's pan here. It can bring the robot near a target
+            # perception cannot name; arrival still needs perception's
+            # detection (3.80.D's known limit).
+            landed = (scene.get("_tier") or {}).get("local_landed") or {}
+            if landed.get("answer") == "yes" and landed.get("bearing_deg") is not None:
+                pan = (self.robot.get_depth_grid() or {}).get("pan_deg") or 0.0
+                return [{"bearing_deg": float(landed["bearing_deg"]) - float(pan)}]
+            return []
+        return [d for d in frame.get("detections") or ()
+                if d.get("label") == target and d.get("bearing_deg") is not None]
+
     def _glimpse(self, frame: dict) -> Optional[tuple]:
         """A point 1 m out along where a PANNED camera saw the target, in
         the house frame -- a direction to turn the body to, never a place
         to drive to (no range: the lidar does not look where the camera
         pans). None if the camera is centred or the target is not in view,
         or if this glimpse's turn is already queued."""
-        target = self.memory.target_object
-        hits = [d for d in frame.get("detections") or ()
-                if target and d.get("label") == target and d.get("bearing_deg") is not None]
+        hits = self._hits(frame)
         if not hits or any(isinstance(p, tuple) and p[0] == "FACE" for p in self._pending):
             return None
         pan = (self.robot.get_depth_grid() or {}).get("pan_deg") or 0.0
@@ -1130,11 +1277,7 @@ class ExploreAgent(MissionAgent):
         dead ahead enough to approach: its bearing from the detection, its
         range from the lidar at that bearing. Camera centred only -- a
         panned bearing is not a body bearing (R3)."""
-        target = self.memory.target_object
-        if not target:
-            return None
-        hits = [d for d in frame.get("detections") or ()
-                if d.get("label") == target and d.get("bearing_deg") is not None]
+        hits = self._hits(frame)
         if not hits:
             return None
         depth = self.robot.get_depth_grid() or {}

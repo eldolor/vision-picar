@@ -29,7 +29,10 @@ threads; where it and this file disagree, check the code.
 
 **Agent selection.** `MissionRunner` builds `VisionAgent` for `policy` in
 `VISION_POLICIES` (`"vision"`, `"tiered"`) and `ObjectSearchAgent` for
-`"frontier"` (both in [policy](../policy/ENGINEERING.md)). With no
+`"frontier"` (both in [policy](../policy/ENGINEERING.md)); `ExploreAgent`
+for `"explore"`, and for `"tiered"` with `tier_search="explore"` (3.80.G,
+`TIER_SEARCHES`; `self.explores` then also gates the navigator wrapper, its
+end at `_finish`, and the status's `explore` block). With no
 `vision_fn`, the frontier agent's own `sensed_scene()` is used.
 
 **Threads** (`AGENT-HARNESS.md` section 7):

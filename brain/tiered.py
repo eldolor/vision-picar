@@ -543,6 +543,8 @@ class TierStats:
     local_direction: dict = field(default_factory=dict)
     local_direction_ms: list = field(default_factory=list)
     candidate_steers: int = 0
+    # 3.80.G: cloud failures logged rather than raised (cloud_errors_fatal off).
+    cloud_errors: int = 0
     # How many samples each bucket has been offered, and the reservoir's
     # draw (seeded, so a replay samples the same way) -- 3.76.
     _seen: dict = field(default_factory=dict, repr=False, compare=False)
@@ -596,6 +598,7 @@ class TierStats:
             "local_direction": dict(self.local_direction),
             "local_direction_ms": self._percentiles("local_direction_ms"),
             "candidate_steers": self.candidate_steers,
+            "cloud_errors": self.cloud_errors,
             "frames": self.frames,
             "cloud_calls": self.cloud_calls,
             "claims": self.claims,
@@ -687,6 +690,7 @@ class TieredVision:
         local_band_low: float = DEFAULT_LOCAL_BAND_LOW,
         local_direction_fn: Optional[Callable[[dict], dict]] = None,
         steer_on_candidate: bool = False,
+        cloud_errors_fatal: bool = True,
     ):
         self.pipeline = pipeline
         # 3.80.F: the local tier's search question (brain/local_vlm.py's
@@ -694,6 +698,11 @@ class TieredVision:
         # is not a yes; its answer is held as a cloud goal is. None: the
         # local tier gives no direction (3.80.D).
         self.local_direction_fn = local_direction_fn
+        # 3.80.G: under an explore search the cloud only ever answers an
+        # escalated question whose direction is unused, and explore needs no
+        # cloud to search: its failures are logged and counted
+        # (`stats.cloud_errors`), not raised into B3.2's budget.
+        self.cloud_errors_fatal = bool(cloud_errors_fatal)
         # 3.80.F: YOLOE + CLIP steer toward a best crop in the uncertain band
         # (not a detection) -- not after a local no about a frame with such
         # a crop, until the band run breaks (`_candidate_rejected`).
@@ -913,7 +922,9 @@ class TieredVision:
         # the budget counts the same events it always did.
         if self._pending_error is not None:
             err, self._pending_error = self._pending_error, None
-            raise err
+            if self.cloud_errors_fatal:
+                raise err
+            self._count_cloud_error(err)
 
         trigger = self._trigger_for(perception)
         if trigger is None:
@@ -975,7 +986,13 @@ class TieredVision:
         if escalated:
             self._count("frame_escalations", "unable")
         _t0 = time.perf_counter()
-        scene = self.cloud_vision_fn(frame)
+        try:
+            scene = self.cloud_vision_fn(frame)
+        except Exception as exc:  # noqa: BLE001 -- raised for B3.2 unless 3.80.G says not
+            if self.cloud_errors_fatal:
+                raise
+            self._count_cloud_error(exc)
+            return self._local_scene(perception, note="cloud call failed")
         self.stats.record("cloud_ms", (time.perf_counter() - _t0) * 1000)
         # The goal the stand-in holds on later free frames. Set on BOTH
         # paths: it lived only in _collect_inflight() at first, so a
@@ -1039,7 +1056,13 @@ class TieredVision:
                 return self._local_scene(perception, note="mission ended")
             return self._local_scene(perception, note="asked the local tier",
                                      local_asked=trigger)
-        got = self._ask_tiers(frame, q, fn)
+        try:
+            got = self._ask_tiers(frame, q, fn)
+        except Exception as exc:  # noqa: BLE001 -- the absent tier's cloud call
+            if self.cloud_errors_fatal:
+                raise
+            self._count_cloud_error(exc)
+            got = None
         if isinstance(got, _LocalAnswer) or got is None:
             if got is not None:
                 self._apply_local(got)
@@ -1100,6 +1123,11 @@ class TieredVision:
         finally:
             with self._stats_lock:
                 self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
+
+    def _count_cloud_error(self, exc: BaseException) -> None:
+        logger.warning("cloud call failed (not fatal under an explore search): %s", exc)
+        with self._stats_lock:
+            self.stats.cloud_errors += 1
 
     def _ask_direction(self, frame: dict, q: "_Question", got: dict) -> Optional[dict]:
         """3.80.F, on the worker: the direction question about the same
