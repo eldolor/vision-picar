@@ -92,4 +92,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.84](3.84-person-stop-last-word.md) | A person's Stop is the last word over autonomy |
 | [3.86](3.86-twin-stop-labels.md) | The twin names a Stop's refusals |
 | [3.87](3.87-map-reply-off-loop.md) | The robot server's map reply, encoded off the event loop the wheel loop runs on |
+| [3.85](3.85-unsurveyed-13-of-13.md) | All 13 rooms from an empty map: the pantry livelock, the table pocket, then 3.83's fix |
 <!-- /sections -->
