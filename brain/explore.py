@@ -1072,6 +1072,12 @@ class ExploreAgent(MissionAgent):
             # an armchair, until the mission's time ran out.
             again = any(math.hypot(target[0] - wx, target[1] - wy) < self.retry.radius_m
                         for wx, wy in self._wedged)
+            # 3.85: a stall after the robot got under way is the place's
+            # failure at once -- the breakfast trap frontier was sent three
+            # times under the first-wedge forgiveness. Never-left keeps it.
+            left = (g.get("from") is not None and pose.get("usable") and math.hypot(
+                pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) >= STUCK_MOVED_M)
+            again = again or (state == "stalled" and left)
             self._wedged.append(target)
             if g["kind"] == "approach":
                 self._approach = None
@@ -1263,7 +1269,22 @@ class ExploreAgent(MissionAgent):
                     # step budget ran out (house 36).
                     self._last_seen = None
             return out
-        return self._verb(item)
+        out = self._verb(item)
+        if (item == "REVERSE" and out[0] != "WAIT" and not out[1]
+                and self._pending and self._pending[0] == ("CREEP",) and self._front_open()):
+            # 3.85: the escape's REVERSE refused with the front open -- drive
+            # out ahead first. 3.83's breakfast pocket left 1.3 cm behind and
+            # about 30 cm ahead, and REVERSE, CREEP, OPEN never tried ahead.
+            self._pending.insert(0, "FORWARD")
+        return out
+
+    def _front_open(self) -> bool:
+        """The safety layer's own forward clearance is above its stop."""
+        try:
+            f, _ = self.safety.forward_clearance()
+        except Exception:  # noqa: BLE001 -- unknown: not open
+            return False
+        return f is not None and f > self.safety.min_distance_cm
 
     def _creep_readings(self) -> dict:
         """What the safety layer read just before a creep (3.74), off ONE

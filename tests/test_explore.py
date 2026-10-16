@@ -953,3 +953,60 @@ def test_a_stall_with_no_pose_at_its_end_still_reads_cleanly():
     while agent._goal is not None and grid.sim_time - t0 < 60:
         agent.step()
     assert "None" not in agent.last_event and "stalled" in agent.last_event
+
+
+def _escape_agent(front_cm, rear_cm=1.3):
+    from robot.safety import SafetyViolation
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="x"),
+                         navigator=FakeNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+
+    def guard(action, **kw):
+        if action == "REVERSE":
+            raise SafetyViolation(f"Blocked REVERSE: rear clearance={rear_cm}cm < min=20cm")
+        return {"executed": action}
+    agent.safety.check_and_execute = guard
+    agent.safety.forward_clearance = lambda: (front_cm, "scan_footprint")
+    agent.safety.reverse_clearance = lambda: (rear_cm, "scan_footprint")
+    agent._pending = ["REVERSE", ("CREEP",), ("OPEN",)]
+    return agent
+
+
+def test_an_escape_with_the_rear_shut_tries_the_open_front():
+    """3.85: in 3.83's breakfast pocket the rear was 1.3 cm and the front
+    about 30 cm, and the escape (REVERSE, CREEP, OPEN) never tried ahead."""
+    agent = _escape_agent(front_cm=30.0)
+    agent._do_pending()
+    assert agent._pending[0] == "FORWARD"
+
+
+def test_an_escape_with_both_ends_shut_creeps_and_turns_as_before():
+    agent = _escape_agent(front_cm=15.0)
+    agent._do_pending()
+    assert agent._pending[0] == ("CREEP",)
+
+
+def _ended_as(state, moved_m):
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="x"),
+                         navigator=FakeNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+    pose = agent._pose()
+    goal = (pose["x_m"] + 2.0, pose["y_m"])
+    agent._goal = {"x_m": goal[0], "y_m": goal[1], "kind": "frontier", "sent_at": 0.0,
+                   "from": (pose["x_m"] - moved_m, pose["y_m"])}
+    agent._goal_ended(state, grid.sim_time)
+    return agent.retry.failures_near(*goal)
+
+
+def test_a_stall_after_moving_counts_against_the_place_at_once():
+    """3.85: 3.83's breakfast trap frontier (8.63, 10.23) was sent three
+    times -- a stall was forgiven as a first wedge."""
+    assert _ended_as("stalled", moved_m=1.39) == 1
+
+
+def test_a_goal_that_never_left_keeps_the_first_wedge_forgiven():
+    assert _ended_as("stalled", moved_m=0.0) == 0
