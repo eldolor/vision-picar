@@ -206,6 +206,43 @@ and `__call__` puts every question to the local tier first:
   `local_ms`. The simulator's pipeline reads boxes in the render's 60 deg
   (`control/brain_server.py` `SIM_HFOV_DEG`).
 
+**The local tiers steer (3.80.F).** Two additions, each off unless the
+brain has a local tier (`local_identity_fn`):
+* **The local VLM's direction** (`local_direction_fn`, the client's
+  `direction`; config `tier_local_direction`, env `TIER_LOCAL_DIRECTION`,
+  **default false**: criterion F4 failed, VE answered `forward` on every
+  frame). On the worker, after a `SEARCH_TRIGGERS` question
+  (`mission_start`, `cold_search`, `staleness`) whose sighting reply is not
+  a yes, finished (`answered` or `unparsed`, not a `timeout`/`busy` still
+  draining) and about a frame perception did not detect the target on,
+  `_ask_direction()` asks the direction question about the same frame.
+  `_Question.local_done` is set only after it, so an arrival check waits
+  for the whole local phase. `_apply_direction()` on landing: a word holds
+  `LEFT`/`RIGHT`/`FORWARD` in `_local_held` (`_local_held_why =
+  "direction"`), closes the search question (the pacing counts reset,
+  `_retry_start` cleared) and resets `_frame_unable`; an unable reply sets
+  `_frame_unable` to one more than before the sighting answer (so a no plus
+  an unable direction still escalates after `local_max_unable`); `absent`
+  or `unsupported` (a service without the route: 404) change nothing. A
+  later sighting no keeps a held direction (it drops only a located
+  FORWARD); a yes drops it; a cloud answer drops either. Counted in
+  `local_direction` (`left`, `right`, `forward`, `unable_<status>`,
+  `absent`, `unsupported`) and `local_direction_ms`.
+* **YOLOE + CLIP's uncertain candidate** (`steer_on_candidate`; config
+  `tier_steer_on_candidate`, env `TIER_STEER_ON_CANDIDATE`, default true
+  since F5). `_steer_to_candidate()`: an absent frame, camera centred, whose
+  strongest crop (by probability: an absent `Perception` has no `best`) has
+  P in [`local_band_low`, `match_probability`) and a bearing turns toward
+  it as `_steer_to()` does (FORWARD within `STEER_BAND_DEG`). A local no
+  about a frame that had such a crop (`_Question.band`) sets
+  `_candidate_rejected` until the band run breaks. It never anchors dead
+  reckoning and never feeds the arrival rule. Counted in
+  `candidate_steers`. The simulator's pipeline has no sub-gate crops, so
+  it never acts there.
+* `_local_scene()` precedence is now: perception's steer, `_local_turn`,
+  dead reckoning, the candidate, the held goal (the local VLM's, else the
+  cloud's), the scan; the spin guard skips a candidate turn.
+
 **What the hysteresis does and does not gate.** `consecutive_frames` is
 read only in `_trigger_for()`. `_steer_to()` returns a direction for any
 frame whose `status` is `detected` with a bearing, with no streak, so one

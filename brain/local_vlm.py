@@ -105,6 +105,21 @@ class LocalVLMClient:
         3.80.D: `box` asks for where, too (a sighting): a yes then carries
         `box` (the model's pixels) and `box_frac` (fractions of the frame),
         unless the deadline came first."""
+        return self._post("identity", frame, box=box)
+
+    def direction(self, frame: dict) -> dict:
+        """3.80.F: the search question. `{"status", "direction", "p",
+        "mass", ...}`: `direction` is `left`, `right` or `forward` when
+        status is `answered`; the unable statuses and LocalVLMAbsent are
+        `ask`'s."""
+        got = self._post("direction", frame)
+        if got.get("reason") == "HTTP 404":
+            # A service from before 3.80.F: no direction to be had, which is
+            # not the local tier failing (no escalation is earned by it).
+            return {"status": "unsupported", "score": None, "reason": "HTTP 404"}
+        return got
+
+    def _post(self, route: str, frame: dict, box: bool = False) -> dict:
         try:
             jpeg = _jpeg(frame)
         except Exception as e:  # noqa: BLE001 -- a frame we cannot encode is unable, not absent
@@ -117,7 +132,7 @@ class LocalVLMClient:
         if box:
             body["box"] = True
         try:
-            r = self._http.post(f"{self.url}/identity", json=body, headers=headers,
+            r = self._http.post(f"{self.url}/{route}", json=body, headers=headers,
                                 timeout=self.timeout_s)
         except httpx.TimeoutException:
             return {"status": "timeout", "score": None,

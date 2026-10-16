@@ -9,7 +9,8 @@ tier as its own process, so an OOM kill takes it and nothing else.
         python -m service.local_vlm.server
 
 `POST /identity` answers 3.48's arrival question with the raw score; the
-brain applies 3.80's thresholds. A 503 means the VLM is absent. If the driver
+brain applies 3.80's thresholds. `POST /direction` (3.80.F) answers the
+search question, one word of `left`, `right`, `forward`. A 503 means the VLM is absent. If the driver
 dies, this process exits non-zero and systemd decides whether to start it
 again (`tools/jetson/systemd/picar-local-vlm.service`).
 """
@@ -133,8 +134,7 @@ def create_app(make_driver: Callable[[], EdgeDriver], *, info: Optional[dict] = 
                 "alive": alive, "load_s": state["load_s"],
                 "served": drv.served if drv else 0, **(info or {})}
 
-    @app.post("/identity", dependencies=[Depends(require_secret)])
-    def identity(req: IdentityRequest) -> dict:
+    def answer(req: IdentityRequest, question: str) -> dict:
         drv = state["driver"]
         if drv is None or not drv.ready or state["dead"]:
             raise HTTPException(status_code=503, detail="local VLM not ready")
@@ -145,10 +145,22 @@ def create_app(make_driver: Callable[[], EdgeDriver], *, info: Optional[dict] = 
         if not jpeg.startswith(b"\xff\xd8"):
             raise HTTPException(status_code=400, detail="image is not a JPEG")
         try:
+            if question == "direction":
+                return drv.ask(jpeg, req.target, req.deadline_s, question="direction")
             return drv.ask(jpeg, req.target, req.deadline_s, box=req.box)
         except DriverGone as e:
             died(str(e))
             raise HTTPException(status_code=503, detail="local VLM absent")
+
+    @app.post("/identity", dependencies=[Depends(require_secret)])
+    def identity(req: IdentityRequest) -> dict:
+        return answer(req, "identity")
+
+    @app.post("/direction", dependencies=[Depends(require_secret)])
+    def direction(req: IdentityRequest) -> dict:
+        """3.80.F: the search question -- `left`, `right` or `forward` --
+        with the same statuses as /identity; `box` is ignored."""
+        return answer(req, "direction")
 
     return app
 

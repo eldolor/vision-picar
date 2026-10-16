@@ -133,6 +133,16 @@ DEFAULT_HFOV_DEG = 66.0
 # not exist yet, and a trigger that cannot fire is worse than one that is
 # absent, because it looks like coverage.
 TRIGGER_STALE = "staleness"
+# 3.80.F: the questions that ask WHERE TO LOOK, not whether a candidate is
+# the target. Put to the local tier, a reply that is not a yes is followed by
+# the direction question about the same frame.
+SEARCH_TRIGGERS = (TRIGGER_START, TRIGGER_COLD_SEARCH, TRIGGER_STALE)
+# The local VLM's one-word answer, as the action the policy holds.
+DIRECTION_ACTIONS = {"left": "LEFT", "right": "RIGHT", "forward": "FORWARD"}
+# A direction reply that says there is no direction to be had -- the service
+# predates 3.80.F (404), or went away between the two questions. Neither
+# answers nor fails the search question: the policy behaves as 3.80.D.
+DIRECTION_NONE = ("absent", "unsupported")
 
 UNAVAILABLE_TRIGGERS = {
     "goal_achieved": "needs C6 -- nothing holds a goal to achieve",
@@ -527,6 +537,12 @@ class TierStats:
     local_frame_calls: int = 0
     frame_escalations: dict = field(default_factory=dict)
     local_frame_ms: list = field(default_factory=list)
+    # 3.80.F: the direction questions, by how they ended (`left`, `right`,
+    # `forward`, `unable_<status>`, `absent`), and their wall clock; and the
+    # frames YOLOE + CLIP's candidate steered.
+    local_direction: dict = field(default_factory=dict)
+    local_direction_ms: list = field(default_factory=list)
+    candidate_steers: int = 0
     # How many samples each bucket has been offered, and the reservoir's
     # draw (seeded, so a replay samples the same way) -- 3.76.
     _seen: dict = field(default_factory=dict, repr=False, compare=False)
@@ -577,6 +593,9 @@ class TierStats:
             "local_frame_calls": self.local_frame_calls,
             "local_frame_ms": self._percentiles("local_frame_ms"),
             "frame_escalations": dict(self.frame_escalations),
+            "local_direction": dict(self.local_direction),
+            "local_direction_ms": self._percentiles("local_direction_ms"),
+            "candidate_steers": self.candidate_steers,
             "frames": self.frames,
             "cloud_calls": self.cloud_calls,
             "claims": self.claims,
@@ -590,6 +609,18 @@ class TierStats:
         }
 
 
+def _local_kind(got: dict, no_below: float) -> str:
+    """A sighting reply as `yes`, `no` or `unable_<why>` (3.80.D's rule)."""
+    status, score = got.get("status"), got.get("score")
+    numeric = isinstance(score, (int, float))
+    if status == "answered" and numeric and score >= LOCAL_YES_AT:
+        return "yes"
+    if status == "answered" and numeric and score <= no_below:
+        return "no"
+    return (f"unable_{status}" if status != "answered"
+            else "unable_band" if numeric else "unable_noscore")
+
+
 @dataclass
 class _Question:
     """3.80.D: one frame's question, as it was asked -- for reading a box's
@@ -600,6 +631,11 @@ class _Question:
     pan_deg: float
     hfov_deg: float
     cloud_ok: bool = True
+    # 3.80.F: what perception saw on the asked frame -- the target (no
+    # direction is asked: it is in view), and a crop in the uncertain band
+    # (a no on this frame rejects it).
+    detected: bool = False
+    band: bool = False
     # Set when the local tier has answered (or failed): the arrival's own
     # local check waits for this, not for the whole question.
     local_done: threading.Event = field(default_factory=threading.Event)
@@ -610,6 +646,9 @@ class _LocalAnswer:
     q: _Question
     got: dict
     absent: bool = False   # absent, and the call cap kept the cloud out
+    # 3.80.F: the direction question's reply, when one was asked after a
+    # search question's sighting answer was not a yes.
+    direction: Optional[dict] = None
 
 
 class TieredVision:
@@ -646,8 +685,21 @@ class TieredVision:
         local_max_unable: int = DEFAULT_LOCAL_MAX_UNABLE,
         local_sighting_fn: Optional[Callable[..., dict]] = None,
         local_band_low: float = DEFAULT_LOCAL_BAND_LOW,
+        local_direction_fn: Optional[Callable[[dict], dict]] = None,
+        steer_on_candidate: bool = False,
     ):
         self.pipeline = pipeline
+        # 3.80.F: the local tier's search question (brain/local_vlm.py's
+        # `direction`), asked after a search trigger's sighting answer that
+        # is not a yes; its answer is held as a cloud goal is. None: the
+        # local tier gives no direction (3.80.D).
+        self.local_direction_fn = local_direction_fn
+        # 3.80.F: YOLOE + CLIP steer toward a best crop in the uncertain band
+        # (not a detection) -- not after a local no about a frame with such
+        # a crop, until the band run breaks (`_candidate_rejected`).
+        self.steer_on_candidate = bool(steer_on_candidate)
+        self._candidate_rejected = False
+        self._local_held_why: Optional[str] = None   # "located" or "direction"
         # 3.80.D: the local tier for every question a FRAME raises, called
         # with `box=True` (brain/local_vlm.py's `ask`). None: the triggers go
         # to the cloud, as before 3.80.D, and the band and out-of-vocabulary
@@ -931,6 +983,7 @@ class TieredVision:
         # scanning -- the exact behaviour Phase F exists to remove.
         self._last_cloud_scene = scene
         self._local_held = None
+        self._local_held_why = None
         self._local_turn = None     # 3.80.D: this answer is newer
         self._frame_unable = 0
         return self._annotate(scene, perception, trigger)
@@ -969,6 +1022,8 @@ class TieredVision:
                   if (self._odometry_usable and self._odom.samples) else None),
             pan_deg=float(frame.get("pan_deg") or 0.0),
             hfov_deg=float(getattr(self.pipeline, "hfov_deg", None) or DEFAULT_HFOV_DEG),
+            detected=perception.status == DETECTED,
+            band=self._band_run > 0,
             # An absent local tier hands this to the cloud, which an
             # out-of-vocabulary question earns only at cold_search's bar.
             cloud_ok=(trigger != TRIGGER_OOV
@@ -996,6 +1051,7 @@ class TieredVision:
         self._mark_odometry_call()
         self._last_cloud_scene = got
         self._local_held = None
+        self._local_held_why = None
         self._local_turn = None
         self._frame_unable = 0
         return self._annotate(got, perception, trigger)
@@ -1009,16 +1065,23 @@ class TieredVision:
             q.local_done.set()
             return None
         started = time.perf_counter()
+        direction = None
         try:
             got, error = (fn(frame, box=True) or {}), None
+            with self._stats_lock:
+                self.stats.record("local_frame_ms", (time.perf_counter() - started) * 1000)
+            got = got if isinstance(got, dict) else {}
+            # 3.80.F: still the LOCAL phase -- the VLM is not free for the
+            # arrival's question until the direction is answered too.
+            direction = self._ask_direction(frame, q, got)
         except Exception as e:  # noqa: BLE001 -- LocalVLMAbsent, or a fault in the client
             got, error = None, e
+            with self._stats_lock:
+                self.stats.record("local_frame_ms", (time.perf_counter() - started) * 1000)
         finally:
             q.local_done.set()
-        with self._stats_lock:
-            self.stats.record("local_frame_ms", (time.perf_counter() - started) * 1000)
         if error is None:
-            return _LocalAnswer(q, got if isinstance(got, dict) else {})
+            return _LocalAnswer(q, got, direction=direction)
         logger.warning("local VLM absent for %s (%s); asking the cloud", q.trigger, error)
         with self._stats_lock:
             if q.epoch != self._epoch or self._closed:
@@ -1038,6 +1101,62 @@ class TieredVision:
             with self._stats_lock:
                 self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
 
+    def _ask_direction(self, frame: dict, q: "_Question", got: dict) -> Optional[dict]:
+        """3.80.F, on the worker: the direction question about the same
+        frame, when this is a search question whose sighting answer is not
+        a yes. None when not asked."""
+        # Only after a reply the VLM finished: a `timeout` or `busy` one is
+        # still draining on the driver, and the direction would wait out its
+        # own deadline behind it (review, 2026-10-16).
+        if (self.local_direction_fn is None or q.trigger not in SEARCH_TRIGGERS
+                or _local_kind(got, self.local_no_below) == "yes"
+                or got.get("status") not in ("answered", "unparsed")
+                or q.detected or q.epoch != self._epoch or self._closed):
+            return None
+        started = time.perf_counter()
+        try:
+            reply = self.local_direction_fn(frame)
+            reply = reply if isinstance(reply, dict) else {}
+        except Exception as e:  # noqa: BLE001 -- LocalVLMAbsent, or a fault in the client
+            logger.warning("local VLM absent for the direction (%s)", e)
+            reply = {"status": "absent"}
+        with self._stats_lock:
+            self.stats.record("local_direction_ms", (time.perf_counter() - started) * 1000)
+        return reply
+
+    def _apply_direction(self, reply: dict, unable_before: int) -> Optional[str]:
+        """3.80.F: a direction reply that landed. Returns the held action,
+        or None. An unable reply counts the search question once as unable
+        for the escalation rule (`unable_before` is the count before its
+        sighting answer was applied); the next search question comes at the
+        pace that answer set. A reply with no direction to give
+        (DIRECTION_NONE) changes nothing."""
+        word = reply.get("direction")
+        action = (DIRECTION_ACTIONS.get(word) if reply.get("status") == "answered"
+                  else None)
+        status = reply.get("status")
+        kind = (word if action else status if status in DIRECTION_NONE
+                else f"unable_{status}")
+        self._count("local_direction", kind)
+        if action is None and status in DIRECTION_NONE:
+            return None
+        if action is None:
+            self._frame_unable = unable_before + 1
+            return None
+        # The search question is answered: its pacing starts again, as on a
+        # decided sighting answer (bug pass, 2026-10-16: an answered direction
+        # after an unable sighting left the question open and re-asked on the
+        # next frame, and the unable count never reached the cloud).
+        self._frame_unable = 0
+        self._absent_streak = 0
+        self._since_call = 0
+        self._retry_start = False
+        self._mark_odometry_call()
+        self._local_held = action
+        self._local_held_why = "direction"
+        self._local_turn = None
+        return action
+
     def _apply_local(self, ans: "_LocalAnswer") -> None:
         """A local answer that landed: count it, and act on it."""
         if ans.q.epoch != self._epoch:
@@ -1050,15 +1169,10 @@ class TieredVision:
             self._local_landed = {"trigger": trigger, "answer": "absent", "score": None}
             return
         got = ans.got
+        unable_before = self._frame_unable
         status, score = got.get("status"), got.get("score")
         numeric = isinstance(score, (int, float))
-        if status == "answered" and numeric and score >= LOCAL_YES_AT:
-            kind = "yes"
-        elif status == "answered" and numeric and score <= self.local_no_below:
-            kind = "no"
-        else:
-            kind = (f"unable_{status}" if status != "answered"
-                    else "unable_band" if numeric else "unable_noscore")
+        kind = _local_kind(got, self.local_no_below)
         with self._stats_lock:
             self.stats.local_frame_calls += 1
             self.stats.local_frame[kind] = self.stats.local_frame.get(kind, 0) + 1
@@ -1075,9 +1189,23 @@ class TieredVision:
                         ("LEFT" if bearing < 0 else "RIGHT", turn_for(bearing))
                         if abs(bearing) > STEER_BAND_DEG else ("FORWARD", None))
                     self._local_held = "FORWARD"
+                    self._local_held_why = "located"
+                elif self._local_held_why == "direction":
+                    # In view somewhere: an older search direction is moot.
+                    self._local_held = self._local_held_why = None
             else:
                 self._local_turn = None
-                self._local_held = None
+                if self._local_held_why != "direction":
+                    # A no drops the FORWARD a located yes held; a direction
+                    # (3.80.F) is about where to look, and a no does not
+                    # answer that.
+                    self._local_held = self._local_held_why = None
+                if ans.q.band:
+                    # 3.80.F: the crop in view when it was asked is not the
+                    # target. Rejected until the band run breaks (the crop
+                    # leaves view or crosses the gate): the band question is
+                    # not asked again in that run either.
+                    self._candidate_rejected = True
         else:
             self._frame_unable += 1
             # The question stays open: asked again on the next frame that
@@ -1091,6 +1219,11 @@ class TieredVision:
         self._local_landed = {"trigger": trigger, "answer": kind,
                               "score": score if numeric else None,
                               "bearing_deg": None if bearing is None else round(bearing, 1)}
+        if ans.direction is not None and kind != "yes":
+            # A search question is answered only by a direction: an unable
+            # one counts toward the cloud, whatever the sighting answer reset.
+            self._local_landed["direction"] = self._apply_direction(
+                ans.direction, unable_before if kind == "no" else self._frame_unable - 1)
 
     def _bearing_of(self, ans: "_LocalAnswer") -> Optional[float]:
         """Body bearing to the box's centre NOW: the bearing in the frame it
@@ -1444,6 +1577,7 @@ class TieredVision:
             return
         self._last_cloud_scene = scene
         self._local_held = None
+        self._local_held_why = None
         self._frame_unable = 0      # 3.80.D: a cloud answer starts the count again
         # Run the annotation for its SIDE EFFECTS -- corroboration and the
         # stats 6.3 puts on the panel -- against the perception this call
@@ -1500,6 +1634,7 @@ class TieredVision:
             # check (3.53) is the cloud's.
             local, self.local_identity_fn = self.local_identity_fn, None
             self.local_sighting_fn = None
+            self.local_direction_fn = None
             if local is not None and hasattr(local, "close"):
                 try:
                     local.close()
@@ -1549,6 +1684,7 @@ class TieredVision:
             self._run.clear()
             self._band_run = 0          # 3.80.D: any other frame breaks a band run
             self._band_asked = False
+            self._candidate_rejected = False
             return None
 
         if self._retry_start:
@@ -1566,6 +1702,7 @@ class TieredVision:
         else:
             self._band_run = 0
             self._band_asked = False
+            self._candidate_rejected = False
 
         self._run.append(perception.status)
         if len(self._run) > self.consecutive_frames:
@@ -1737,9 +1874,13 @@ class TieredVision:
         # this frame, and better than a direction the cloud gave several
         # seconds and several turns ago.
         reckoned = None if (steer or located) else self._dead_reckoned_direction()
+        # 3.80.F: YOLOE + CLIP's own weaker evidence -- a crop in the
+        # uncertain band, measured on this frame -- after any sighting.
+        candidate = (None if (steer or located or reckoned)
+                     else self._steer_to_candidate(perception))
         held = (self._held_direction()
                 if (self.hold_goal or self._inflight is not None) else None)
-        direction = steer or located or reckoned or held or SCAN_ACTION
+        direction = steer or located or reckoned or candidate or held or SCAN_ACTION
         if steer:
             why = (f"{why} -- steering on local sighting "
                    f"({_direction_for(perception)})")
@@ -1748,6 +1889,14 @@ class TieredVision:
         elif reckoned:
             why = (f"{why} -- dead-reckoning to a sighting "
                    f"{self._goal.sightings} detection(s) ago")
+        elif candidate:
+            why = (f"{why} -- steering on an uncertain candidate (P "
+                   f"{max(float(c.probability) for c in perception.candidates):.2f})")
+            with self._stats_lock:
+                self.stats.candidate_steers += 1
+        elif held and self._local_held:
+            why = (f"{why} -- holding the local VLM's "
+                   f"{self._local_held_why or 'answer'} {held}")
         elif held:
             why = f"{why} -- holding last cloud goal {held}"
         # The spin floor. Counted over what the robot was actually TOLD to
@@ -1757,6 +1906,7 @@ class TieredVision:
                 and direction in TURN_ACTIONS
                 and steer is None
                 and located is None
+                and candidate is None
                 and perception.status != DETECTED
                 and self._consecutive_turn_deg >= self.spin_guard_after * 90):
             direction = "FORWARD"
@@ -1775,6 +1925,8 @@ class TieredVision:
                 turn_deg = located_turn[1]
             elif reckoned == direction:
                 turn_deg = self._reckoned_turn_deg
+            elif candidate == direction:
+                turn_deg = self._steer_turn_deg
             # R1b: a turn with no bearing behind it is a SEARCH, and a search
             # step must be smaller than the field of view or it skips part of
             # the circle -- see SCAN_TURN_DEG.
@@ -1890,6 +2042,33 @@ class TieredVision:
         # nobody measured is exactly the fabrication `unusable_grid()` and
         # NO_SENSOR_CM refuse elsewhere.
         return None
+
+    def _steer_to_candidate(self, perception) -> Optional[str]:
+        """3.80.F: an action toward the best crop when it is in the
+        uncertain band -- P in [local_band_low, the gate) -- or None. Not
+        after a local no on this band run (`_candidate_rejected`), not for a
+        panned camera, and never an anchor for dead reckoning: the crop may
+        not be the target."""
+        if (not self.steer_on_candidate or self._candidate_rejected
+                or perception.status != ABSENT or not perception.candidates
+                or getattr(perception, "pan_deg", 0.0)):
+            return None
+        # An ABSENT perception carries its crops but no `best` (perceive.py):
+        # the strongest one, as the band trigger reads it.
+        try:
+            best = max(perception.candidates, key=lambda c: float(c.probability))
+            p = float(best.probability)
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if best.bearing_deg is None:
+            return None
+        if not (self.local_band_low <= p < self.match_probability):
+            return None
+        bearing = float(best.bearing_deg)
+        if abs(bearing) > STEER_BAND_DEG:
+            self._steer_turn_deg = turn_for(bearing)
+            return "LEFT" if bearing < 0 else "RIGHT"
+        return "FORWARD"
 
     def _dead_reckoned_direction(self) -> Optional[str]:
         """An action from an ANCHORED sighting the detector is not seeing.

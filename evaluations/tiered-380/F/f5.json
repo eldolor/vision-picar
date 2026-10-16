@@ -1,0 +1,27 @@
+{
+ "records": "/Users/anshugaind/vision-picar/evaluations/gpu-yoloe/yoloe-11s-seg_none.json",
+ "config": {
+  "detector": "crops:yoloe:yoloe-11s-seg",
+  "device": "cuda",
+  "dtype": "fp32",
+  "clip": "RN50",
+  "proposer": "none",
+  "crop_path": "low_confidence",
+  "affinity_k": 8,
+  "confidence": null,
+  "metric": "probability",
+  "max_crops": 16,
+  "imgsz": null,
+  "vlm_max_pixels": null,
+  "vlm_ground": true
+ },
+ "frames": 1234,
+ "walks": 11,
+ "band_frames": 27,
+ "band_visible": 26,
+ "band_precision": 0.963,
+ "bar": 0.6,
+ "met": true,
+ "visible_not_detected": 72,
+ "visible_not_detected_in_band": 26
+}

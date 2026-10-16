@@ -325,6 +325,16 @@ brain:
   # today's four triggers; the cloud only after max_unable unable answers in
   # a row, or when the local VLM is absent (approved by the user 2026-10-14).
   tier_local_band_low: 0.5
+  # 3.80.F -- with the local tier on, a search trigger (mission_start,
+  # cold_search, staleness) whose sighting answer is not a yes asks the local
+  # VLM for a direction (left, right, forward), held as a cloud goal is
+  # (the user, 2026-10-16). Off: criterion F4 failed (VE said `forward` on
+  # 10 of 10 frames). TIER_LOCAL_DIRECTION overrides.
+  tier_local_direction: false
+  # 3.80.F -- YOLOE + CLIP steer toward a best crop in the uncertain band
+  # while the local VLM is asked about it. On since criterion F5 (the target
+  # in view on 26 of 27 such real frames). TIER_STEER_ON_CANDIDATE overrides.
+  tier_steer_on_candidate: true
 
   # 3.70 E4: a mission's budget -- a time limit (seconds) and a battery floor
   # (volts, the motor board's `v`). It ends `out_of_budget` at either. The

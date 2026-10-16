@@ -367,6 +367,14 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
     kwargs["local_identity_fn"] = local
     kwargs["local_sighting_fn"] = (functools.partial(local.ask, box=True)
                                    if local is not None else None)
+    # 3.80.F: the local tier's direction, and YOLOE + CLIP's candidate steer.
+    kwargs["local_direction_fn"] = (local.direction
+                                    if local is not None and config["tier_local_direction"]
+                                    else None)
+    # The candidate's steer covers the band question to the local tier; with
+    # no local tier there is no such question, and the policy stays as it was.
+    kwargs["steer_on_candidate"] = (local is not None
+                                    and bool(config["tier_steer_on_candidate"]))
     if simulated:
         # 1.12, built at last (PLAN-ros-alignment.md R1): the simulator
         # reports what its geometry says is visible, and nothing loads YOLO
@@ -634,6 +642,7 @@ def create_app(
             k: config.get(k) for k in (
                 "tier_cold_search_after", "tier_cold_search_after_cm",
                 "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
+                "tier_local_direction", "tier_steer_on_candidate",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",
                 "tier_spin_guard_after", "tier_consecutive_frames",
                 "perception_floor_mask", "perception_crop_path",
@@ -1071,6 +1080,8 @@ def create_app(
             "tier_async_cloud": bool(config["tier_async_cloud"]),
             "tier_hold_goal": bool(config["tier_hold_goal"]),
             "tier_steer_on_sight": bool(config["tier_steer_on_sight"]),
+            "tier_local_direction": bool(config["tier_local_direction"]),
+            "tier_steer_on_candidate": bool(config["tier_steer_on_candidate"]),
             "tier_spin_guard_after": config["tier_spin_guard_after"],
             # Published so the panel can name the bar it is reporting
             # against. A verdict shown without the number it was taken at

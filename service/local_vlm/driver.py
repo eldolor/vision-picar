@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import queue
 import re
@@ -44,6 +45,67 @@ MIN_SEND_S = 0.1
 _EOF = object()
 # 3.80.D: the first JSON object in a reply, for its `bbox_2d`.
 _OBJECT = re.compile(r"\{[^{}]*\}")
+
+# 3.80.F: the search question -- the cloud's "single best next action to get
+# closer to the target" (vision_core's NAVIGATE_PROMPT_TEMPLATE, question 5),
+# asked for one word. The word comes after "Move:" because VE's reduced
+# vocabulary (3.78) keeps only the space-led forms of two of the three words
+# (" left", " forward"; bare "left", "Left", "forward" were cut, bare "right"
+# was not): a reply that OPENED with the word could only say right (F4,
+# 2026-10-16).
+DIRECTION_PROMPT = ("You are the camera of a small indoor robot searching a house for "
+                    "a {target}. Which single move brings the robot closer to finding "
+                    "the {target}: turn left, turn right, or go forward? Go forward only "
+                    "if the way ahead is open. Reply with one line in the form "
+                    "\"Move: <word>\", where <word> is one of left, right or forward.")
+DIRECTIONS = ("left", "right", "forward")
+DIRECTION_MAX_TOKENS = 8
+# Below this much of the first token's probability on the three words, the
+# reply did not answer the question (`unparsed`, unable).
+DIRECTION_MIN_MASS = 0.5
+_PUNCT = " \t\n.,:;!\"'*`"
+
+
+def direction_doc(image: Path, target: str) -> dict:
+    """The search question as an Edge-LLM request file: the identity
+    request's sampling (greedy, top-20 logprobs), its own prompt, and a few
+    tokens at most -- the answer is the first."""
+    doc = request_doc(image, target)
+    doc["max_generate_length"] = DIRECTION_MAX_TOKENS
+    doc["requests"][0]["messages"][0]["content"][1]["text"] = DIRECTION_PROMPT.format(
+        target=target)
+    return doc
+
+
+def _option(token: str) -> Optional[str]:
+    """The direction a token starts, or None: any non-empty prefix of one
+    of the three words, any case (`L`, `for`, ` Forward`)."""
+    t = token.strip(_PUNCT).lower()
+    if not t:
+        return None
+    hits = [d for d in DIRECTIONS if d.startswith(t)]
+    return hits[0] if len(hits) == 1 else None
+
+
+def direction_of(step: dict) -> Optional[dict]:
+    """The answer read off the first generated token that is one of the
+    words (or a prefix of one): `{"direction", "p", "mass", "probs"}`.
+    `probs` is each word's probability among that step's top alternatives,
+    `mass` their sum, `p` the winner's share of it. None for any other
+    token (`Move`, `:`, whitespace): read the next one."""
+    if _option(step["token"]) is None:
+        return None
+    probs = dict.fromkeys(DIRECTIONS, 0.0)
+    alts = step.get("top_logprobs") or [{"token": step["token"], "logprob": step["logprob"]}]
+    for a in alts:
+        d = _option(a["token"])
+        if d is not None:
+            probs[d] += math.exp(a["logprob"])
+    mass = sum(probs.values())
+    best = max(DIRECTIONS, key=lambda d: probs[d])
+    return {"direction": best if mass > 0 else None,
+            "p": round(probs[best] / mass, 4) if mass > 0 else None,
+            "mass": round(mass, 4), "probs": {d: round(v, 4) for d, v in probs.items()}}
 
 
 def parse_box(text: str) -> Optional[list]:
@@ -117,7 +179,8 @@ class EdgeDriver:
         except (BrokenPipeError, OSError, ValueError) as e:
             raise DriverGone(f"driver stdin closed: {e}") from e
 
-    def ask(self, jpeg: bytes, target: str, deadline_s: float, box: bool = False) -> dict:
+    def ask(self, jpeg: bytes, target: str, deadline_s: float, box: bool = False,
+            question: str = "identity") -> dict:
         """One arrival question. Returns `{"status", "score", "parsed",
         "ms", "driver_ms", "box"}`; status is `answered`, `timeout`,
         `unparsed`, `busy` or `error`. Raises DriverGone when the driver is
@@ -132,6 +195,14 @@ class EdgeDriver:
         first. The driver ends the request on its own after the cancel, and
         that tail is drained in the background with the runtime still held,
         so the next request waits for it (and is `busy` if it cannot).
+
+        3.80.F: `question="direction"` asks the search question instead
+        (`DIRECTION_PROMPT`) and returns at the first token that is one of
+        the words: status `answered` with `direction`, `p`, `mass` and
+        `probs`, or `unparsed` when under DIRECTION_MIN_MASS of that step's
+        probability is on the three words, or when the reply ends without
+        one. `score` is None for it.
+
         `driver_ms` is the driver's own time, known only when the request
         ended before the reply returned (`error`, or an end id before any
         decision); otherwise None."""
@@ -153,7 +224,8 @@ class EdgeDriver:
             req = self.workdir / f"local-vlm-{os.getpid()}-{self._n}.json"
             files = [img, req]
             img.write_bytes(jpeg)
-            req.write_text(json.dumps(request_doc(img, target)))
+            req.write_text(json.dumps(direction_doc(img, target) if question == "direction"
+                                      else request_doc(img, target)))
             # A line left by an earlier exchange is not this request's: the
             # lock means none can be in flight now.
             while True:
@@ -165,7 +237,8 @@ class EdgeDriver:
                     self.lines.put(_EOF)
                     raise DriverGone(f"driver exited ({self.proc.poll()})")
             self._send(str(req))
-            result, ended = self._stream(t0, end, box)
+            result, ended = (self._stream_direction(t0, end) if question == "direction"
+                             else self._stream(t0, end, box))
             if not ended:
                 handed_off = True
                 threading.Thread(target=self._drain, args=(files,), daemon=True).start()
@@ -248,6 +321,39 @@ class EdgeDriver:
                     return ({"status": "error", "score": None, "parsed": False,
                              "ms": ms, "driver_ms": driver_ms, "box": None}, True)
                 return reply(ms, driver_ms), True
+            else:
+                logger.warning("driver line not understood: %r", line[:80])
+
+    def _stream_direction(self, t0: float, end: float) -> tuple:
+        """`(result, ended)` for the search question: the answer at the
+        first word, the rest cancelled."""
+        def unable(status, ms, driver_ms=None, read=None):
+            return {"status": status, "score": None, "parsed": False, "direction": None,
+                    "p": None, "mass": read["mass"] if read else None,
+                    "probs": read["probs"] if read else None, "ms": ms,
+                    "driver_ms": driver_ms, "box": None, "decision_ms": None}
+
+        while True:
+            line = self._next(end - time.monotonic())
+            if line is None:
+                self._send("C")
+                return unable("timeout", (time.monotonic() - t0) * 1000), False
+            if line.startswith("T "):
+                chosen, alts = parse_token_line(line)
+                read = direction_of(content_entry(self.decode, chosen, alts))
+                if read is None:
+                    continue    # the lead-in ("Move:"): the word is still to come
+                self._send("C")
+                ms = (time.monotonic() - t0) * 1000
+                if read["mass"] < DIRECTION_MIN_MASS:
+                    return unable("unparsed", ms, read=read), False
+                return {"status": "answered", "score": None, "parsed": True, **read,
+                        "ms": ms, "driver_ms": None, "box": None, "decision_ms": ms}, False
+            elif line.startswith("E "):
+                reason, driver_ms, ok = parse_end_line(line)
+                self.served += 1
+                ms = (time.monotonic() - t0) * 1000
+                return unable("unparsed" if ok else "error", ms, driver_ms), True
             else:
                 logger.warning("driver line not understood: %r", line[:80])
 

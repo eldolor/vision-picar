@@ -156,6 +156,17 @@ DEFAULTS = {
     "tier_local_max_unable": 2,
     "tier_local_timeout_s": 3.0,
     "tier_local_band_low": 0.5,
+    # 3.80.F (the user, 2026-10-16): with the local tier on, a search
+    # trigger's question is followed by the direction question (left, right
+    # or forward), whose answer the policy holds as it holds the cloud's.
+    # Off (3.80.D: the local tier gives no direction) because its criterion
+    # F4 failed: Qwen VE answered `forward` on 10 of 10 frames.
+    "tier_local_direction": False,
+    # 3.80.F: YOLOE + CLIP steer toward a best crop in the uncertain band.
+    # On since criterion F5 (2026-10-16: the target in view on 26 of 27 such
+    # real frames); it cannot act in the simulator, whose perception has no
+    # such crops.
+    "tier_steer_on_candidate": True,
     # 3.70 E4 (decided by the user 2026-10-11): a mission's budget is a time
     # limit and a battery floor; the step count is only a backstop derived
     # from the limit (control/mission_runner.py's derived_max_steps()).
@@ -289,6 +300,14 @@ def load_brain_config(config_path=None) -> dict:
         merged["vision_url"] = os.environ["VISION_URL"]
     if "LOCAL_VLM_URL" in os.environ:
         merged["tier_local_vlm_url"] = os.environ["LOCAL_VLM_URL"].strip()
+    # 3.80.F: the criterion-2 arms switch these per stack.
+    for key, env in (("tier_local_direction", "TIER_LOCAL_DIRECTION"),
+                     ("tier_steer_on_candidate", "TIER_STEER_ON_CANDIDATE")):
+        if os.environ.get(env, "").strip():
+            value = os.environ[env].strip().lower()
+            if value not in ("true", "false", "1", "0"):
+                raise ValueError(f"{env} must be true or false; got {os.environ[env]!r}")
+            merged[key] = value in ("true", "1")
     if os.environ.get("NAVIGATE_MODEL_ID"):
         merged["navigate_model_id"] = os.environ["NAVIGATE_MODEL_ID"]
     if os.environ.get("NAVIGATE_PROMPT_VARIANT"):

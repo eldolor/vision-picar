@@ -1,0 +1,815 @@
+{
+ "frames": 40,
+ "walks": 7,
+ "mirror_side_hits": 24,
+ "mirror_side_rate": 0.6,
+ "argmax_side_hits": 0,
+ "argmax_counts": {
+  "left": 0,
+  "right": 0,
+  "forward": 40
+ },
+ "signal": false,
+ "rows": [
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0009.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": 30.7,
+   "side": "right",
+   "probs": {
+    "left": 0.1131,
+    "right": 0.0857,
+    "forward": 0.7817
+   },
+   "probs_mirror": {
+    "left": 0.1434,
+    "right": 0.1189,
+    "forward": 0.7211
+   },
+   "direction": "forward",
+   "d": 0.09,
+   "d_side": "left"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0014.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": 16.2,
+   "side": "right",
+   "probs": {
+    "left": 0.076,
+    "right": 0.0682,
+    "forward": 0.8383
+   },
+   "probs_mirror": {
+    "left": 0.0756,
+    "right": 0.0659,
+    "forward": 0.8373
+   },
+   "direction": "forward",
+   "d": -0.029,
+   "d_side": "right"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0016.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": 11.8,
+   "side": "right",
+   "probs": {
+    "left": 0.0801,
+    "right": 0.0629,
+    "forward": 0.8373
+   },
+   "probs_mirror": {
+    "left": 0.0633,
+    "right": 0.0568,
+    "forward": 0.8568
+   },
+   "direction": "forward",
+   "d": 0.133,
+   "d_side": "left"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0024.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": 8.5,
+   "side": "right",
+   "probs": {
+    "left": 0.1127,
+    "right": 0.0947,
+    "forward": 0.775
+   },
+   "probs_mirror": {
+    "left": 0.0962,
+    "right": 0.087,
+    "forward": 0.7951
+   },
+   "direction": "forward",
+   "d": 0.073,
+   "d_side": "left"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0040.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": 6.3,
+   "side": "right",
+   "probs": {
+    "left": 0.1431,
+    "right": 0.0937,
+    "forward": 0.7432
+   },
+   "probs_mirror": {
+    "left": 0.1231,
+    "right": 0.0779,
+    "forward": 0.7805
+   },
+   "direction": "forward",
+   "d": -0.034,
+   "d_side": "right"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0048.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": 14.1,
+   "side": "right",
+   "probs": {
+    "left": 0.1372,
+    "right": 0.1138,
+    "forward": 0.7266
+   },
+   "probs_mirror": {
+    "left": 0.1277,
+    "right": 0.0962,
+    "forward": 0.753
+   },
+   "direction": "forward",
+   "d": -0.096,
+   "d_side": "right"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0008.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": -18.2,
+   "side": "left",
+   "probs": {
+    "left": 0.0935,
+    "right": 0.0807,
+    "forward": 0.8003
+   },
+   "probs_mirror": {
+    "left": 0.1142,
+    "right": 0.0917,
+    "forward": 0.7754
+   },
+   "direction": "forward",
+   "d": -0.072,
+   "d_side": "right"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0016.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": 9.9,
+   "side": "right",
+   "probs": {
+    "left": 0.1226,
+    "right": 0.0891,
+    "forward": 0.7655
+   },
+   "probs_mirror": {
+    "left": 0.1177,
+    "right": 0.091,
+    "forward": 0.7688
+   },
+   "direction": "forward",
+   "d": 0.062,
+   "d_side": "left"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0020.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": 5.1,
+   "side": "right",
+   "probs": {
+    "left": 0.0855,
+    "right": 0.0765,
+    "forward": 0.817
+   },
+   "probs_mirror": {
+    "left": 0.105,
+    "right": 0.0938,
+    "forward": 0.7804
+   },
+   "direction": "forward",
+   "d": -0.002,
+   "d_side": "right"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0052.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": 9.1,
+   "side": "right",
+   "probs": {
+    "left": 0.1307,
+    "right": 0.0926,
+    "forward": 0.7563
+   },
+   "probs_mirror": {
+    "left": 0.1653,
+    "right": 0.1101,
+    "forward": 0.7004
+   },
+   "direction": "forward",
+   "d": -0.062,
+   "d_side": "right"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0060.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": -11.7,
+   "side": "left",
+   "probs": {
+    "left": 0.1981,
+    "right": 0.1075,
+    "forward": 0.6739
+   },
+   "probs_mirror": {
+    "left": 0.1395,
+    "right": 0.1007,
+    "forward": 0.7389
+   },
+   "direction": "forward",
+   "d": 0.285,
+   "d_side": "left"
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0064.jpg",
+   "target": "a white phone charger cable",
+   "bearing_deg": 12.8,
+   "side": "right",
+   "probs": {
+    "left": 0.1273,
+    "right": 0.0877,
+    "forward": 0.7636
+   },
+   "probs_mirror": {
+    "left": 0.1157,
+    "right": 0.0953,
+    "forward": 0.7663
+   },
+   "direction": "forward",
+   "d": 0.178,
+   "d_side": "left"
+  },
+  {
+   "walk": "blue-bottle-20260907-142454",
+   "frame": "frame-0004.jpg",
+   "target": "blue bottle",
+   "bearing_deg": 29.7,
+   "side": "right",
+   "probs": {
+    "left": 0.079,
+    "right": 0.0843,
+    "forward": 0.819
+   },
+   "probs_mirror": {
+    "left": 0.2402,
+    "right": 0.1151,
+    "forward": 0.6273
+   },
+   "direction": "forward",
+   "d": -0.8,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-bottle-20260907-142454",
+   "frame": "frame-0012.jpg",
+   "target": "blue bottle",
+   "bearing_deg": 25.0,
+   "side": "right",
+   "probs": {
+    "left": 0.0824,
+    "right": 0.0955,
+    "forward": 0.8049
+   },
+   "probs_mirror": {
+    "left": 0.1283,
+    "right": 0.0906,
+    "forward": 0.7649
+   },
+   "direction": "forward",
+   "d": -0.495,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-bottle-20260907-142454",
+   "frame": "frame-0013.jpg",
+   "target": "blue bottle",
+   "bearing_deg": 27.7,
+   "side": "right",
+   "probs": {
+    "left": 0.074,
+    "right": 0.0991,
+    "forward": 0.8104
+   },
+   "probs_mirror": {
+    "left": 0.2388,
+    "right": 0.1153,
+    "forward": 0.6284
+   },
+   "direction": "forward",
+   "d": -1.019,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-bottle-20260907-142454",
+   "frame": "frame-0018.jpg",
+   "target": "blue bottle",
+   "bearing_deg": 25.1,
+   "side": "right",
+   "probs": {
+    "left": 0.0664,
+    "right": 0.0754,
+    "forward": 0.8428
+   },
+   "probs_mirror": {
+    "left": 0.1534,
+    "right": 0.088,
+    "forward": 0.7426
+   },
+   "direction": "forward",
+   "d": -0.682,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-bottle-20260907-142454",
+   "frame": "frame-0019.jpg",
+   "target": "blue bottle",
+   "bearing_deg": 17.5,
+   "side": "right",
+   "probs": {
+    "left": 0.0511,
+    "right": 0.0603,
+    "forward": 0.8685
+   },
+   "probs_mirror": {
+    "left": 0.0944,
+    "right": 0.0631,
+    "forward": 0.8252
+   },
+   "direction": "forward",
+   "d": -0.568,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-bottle-20260907-142454",
+   "frame": "frame-0031.jpg",
+   "target": "blue bottle",
+   "bearing_deg": 6.3,
+   "side": "right",
+   "probs": {
+    "left": 0.1252,
+    "right": 0.0794,
+    "forward": 0.7712
+   },
+   "probs_mirror": {
+    "left": 0.1435,
+    "right": 0.0796,
+    "forward": 0.7491
+   },
+   "direction": "forward",
+   "d": -0.134,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-shoes-20260907-152528",
+   "frame": "frame-0004.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": 17.8,
+   "side": "right",
+   "probs": {
+    "left": 0.0841,
+    "right": 0.0799,
+    "forward": 0.8069
+   },
+   "probs_mirror": {
+    "left": 0.1483,
+    "right": 0.0833,
+    "forward": 0.7484
+   },
+   "direction": "forward",
+   "d": -0.525,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-shoes-20260907-152528",
+   "frame": "frame-0005.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": 13.4,
+   "side": "right",
+   "probs": {
+    "left": 0.0833,
+    "right": 0.0695,
+    "forward": 0.8196
+   },
+   "probs_mirror": {
+    "left": 0.1877,
+    "right": 0.0849,
+    "forward": 0.7057
+   },
+   "direction": "forward",
+   "d": -0.612,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-shoes-20260907-152528",
+   "frame": "frame-0008.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": 14.0,
+   "side": "right",
+   "probs": {
+    "left": 0.0918,
+    "right": 0.0817,
+    "forward": 0.7981
+   },
+   "probs_mirror": {
+    "left": 0.1685,
+    "right": 0.0929,
+    "forward": 0.715
+   },
+   "direction": "forward",
+   "d": -0.479,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-shoes-20260907-152528",
+   "frame": "frame-0009.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": 5.1,
+   "side": "right",
+   "probs": {
+    "left": 0.0925,
+    "right": 0.0759,
+    "forward": 0.8027
+   },
+   "probs_mirror": {
+    "left": 0.1407,
+    "right": 0.091,
+    "forward": 0.7367
+   },
+   "direction": "forward",
+   "d": -0.238,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-shoes-20260907-152528",
+   "frame": "frame-0010.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": -6.8,
+   "side": "left",
+   "probs": {
+    "left": 0.1245,
+    "right": 0.0799,
+    "forward": 0.7675
+   },
+   "probs_mirror": {
+    "left": 0.085,
+    "right": 0.0768,
+    "forward": 0.8098
+   },
+   "direction": "forward",
+   "d": 0.342,
+   "d_side": "left"
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0023.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": -5.8,
+   "side": "left",
+   "probs": {
+    "left": 0.1217,
+    "right": 0.088,
+    "forward": 0.7689
+   },
+   "probs_mirror": {
+    "left": 0.1214,
+    "right": 0.0807,
+    "forward": 0.7752
+   },
+   "direction": "forward",
+   "d": -0.084,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0027.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": -6.5,
+   "side": "left",
+   "probs": {
+    "left": 0.1202,
+    "right": 0.0799,
+    "forward": 0.7793
+   },
+   "probs_mirror": {
+    "left": 0.1378,
+    "right": 0.0934,
+    "forward": 0.744
+   },
+   "direction": "forward",
+   "d": 0.019,
+   "d_side": "left"
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0032.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": -14.8,
+   "side": "left",
+   "probs": {
+    "left": 0.1915,
+    "right": 0.1212,
+    "forward": 0.6626
+   },
+   "probs_mirror": {
+    "left": 0.2103,
+    "right": 0.1215,
+    "forward": 0.6436
+   },
+   "direction": "forward",
+   "d": -0.091,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0033.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": -8.0,
+   "side": "left",
+   "probs": {
+    "left": 0.1574,
+    "right": 0.1005,
+    "forward": 0.7167
+   },
+   "probs_mirror": {
+    "left": 0.2283,
+    "right": 0.1187,
+    "forward": 0.6282
+   },
+   "direction": "forward",
+   "d": -0.205,
+   "d_side": "right"
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0034.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": -5.7,
+   "side": "left",
+   "probs": {
+    "left": 0.2465,
+    "right": 0.1189,
+    "forward": 0.61
+   },
+   "probs_mirror": {
+    "left": 0.2244,
+    "right": 0.1398,
+    "forward": 0.6132
+   },
+   "direction": "forward",
+   "d": 0.256,
+   "d_side": "left"
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0035.jpg",
+   "target": "blue and yellow running shoes",
+   "bearing_deg": 6.0,
+   "side": "right",
+   "probs": {
+    "left": 0.2214,
+    "right": 0.128,
+    "forward": 0.6267
+   },
+   "probs_mirror": {
+    "left": 0.2703,
+    "right": 0.143,
+    "forward": 0.569
+   },
+   "direction": "forward",
+   "d": -0.089,
+   "d_side": "right"
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0003.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": 6.2,
+   "side": "right",
+   "probs": {
+    "left": 0.0998,
+    "right": 0.0759,
+    "forward": 0.8095
+   },
+   "probs_mirror": {
+    "left": 0.0709,
+    "right": 0.0584,
+    "forward": 0.8524
+   },
+   "direction": "forward",
+   "d": 0.08,
+   "d_side": "left"
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0007.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": 5.7,
+   "side": "right",
+   "probs": {
+    "left": 0.0886,
+    "right": 0.0701,
+    "forward": 0.8222
+   },
+   "probs_mirror": {
+    "left": 0.1056,
+    "right": 0.0877,
+    "forward": 0.7884
+   },
+   "direction": "forward",
+   "d": 0.048,
+   "d_side": "left"
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0013.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": 11.4,
+   "side": "right",
+   "probs": {
+    "left": 0.1382,
+    "right": 0.1086,
+    "forward": 0.7365
+   },
+   "probs_mirror": {
+    "left": 0.207,
+    "right": 0.1083,
+    "forward": 0.6678
+   },
+   "direction": "forward",
+   "d": -0.407,
+   "d_side": "right"
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0019.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": 11.6,
+   "side": "right",
+   "probs": {
+    "left": 0.1883,
+    "right": 0.0983,
+    "forward": 0.6983
+   },
+   "probs_mirror": {
+    "left": 0.2069,
+    "right": 0.1155,
+    "forward": 0.6594
+   },
+   "direction": "forward",
+   "d": 0.067,
+   "d_side": "left"
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0022.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": 10.6,
+   "side": "right",
+   "probs": {
+    "left": 0.2897,
+    "right": 0.1191,
+    "forward": 0.5719
+   },
+   "probs_mirror": {
+    "left": 0.2869,
+    "right": 0.1302,
+    "forward": 0.5609
+   },
+   "direction": "forward",
+   "d": 0.099,
+   "d_side": "left"
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0031.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": 5.2,
+   "side": "right",
+   "probs": {
+    "left": 0.3301,
+    "right": 0.1311,
+    "forward": 0.5213
+   },
+   "probs_mirror": {
+    "left": 0.2545,
+    "right": 0.1252,
+    "forward": 0.6008
+   },
+   "direction": "forward",
+   "d": 0.214,
+   "d_side": "left"
+  },
+  {
+   "walk": "grey-backpack-opus-4-5-20260921-210743",
+   "frame": "frame-0004.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": 23.1,
+   "side": "right",
+   "probs": {
+    "left": 0.1433,
+    "right": 0.1077,
+    "forward": 0.7299
+   },
+   "probs_mirror": {
+    "left": 0.2449,
+    "right": 0.1686,
+    "forward": 0.5726
+   },
+   "direction": "forward",
+   "d": -0.088,
+   "d_side": "right"
+  },
+  {
+   "walk": "grey-backpack-opus-4-5-20260921-210743",
+   "frame": "frame-0005.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": 20.0,
+   "side": "right",
+   "probs": {
+    "left": 0.145,
+    "right": 0.1107,
+    "forward": 0.7265
+   },
+   "probs_mirror": {
+    "left": 0.2027,
+    "right": 0.1689,
+    "forward": 0.6115
+   },
+   "direction": "forward",
+   "d": 0.087,
+   "d_side": "left"
+  },
+  {
+   "walk": "grey-backpack-opus-4-5-20260921-210743",
+   "frame": "frame-0006.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": 5.6,
+   "side": "right",
+   "probs": {
+    "left": 0.0745,
+    "right": 0.0776,
+    "forward": 0.8288
+   },
+   "probs_mirror": {
+    "left": 0.0623,
+    "right": 0.0711,
+    "forward": 0.8461
+   },
+   "direction": "forward",
+   "d": 0.091,
+   "d_side": "left"
+  },
+  {
+   "walk": "grey-backpack-opus-4-5-20260921-210743",
+   "frame": "frame-0008.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": -9.9,
+   "side": "left",
+   "probs": {
+    "left": 0.1661,
+    "right": 0.1022,
+    "forward": 0.7144
+   },
+   "probs_mirror": {
+    "left": 0.1107,
+    "right": 0.0791,
+    "forward": 0.7932
+   },
+   "direction": "forward",
+   "d": 0.15,
+   "d_side": "left"
+  },
+  {
+   "walk": "grey-backpack-opus-4-5-20260921-210743",
+   "frame": "frame-0009.jpg",
+   "target": "Grey backpack",
+   "bearing_deg": -9.6,
+   "side": "left",
+   "probs": {
+    "left": 0.2112,
+    "right": 0.126,
+    "forward": 0.6445
+   },
+   "probs_mirror": {
+    "left": 0.103,
+    "right": 0.0747,
+    "forward": 0.8082
+   },
+   "direction": "forward",
+   "d": 0.195,
+   "d_side": "left"
+  }
+ ]
+}

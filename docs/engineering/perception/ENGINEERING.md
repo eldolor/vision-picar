@@ -79,6 +79,18 @@ service cannot drift from what was measured.
 * `POST /identity` `{image_b64, target, deadline_s}` (secret-gated):
   `status` `answered` with the raw `score`, or `timeout`, `unparsed`,
   `busy`, `error` (each an *unable* answer). 503: absent.
+* 3.80.F: `POST /direction` (same body, `box` ignored) asks
+  `driver.DIRECTION_PROMPT`: one line, "Move: <word>", the word one of
+  `left`, `right`, `forward`. The word follows a lead-in because VE's
+  reduced vocabulary keeps the space-led ` left`/` forward` but not bare
+  `left`/`Left`/`forward` (bare `right` survives), so a reply opening with
+  the word could only say right. The reply is read at the first generated
+  token that is a prefix of one word (`_option`); `direction_of()` sums each
+  word's probability over that step's top-20 alternatives: `probs`, `mass`
+  (their total), `direction` (the largest) and `p` (its share). `answered`
+  when `mass` >= 0.5, else `unparsed`; a reply that ends with no word is
+  `unparsed`; `timeout`, `busy`, `error` and 503 as `/identity`. At most 8
+  tokens; cancelled at the word.
 * 3.80.D: `box: true` (a sighting) reads a reply that decides yes on until
   its first JSON object with a well-formed `bbox_2d` closes, then cancels;
   the reply adds `box` `[x1, y1, x2, y2]` (the model's pixels) and
@@ -114,7 +126,9 @@ returns status `error`. `ask(frame, box=True)` (3.80.D, every frame's
 question; the brain passes `functools.partial(client.ask, box=True)` as the
 policy's `local_sighting_fn`) adds `box_frac`: the box over the size Qwen2.5-VL
 saw the frame at (`model_size()`, its processor's `smart_resize`: each side
-to a multiple of 28; 640x480 is seen as 644x476), clipped to [0, 1]. The
+to a multiple of 28; 640x480 is seen as 644x476), clipped to [0, 1].
+`direction(frame)` (3.80.F) posts to `/direction` with the same rules, and
+returns status `unsupported` on a 404 (a service from before 3.80.F). The
 thresholds are the policy's
 ([policy engineering](../policy/ENGINEERING.md)).
 
