@@ -1,0 +1,612 @@
+{
+ "how": "Labelled 2026-10-16 by viewing each frame with the thirds drawn (480 px wide), before any model ran. truth = the third holding the target's centre (the middle of its horizontal extent). border: that centre within 24 px (5%) of a third line. wide: the target spans more than about half the frame (filling the view). No frame was dropped: every target could be placed.",
+ "counts": {
+  "LEFT": 11,
+  "FORWARD": 28,
+  "RIGHT": 21
+ },
+ "border": 15,
+ "wide": 12,
+ "rows": [
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0010.jpg",
+   "target": "a white phone charger cable",
+   "i": 0,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.927,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0015.jpg",
+   "target": "a white phone charger cable",
+   "i": 1,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.7,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0016.jpg",
+   "target": "a white phone charger cable",
+   "i": 2,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.677,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0025.jpg",
+   "target": "a white phone charger cable",
+   "i": 3,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.5,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203250",
+   "frame": "frame-0049.jpg",
+   "target": "a white phone charger cable",
+   "i": 4,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.754,
+   "border": false,
+   "wide": true
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0006.jpg",
+   "target": "a white phone charger cable",
+   "i": 5,
+   "truth": "LEFT",
+   "centre_x_frac": 0.26,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0009.jpg",
+   "target": "a white phone charger cable",
+   "i": 6,
+   "truth": "LEFT",
+   "centre_x_frac": 0.308,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0019.jpg",
+   "target": "a white phone charger cable",
+   "i": 7,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.594,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0033.jpg",
+   "target": "a white phone charger cable",
+   "i": 8,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.5,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0039.jpg",
+   "target": "a white phone charger cable",
+   "i": 9,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.594,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0053.jpg",
+   "target": "a white phone charger cable",
+   "i": 10,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.692,
+   "border": true,
+   "wide": true
+  },
+  {
+   "walk": "a-white-phone-charger-ca-20260921-203355",
+   "frame": "frame-0054.jpg",
+   "target": "a white phone charger cable",
+   "i": 11,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.729,
+   "border": false,
+   "wide": true
+  },
+  {
+   "walk": "blue-bottle-20260907-142454",
+   "frame": "frame-0025.jpg",
+   "target": "blue bottle",
+   "i": 12,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.537,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "blue-bottle-20260907-142454",
+   "frame": "frame-0027.jpg",
+   "target": "blue bottle",
+   "i": 13,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.51,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "blue-bottle-20260907-185007",
+   "frame": "frame-0204.jpg",
+   "target": "blue bottle",
+   "i": 14,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.367,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "blue-bottle-20260907-185007",
+   "frame": "frame-0208.jpg",
+   "target": "blue bottle",
+   "i": 15,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.517,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "blue-bottle-20260907-185007",
+   "frame": "frame-0209.jpg",
+   "target": "blue bottle",
+   "i": 16,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.535,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "blue-shoes-20260907-152528",
+   "frame": "frame-0004.jpg",
+   "target": "blue and yellow running shoes",
+   "i": 17,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.771,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "blue-shoes-20260907-152528",
+   "frame": "frame-0010.jpg",
+   "target": "blue and yellow running shoes",
+   "i": 18,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.396,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0018.jpg",
+   "target": "blue and yellow running shoes",
+   "i": 19,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.802,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0028.jpg",
+   "target": "blue and yellow running shoes",
+   "i": 20,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.719,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0029.jpg",
+   "target": "blue and yellow running shoes",
+   "i": 21,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.75,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0039.jpg",
+   "target": "blue and yellow running shoes",
+   "i": 22,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.823,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "blue-shoes-20260908-210511",
+   "frame": "frame-0041.jpg",
+   "target": "blue and yellow running shoes",
+   "i": 23,
+   "truth": "LEFT",
+   "centre_x_frac": 0.323,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0000.jpg",
+   "target": "Grey backpack",
+   "i": 24,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.554,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0001.jpg",
+   "target": "Grey backpack",
+   "i": 25,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.542,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0007.jpg",
+   "target": "Grey backpack",
+   "i": 26,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.583,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0029.jpg",
+   "target": "Grey backpack",
+   "i": 27,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.521,
+   "border": false,
+   "wide": true
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0039.jpg",
+   "target": "Grey backpack",
+   "i": 28,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.469,
+   "border": false,
+   "wide": true
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0044.jpg",
+   "target": "Grey backpack",
+   "i": 29,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.469,
+   "border": false,
+   "wide": true
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0045.jpg",
+   "target": "Grey backpack",
+   "i": 30,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.469,
+   "border": false,
+   "wide": true
+  },
+  {
+   "walk": "grey-backpack-20260921-203748",
+   "frame": "frame-0063.jpg",
+   "target": "Grey backpack",
+   "i": 31,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.469,
+   "border": false,
+   "wide": true
+  },
+  {
+   "walk": "grey-backpack-opus-4-5-20260921-210743",
+   "frame": "frame-0010.jpg",
+   "target": "Grey backpack",
+   "i": 32,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.521,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "red-backpack-20260907-144856",
+   "frame": "frame-0020.jpg",
+   "target": "burgundy backpack",
+   "i": 33,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.521,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "red-backpack-20260907-144856",
+   "frame": "frame-0027.jpg",
+   "target": "burgundy backpack",
+   "i": 34,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.494,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "red-backpack-20260907-144856",
+   "frame": "frame-0029.jpg",
+   "target": "burgundy backpack",
+   "i": 35,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.698,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "red-backpack-20260907-144856",
+   "frame": "frame-0033.jpg",
+   "target": "burgundy backpack",
+   "i": 36,
+   "truth": "LEFT",
+   "centre_x_frac": 0.333,
+   "border": true,
+   "wide": true
+  },
+  {
+   "walk": "woven-laundry-basket-20260908-215252",
+   "frame": "frame-0005.jpg",
+   "target": "woven laundry basket",
+   "i": 37,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.958,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260908-215252",
+   "frame": "frame-0015.jpg",
+   "target": "woven laundry basket",
+   "i": 38,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.406,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260908-215351",
+   "frame": "frame-0006.jpg",
+   "target": "woven laundry basket",
+   "i": 39,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.865,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260908-215351",
+   "frame": "frame-0009.jpg",
+   "target": "woven laundry basket",
+   "i": 40,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.787,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260908-215351",
+   "frame": "frame-0013.jpg",
+   "target": "woven laundry basket",
+   "i": 41,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.604,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260908-215351",
+   "frame": "frame-0075.jpg",
+   "target": "woven laundry basket",
+   "i": 42,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.848,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260908-215351",
+   "frame": "frame-0081.jpg",
+   "target": "woven laundry basket",
+   "i": 43,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.431,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260908-215351",
+   "frame": "frame-0083.jpg",
+   "target": "woven laundry basket",
+   "i": 44,
+   "truth": "LEFT",
+   "centre_x_frac": 0.327,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260912-231358",
+   "frame": "frame-0016.jpg",
+   "target": "woven laundry basket",
+   "i": 45,
+   "truth": "LEFT",
+   "centre_x_frac": 0.285,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260912-231358",
+   "frame": "frame-0051.jpg",
+   "target": "woven laundry basket",
+   "i": 46,
+   "truth": "LEFT",
+   "centre_x_frac": 0.058,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260912-231358",
+   "frame": "frame-0053.jpg",
+   "target": "woven laundry basket",
+   "i": 47,
+   "truth": "LEFT",
+   "centre_x_frac": 0.037,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260912-231358",
+   "frame": "frame-0140.jpg",
+   "target": "woven laundry basket",
+   "i": 48,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.969,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260912-231358",
+   "frame": "frame-0145.jpg",
+   "target": "woven laundry basket",
+   "i": 49,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.681,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260913-115414",
+   "frame": "frame-0222.jpg",
+   "target": "woven laundry basket",
+   "i": 50,
+   "truth": "LEFT",
+   "centre_x_frac": 0.16,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260913-115414",
+   "frame": "frame-0225.jpg",
+   "target": "woven laundry basket",
+   "i": 51,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.412,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260913-115703",
+   "frame": "frame-0016.jpg",
+   "target": "woven laundry basket",
+   "i": 52,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.531,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260913-115703",
+   "frame": "frame-0020.jpg",
+   "target": "woven laundry basket",
+   "i": 53,
+   "truth": "LEFT",
+   "centre_x_frac": 0.329,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260913-115703",
+   "frame": "frame-0133.jpg",
+   "target": "woven laundry basket",
+   "i": 54,
+   "truth": "LEFT",
+   "centre_x_frac": 0.125,
+   "border": false,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260913-115703",
+   "frame": "frame-0148.jpg",
+   "target": "woven laundry basket",
+   "i": 55,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.662,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260913-115703",
+   "frame": "frame-0159.jpg",
+   "target": "woven laundry basket",
+   "i": 56,
+   "truth": "FORWARD",
+   "centre_x_frac": 0.713,
+   "border": true,
+   "wide": false
+  },
+  {
+   "walk": "woven-laundry-basket-20260913-115703",
+   "frame": "frame-0173.jpg",
+   "target": "woven laundry basket",
+   "i": 57,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.817,
+   "border": false,
+   "wide": true
+  },
+  {
+   "walk": "woven-laundry-basket-20260913-115703",
+   "frame": "frame-0184.jpg",
+   "target": "woven laundry basket",
+   "i": 58,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.354,
+   "border": true,
+   "wide": true
+  },
+  {
+   "walk": "woven-laundry-basket-20260913-115703",
+   "frame": "frame-0190.jpg",
+   "target": "woven laundry basket",
+   "i": 59,
+   "truth": "RIGHT",
+   "centre_x_frac": 0.802,
+   "border": false,
+   "wide": true
+  }
+ ]
+}
