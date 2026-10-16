@@ -1002,12 +1002,12 @@
     const resp = await sendAction(action, driver, extra);
     const executed = resp.executed !== false;
     if (!executed && refusalKind(resp.reason) === "veto") {
-      state.safetyFlashUntil = Date.now() + 350;
+      state.safetyFlashUntil = Date.now() + SAFETY_FLASH_MS;
       // 3.86: drawn now, not when the next frame lands -- over the tunnel a
       // frame can take longer than the flash, and a veto then never showed --
       // and cleared by one timer when it ends.
       renderTelemetry(state.lastFrame);
-      setTimeout(function () { renderTelemetry(state.lastFrame); }, 360);
+      setTimeout(function () { renderTelemetry(state.lastFrame); }, SAFETY_FLASH_MS + 10);
     }
     // Phase M4: the reason is what a person can act on. "SAFETY VETO" was
     // the only thing this ever said, so a move refused because someone
@@ -1055,20 +1055,19 @@
       ? REFUSAL_LABEL[reason] : String(reason).replace(/_/g, " ").toUpperCase();
   }
 
-  // 3.86: the Safety line's VETOED flash is for a safety veto only (or a
-  // server too old to name its refusals) -- not a preemption, a Stop or a fault.
-  function isSafetyVeto(reason) {
-    return !reason || reason === "safety_distance";
-  }
-
-  // 3.86: how a refusal is coloured. "veto" (the alarm colour) for a safety
-  // veto; "calm" (no colour) for a Stop or someone else driving -- nothing is
-  // wrong; "fault" (the warning colour) for everything else: a fault of the
-  // robot, a press that never reached it or was answered an error (a lost
-  // STOP must stand out, 3.76 D), the watchdog, a reason the twin does not know.
-  const CALM_REFUSALS = { stopped: true, person_stop: true, preempted: true };
+  // 3.86: what kind a refusal is, which decides its colour and whether the
+  // Safety line flashes VETOED. "veto" (the alarm colour, and the flash) for
+  // a safety veto, or a server too old to name its refusals; "calm" (no
+  // colour) when nothing is wrong -- a Stop, someone else driving, the
+  // watchdog's routine stop after a second of silence; "fault" (the warning
+  // colour) for everything else: a fault of the robot, a press that never
+  // reached it or was answered an error (a lost STOP must stand out, 3.76 D),
+  // a reason the twin does not know.
+  const CALM_REFUSALS = { stopped: true, person_stop: true, preempted: true, watchdog: true };
+  const REFUSAL_KIND_CLASS = { veto: "alert", fault: "warn", calm: null };   // the readout
+  const SAFETY_FLASH_MS = 350;
   function refusalKind(reason) {
-    if (isSafetyVeto(reason)) return "veto";
+    if (!reason || reason === "safety_distance") return "veto";
     return Object.prototype.hasOwnProperty.call(CALM_REFUSALS, reason) ? "calm" : "fault";
   }
 
@@ -2233,7 +2232,7 @@
     setBrainText("brain-tel-refusal",
       label + " \u00b7 " + (refusal.driver || "no driver") + " \u00b7 " +
       refusal.seconds_ago.toFixed(1) + "s ago",
-      { veto: "alert", fault: "warn", calm: null }[refusalKind(refusal.reason)]);   // 3.86
+      REFUSAL_KIND_CLASS[refusalKind(refusal.reason)]);   // 3.86
   }
 
   // ---------- brain liveness: reconnect on its own ----------

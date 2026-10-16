@@ -1384,6 +1384,8 @@ def test_a_safety_veto_still_flashes_vetoed(browser, twin_server):
     page.wait_for_function("() => window.__vetoed", timeout=2000)   # fails: no flash
     line = page.locator("#log .entry", has_text="SAFETY VETO")
     assert "veto" in (line.get_attribute("class") or ""), "a safety veto lost the veto colour"
+    # Round 5: and the flash ends by itself (the timer), back to OK.
+    sync_api.expect(page.locator("#tel-safety")).to_contain_text("OK", timeout=1500)
     assert not errors, errors
     page.close()
 
@@ -1412,11 +1414,13 @@ def test_a_stop_that_never_reached_the_robot_stands_out(browser, twin_server):
     page.click("#btn-stop")
     line = page.locator("#log .entry", has_text="NOT SENT")
     sync_api.expect(line).to_have_class(re.compile(r"\bfault\b"), timeout=5000)
+    # The aborted request's own console line is expected; nothing else may fail.
+    assert not [e for e in errors if "Failed to fetch" not in e and "ERR_FAILED" not in e], errors
     page.close()
 
 
 @pytest.mark.parametrize("reason,cls", [("safety_distance", "alert"), ("no_feedback", "warn"),
-                                        ("person_stop", None)])
+                                        ("person_stop", None), ("watchdog", None)])
 def test_the_refusal_readout_colours_by_kind(browser, twin_server, reason, cls):
     page, errors = open_twin(browser, twin_server)
 
