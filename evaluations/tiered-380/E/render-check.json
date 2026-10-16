@@ -1,0 +1,104 @@
+[
+ {
+  "house": "control (real frame, labelled yes)",
+  "target": "Grey backpack",
+  "status": "answered",
+  "score": 0.9795388617383485
+ },
+ {
+  "house": "procthor:val:5",
+  "dist_m": 1.0,
+  "frame": "procthor-val-5-1.0m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.001949946408593035
+ },
+ {
+  "house": "procthor:val:5",
+  "dist_m": 1.5,
+  "frame": "procthor-val-5-1.5m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.79513218934382
+ },
+ {
+  "house": "procthor:val:5",
+  "dist_m": 2.0,
+  "frame": "procthor-val-5-2.0m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.5958586402158417
+ },
+ {
+  "house": "procthor:val:5",
+  "dist_m": 3.0,
+  "frame": "procthor-val-5-3.0m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.5196651380880779
+ },
+ {
+  "house": "procthor:val:18",
+  "dist_m": 1.0,
+  "frame": "procthor-val-18-1.0m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.7885669277014274
+ },
+ {
+  "house": "procthor:val:18",
+  "dist_m": 1.5,
+  "frame": "procthor-val-18-1.5m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.006764770487458151
+ },
+ {
+  "house": "procthor:val:18",
+  "dist_m": 2.0,
+  "frame": "procthor-val-18-2.0m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.5466549508665396
+ },
+ {
+  "house": "procthor:val:18",
+  "dist_m": 3.0,
+  "frame": "procthor-val-18-3.0m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.0023048178370179803
+ },
+ {
+  "house": "home_first_floor",
+  "dist_m": 1.0,
+  "frame": "home_first_floor-1.0m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.7088892706742403
+ },
+ {
+  "house": "home_first_floor",
+  "dist_m": 1.5,
+  "frame": "home_first_floor-1.5m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.48239903277414214
+ },
+ {
+  "house": "home_first_floor",
+  "dist_m": 2.0,
+  "frame": "home_first_floor-2.0m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.48369260164538225
+ },
+ {
+  "house": "home_first_floor",
+  "dist_m": 3.0,
+  "frame": "home_first_floor-3.0m.jpg",
+  "target_in_detections": true,
+  "status": "answered",
+  "score": 0.0014825071619575677
+ }
+]
