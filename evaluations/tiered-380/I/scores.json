@@ -1,0 +1,332 @@
+{
+ "YOLOE + CLIP (detection or band candidate)": {
+  "S1": {
+   "mirror": {
+    "pairs": 45,
+    "consistent": 43,
+    "rate": 0.956,
+    "turn_pairs": 22,
+    "turn_consistent": 21
+   },
+   "all": {
+    "n": 60,
+    "answered": 49,
+    "right": 45,
+    "acc_all": 0.75,
+    "acc_answered": 0.918,
+    "coverage": 0.817,
+    "side_right": 22,
+    "side_n": 32,
+    "answers": {
+     "None": 11,
+     "RIGHT": 17,
+     "FORWARD": 25,
+     "LEFT": 7
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 28,
+    "right": 28,
+    "acc_all": 0.778,
+    "acc_answered": 1.0,
+    "coverage": 0.778,
+    "side_right": 9,
+    "side_n": 16,
+    "answers": {
+     "None": 8,
+     "FORWARD": 19,
+     "LEFT": 3,
+     "RIGHT": 6
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 1,
+    "consistent": 1,
+    "rate": 1.0,
+    "turn_pairs": 1,
+    "turn_consistent": 1
+   },
+   "answers": {
+    "None": 39,
+    "LEFT": 1
+   }
+  }
+ },
+ "Qwen VE: direction question": {
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 60,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 32,
+    "mirror_d_right": 21,
+    "lean_right": 11
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 28,
+    "acc_all": 0.467,
+    "acc_answered": 0.467,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 32,
+    "answers": {
+     "FORWARD": 60
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 36,
+    "right": 20,
+    "acc_all": 0.556,
+    "acc_answered": 0.556,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 16,
+    "answers": {
+     "FORWARD": 36
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 40,
+    "consistent": 40,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "FORWARD": 40
+   }
+  },
+  "S3": {
+   "mirror": {
+    "pairs": 42,
+    "consistent": 42,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 35,
+    "mirror_d_right": 21,
+    "lean_right": 20
+   },
+   "all": {
+    "n": 42,
+    "answered": 42,
+    "right": 7,
+    "acc_all": 0.167,
+    "acc_answered": 0.167,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 35,
+    "answers": {
+     "FORWARD": 42
+    }
+   },
+   "majority_share": 0.429
+  }
+ },
+ "Qwen VE: identity box": {
+  "S1": {
+   "mirror": {
+    "pairs": 43,
+    "consistent": 42,
+    "rate": 0.977,
+    "turn_pairs": 19,
+    "turn_consistent": 18
+   },
+   "all": {
+    "n": 60,
+    "answered": 46,
+    "right": 42,
+    "acc_all": 0.7,
+    "acc_answered": 0.913,
+    "coverage": 0.767,
+    "side_right": 21,
+    "side_n": 32,
+    "answers": {
+     "None": 14,
+     "RIGHT": 18,
+     "FORWARD": 24,
+     "LEFT": 4
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 24,
+    "right": 24,
+    "acc_all": 0.667,
+    "acc_answered": 1.0,
+    "coverage": 0.667,
+    "side_right": 9,
+    "side_n": 16,
+    "answers": {
+     "None": 12,
+     "FORWARD": 15,
+     "LEFT": 1,
+     "RIGHT": 8
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 0,
+    "consistent": 0,
+    "rate": null,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "None": 40
+   }
+  }
+ },
+ "Qwen full: direction question": {
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 60,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 32,
+    "mirror_d_right": 19,
+    "lean_right": 16
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 28,
+    "acc_all": 0.467,
+    "acc_answered": 0.467,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 32,
+    "answers": {
+     "FORWARD": 60
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 36,
+    "right": 20,
+    "acc_all": 0.556,
+    "acc_answered": 0.556,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 16,
+    "answers": {
+     "FORWARD": 36
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 40,
+    "consistent": 40,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "FORWARD": 40
+   }
+  },
+  "S3": {
+   "mirror": {
+    "pairs": 42,
+    "consistent": 42,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 35,
+    "mirror_d_right": 19,
+    "lean_right": 19
+   },
+   "all": {
+    "n": 42,
+    "answered": 42,
+    "right": 7,
+    "acc_all": 0.167,
+    "acc_answered": 0.167,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 35,
+    "answers": {
+     "FORWARD": 42
+    }
+   },
+   "majority_share": 0.429
+  }
+ },
+ "Qwen full: identity box": {
+  "S1": {
+   "mirror": {
+    "pairs": 44,
+    "consistent": 42,
+    "rate": 0.955,
+    "turn_pairs": 17,
+    "turn_consistent": 16
+   },
+   "all": {
+    "n": 60,
+    "answered": 49,
+    "right": 44,
+    "acc_all": 0.733,
+    "acc_answered": 0.898,
+    "coverage": 0.817,
+    "side_right": 21,
+    "side_n": 32,
+    "answers": {
+     "None": 11,
+     "RIGHT": 17,
+     "FORWARD": 27,
+     "LEFT": 5
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 26,
+    "right": 26,
+    "acc_all": 0.722,
+    "acc_answered": 1.0,
+    "coverage": 0.722,
+    "side_right": 9,
+    "side_n": 16,
+    "answers": {
+     "None": 10,
+     "FORWARD": 17,
+     "LEFT": 1,
+     "RIGHT": 8
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 0,
+    "consistent": 0,
+    "rate": null,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "None": 40
+   }
+  }
+ }
+}
