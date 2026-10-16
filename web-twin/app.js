@@ -1070,9 +1070,8 @@
   // that hung mid-mission (B3.1) from one whose mission ended (3.86 rounds
   // 5-8; open).
   const CALM_REFUSALS = { stopped: true, person_stop: true, preempted: true };
+  // The colour class of each kind, the same name on the readout and the log.
   const REFUSAL_KIND_CLASS = { veto: "alert", watchdog: "alert", fault: "warn", calm: null };
-  // The log's names for the same colours (index.html's #log .entry rules).
-  const LOG_ENTRY_CLASS = { alert: " veto", warn: " fault" };
   function refusalKind(reason) {
     if (!reason || reason === "safety_distance") return "veto";
     if (reason === "watchdog") return "watchdog";
@@ -1505,12 +1504,9 @@
     clearEmptyState(el);
     const entry = state.log[state.log.length - 1];
     const div = document.createElement("div");
-    // 3.86: coloured as the readout colours the same kind (REFUSAL_KIND_CLASS,
-    // in the log's names): none for a Stop or a done move; a colour the log
-    // has no name for falls to the veto colour, never to none.
-    const kind = entry.executed === false ? refusalKind(entry.reason) : "calm";
-    const cls = REFUSAL_KIND_CLASS[kind];
-    div.className = "entry" + (cls == null && kind === "calm" ? "" : (LOG_ENTRY_CLASS[cls] || " veto"));
+    // 3.86: the same colour class the readout gives the same kind.
+    const cls = REFUSAL_KIND_CLASS[entry.executed === false ? refusalKind(entry.reason) : "calm"];
+    div.className = cls ? "entry " + cls : "entry";
     // Phase M4: name the refusal rather than stamping every one of them
     // VETOED. The reason was already being carried here and thrown away,
     // so a preemption and a wall produced identical lines -- which is the

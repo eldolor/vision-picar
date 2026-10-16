@@ -1349,7 +1349,7 @@ def test_a_press_a_stop_overtook_reads_as_stopped_not_a_veto(browser, twin_serve
     sync_api.expect(log).to_contain_text("[STOPPED]", timeout=5000)
     assert not _flashed(page), "the Safety line flashed VETOED for a Stop"
     line_class = log.locator(".entry", has_text="[STOPPED]").get_attribute("class") or ""
-    assert "veto" not in line_class and "fault" not in line_class, \
+    assert "alert" not in line_class and "warn" not in line_class, \
         f"a Stop's log line coloured as a veto or fault: {line_class}"
     text = log.inner_text()
     assert "VETOED" not in text and "SAFETY VETO" not in text, text
@@ -1383,7 +1383,7 @@ def test_a_safety_veto_still_flashes_vetoed(browser, twin_server):
     sync_api.expect(page.locator("#log")).to_contain_text("SAFETY VETO", timeout=5000)
     page.wait_for_function("() => window.__vetoed", timeout=2000)   # fails: no flash
     line = page.locator("#log .entry", has_text="SAFETY VETO")
-    assert "veto" in (line.get_attribute("class") or ""), "a safety veto lost the veto colour"
+    assert "alert" in (line.get_attribute("class") or "").split(), "a safety veto lost the veto colour"
     # Round 5: and the flash ends by itself (the timer), back to OK.
     sync_api.expect(page.locator("#tel-safety")).to_contain_text("OK", timeout=1500)
     assert not errors, errors
@@ -1397,7 +1397,7 @@ def test_a_fault_refusal_takes_the_warning_colour(browser, twin_server, reason):
     page, errors = _press_answered(browser, twin_server, {
         "executed": False, "reason": reason, "detail": "detail"})
     line = page.locator("#log .entry").last
-    sync_api.expect(line).to_have_class(re.compile(r"\bfault\b"), timeout=5000)
+    sync_api.expect(line).to_have_class(re.compile(r"\bwarn\b"), timeout=5000)
     assert not errors, errors
     page.close()
 
@@ -1413,7 +1413,7 @@ def test_a_stop_that_never_reached_the_robot_stands_out(browser, twin_server):
     page.route("**/stop", lambda route: route.abort())
     page.click("#btn-stop")
     line = page.locator("#log .entry", has_text="NOT SENT")
-    sync_api.expect(line).to_have_class(re.compile(r"\bfault\b"), timeout=5000)
+    sync_api.expect(line).to_have_class(re.compile(r"\bwarn\b"), timeout=5000)
     assert not errors, errors
     page.close()
 

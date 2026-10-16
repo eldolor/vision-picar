@@ -210,9 +210,11 @@
     max-height: 130px; overflow-y: auto; line-height: 1.6;
     background: var(--field-bg); border-radius: 8px; padding: 8px 10px;
   }
-  #log .entry.veto, #brain-log .entry.veto { color: var(--accent-alert); }
-  /* 3.86: a refusal that is a fault or a press that failed -- not a veto, not calm */
-  #log .entry.fault { color: var(--accent-warn); }
+  #brain-log .entry.veto { color: var(--accent-alert); }
+  /* 3.86: the action log uses the readouts' names: alert (a veto), warn (a
+     fault or a press that failed); no class for a Stop or a done move */
+  #log .entry.alert { color: var(--accent-alert); }
+  #log .entry.warn { color: var(--accent-warn); }
   #log .entry.found, #brain-log .entry.found { color: var(--accent-safe); }
 
   /* Matches .text-input, for the failsafe-drill picker. */
