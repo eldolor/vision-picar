@@ -1010,3 +1010,20 @@ def test_a_stall_after_moving_counts_against_the_place_at_once():
 
 def test_a_goal_that_never_left_keeps_the_first_wedge_forgiven():
     assert _ended_as("stalled", moved_m=0.0) == 0
+
+
+def test_a_front_just_past_the_stop_is_not_worth_a_forward():
+    """3.85 review (both reviewers): FORWARD is queued only with room to
+    gain over the bar it is vetted against -- at 20.5 cm it moves 0.5 cm."""
+    agent = _escape_agent(front_cm=20.5)
+    agent._do_pending()
+    assert agent._pending[0] == ("CREEP",)
+
+
+def test_the_forward_bar_is_the_speed_dependent_one(monkeypatch):
+    """The FORWARD is vetted at its own speed (3.44's stop distance), so
+    a faster default speed raises the front it needs."""
+    agent = _escape_agent(front_cm=30.0)
+    monkeypatch.setattr(agent.safety, "required_clearance_cm", lambda v, creep=False: 40.0)
+    agent._do_pending()
+    assert agent._pending[0] == ("CREEP",)

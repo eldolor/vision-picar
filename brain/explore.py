@@ -54,7 +54,7 @@ from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
 from robot.interface import ZONE_UNUSABLE, Preempted, RobotInterface
-from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation
+from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation, verb_speed_m_s
 from world.bridge_faults import fault_from_headers, response_detail, setup_fault_message
 
 logger = logging.getLogger("explore")
@@ -91,6 +91,8 @@ STUCK_MOVED_M = 0.15
 # controller keeps pushing forward; backing out can (3.68's record).
 STALL_S = 20.0
 STALL_M = 0.15
+# 3.85: the escape's FORWARD is queued only with this much to gain.
+FORWARD_GAIN_CM = 5.0
 # Escapes tried before a search may conclude, while boxed in.
 MAX_ESCAPES = 3
 # An escape's turn sizes, each tried on the roomier side and then the other,
@@ -1279,12 +1281,16 @@ class ExploreAgent(MissionAgent):
         return out
 
     def _front_open(self) -> bool:
-        """The safety layer's own forward clearance is above its stop."""
+        """Room ahead for the escape's FORWARD to gain at least
+        FORWARD_GAIN_CM over the bar the safety layer vets it against at its
+        own speed (3.44's speed-dependent stop) -- not merely past it, where
+        it moves half a centimetre (3.85 review)."""
         try:
             f, _ = self.safety.forward_clearance()
+            bar = self.safety.required_clearance_cm(verb_speed_m_s(50))
         except Exception:  # noqa: BLE001 -- unknown: not open
             return False
-        return f is not None and f > self.safety.min_distance_cm
+        return f is not None and f >= bar + FORWARD_GAIN_CM
 
     def _creep_readings(self) -> dict:
         """What the safety layer read just before a creep (3.74), off ONE
