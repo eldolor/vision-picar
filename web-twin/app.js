@@ -134,7 +134,6 @@
     sightings: [], found: false, foundSighting: null,
     log: [], step: 0,
     safetyFlashUntil: 0,
-    safetyFlashLoop: false,
     guidanceMode: "guide", // "guide" -> /guidance (steer a person); "robot" -> /navigate (what would the robot do)
     guidanceRunning: false, guidanceStarting: false, guidanceTimerId: null, guidanceTarget: null,
     guidanceInFlight: 0, guidanceSeq: 0, guidanceLastRenderedSeq: 0,
@@ -1002,11 +1001,13 @@
   async function commitAction(action, driver, extra) {
     const resp = await sendAction(action, driver, extra);
     const executed = resp.executed !== false;
-    if (!executed && isSafetyVeto(resp.reason)) {
+    if (!executed && refusalKind(resp.reason) === "veto") {
       state.safetyFlashUntil = Date.now() + 350;
       // 3.86: drawn now, not when the next frame lands -- over the tunnel a
-      // frame can take longer than the flash, and a veto then never showed.
+      // frame can take longer than the flash, and a veto then never showed --
+      // and cleared by one timer when it ends.
       renderTelemetry(state.lastFrame);
+      setTimeout(function () { renderTelemetry(state.lastFrame); }, 360);
     }
     // Phase M4: the reason is what a person can act on. "SAFETY VETO" was
     // the only thing this ever said, so a move refused because someone
@@ -1058,6 +1059,17 @@
   // server too old to name its refusals) -- not a preemption, a Stop or a fault.
   function isSafetyVeto(reason) {
     return !reason || reason === "safety_distance";
+  }
+
+  // 3.86: how a refusal is coloured. "veto" (the alarm colour) for a safety
+  // veto; "calm" (no colour) for a Stop or someone else driving -- nothing is
+  // wrong; "fault" (the warning colour) for everything else: a fault of the
+  // robot, a press that never reached it or was answered an error (a lost
+  // STOP must stand out, 3.76 D), the watchdog, a reason the twin does not know.
+  const CALM_REFUSALS = { stopped: true, person_stop: true, preempted: true };
+  function refusalKind(reason) {
+    if (isSafetyVeto(reason)) return "veto";
+    return Object.prototype.hasOwnProperty.call(CALM_REFUSALS, reason) ? "calm" : "fault";
   }
 
   function refusalText(resp) {
@@ -1474,15 +1486,7 @@
     safetyEl.innerHTML = vetoedRecently
       ? 'Safety: <span class="alert">VETOED</span>'
       : 'Safety: <span class="safe">OK</span>';
-    // One redraw loop at a time while the flash lasts (3.86: a veto also
-    // draws it at once, before the frame's own render).
-    if (vetoedRecently && !state.safetyFlashLoop) {
-      state.safetyFlashLoop = true;
-      requestAnimationFrame(function () {
-        state.safetyFlashLoop = false;
-        renderTelemetry(state.lastFrame);
-      });
-    }
+    // Cleared by the timer commitAction sets when the flash begins (3.86).
 
     const rooms = Array.from(state.searchedRooms).sort();
     let summary = rooms.length ? rooms.join(", ") + " searched." : "No rooms searched yet.";
@@ -1494,9 +1498,10 @@
     clearEmptyState(el);
     const entry = state.log[state.log.length - 1];
     const div = document.createElement("div");
-    // 3.86: the veto colour for a safety veto only; a Stop, a preemption or
-    // a fault is a refusal, not a veto.
-    div.className = "entry" + (entry.executed === false && isSafetyVeto(entry.reason) ? " veto" : "");
+    // 3.86: coloured by kind (refusalKind): the veto colour for a safety veto
+    // only, the warning colour for a fault or a failed press, none for a Stop.
+    const kind = entry.executed === false ? refusalKind(entry.reason) : "calm";
+    div.className = "entry" + (kind === "calm" ? "" : " " + kind);
     // Phase M4: name the refusal rather than stamping every one of them
     // VETOED. The reason was already being carried here and thrown away,
     // so a preemption and a wall produced identical lines -- which is the
@@ -2228,7 +2233,7 @@
     setBrainText("brain-tel-refusal",
       label + " \u00b7 " + (refusal.driver || "no driver") + " \u00b7 " +
       refusal.seconds_ago.toFixed(1) + "s ago",
-      isSafetyVeto(refusal.reason) ? "alert" : null);     // 3.86: only a veto alarms
+      { veto: "alert", fault: "warn", calm: null }[refusalKind(refusal.reason)]);   // 3.86
   }
 
   // ---------- brain liveness: reconnect on its own ----------

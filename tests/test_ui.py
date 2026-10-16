@@ -1348,8 +1348,9 @@ def test_a_press_a_stop_overtook_reads_as_stopped_not_a_veto(browser, twin_serve
     log = page.locator("#log")
     sync_api.expect(log).to_contain_text("[STOPPED]", timeout=5000)
     assert not _flashed(page), "the Safety line flashed VETOED for a Stop"
-    assert "veto" not in (log.locator(".entry").last.get_attribute("class") or ""), \
-        "a Stop's log line in the veto colour"
+    line_class = log.locator(".entry", has_text="[STOPPED]").get_attribute("class") or ""
+    assert "veto" not in line_class and "fault" not in line_class, \
+        f"a Stop's log line coloured as a veto or fault: {line_class}"
     text = log.inner_text()
     assert "VETOED" not in text and "SAFETY VETO" not in text, text
     assert not errors, errors
@@ -1381,6 +1382,63 @@ def test_a_safety_veto_still_flashes_vetoed(browser, twin_server):
         "executed": False, "reason": "safety_distance", "detail": "Blocked FORWARD: 12 cm"})
     sync_api.expect(page.locator("#log")).to_contain_text("SAFETY VETO", timeout=5000)
     page.wait_for_function("() => window.__vetoed", timeout=2000)   # fails: no flash
+    line = page.locator("#log .entry", has_text="SAFETY VETO")
+    assert "veto" in (line.get_attribute("class") or ""), "a safety veto lost the veto colour"
+    assert not errors, errors
+    page.close()
+
+
+@pytest.mark.parametrize("reason", ["no_feedback", "ros_unavailable", "a_reason_from_later"])
+def test_a_fault_refusal_takes_the_warning_colour(browser, twin_server, reason):
+    """3.86 review round 4: making non-vetoes plain also made faults plain;
+    a fault (or a reason the twin does not know) takes the warning colour."""
+    page, errors = _press_answered(browser, twin_server, {
+        "executed": False, "reason": reason, "detail": "detail"})
+    line = page.locator("#log .entry").last
+    sync_api.expect(line).to_have_class(re.compile(r"\bfault\b"), timeout=5000)
+    assert not errors, errors
+    page.close()
+
+
+def test_a_stop_that_never_reached_the_robot_stands_out(browser, twin_server):
+    """3.86 review round 4: a STOP the robot never got (NOT SENT, 3.76 D)
+    lost its colour when only a veto was coloured."""
+    page, errors = open_twin(browser, twin_server)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    page.route("**/stop", lambda route: route.abort())
+    page.click("#btn-stop")
+    line = page.locator("#log .entry", has_text="NOT SENT")
+    sync_api.expect(line).to_have_class(re.compile(r"\bfault\b"), timeout=5000)
+    page.close()
+
+
+@pytest.mark.parametrize("reason,cls", [("safety_distance", "alert"), ("no_feedback", "warn"),
+                                        ("person_stop", None)])
+def test_the_refusal_readout_colours_by_kind(browser, twin_server, reason, cls):
+    page, errors = open_twin(browser, twin_server)
+
+    def health(route):
+        route.fulfill(status=200, content_type="application/json", body=_json({
+            "status": "ok", "seconds_since_last_command": 0.1,
+            "watchdog_timeout_s": 1.0, "min_distance_cm": 20, "mode": "sim",
+            "env_label": "", "driver": "twin-dpad", "authority_holder": None,
+            "last_refusal": {"reason": reason, "detail": "d", "driver": "brain",
+                             "at": 1.0, "seconds_ago": 1.0},
+        }))
+
+    page.route("**/health", health)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", twin_server)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    readout = page.locator("#brain-tel-refusal")
+    sync_api.expect(readout).to_contain_text("brain", timeout=5000)
+    classes = (readout.get_attribute("class") or "").split()
+    for other in ("alert", "warn"):
+        assert (other in classes) == (other == cls), (reason, classes)
     assert not errors, errors
     page.close()
 

@@ -211,6 +211,8 @@
     background: var(--field-bg); border-radius: 8px; padding: 8px 10px;
   }
   #log .entry.veto, #brain-log .entry.veto { color: var(--accent-alert); }
+  /* 3.86: a refusal that is a fault or a press that failed -- not a veto, not calm */
+  #log .entry.fault, #brain-log .entry.fault { color: var(--accent-warn); }
   #log .entry.found, #brain-log .entry.found { color: var(--accent-safe); }
 
   /* Matches .text-input, for the failsafe-drill picker. */
