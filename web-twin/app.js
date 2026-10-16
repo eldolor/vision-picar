@@ -1071,6 +1071,8 @@
   // 5-8; open).
   const CALM_REFUSALS = { stopped: true, person_stop: true, preempted: true };
   const REFUSAL_KIND_CLASS = { veto: "alert", watchdog: "alert", fault: "warn", calm: null };
+  // The log's names for the same colours (index.html's #log .entry rules).
+  const LOG_ENTRY_CLASS = { alert: " veto", warn: " fault" };
   function refusalKind(reason) {
     if (!reason || reason === "safety_distance") return "veto";
     if (reason === "watchdog") return "watchdog";
@@ -1503,12 +1505,12 @@
     clearEmptyState(el);
     const entry = state.log[state.log.length - 1];
     const div = document.createElement("div");
-    // 3.86: coloured by kind (refusalKind): the veto colour for a safety veto,
-    // the warning colour for a fault or a failed press, none for a Stop. (A
-    // press is never answered `watchdog`: that reason is only /health's.)
+    // 3.86: coloured as the readout colours the same kind (REFUSAL_KIND_CLASS,
+    // in the log's names): none for a Stop or a done move; a colour the log
+    // has no name for falls to the veto colour, never to none.
     const kind = entry.executed === false ? refusalKind(entry.reason) : "calm";
-    // The log's classes follow the readout's: one kind-to-colour map.
-    div.className = "entry" + ({ alert: " veto", warn: " fault" }[REFUSAL_KIND_CLASS[kind]] || "");
+    const cls = REFUSAL_KIND_CLASS[kind];
+    div.className = "entry" + (cls == null && kind === "calm" ? "" : (LOG_ENTRY_CLASS[cls] || " veto"));
     // Phase M4: name the refusal rather than stamping every one of them
     // VETOED. The reason was already being carried here and thrown away,
     // so a preemption and a wall produced identical lines -- which is the
