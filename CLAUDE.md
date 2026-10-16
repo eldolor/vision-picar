@@ -347,8 +347,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   D-pad Stop during explore: 0.0 cm true vs 29.8 cm on `dev`. A verb under
   `drive: ros` lifts the Stop's hold only under its lock and only if no
   Stop came after it; a verb's stop baseline is the server's
-  (`VERB_STOP_BASELINE`). Open: the twin labels the new refusals
-  `[VETOED]` (a deploy). `HANDOFF-2026-10-15-3.84-person-stop-last-word.md`. **Batches F and G (recorded walks, the inventory and the late
+  (`VERB_STOP_BASELINE`). `HANDOFF-2026-10-15-3.84-person-stop-last-word.md`.
+  **The twin names a Stop's refusals (3.86), merged and deployed
+  2026-10-16:** STOPPED, STOPPED BY A PERSON, NO WHEEL FEEDBACK, ROS DOWN,
+  unknown reasons by name; only a safety veto flashes VETOED or takes the
+  alarm colour, a Stop or preemption is plain, a fault or a lost STOP amber.
+  Open (the user's call, a follow-up): the robot server's watchdog record
+  names the last driver and replaces a Stop's or fault's refusal ~1 s later,
+  so the readout cannot tell a hung brain from a finished mission. **Batches F and G (recorded walks, the inventory and the late
   identity check), merged and deployed 2026-10-14** (walks Lambda and
   consoles from `5fcb7bb`; G runs in the brain, no deploy). F: 20 fixed,
   one a security bug -- the metrics console put stored text into
