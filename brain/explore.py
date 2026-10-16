@@ -681,6 +681,10 @@ class ExploreAgent(MissionAgent):
             self._approach = (tx, ty)
             self._goal["target"] = (tx, ty)
             self._close_in_refused = 0
+        else:
+            # Nor does an older one stay on record: _cancel() above ended
+            # its goal, so a sighting back near it must be approached again.
+            self._approach = None
         return out
 
     def _back_to_sighting(self, now: float):

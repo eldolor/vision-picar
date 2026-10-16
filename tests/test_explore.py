@@ -800,3 +800,39 @@ def test_a_refused_approach_is_tried_again_not_given_up_for_a_look():
     # The same sighting on the next frame: the approach goes out again.
     again = agent._send_approach(*target, grid.sim_time) if agent._approach is None else None
     assert again is not None and again[0] == "GOAL"
+
+
+class SwitchNav(FakeNav):
+    """Takes goals until `refuse` is set, then refuses them `preempted`."""
+
+    refuse = False
+
+    def set_goal(self, x_m, y_m):
+        if self.refuse:
+            self.calls.append(("set", round(x_m, 2), round(y_m, 2)))
+            return {"accepted": False, "reason": "preempted"}
+        return super().set_goal(x_m, y_m)
+
+
+def test_a_refused_approach_leaves_no_older_approach_on_record():
+    """3.85 review: approach A taken, then B (> APPROACH_MOVED_M away)
+    refused -- the record must not still say A, or a sighting back near A
+    is never approached again (the pantry livelock by another road)."""
+    grid = build_world("home_first_floor")
+    grid.move_object((46, 19), (40, 23))
+    grid.x, grid.y = 12.928 / CELL, 7.321 / CELL
+    robot = MockRobot(grid, render=False)
+    nav = SwitchNav(robot)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="red backpack"),
+                         navigator=nav, clock=lambda: grid.sim_time, world=MockWorld(grid))
+    a, b = (12.15, 7.05), (12.15, 5.9)
+    assert agent._send_approach(*a, grid.sim_time)[0] == "GOAL"
+    nav.refuse = True
+    agent._send_approach(*b, grid.sim_time)
+    nav.refuse = False
+    agent._goal = None
+    agent._pending = []
+    agent._sighting = lambda frame: a                     # seen near A again
+    sent_before = len([c for c in nav.calls if c[0] == "set"])
+    agent.step()
+    assert len([c for c in nav.calls if c[0] == "set"]) > sent_before
