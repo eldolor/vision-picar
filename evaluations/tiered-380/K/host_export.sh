@@ -14,10 +14,12 @@ step "setup"
 dpkg -s python3-venv >/dev/null 2>&1 || { sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq; sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv git-lfs; }
 test -d ell || git clone -q --depth 1 -b v0.9.1 https://github.com/NVIDIA/TensorRT-Edge-LLM ell
 (cd ell && git submodule update --init --recursive -q)
-test -x venv/bin/pip || python3 -m venv venv
+# Edge-LLM 0.9.1 needs Python >= 3.11 (numpy 2.4.6); the AMI's is 3.10.
+test -x $HOME/.local/bin/uv || curl -LsSf https://astral.sh/uv/install.sh | sh
+U=$HOME/.local/bin/uv
+test -x venv/bin/python || $U venv -q -p 3.12 venv
 . venv/bin/activate
-pip install -q --upgrade pip
-(cd ell && pip install -q . && pip install -q ".[tools]")
+(cd ell && $U pip install -q . && $U pip install -q ".[tools]")
 export PYTHONPATH=$W/ell
 # 3.78's patch: this huggingface_hub rejects the bare dataset id.
 grep -rl "\"cnn_dailymail\"" ell/tensorrt_edgellm | xargs -r sed -i 's/"cnn_dailymail"/"abisee\/cnn_dailymail"/g'
