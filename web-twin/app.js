@@ -1071,7 +1071,6 @@
   // 5-8; open).
   const CALM_REFUSALS = { stopped: true, person_stop: true, preempted: true };
   const REFUSAL_KIND_CLASS = { veto: "alert", watchdog: "alert", fault: "warn", calm: null };
-  const REFUSAL_LOG_CLASS = { veto: " veto", watchdog: " veto", fault: " fault", calm: "" };
   function refusalKind(reason) {
     if (!reason || reason === "safety_distance") return "veto";
     if (reason === "watchdog") return "watchdog";
@@ -1504,10 +1503,11 @@
     clearEmptyState(el);
     const entry = state.log[state.log.length - 1];
     const div = document.createElement("div");
-    // 3.86: coloured by kind (refusalKind): the veto colour for a safety veto
-    // only, the warning colour for a fault or a failed press, none for a Stop.
+    // 3.86: coloured by kind (refusalKind): the veto colour for a safety veto,
+    // the warning colour for a fault or a failed press, none for a Stop. (A
+    // press is never answered `watchdog`: that reason is only /health's.)
     const kind = entry.executed === false ? refusalKind(entry.reason) : "calm";
-    div.className = "entry" + REFUSAL_LOG_CLASS[kind];
+    div.className = "entry" + (kind === "calm" ? "" : kind === "fault" ? " fault" : " veto");
     // Phase M4: name the refusal rather than stamping every one of them
     // VETOED. The reason was already being carried here and thrown away,
     // so a preemption and a wall produced identical lines -- which is the
