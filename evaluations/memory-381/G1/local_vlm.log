@@ -1,0 +1,18 @@
+INFO:     Started server process [424573]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8005 (Press CTRL+C to quit)
+INFO:     127.0.0.1:49036 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49052 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49064 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49074 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49088 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49092 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37686 - "GET /health HTTP/1.1" 200 OK
+2026-10-16 03:05:59,283 local_vlm INFO local VLM ready in 7.6 s
+INFO:     127.0.0.1:37694 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45374 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [424573]

@@ -1,0 +1,88 @@
+{
+ "valid": true,
+ "mission_exit": 0,
+ "mission_end": {
+  "running": false,
+  "outcome": "out_of_budget",
+  "step": 390,
+  "end_reason": "time limit of 1200 s reached (1202.7 s)",
+  "arrival": {
+   "state": "approaching",
+   "streak": 0,
+   "reason": "target not detected",
+   "bearing_deg": null,
+   "range_m": null,
+   "radius_m": 0.4
+  },
+  "tier": {
+   "cloud_called": false,
+   "trigger": null,
+   "cloud_landed": false,
+   "models": {
+    "detector": "sim ground truth",
+    "scorer": null,
+    "proposer": null,
+    "target": "red backpack",
+    "crop_source": "frame_reported"
+   },
+   "corroboration": null,
+   "in_flight": null,
+   "holding": null,
+   "vocabulary": null,
+   "pacing": {
+    "rule": "frames",
+    "frames_absent": 5,
+    "frames_bar": 6,
+    "cm_since_call": 6.2,
+    "cm_bar": null,
+    "odometry_usable": true,
+    "reason": "cold_search_after_cm is not set"
+   },
+   "stats": {
+    "cloud_ms": {
+     "n": 65,
+     "p50": 82,
+     "p90": 94,
+     "p99": 103,
+     "max": 105,
+     "mean": 83
+    },
+    "perception_ms": {
+     "n": 455,
+     "p50": 0,
+     "p90": 0,
+     "p99": 0,
+     "max": 1,
+     "mean": 0
+    },
+    "local_ms": null,
+    "local_calls": 0,
+    "local": {},
+    "escalations": 0,
+    "frames": 455,
+    "cloud_calls": 65,
+    "claims": 0,
+    "corroborated": 0,
+    "verdicts": {},
+    "frames_per_call": 7.0,
+    "triggers": {
+     "mission_start": 1,
+     "cold_search": 64
+    },
+    "perception": {
+     "absent": 455
+    }
+   }
+  },
+  "error": null
+ },
+ "window_s": 1204,
+ "mem_min_mb": 5417,
+ "mem_median_mb": 5437.0,
+ "mem_first_min_median_mb": 5500.5,
+ "mem_last_min_median_mb": 5419.0,
+ "drift_mb": 81.5,
+ "oom_events": 0,
+ "wheel_moving_ticks": 16841,
+ "wheel_late_ticks": 0
+}
