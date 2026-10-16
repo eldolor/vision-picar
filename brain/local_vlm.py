@@ -35,15 +35,17 @@ TAIL_S = 2.0
 
 # 3.80.D: Qwen2.5-VL answers a box in the pixels of the image it was fed,
 # which its processor resizes ("smart_resize": each side to a multiple of 28,
-# the area inside these bounds; the model's preprocessor_config defaults).
-# A 640x480 frame is seen at 644x476. Checked on the board in 3.80.E (D10:
+# the area inside these bounds). Edge-LLM sizes the image by the engine's
+# builder_config (min_image_tokens, max_image_tokens_per_image), not by
+# preprocessor_config's `size`. A 640x480 frame is seen at 644x476. Checked on the board in 3.80.E (D10:
 # the box's bearing against perception's).
 PATCH = 28
 # The bounds are the ENGINES' (3.80.I): built with min_image_tokens 128 and
-# max_image_tokens 512 (each token one 28 x 28 patch; visual/config.json,
-# preprocessor_config.json's shortest_edge 100,352), not the model's stock
+# max_image_tokens 512 (each token one 28 x 28 patch; visual/config.json's
+# builder_config, read by Edge-LLM's qwenViTRunner), not the model's stock
 # 56 x 56 .. 28 x 28 x 16384. A 1280x720 frame is seen at 840x448; with the
-# stock bound every box on it read 0.65x its true position.
+# stock bound every box on it read 0.65x its true position, and a 320x200
+# render (seen at 420x252) read 1.36x, to the right.
 MIN_PIXELS = 28 * 28 * 128
 MAX_PIXELS = 28 * 28 * 512
 

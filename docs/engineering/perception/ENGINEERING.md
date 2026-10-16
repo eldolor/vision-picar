@@ -126,7 +126,9 @@ returns status `error`. `ask(frame, box=True)` (3.80.D, every frame's
 question; the brain passes `functools.partial(client.ask, box=True)` as the
 policy's `local_sighting_fn`) adds `box_frac`: the box over the size Qwen2.5-VL
 saw the frame at (`model_size()`, its processor's `smart_resize`: each side
-to a multiple of 28; 640x480 is seen as 644x476), clipped to [0, 1].
+to a multiple of 28, the area held between the board engines' 128 and 512
+image tokens of 28 x 28 pixels each (3.80.I); 640x480 is seen as 644x476,
+1280x720 as 840x448), clipped to [0, 1].
 `direction(frame)` (3.80.F) posts to `/direction` with the same rules, and
 returns status `unsupported` on a 404 (a service from before 3.80.F). The
 thresholds are the policy's
