@@ -1421,9 +1421,9 @@ def test_a_stop_that_never_reached_the_robot_stands_out(browser, twin_server):
 @pytest.mark.parametrize("reason,driver,cls", [
     ("safety_distance", "brain", "alert"), ("no_feedback", "brain", "warn"),
     ("person_stop", "brain", None),
-    # The server names the LAST driver, not who went quiet: a brain's normal
-    # end reads "watchdog . brain" too (3.86 round 7), so both are calm.
-    ("watchdog", "twin-dpad", None), ("watchdog", "brain", None),
+    # The watchdog keeps dev's alarm colour, whoever was last to drive: the
+    # twin cannot tell a hung brain from a finished mission (3.86 rounds 5-8).
+    ("watchdog", "twin-dpad", "alert"), ("watchdog", "brain", "alert"),
 ])
 def test_the_refusal_readout_colours_by_kind(browser, twin_server, reason, driver, cls):
     page, errors = open_twin(browser, twin_server)

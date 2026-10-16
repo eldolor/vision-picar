@@ -1061,17 +1061,20 @@
   // 3.86: what kind a refusal is, which decides its colour and whether the
   // Safety line flashes VETOED. "veto" (the alarm colour, and the flash) for
   // a safety veto, or a server too old to name its refusals; "calm" (no
-  // colour) when nothing is wrong -- a Stop, someone else driving, the
-  // watchdog's stop after `watchdog_timeout_s` of silence (which follows every
-  // mission's end; a watchdog that trips while something drives shows on the
-  // Robot watchdog line, in the alarm colour); "fault" (the warning colour)
-  // for everything else: a fault of the robot, a press that never reached it
-  // or was answered an error (a lost STOP must stand out, 3.76 D), a reason
-  // the twin does not know.
-  const CALM_REFUSALS = { stopped: true, person_stop: true, preempted: true, watchdog: true };
-  const REFUSAL_KIND_CLASS = { veto: "alert", fault: "warn", calm: null };   // the readout
+  // colour) when nothing is wrong -- a Stop, someone else driving; "fault"
+  // (the warning colour) for a fault of the robot, a press that never reached
+  // it or was answered an error (a lost STOP must stand out, 3.76 D), a reason
+  // the twin does not know. "watchdog" keeps the alarm colour every refusal
+  // had before 3.86, without the flash: the server records it after any
+  // silence under the last driver's name, so the twin cannot tell a brain
+  // that hung mid-mission (B3.1) from one whose mission ended (3.86 rounds
+  // 5-8; open).
+  const CALM_REFUSALS = { stopped: true, person_stop: true, preempted: true };
+  const REFUSAL_KIND_CLASS = { veto: "alert", watchdog: "alert", fault: "warn", calm: null };
+  const REFUSAL_LOG_CLASS = { veto: " veto", watchdog: " veto", fault: " fault", calm: "" };
   function refusalKind(reason) {
     if (!reason || reason === "safety_distance") return "veto";
+    if (reason === "watchdog") return "watchdog";
     return Object.prototype.hasOwnProperty.call(CALM_REFUSALS, reason) ? "calm" : "fault";
   }
 
@@ -1504,7 +1507,7 @@
     // 3.86: coloured by kind (refusalKind): the veto colour for a safety veto
     // only, the warning colour for a fault or a failed press, none for a Stop.
     const kind = entry.executed === false ? refusalKind(entry.reason) : "calm";
-    div.className = "entry" + (kind === "calm" ? "" : " " + kind);
+    div.className = "entry" + REFUSAL_LOG_CLASS[kind];
     // Phase M4: name the refusal rather than stamping every one of them
     // VETOED. The reason was already being carried here and thrown away,
     // so a preemption and a wall produced identical lines -- which is the
