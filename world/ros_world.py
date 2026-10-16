@@ -30,6 +30,7 @@ import time
 from typing import NamedTuple, Optional, Tuple
 
 import httpx
+import numpy as np
 
 from world.bridge_faults import classify
 
@@ -352,22 +353,29 @@ class RosWorld(WorldInterface):
         out_w = int(math.ceil((max(c[0] for c in corners) - min_x) / res))
         out_h = int(math.ceil((max(c[1] for c in corners) - min_y) / res))
         ca, sa = math.cos(math.radians(alpha)), math.sin(math.radians(alpha))
-        cells = [CELL_UNKNOWN] * (out_w * out_h)
-        for row in range(out_h):
-            for col in range(out_w):
-                wx, wy = min_x + (col + 0.5) * res, min_y + (row + 0.5) * res
-                # undo the anchor, then ours -> ROS (flip y), then the origin
-                dx, dy = wx - t[0], wy - t[1]
-                x, y = ca * dx + sa * dy, -sa * dx + ca * dy
-                rx, ry = _ours_to_ros(x, y)
-                rx, ry = rx - ox, ry - oy
-                gx, gy = cyaw * rx + syaw * ry, -syaw * rx + cyaw * ry
-                i, j = int(math.floor(gx / res)), int(math.floor(gy / res))
-                if 0 <= i < w and 0 <= j < h:
-                    v = data[j * w + i]
-                    cells[row * out_w + col] = (
-                        CELL_UNKNOWN if v < 0 else CELL_OCCUPIED if v >= OCCUPIED_AT
-                        else CELL_FREE if v < FREE_BELOW else CELL_UNKNOWN)
+        # 3.87: every output cell at once, in numpy, with the per-cell loop's
+        # operations in the loop's order (float64, no fused multiply-add), so
+        # the cells are bit-identical (tests/test_ros_world_resample.py). The
+        # loop took 141 ms of pure Python a map version on the Jetson, in the
+        # robot server's threadpool, and beside one more busy thread starved
+        # the event loop the wheel loop runs on.
+        wx = min_x + (np.arange(out_w, dtype=np.float64) + 0.5) * res
+        wy = min_y + (np.arange(out_h, dtype=np.float64) + 0.5) * res
+        # undo the anchor, then ours -> ROS (flip y), then the origin
+        dx, dy = (wx - t[0])[None, :], (wy - t[1])[:, None]
+        x, y = ca * dx + sa * dy, -sa * dx + ca * dy
+        rx, ry = _ours_to_ros(x, y)
+        rx, ry = rx - ox, ry - oy
+        gx, gy = cyaw * rx + syaw * ry, -syaw * rx + cyaw * ry
+        i = np.floor(gx / res).astype(np.int64).ravel()
+        j = np.floor(gy / res).astype(np.int64).ravel()
+        inside = (i >= 0) & (i < w) & (j >= 0) & (j < h)
+        v = np.asarray(data, dtype=np.int64)[j[inside] * w + i[inside]]
+        cells = np.full(out_w * out_h, CELL_UNKNOWN, dtype=np.int64)
+        cells[inside] = np.where(v < 0, CELL_UNKNOWN,
+                                 np.where(v >= OCCUPIED_AT, CELL_OCCUPIED,
+                                          np.where(v < FREE_BELOW, CELL_FREE, CELL_UNKNOWN)))
+        cells = cells.tolist()
         return {"usable": True, "map_id": f"slam-{session}",
                 "map_version": m["version"] + anchor.epoch,
                 "resolution_m": res, "width": out_w, "height": out_h,
