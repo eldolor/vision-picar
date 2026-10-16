@@ -1300,17 +1300,10 @@ def test_a_preemption_does_not_read_as_a_safety_veto_in_the_log(browser, twin_se
     """The bug this phase is about, at the surface a person reads. Two
     refusals with opposite correct responses -- retry later, versus stop,
     you are not driving -- rendered as the same three words."""
-    page, errors = open_twin(browser, twin_server)
-    page.route("**/action", lambda route: route.fulfill(
-        status=200, content_type="application/json", body=_json({
-            "executed": False, "reason": "preempted",
-            "detail": "twin-dpad is driving -- brain is lower priority and was refused",
-        })))
-    page.click("#btn-settings")
-    page.fill("#cfg-server-url", twin_server)
-    page.click("#btn-connect")
-    page.click('.tab-btn[data-tab="sim"]')
-    page.click("#btn-forward")
+    page, errors = _press_answered(browser, twin_server, {
+        "executed": False, "reason": "preempted",
+        "detail": "twin-dpad is driving -- brain is lower priority and was refused",
+    })
     log = page.locator("#log")
     sync_api.expect(log).to_contain_text("PREEMPTED", timeout=5000)
     assert "SAFETY VETO" not in log.inner_text()
@@ -1319,7 +1312,9 @@ def test_a_preemption_does_not_read_as_a_safety_veto_in_the_log(browser, twin_se
 
 
 def _press_answered(browser, twin_server, answer):
-    """The D-pad's FORWARD, answered `answer` by the robot server."""
+    """The D-pad's FORWARD, answered `answer` by the robot server. A watcher
+    armed before the press records whether the Safety line ever showed
+    VETOED (`window.__vetoed`), so a slow frame cannot hide the flash."""
     page, errors = open_twin(browser, twin_server)
     page.route("**/action", lambda route: route.fulfill(
         status=200, content_type="application/json", body=_json(answer)))
@@ -1327,44 +1322,62 @@ def _press_answered(browser, twin_server, answer):
     page.fill("#cfg-server-url", twin_server)
     page.click("#btn-connect")
     page.click('.tab-btn[data-tab="sim"]')
+    page.evaluate("""() => {
+        window.__vetoed = false;
+        const el = document.getElementById("tel-safety");
+        new MutationObserver(() => {
+            if (el.textContent.includes("VETOED")) window.__vetoed = true;
+        }).observe(el, {childList: true, subtree: true, characterData: true});
+    }""")
     page.click("#btn-forward")
     return page, errors
 
 
-def _safety_flashed(page, seconds=1.0):
-    """Whether the Safety readout showed VETOED at any point in `seconds`."""
-    return page.evaluate("""(ms) => new Promise((done) => {
-        const el = document.getElementById("tel-safety");
-        let seen = el.textContent.includes("VETOED");
-        const t = setInterval(() => { if (el.textContent.includes("VETOED")) seen = true; }, 10);
-        setTimeout(() => { clearInterval(t); done(seen); }, ms);
-    })""", int(seconds * 1000))
+def _flashed(page):
+    page.wait_for_timeout(1000)             # the frame, and the 350 ms flash
+    return page.evaluate("() => window.__vetoed")
 
 
 def test_a_press_a_stop_overtook_reads_as_stopped_not_a_veto(browser, twin_server):
     """3.86: `stopped` (3.82/3.84: a press a Stop overtook after it was sent)
     was unknown to the twin, so the log tagged it [VETOED] and the Safety
-    readout flashed VETOED: a person's own Stop read as a safety veto."""
+    line flashed VETOED: a person's own Stop read as a safety veto."""
     page, errors = _press_answered(browser, twin_server, {
         "executed": False, "reason": "stopped",
         "detail": "a stop was pressed after this FORWARD was sent; it was not carried out"})
     log = page.locator("#log")
     sync_api.expect(log).to_contain_text("[STOPPED]", timeout=5000)
-    flashed = _safety_flashed(page)
+    assert not _flashed(page), "the Safety line flashed VETOED for a Stop"
     text = log.inner_text()
     assert "VETOED" not in text and "SAFETY VETO" not in text, text
-    assert not flashed, "the Safety readout flashed VETOED for a Stop"
+    assert not errors, errors
+    page.close()
+
+
+@pytest.mark.parametrize("reason,label", [("preempted", "[PREEMPTED]"),
+                                          ("no_feedback", "[NO WHEEL FEEDBACK]"),
+                                          ("a_reason_from_later", "[A_REASON_FROM_LATER]")])
+def test_a_refusal_that_is_no_veto_never_flashes_vetoed(browser, twin_server, reason, label):
+    """3.86 review: the flash was turned off for a list of exceptions, so a
+    preemption or a fault still flashed VETOED; and a reason the twin did not
+    know was tagged VETOED. Only a veto flashes; an unknown reason is shown
+    by its own name."""
+    page, errors = _press_answered(browser, twin_server, {
+        "executed": False, "reason": reason, "detail": "detail"})
+    log = page.locator("#log")
+    sync_api.expect(log).to_contain_text(label, timeout=5000)
+    assert not _flashed(page), f"the Safety line flashed VETOED for {reason}"
+    assert "VETOED" not in log.inner_text()
     assert not errors, errors
     page.close()
 
 
 def test_a_safety_veto_still_flashes_vetoed(browser, twin_server):
-    """The guard for the change above: a real veto still flashes."""
+    """The guard: a real veto still flashes."""
     page, errors = _press_answered(browser, twin_server, {
         "executed": False, "reason": "safety_distance", "detail": "Blocked FORWARD: 12 cm"})
     sync_api.expect(page.locator("#log")).to_contain_text("SAFETY VETO", timeout=5000)
-    page.wait_for_timeout(50)
-    assert "VETOED" in page.locator("#tel-safety").inner_text() or _safety_flashed(page, 0.3)
+    assert _flashed(page), "a safety veto no longer flashes VETOED"
     assert not errors, errors
     page.close()
 

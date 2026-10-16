@@ -1001,7 +1001,7 @@
   async function commitAction(action, driver, extra) {
     const resp = await sendAction(action, driver, extra);
     const executed = resp.executed !== false;
-    if (!executed && !NOT_A_VETO[resp.reason]) state.safetyFlashUntil = Date.now() + 350;
+    if (!executed && isSafetyVeto(resp.reason)) state.safetyFlashUntil = Date.now() + 350;
     // Phase M4: the reason is what a person can act on. "SAFETY VETO" was
     // the only thing this ever said, so a move refused because someone
     // else had taken the robot looked identical to one refused for being
@@ -1028,18 +1028,34 @@
     unreachable: "NOT SENT",       // 3.76: the press never reached the robot
     rejected: "REJECTED",          // 3.76: the server answered with an error
     watchdog: "WATCHDOG",
-    // 3.82/3.84: a Stop overtook the press (or the goal) after it was sent,
-    // so it was not carried out -- a Stop, not a veto.
+    // 3.82/3.84: a Stop overtook the press after it was sent, so it was not
+    // carried out -- a Stop, not a veto.
     stopped: "STOPPED",
-    // 3.84: the brain, refused because a person pressed Stop.
+    // 3.84: the brain, refused because a person pressed Stop (the brain
+    // refusal readout; a person's own press never gets it).
     person_stop: "STOPPED BY A PERSON",
+    // 3.34 / 3.24: faults of the robot itself, not vetoes.
+    no_feedback: "NO WHEEL FEEDBACK",
+    ros_unavailable: "ROS DOWN",
   };
-  // 3.86: the Safety readout's VETOED is for a veto; a Stop's refusal is not one.
-  const NOT_A_VETO = { stopped: true, person_stop: true };
+
+  // 3.86: what a refusal is called. A reason the twin does not know is shown
+  // by its own name, never as a veto; only a server too old to send a reason
+  // (every refusal then was a veto) reads VETOED.
+  function refusalLabel(reason) {
+    if (!reason) return "VETOED";
+    return REFUSAL_LABEL[reason] || String(reason).toUpperCase();
+  }
+
+  // 3.86: the Safety line's VETOED flash is for a safety veto only (or a
+  // server too old to name its refusals) -- not a preemption, a Stop or a fault.
+  function isSafetyVeto(reason) {
+    return !reason || reason === "safety_distance";
+  }
 
   function refusalText(resp) {
-    const label = REFUSAL_LABEL[resp.reason];
-    if (!label) return resp.detail || "SAFETY VETO";
+    if (!resp.reason) return resp.detail || "SAFETY VETO";    // an old server
+    const label = refusalLabel(resp.reason);
     return resp.detail ? label + " \u2014 " + resp.detail : label;
   }
 
@@ -1473,7 +1489,7 @@
     // the fallback for a server that sends no reason.
     var tag = "";
     if (entry.executed === false) {
-      tag = " [" + (REFUSAL_LABEL[entry.reason] || "VETOED") + "]";
+      tag = " [" + refusalLabel(entry.reason) + "]";
       if (entry.extra) div.title = entry.extra;
     }
     div.textContent = "#" + entry.step + " " + entry.room + " \u2192 " + entry.action + tag;
@@ -2191,7 +2207,7 @@
 
     const refusal = health.last_refusal;
     if (!refusal) { setBrainText("brain-tel-refusal", "none"); return; }
-    const label = REFUSAL_LABEL[refusal.reason] || refusal.reason;
+    const label = refusalLabel(refusal.reason);
     // A watchdog stop can happen before anyone has driven, so there may be
     // no driver to name -- it used to print the word "null".
     setBrainText("brain-tel-refusal",
