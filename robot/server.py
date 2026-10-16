@@ -98,7 +98,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 from robot.factory import get_robot, load_config
@@ -1423,8 +1423,15 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         everywhere else. `map_version` is what lets a client avoid asking
         for it -- poll `/world/pose` freely, re-read this only when the
         version moves.
+
+        Returned ENCODED (3.87): FastAPI encodes a plain return value with
+        `jsonable_encoder` on the event loop, which on the Jetson took
+        131-218 ms for a house's map -- a late tick of the wheel loop (and
+        the watchdog beside it) on every fetch. A `JSONResponse` built here
+        is rendered in the threadpool and passed through as is: the same
+        bytes FastAPI's default response would have sent.
         """
-        return world_model.get_map()
+        return JSONResponse(world_model.get_map())
 
     @app.post(prefix + "/sim/house/random", dependencies=[Depends(require_secret)])
     def sim_house_random():

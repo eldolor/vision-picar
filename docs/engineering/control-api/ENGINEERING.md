@@ -193,7 +193,7 @@ session may already own ports 8000/8090; use 8100/8101/8190 with a separate
 | FORWARD vetoed everywhere under the fake board, the scan `usable: false` | The sensor programs' safety bundle is older than `SENSOR_STALE_S` (0.15 s): the first program in `SIM_SENSORS_URL` is dead or overloaded. Fail-safe by design (3.36) |
 | `/health` `sim_map` null where a live suite expects a house | No sim house behind the body. The live ROS suites skip on it; a skip is not a pass |
 | `seconds_since_watchdog_poll` growing | The watchdog task is dead; restart the server |
-| `wheel_loop.late_ticks` > 0 | The event loop was starved while the wheels turned |
+| `wheel_loop.late_ticks` > 0 | The event loop was starved while the wheels turned. A sync route's plain return value is encoded (`jsonable_encoder`) on the event loop, so a large reply returns a `JSONResponse` built in the route (3.87: `/world/map`, 131-218 ms a fetch on the Jetson before) |
 | `/action` or `/wheels` refused `no_feedback`; `motor_board.fresh` false | The motor board has not reported for `stale_after_s`. `link_error` set: the serial line is gone. Null, with `age_s` growing: the board hears commands and no longer reports. Nothing moves until frames return |
 
 ## Verification
