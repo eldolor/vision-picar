@@ -65,8 +65,8 @@ waitfor() {  # seconds what cmd...
 }
 
 teardown() {
+  # Only this run's VLM: its server closes its own driver on the way out.
   kill $PERC $MEM $WHL $NAV $VLMP 2>/dev/null; sudo pkill tegrastats 2>/dev/null
-  pkill -f 'edgellm_identity' 2>/dev/null
   docker rm -f "$NAME" >/dev/null 2>&1
   pids="$(pgrep -f 'bash service/tunnel/run.sh'; for p in 8000 8001 8002 8003 8004 8080; do lsof -nP -tiTCP:$p -sTCP:LISTEN; done)"
   [ -n "$pids" ] && kill $pids 2>/dev/null; sleep 3
@@ -79,7 +79,7 @@ PERC=; MEM=; WHL=; NAV=; VLMP=
 trap teardown EXIT
 
 sudo systemctl isolate multi-user.target; sleep 5
-sudo systemctl stop picar-stack picar-ngrok 2>/dev/null; sleep 3
+sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3
 { echo "== desktop: $(systemctl is-active gdm); twin units: $(systemctl is-active picar-stack) $(systemctl is-active picar-ngrok); runtime $RUNTIME"
   echo "== run L $(date +%T) rev $(git rev-parse --short HEAD) image $IMAGE $(sudo nvpmodel -q | head -1)"
   echo "== policy $POLICY; vlm $VLM; cloud $CLOUD; ros from tree ${ROS_FROM_TREE:-0}; text cache ${TEXT_CACHE:-default}"
@@ -92,12 +92,15 @@ if [ "${TEXT_CACHE:-}" = empty ]; then
   export PICAR_TEXT_CACHE="$OUT/text-cache"; rm -rf "$PICAR_TEXT_CACHE"
 fi
 if [ "$VLM" = service ]; then
+  # :8005 must be free, or the ready check below would pass on someone
+  # else's VLM (another session's hand-started one).
+  ss -ltn | grep -q ':8005 ' && { echo "STOP: :8005 is already in use" | tee -a "$OUT/run.log"; exit 2; }
   # The unit's own settings, by hand: same engines, same secret, OOM first.
   LOCAL_VLM_ENGINES="$ENGINES" LOCAL_VLM_EDGELLM="$EDGELLM" \
     python -m service.local_vlm.server > "$OUT/local_vlm.log" 2>&1 &
   VLMP=$!
   echo 1000 | sudo tee /proc/$VLMP/oom_score_adj >/dev/null
-  waitfor 300 "local VLM ready" sh -c "curl -s localhost:8005/health | grep -q '\"ready\": *true'"
+  waitfor 300 "local VLM ready" sh -c "kill -0 $VLMP && curl -s localhost:8005/health | grep -q '\"ready\": *true'"
   export LOCAL_VLM_URL=http://127.0.0.1:8005
   echo "== local VLM ready $(date +%T); MemAvailable: $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) MB" | tee -a "$OUT/run.log"
 fi
