@@ -489,10 +489,10 @@
   // differently: a person tapping the pad outranks the JS loop, and both
   // are only meaningful because the server now knows the difference.
   const DRIVER_DPAD = "twin-dpad";
-  // 3.86: how long the Safety line shows VETOED after a safety veto. Declared
-  // here, above every caller.
-  const SAFETY_FLASH_MS = 350;
   const DRIVER_LOCAL_BRAIN = "twin-local-brain";
+
+  // 3.86: how long the Safety line shows VETOED after a safety veto.
+  const SAFETY_FLASH_MS = 350;
 
   // `extra` carries the per-action parameters /action accepts beyond the
   // verb -- today only `angle`, for the D-pad's turn step (R0). Omitted
@@ -1062,20 +1062,16 @@
   // Safety line flashes VETOED. "veto" (the alarm colour, and the flash) for
   // a safety veto, or a server too old to name its refusals; "calm" (no
   // colour) when nothing is wrong -- a Stop, someone else driving, the
-  // watchdog's stop once a person's or nobody's commands went quiet for
-  // `watchdog_timeout_s`; "fault" (the warning colour) for everything else: a
-  // fault of the robot, the watchdog stopping the BRAIN (B3.1: a brain that
-  // stopped commanding mid-mission), a press that never reached the robot or
-  // was answered an error (a lost STOP must stand out, 3.76 D), a reason the
-  // twin does not know. `driver` is who was refused, when known.
+  // watchdog's stop after `watchdog_timeout_s` of silence (which follows every
+  // mission's end; a watchdog that trips while something drives shows on the
+  // Robot watchdog line, in the alarm colour); "fault" (the warning colour)
+  // for everything else: a fault of the robot, a press that never reached it
+  // or was answered an error (a lost STOP must stand out, 3.76 D), a reason
+  // the twin does not know.
   const CALM_REFUSALS = { stopped: true, person_stop: true, preempted: true, watchdog: true };
-  const AUTONOMOUS_DRIVERS = { brain: true, teleop: true };
   const REFUSAL_KIND_CLASS = { veto: "alert", fault: "warn", calm: null };   // the readout
-  function refusalKind(reason, driver) {
+  function refusalKind(reason) {
     if (!reason || reason === "safety_distance") return "veto";
-    if (reason === "watchdog" && Object.prototype.hasOwnProperty.call(AUTONOMOUS_DRIVERS, driver)) {
-      return "fault";
-    }
     return Object.prototype.hasOwnProperty.call(CALM_REFUSALS, reason) ? "calm" : "fault";
   }
 
@@ -2240,7 +2236,7 @@
     setBrainText("brain-tel-refusal",
       label + " \u00b7 " + (refusal.driver || "no driver") + " \u00b7 " +
       refusal.seconds_ago.toFixed(1) + "s ago",
-      REFUSAL_KIND_CLASS[refusalKind(refusal.reason, refusal.driver)]);   // 3.86
+      REFUSAL_KIND_CLASS[refusalKind(refusal.reason)]);   // 3.86
   }
 
   // ---------- brain liveness: reconnect on its own ----------
