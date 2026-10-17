@@ -8,7 +8,7 @@ with S1's labels; a reading the numbers cannot fit is ruled out first; the
 reading with the most agreement is used. Writes `<name>.scaled.jsonl` (the
 box fields re-read) and `<name>.scale.json` (the decision).
 
-    .venv/bin/python evaluations/tiered-380/M/decide_scale.py <name>
+    .venv/bin/python evaluations/tiered-380/M/decide_scale.py <name> [dir]
 """
 
 import json
@@ -38,8 +38,9 @@ def fits(rows, scale):
     return all(v <= SCALES[scale](w) * 1.02 for v, w in xs)
 
 
-def main(name):
-    rows = [json.loads(l) for l in (HERE / f"{name}.jsonl").read_text().splitlines() if l.strip()]
+def main(name, where=None):
+    d = Path(where) if where else HERE
+    rows = [json.loads(l) for l in (d / f"{name}.jsonl").read_text().splitlines() if l.strip()]
     s1 = [r for r in rows if r["set"] == "S1"]
     agree = {}
     for scale in SCALES:
@@ -52,12 +53,12 @@ def main(name):
     chosen = ranked[0]
     close = len(ranked) > 1 and ok[ranked[0]]["agree"] - ok[ranked[1]]["agree"] <= 2
     doc = {"chosen": chosen, "close_second": ranked[1] if close else None, "by_scale": agree}
-    (HERE / f"{name}.scale.json").write_text(json.dumps(doc, indent=1) + "\n")
-    with (HERE / f"{name}.scaled.jsonl").open("w") as f:
+    (d / f"{name}.scale.json").write_text(json.dumps(doc, indent=1) + "\n")
+    with (d / f"{name}.scaled.jsonl").open("w") as f:
         for r in rows:
             f.write(json.dumps({**reread(r, chosen), "mirror": reread(r["mirror"], chosen)}) + "\n")
     print(json.dumps(doc))
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(*sys.argv[1:3])

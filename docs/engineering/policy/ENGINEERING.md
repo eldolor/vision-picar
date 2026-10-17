@@ -405,6 +405,64 @@ logged and counted in `stats.cloud_errors`, not raised into B3.2).
   the identity verdict); the runner's status reports `tier_search`, the
   `explore` block, and no `last_turn_deg` from the tiers' scene.
 
+**The local box finishes the approach (3.80.O).** Under `tier_search:
+explore` with a local tier, a target only the local VLM sees is approached,
+closed in on and arrived at on its box; such an arrival is confirmed by the
+cloud alone.
+* `brain/tiered.py`: `located_local_bearing(scene)` / `local_said_no(scene)`
+  read `_tier.local_landed` (the one reader). `set_local_track(on)` arms
+  trigger `local_track` (`TRIGGER_TRACK`): every frame perception does not
+  detect the target asks the local VLM (its frames do not grow the absent
+  streak, so no paid cold search follows tracking at once), while
+  `_local_first()` takes it
+  (after `local_max_unable` unable answers the usual triggers run); its
+  question is never handed to the cloud (`cloud_ok=False`), and the absent
+  edge (`_last_confirmed`) still moves. `confirm_arrival(frame,
+  local_ok=False)` and `confirm_cloud(frame, guarded=True)` count
+  `stats.guarded`.
+* `brain/arrival.py`: `ArrivalCheck(clock=...)` (explore with
+  `sight_from="perception"` passes its clock; without one the rule reads
+  perception alone). The bearing is perception's detection, else this
+  frame's located local yes (a body bearing); a local "no" misses; a frame
+  with neither, inside `LOCAL_FRESH_S` (3.0 s) of the streak's last counted
+  frame and with a local frame in the streak, holds the last readout after
+  re-reading the lidar at its bearing (a range past the radius or an edge
+  ends the hold; not judged when panned). A local answer more than `LOCAL_FRESH_S` after
+  the streak's last frame starts it again; the agent calls `refresh()`
+  after every identity check, so a slow or hanging cloud does not restart
+  the streak (3.47's `arrived_unconfirmed` still comes). The readout's
+  `source` is `local` if any frame of the streak was.
+* `brain/agent.py`: a `source: local` arrival calls the confirmer with
+  `local_ok=False` (a confirmer without that keyword is not called: the
+  arrival stays `checking`, unconfirmed). A local-led arrival within
+  `LOCAL_REFUSED_RADIUS_M` (0.5 m) of one the cloud refused is refused again
+  unpaid. `control/mission_runner.py`:
+  `_guarded_confirm(frame, local_ok=False)` waits for a local question still
+  in flight (`TieredVision.wait_local_free`, its local phase, within the
+  step's deadline less the cloud guard or half of it; still out: undecided,
+  asked next frame, never a cloud outage), returns unpaid and undecided if a
+  Stop landed during any of its waits, and calls `TieredVision.cloud_only_confirmer()`
+  (`confirm_cloud(guarded=True)`); 3.53's late check does the same for a
+  stored `source: local` arrival. A confirmer without `local_ok` leaves a
+  local arrival `checking` (unconfirmed), never refused.
+* `brain/explore.py`: `_update_track()` (after each `_choose`) sets the
+  tier's tracking through `local_track_fn` (the runner hands over
+  `set_local_track`: the agent's `vision_fn` is the guarded wrapper) for
+  `LOCAL_FRESH_S` after a located yes, and while standing within the
+  approach band of a sighting only the local VLM made -- never while an
+  arrival is arrived, checking or refused. A local-only yes more
+  than `LOCAL_FACE_DEG` (15 deg) off centre, or off centre with no range, is
+  faced first (`_glimpse`) and not ranged (`_sighting`); a fresh yes that is
+  a sighting pre-empts a pending look-around; `_close_in()` turns by the
+  landed yes's bearing when perception is silent; between answers, from the
+  first yes, it WAITs at most `LOCAL_WAIT_MAX_S` (6 s) a stretch, near the
+  target too (a ranged sighting restarts the stretch, so only an unranged
+  park runs out). A landed yes counts as seen on every tick, an escape's
+  included.
+  `_sighting()` and the pan (`_pan()`) are read once a tick.
+* Evaluation only: `FrameReportedPipeline(target, blind=True)`
+  (`SIM_PERCEPTION_BLIND=1` on the brain server) never reports the target.
+
 **Explore's learned goal choice (3.65 phase 2).** `explore_goal_policy`
 (`brain:` block; `rule` | `learned` | `network`, default `rule`; the
 `EXPLORE_GOAL_POLICY` environment variable overrides it for live runs; validated by

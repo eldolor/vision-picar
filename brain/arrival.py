@@ -62,6 +62,14 @@ ARRIVAL_BEAM_HALF_DEG = 2
 # with guarded verbs a mission stopped 37 cm from a jamb and its median was
 # the jamb, `found` 1.1 m short).
 ARRIVAL_EDGE_M = 0.10
+# 3.80.O: under explore's search with a local tier, the local VLM's located
+# yes (its box's bearing) is a second source of the arrival bearing. It lands
+# about once a second, not every frame, so two of its answers count as two
+# frames running only if they landed within this, and the frames between
+# them neither count nor break the streak.
+LOCAL_FRESH_S = 3.0
+SOURCE_PERCEPTION = "perception"
+SOURCE_LOCAL = "local"
 
 # Readout states.
 ARRIVED = "arrived"
@@ -82,11 +90,46 @@ class ArrivalCheck:
 
     def __init__(self, radius_m: float = ARRIVAL_RADIUS_M,
                  centre_deg: float = ARRIVAL_CENTRE_DEG,
-                 frames: int = ARRIVAL_FRAMES):
+                 frames: int = ARRIVAL_FRAMES,
+                 clock=None, local_fresh_s: float = LOCAL_FRESH_S):
         self.radius_m = radius_m
         self.centre_deg = centre_deg
         self.frames = frames
         self.streak = 0
+        # 3.80.O: a clock turns the local tier's located yes into a source of
+        # the bearing; without one (every policy but explore's tiered search)
+        # the rule reads perception alone, as before.
+        self.clock = clock
+        self.local_fresh_s = local_fresh_s
+        self.source: Optional[str] = None   # the running streak's: local if any frame was
+        self._local_at: Optional[float] = None   # when the streak last counted a frame
+        self._last: Optional[dict] = None
+
+    def _local_answer(self, scene: dict):
+        """This frame's landed local answer: a body bearing for a located
+        yes, "no" for a no, else None (nothing landed, or no clock). Read by
+        brain/tiered.py's readers, imported late: this module does not
+        import the tier at load (the agent must not)."""
+        if self.clock is None:
+            return None
+        from brain.tiered import local_said_no, located_local_bearing
+        bearing = located_local_bearing(scene)
+        if bearing is not None:
+            return bearing
+        return "no" if local_said_no(scene) else None
+
+    def refresh(self) -> None:
+        """3.80.O review: an identity check just took its time (up to the
+        step's deadline); the streak is as fresh as the end of it, or a
+        slow (or hanging) cloud would restart every local-led arrival and
+        never spend B3.2's budget."""
+        if self.clock is not None and self.streak > 0:
+            self._local_at = self.clock()
+
+    def _holding(self) -> bool:
+        return (self.clock is not None and self._local_at is not None and self.streak > 0
+                and self.source == SOURCE_LOCAL and self._last is not None
+                and self.clock() - self._local_at <= self.local_fresh_s)
 
     def observe(self, scene: dict, robot) -> dict:
         """Judge one frame. Returns the readout; `state` is ARRIVED only on
@@ -94,11 +137,38 @@ class ArrivalCheck:
         perception = scene.get("_perception")
         if not perception:
             return self._not_judged("no local perception on this policy")
-        if perception.get("status") != DETECTED or perception.get("bearing_deg") is None:
-            return self._miss("target not detected")
+        local = self._local_answer(scene)
+        if perception.get("status") == DETECTED and perception.get("bearing_deg") is not None:
+            source = SOURCE_PERCEPTION
+        elif isinstance(local, float):
+            source = SOURCE_LOCAL
+        elif local is None and self._holding():
+            # Between the local tier's answers: nothing new to judge.
+            if perception.get("pan_deg"):
+                return self._not_judged("camera panned: bearing is not body-relative")
+            # The geometry is re-read at the held bearing (review): something
+            # moving in, or the robot moving, ends the hold.
+            scan = robot.get_scan()
+            if not scan.get("usable") or not scan.get("ranges_m"):
+                return self._not_judged("no range sensor")
+            window = self._window(scan, self._last["bearing_deg"])
+            middle = sorted(window)[len(window) // 2]
+            if math.isinf(middle) or middle > self.radius_m or self._is_edge(window):
+                return self._miss("the held arrival no longer holds at the lidar")
+            return {**self._last, "streak": self.streak, "range_m": round(middle, 3),
+                    "reason": "holding: waiting for the local tier's next answer"}
+        else:
+            return self._miss("the local tier does not see the target" if local == "no"
+                              else "target not detected")
         if perception.get("pan_deg"):
             return self._not_judged("camera panned: bearing is not body-relative")
-        bearing = float(perception["bearing_deg"])
+        # Perception's bearing is in the camera's frame, which is the body's
+        # when unpanned; the local tier's is already a body bearing.
+        bearing = float(perception["bearing_deg"]) if source == SOURCE_PERCEPTION else local
+        if (source == SOURCE_LOCAL and self._local_at is not None
+                and self.clock() - self._local_at > self.local_fresh_s):
+            self.streak = 0             # the streak's last frame is too old to run on from
+            self.source = None
         scan = robot.get_scan()
         if not scan.get("usable") or not scan.get("ranges_m"):
             return self._not_judged("no range sensor")
@@ -110,28 +180,39 @@ class ArrivalCheck:
         close = range_m is not None and range_m <= self.radius_m
         readout = {"bearing_deg": round(bearing, 1),
                    "range_m": None if range_m is None else round(range_m, 3),
-                   "radius_m": self.radius_m}
+                   "radius_m": self.radius_m, "source": source}
         if not (centred and close) or edge:
             self.streak = 0
+            self.source = None
+            self._local_at = None
             why = ("off centre" if not centred
                    else "no return at the bearing" if range_m is None
                    else "not yet within the radius" if not close
                    else "an edge at the bearing, not one surface")
             return {"state": APPROACHING, "streak": 0, "reason": why, **readout}
         self.streak += 1
+        if self.clock is not None:
+            self._local_at = self.clock()   # the streak's last counted frame (review)
+        self.source = SOURCE_LOCAL if SOURCE_LOCAL in (source, self.source) else source
+        readout["source"] = self.source
         state = ARRIVED if self.streak >= self.frames else APPROACHING
-        return {"state": state, "streak": self.streak,
-                "reason": (f"target centred at {readout['range_m']} m, "
-                           f"{self.streak} frame(s) running"), **readout}
+        self._last = {"state": state, "streak": self.streak,
+                      "reason": (f"target centred at {readout['range_m']} m, "
+                                 f"{self.streak} frame(s) running"), **readout}
+        return dict(self._last)
 
     def _miss(self, why: str) -> dict:
         self.streak = 0
+        self.source = None
+        self._local_at = None
         return {"state": APPROACHING, "streak": 0, "reason": why,
                 "bearing_deg": None, "range_m": None, "radius_m": self.radius_m}
 
     def _not_judged(self, why: str) -> dict:
         # Not a miss either: a policy that cannot be judged has no streak.
         self.streak = 0
+        self.source = None
+        self._local_at = None
         return {"state": NOT_JUDGED, "streak": 0, "reason": why,
                 "bearing_deg": None, "range_m": None, "radius_m": self.radius_m}
 

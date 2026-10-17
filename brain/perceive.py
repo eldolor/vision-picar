@@ -673,9 +673,12 @@ class FrameReportedPipeline:
 
     NAME = "sim ground truth"
 
-    def __init__(self, target: str):
+    def __init__(self, target: str, blind: bool = False):
         self.target = target.strip()
-        self.detector = _Named(self.NAME)
+        # 3.80.O, evaluation only: never report the target, so a search must
+        # run on the local VLM's eyes alone (`SIM_PERCEPTION_BLIND=1`).
+        self.blind = bool(blind)
+        self.detector = _Named(self.NAME + (" (blind to the target)" if blind else ""))
         self.scorer = None
         self.proposer = None
         self.crop_source = "frame_reported"
@@ -689,7 +692,7 @@ class FrameReportedPipeline:
         needle = self.target.lower()
         matches = [d for d in detections
                    if needle and needle in str(d.get("label", "")).lower()]
-        if not matches:
+        if not matches or self.blind:
             return Perception(status=ABSENT, crop_source=self.crop_source,
                               synthesised=True)
         # Nearest first: the one a robot would approach, and the one whose

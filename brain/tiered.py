@@ -72,6 +72,7 @@ cap, for the same reason.
 
 from __future__ import annotations
 
+import functools
 import logging
 import threading
 import math
@@ -124,6 +125,25 @@ LOCAL_RESET_FRAMES = 3
 # so it is asked about as often as the VLM can answer).
 TRIGGER_BAND = "uncertain_band"
 TRIGGER_OOV = "out_of_vocabulary"
+# 3.80.O: explore is closing in on a target only the local VLM has seen, so
+# the local VLM is asked on every frame it is free (its box steers the last
+# half metre and judges the arrival). Local only: never handed to the cloud.
+TRIGGER_TRACK = "local_track"
+
+
+def located_local_bearing(scene: dict):
+    """3.80.O: the body bearing of the local VLM's located yes landed on this
+    frame (`_tier.local_landed`), else None. One reader for the arrival rule
+    and explore."""
+    landed = ((scene or {}).get("_tier") or {}).get("local_landed") or {}
+    if landed.get("answer") == "yes" and landed.get("bearing_deg") is not None:
+        return float(landed["bearing_deg"])
+    return None
+
+
+def local_said_no(scene: dict) -> bool:
+    landed = ((scene or {}).get("_tier") or {}).get("local_landed") or {}
+    return landed.get("answer") == "no"
 DEFAULT_LOCAL_BAND_LOW = 0.5
 # The field of view a box's bearing is read in, when the pipeline names none
 # (perceive.py's Camera Module 3 default).
@@ -529,6 +549,8 @@ class TierStats:
     local: dict = field(default_factory=dict)
     local_ms: list = field(default_factory=list)
     escalations: int = 0
+    # 3.80.O: arrivals on the local VLM's box, confirmed by the cloud alone.
+    guarded: int = 0
     # 3.80.D: the per-frame questions put to the local tier, by trigger;
     # how they ended (`yes`, `no`, `unable_<status>`, `absent`); and the
     # questions handed to the cloud, by why (`unable`, `absent`).
@@ -590,6 +612,7 @@ class TierStats:
             "local_calls": self.local_calls,
             "local": dict(self.local),
             "escalations": self.escalations,
+            "guarded": self.guarded,
             "local_triggers": dict(self.local_triggers),
             "local_frame": dict(self.local_frame),
             "local_frame_calls": self.local_frame_calls,
@@ -726,6 +749,7 @@ class TieredVision:
         self._inflight_tier: Optional[str] = None
         self._inflight_question: Optional["_Question"] = None
         self._local_landed: Optional[dict] = None  # shown on the frame it landed
+        self._local_track = False   # 3.80.O: set by explore (`set_local_track`)
         # Counts the worker thread changes too (an absent local tier's
         # cloud call).
         self._stats_lock = threading.Lock()
@@ -1043,9 +1067,10 @@ class TieredVision:
             band=self._band_run > 0,
             # An absent local tier hands this to the cloud, which an
             # out-of-vocabulary question earns only at cold_search's bar.
-            cloud_ok=(trigger != TRIGGER_OOV
-                      or self._absent_streak >= self._cold_search_bar()
-                      or self._distance_bar_reached()))
+            cloud_ok=(trigger != TRIGGER_TRACK
+                      and (trigger != TRIGGER_OOV
+                           or self._absent_streak >= self._cold_search_bar()
+                           or self._distance_bar_reached())))
         if self.async_cloud:
             self._inflight_question = q
             if not self._dispatch(frame, trigger, epoch, tier="local",
@@ -1298,14 +1323,33 @@ class TieredVision:
             self._charged = self._inflight or self._last_taken
             self._pending_error = None
 
+    def cloud_only_confirmer(self):
+        """3.80.O: the confirmer for an arrival the local VLM's box led to:
+        the cloud alone, counted as guarded."""
+        return functools.partial(self.confirm_cloud, guarded=True)
+
+    def wait_local_free(self, timeout_s: float) -> bool:
+        """3.80.O: wait up to `timeout_s` for a frame's question still holding
+        the local VLM to finish its local phase. True when it is free."""
+        q = self._inflight_question
+        return q is None or q.local_done.wait(max(0.0, timeout_s))
+
+    def set_local_track(self, on: bool) -> None:
+        """3.80.O: explore says whether it is closing in on a target only the
+        local VLM has seen; while it is, every frame perception does not
+        detect the target asks the local VLM (`local_track`)."""
+        self._local_track = bool(on)
+
     # -- 1a: the cloud confirms identity at arrival -----------------------
 
-    def confirm_arrival(self, frame: dict) -> dict:
+    def confirm_arrival(self, frame: dict, local_ok: bool = True) -> dict:
         """The arrival's identity question, through the tiers (3.80.C): the
         local VLM first, the cloud only when it is absent or has been unable
         `local_max_unable` times in this arrival. `MissionRunner` calls the
         two halves itself (`confirm_local`, then `confirm_cloud`), so each
         gets its own deadline."""
+        if not local_ok:
+            return self.confirm_cloud(frame, guarded=True)
         verdict = self.confirm_local(frame)
         return verdict if verdict is not None else self.confirm_cloud(frame)
 
@@ -1454,7 +1498,7 @@ class TieredVision:
                 "reason": (f"the local model could not decide ({what}); "
                            + ("asking the cloud next" if last else "asking again"))}
 
-    def confirm_cloud(self, frame: dict) -> dict:
+    def confirm_cloud(self, frame: dict, guarded: bool = False) -> dict:
         """One paid, synchronous cloud call on the ARRIVAL frame: is the
         target in it? (Handoff 2026-10-02 1a, decided by the user.)
 
@@ -1486,7 +1530,10 @@ class TieredVision:
         self.stats.triggers[TRIGGER_ARRIVAL] = self.stats.triggers.get(TRIGGER_ARRIVAL, 0) + 1
         with self._local_lock:
             self._frames_off_arrival = 0
-        if self.local_identity_fn is not None and not self.next_confirm_is_local():
+        if guarded:
+            # 3.80.O: an arrival the local VLM's box led to, never put to it.
+            self.stats.guarded += 1
+        elif self.local_identity_fn is not None and not self.next_confirm_is_local():
             # 3.80.C: an arrival the local tier could not decide, handed up.
             self.stats.escalations += 1
         started = time.perf_counter()
@@ -1743,6 +1790,18 @@ class TieredVision:
             else None
         )
 
+        if (self._local_track and self._local_first() is not None
+                and perception.status != DETECTED):
+            # Only while the local tier takes the question (review): after
+            # `local_max_unable` unable answers the usual triggers run, and
+            # the cloud may take one of them.
+            if confirmed == ABSENT:
+                # The absent edge still moves (review), or a later detection
+                # would never fire `candidate_sighting`.
+                self._last_confirmed = ABSENT
+            # The absent streak does not grow on tracking frames (review): a
+            # cold search must not fire, paid, the moment tracking ends.
+            return TRIGGER_TRACK
         if confirmed == DETECTED and self._last_confirmed != DETECTED:
             self._last_confirmed = DETECTED
             return TRIGGER_CANDIDATE

@@ -45,9 +45,9 @@ import time
 from typing import Callable, Optional, Protocol
 
 from brain.agent import MissionAgent, StepResult
-from brain.arrival import ARRIVED, CHECKING, REFUSED, ArrivalCheck
+from brain.arrival import ARRIVED, CHECKING, LOCAL_FRESH_S, REFUSED, ArrivalCheck
 from brain.perceive import DETECTED
-from brain.tiered import STEER_BAND_DEG, turn_for
+from brain.tiered import STEER_BAND_DEG, located_local_bearing, turn_for
 from brain.frontier import (RetryBook, camera_seen, find_frontiers, find_view_gaps,
                             known_near, reach, reachable)
 from brain.goal_policy import LinearGoalPolicy
@@ -120,6 +120,12 @@ OWN_GOAL_TOLERANCE_M = 0.05
 SIGHT_FROM = ("frame", "perception")
 # Refused close-in FORWARDs in a row before the sighting counts a failure.
 CLOSE_IN_REFUSED = 3
+# 3.80.O amendment 1: a sighting only the local VLM made, further off centre
+# than this, is faced before it is ranged.
+LOCAL_FACE_DEG = 15.0
+# 3.80.O review: the longest it waits a stretch for the local VLM's next
+# answer with no ranged sighting (two of its answer windows).
+LOCAL_WAIT_MAX_S = 6.0
 # Transient goal-call failures in a row before the search gives up (3.76):
 # about ten seconds of ticks.
 BRIDGE_BLIPS_MAX = 40
@@ -178,6 +184,7 @@ class ExploreAgent(MissionAgent):
         retry: Optional[RetryBook] = None,
         goal_policy: Optional[LinearGoalPolicy] = None,
         sight_from: str = "frame",
+        local_track_fn: Optional[Callable[[bool], None]] = None,
         **kwargs,
     ):
         super().__init__(robot, memory, **kwargs)
@@ -186,6 +193,20 @@ class ExploreAgent(MissionAgent):
         if sight_from not in SIGHT_FROM:
             raise ValueError(f"sight_from must be one of {SIGHT_FROM}; got {sight_from!r}")
         self.sight_from = sight_from
+        if sight_from == "perception":
+            # 3.80.O: the local VLM's located yes is a source of the arrival
+            # bearing too (brain/arrival.py), timed by this clock.
+            self.arrival = ArrivalCheck(clock=clock)
+        # 3.80.O: the latest sighting came from the local VLM alone (perception
+        # silent), and when its last located yes landed.
+        self._sighted_by_local = False
+        self._local_yes_at: Optional[float] = None
+        self._tracking = False
+        self._local_wait_since: Optional[float] = None
+        self._sighting_memo: Optional[tuple] = None
+        self._pan_memo: Optional[tuple] = None
+        self._ticks = 0
+        self._local_track_fn = local_track_fn   # the tier's `set_local_track`
         self.close_ins = 0             # 3.80.G: last-approach verbs executed
         self._close_in_refused = 0
         self._refusal_noted = False
@@ -274,6 +295,7 @@ class ExploreAgent(MissionAgent):
         frame = self.robot.get_camera_frame()
         scene = self._review_scene(self.vision_fn(frame), frame)
         action, executed, detail = self._choose(frame, scene)
+        self._update_track()
         result = StepResult(step=len(self.history), frame=frame, scene=scene,
                             action=action, executed=executed, detail=detail)
         # A GOAL (or the final STOP) is a decision and spends the step
@@ -293,7 +315,16 @@ class ExploreAgent(MissionAgent):
         return result
 
     def _choose(self, frame: dict, scene: dict):
+        self._ticks += 1
         now = self.clock()
+        # 3.80.G: the tiers' scene, for sightings read from their perception
+        # (set first: the found tick's `_update_track` reads it, review).
+        self._scene = scene
+        if self.sight_from == "perception" and located_local_bearing(scene) is not None:
+            # 3.80.O review: a located yes counts as seen even on a tick an
+            # escape or a goal keeps from reading it as a sighting.
+            self._sighted_by_local = True
+            self._local_yes_at = now
         if self.memory.is_complete():
             try:
                 self._cancel()
@@ -329,14 +360,22 @@ class ExploreAgent(MissionAgent):
         # Never over an escape still queued: a wedged robot backs out first.
         escaping = any(p == "REVERSE" or (isinstance(p, tuple) and p[0] in ("OPEN", "CREEP"))
                        for p in self._pending)
-        # 3.80.G: the tiers' scene, for sightings read from their perception.
-        self._scene = scene
         self._note_refusal(scene)
         glimpse = self._glimpse(frame) if self._goal is None and not escaping else None
         if glimpse is not None:
             self._pending = ["LOOK_CENTER", ("FACE", glimpse, 90, False, "glimpse")]
             self._event("glimpse", toward=[round(glimpse[0], 2), round(glimpse[1], 2)])
 
+        if (glimpse is None and self._goal is None and self.sight_from == "perception"
+                and located_local_bearing(scene) is not None
+                and self._pending and all(p in LOOK_AROUND for p in self._pending)
+                and abs(self._pan()) <= 1.0
+                and self._sighting(frame) is not None):
+            # 3.80.O amendment 1: the local VLM's yes lands on one frame only
+            # (perception's sighting is there on every frame); a look-around
+            # queued after a goal must not spend it. Acted on now -- only when
+            # it is a sighting this frame (review: else both were lost).
+            self._pending = []
         # A look queued after an arrival goes first: no goal is live then.
         if self._pending and self._goal is None:
             return self._do_pending()
@@ -358,6 +397,17 @@ class ExploreAgent(MissionAgent):
 
         if self._goal is not None:
             return "WAIT", True, f"nav2 {state}: {self._goal['kind']}"
+        waiting = (sighting is None and self.sight_from == "perception"
+                   and self._local_yes_recent(now))
+        if not waiting:
+            self._local_wait_since = None   # the cap runs a stretch at a time
+        if waiting and self._local_wait_ok(now):
+            # Capped near the target too (review): a ranged sighting each
+            # answer restarts the stretch, so only an unranged park runs out.
+            # 3.80.O: closing in on the local VLM's box, which lands about
+            # once a second: the frames between its answers wait for the next
+            # one rather than read "here and not seeing it".
+            return "WAIT", True, "closing in: waiting for the local tier's next answer"
 
         remembered = self._back_to_sighting(now)
         if remembered is not None:
@@ -504,6 +554,39 @@ class ExploreAgent(MissionAgent):
         return bool(pose.get("usable")) and math.hypot(
             tx - pose["x_m"], ty - pose["y_m"]) <= APPROACH_FAR_M + 0.1
 
+    def _local_wait_ok(self, now: float) -> bool:
+        """3.80.O review: waiting for the local VLM's next answer away from a
+        sighting is capped at LOCAL_WAIT_MAX_S a stretch -- a yes the lidar
+        cannot range (through a doorway, behind a jamb), renewed every second,
+        must not park the search for the whole time limit."""
+        if self._local_wait_since is None:
+            self._local_wait_since = now
+        return now - self._local_wait_since <= LOCAL_WAIT_MAX_S
+
+    def _local_yes_recent(self, now: float) -> bool:
+        return self._local_yes_at is not None and now - self._local_yes_at <= LOCAL_FRESH_S
+
+    def _update_track(self) -> None:
+        """3.80.O: tell the tier whether to ask the local VLM on every frame:
+        for LOCAL_FRESH_S after any located yes (amendment 1: a yes that
+        lands on a panned frame or at the frame's edge is a turn or a look,
+        and the next question must follow it, not wait for cold_search), and
+        while no goal is live and the robot stands within the approach band
+        of a sighting only the local VLM made."""
+        fresh = self._local_yes_recent(self.clock())
+        near = (self._sighted_by_local and self._goal is None and self._last_seen is not None
+                and self._at_target(*self._last_seen))
+        arriving = (self._scene.get("_arrival") or {}).get("state") in (ARRIVED, CHECKING, REFUSED)
+        # Off while an arrival is judged (review): the identity is the
+        # cloud's, and a tracking question would only make it wait.
+        track = self.sight_from == "perception" and (fresh or near) and not arriving
+        if track != self._tracking:
+            self._tracking = track
+            setter = self._local_track_fn or getattr(self.vision_fn, "set_local_track", None)
+            if setter is not None:
+                setter(track)
+            self._event("local_track", on=track)
+
     def _close_in(self, scene: dict, target: tuple):
         """3.80.G: the last half metre. With sightings from the tiers'
         perception, explore's approach stops up to 0.6 m short and the
@@ -531,9 +614,14 @@ class ExploreAgent(MissionAgent):
             return "WAIT", True, "arrived; holding for the identity check"
         perception = scene.get("_perception") or {}
         bearing = perception.get("bearing_deg")
-        if perception.get("status") != DETECTED or bearing is None:
-            return None
-        bearing = float(bearing) - float(perception.get("pan_deg") or 0.0)
+        if perception.get("status") == DETECTED and bearing is not None:
+            bearing = float(bearing) - float(perception.get("pan_deg") or 0.0)
+        else:
+            # 3.80.O: the local VLM's located yes on this frame, already a
+            # body bearing (brain/tiered.py `_bearing_of`).
+            bearing = located_local_bearing(scene)
+            if bearing is None:
+                return None
         kwargs = {}
         if abs(bearing) > STEER_BAND_DEG:
             action = "LEFT" if bearing < 0 else "RIGHT"
@@ -1175,7 +1263,7 @@ class ExploreAgent(MissionAgent):
             return
         try:
             m = self.world.get_map()
-            pan = (self.robot.get_depth_grid() or {}).get("pan_deg") or 0.0
+            pan = self._pan()
         except Exception:  # noqa: BLE001 -- coverage is advisory
             return
         if not m.get("usable"):
@@ -1242,16 +1330,19 @@ class ExploreAgent(MissionAgent):
             scene = self._scene or {}
             p = scene.get("_perception") or {}
             if p.get("status") == DETECTED and p.get("bearing_deg") is not None:
+                self._sighted_by_local = False
                 return [{"bearing_deg": float(p["bearing_deg"]) - float(p.get("pan_deg") or 0.0)}]
             # The local VLM's located yes, on the frame it landed: a BODY
             # bearing now (brain/tiered.py `_bearing_of`), so less the
             # camera's pan here. It can bring the robot near a target
             # perception cannot name; arrival still needs perception's
             # detection (3.80.D's known limit).
-            landed = (scene.get("_tier") or {}).get("local_landed") or {}
-            if landed.get("answer") == "yes" and landed.get("bearing_deg") is not None:
-                pan = (self.robot.get_depth_grid() or {}).get("pan_deg") or 0.0
-                return [{"bearing_deg": float(landed["bearing_deg"]) - float(pan)}]
+            located = located_local_bearing(scene)
+            if located is not None:
+                self._sighted_by_local = True
+                self._local_yes_at = self.clock()
+                pan = self._pan()
+                return [{"bearing_deg": located - float(pan)}]
             return []
         return [d for d in frame.get("detections") or ()
                 if d.get("label") == target and d.get("bearing_deg") is not None]
@@ -1265,14 +1356,46 @@ class ExploreAgent(MissionAgent):
         hits = self._hits(frame)
         if not hits or any(isinstance(p, tuple) and p[0] == "FACE" for p in self._pending):
             return None
-        pan = (self.robot.get_depth_grid() or {}).get("pan_deg") or 0.0
+        pan = self._pan()
         pose = self._pose()
-        if abs(pan) <= 1.0 or not pose.get("usable"):
+        if not pose.get("usable"):
+            return None
+        if abs(pan) <= 1.0 and not (
+                # 3.80.O amendment 1: the local VLM's yes well off centre (where
+                # the lidar's beam at its bearing may hit something else: dev
+                # house val 6 ranged a frame-edge yes at 1.55 m, the target
+                # 2.7 m), or with no range: turn the body to it and ask again,
+                # centred, as for a panned glimpse. Perception sees every frame
+                # and corrects itself; the local VLM answers about once a second.
+                self._sighted_by_local and abs(hits[0]["bearing_deg"]) > STEER_BAND_DEG
+                and (abs(hits[0]["bearing_deg"]) > LOCAL_FACE_DEG
+                     or self._sighting(frame) is None)):
             return None
         a = math.radians(pose["heading_deg"] + pan + hits[0]["bearing_deg"])
         return pose["x_m"] + math.sin(a), pose["y_m"] - math.cos(a)
 
     def _sighting(self, frame: dict) -> Optional[tuple]:
+        """`_sighting_now`, once per tick (3.80.O review: `_glimpse`, the
+        look-around pre-empt and `_choose` all ask; each read is an HTTP
+        round trip live)."""
+        m = self._sighting_memo
+        if m is None or m[0] != self._ticks or m[1] is not frame or m[2] is not self._scene:
+            # The objects themselves are held, so a later tick's frame can
+            # never be mistaken for this one's.
+            self._sighting_memo = m = (self._ticks, frame, self._scene, self._sighting_now(frame))
+        return m[3]
+
+    def _pan(self) -> float:
+        """The camera's pan, read once a tick (3.80.O review: each read is an
+        HTTP round trip live). Read before this tick's verbs, which is when
+        every caller asks."""
+        m = self._pan_memo
+        if m is None or m[0] != self._ticks:
+            self._pan_memo = m = (self._ticks,
+                                  (self.robot.get_depth_grid() or {}).get("pan_deg") or 0.0)
+        return m[1]
+
+    def _sighting_now(self, frame: dict) -> Optional[tuple]:
         """The target's position in the house frame, if the camera sees it
         dead ahead enough to approach: its bearing from the detection, its
         range from the lidar at that bearing. Camera centred only -- a
@@ -1280,10 +1403,11 @@ class ExploreAgent(MissionAgent):
         hits = self._hits(frame)
         if not hits:
             return None
-        depth = self.robot.get_depth_grid() or {}
-        if abs(depth.get("pan_deg") or 0.0) > 1.0:
+        if abs(self._pan()) > 1.0:
             return None
         bearing = hits[0]["bearing_deg"]
+        if self._sighted_by_local and abs(bearing) > LOCAL_FACE_DEG:
+            return None     # faced first (`_glimpse`), ranged once centred
         try:
             scan = self.robot.get_scan()
         except Exception:  # noqa: BLE001 -- no scan, no range, no approach

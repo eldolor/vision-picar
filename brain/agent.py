@@ -17,6 +17,7 @@ robot/safety.py before it reaches the robot, so even a bad decision here
 (or a bad VLM read) can't drive the robot into something.
 """
 
+import inspect
 import logging
 import math
 from dataclasses import dataclass
@@ -24,7 +25,8 @@ from typing import Callable, Optional
 
 from robot.interface import RobotInterface
 from robot.safety import VERB_MIN_MOVE_M, SafetyController, SafetyViolation
-from brain.arrival import ARRIVED, CHECKING, NOT_JUDGED, REFUSED, ArrivalCheck, arrived_scene
+from brain.arrival import (ARRIVED, CHECKING, NOT_JUDGED, REFUSED, SOURCE_LOCAL, ArrivalCheck,
+                           arrived_scene)
 from brain.memory import MissionMemory
 from world.interface import NullWorld, WorldInterface, unusable_pose
 
@@ -69,6 +71,20 @@ SCENE_CLEAR_CM = 90.0
 # 3.34: how a verb can end without having made its move (robot/interface.py
 # carry_out_verb). `clamped` is deliberately absent -- see ConstrainedAgent.step.
 SHORT_MOVES = ("timeout", "stalled")
+
+
+# 3.80.O review: a local-led arrival this close to one the cloud refused is
+# the same object.
+LOCAL_REFUSED_RADIUS_M = 0.5
+
+
+def _takes_local_ok(fn) -> bool:
+    """3.80.O: can `fn` be called with `local_ok=False`?"""
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return "local_ok" in params or any(p.kind is p.VAR_KEYWORD for p in params.values())
 
 
 @dataclass
@@ -311,6 +327,17 @@ class MissionAgent(ConstrainedAgent):
         # mission's final status still says why (spec review 3, fix 9).
         self._refusal: Optional[dict] = None
         self._confirmed_this_frame = False
+        # 3.80.O: where local-led arrivals were refused, as house points.
+        self._refused_local: list = []
+
+    def _arrival_point(self, readout: dict):
+        """The target's house-frame point of an arrival readout, or None."""
+        pose = self._pose()
+        if not pose.get("usable") or readout.get("range_m") is None:
+            return None
+        a = math.radians(pose["heading_deg"] + float(readout.get("bearing_deg") or 0.0))
+        r = float(readout["range_m"])
+        return pose["x_m"] + r * math.sin(a), pose["y_m"] - r * math.cos(a)
 
     def _confirm_identity(self, readout: dict, frame: dict) -> dict:
         """Returns the readout; sets `self._confirmed_this_frame` when this
@@ -321,9 +348,32 @@ class MissionAgent(ConstrainedAgent):
             return {**readout, "state": REFUSED, "identity": self._refusal,
                     "reason": f"{who} did not confirm this arrival; not asking again "
                               "until the arrival ends"}
+        point = self._arrival_point(readout) if readout.get("source") == SOURCE_LOCAL else None
+        if point is not None and any(math.dist(point, p) <= LOCAL_REFUSED_RADIUS_M
+                                     for p, _ in self._refused_local):
+            # 3.80.O review: a local-led hold lapses between the local VLM's
+            # answers, which cleared the refusal; the same wrong object is
+            # not paid for twice.
+            verdict = next(v for p, v in self._refused_local
+                           if math.dist(point, p) <= LOCAL_REFUSED_RADIUS_M)
+            return {**readout, "state": REFUSED, "identity": verdict,
+                    "reason": "the cloud did not confirm an arrival here; not asking again"}
         confirm = self.arrival_confirm_fn or getattr(self.vision_fn, "confirm_arrival", None)
+        # 3.80.O: an arrival whose bearing came from the local VLM is never
+        # confirmed by the local VLM -- the same model would confirm its own
+        # mistake -- so its identity question goes to the cloud.
+        local_ok = readout.get("source") != SOURCE_LOCAL
+        if not local_ok and confirm is not None and not _takes_local_ok(confirm):
+            # A confirmer that cannot be told to skip the local tier is not
+            # asked, and the arrival is not refused either (review: a refusal
+            # drops the place for good): undecided, it stays unconfirmed.
+            return {**readout, "state": CHECKING,
+                    "identity": {"confirmed": False, "undecided": True, "cloud_called": False,
+                                 "reason": "no cloud-only confirmer for a local-led arrival"},
+                    "reason": "arrived on the local box; no cloud-only confirmer"}
         try:
-            verdict = (confirm(frame) if confirm is not None
+            verdict = ((confirm(frame) if local_ok else confirm(frame, local_ok=False))
+                       if confirm is not None
                        else {"confirmed": False, "cloud_called": False,
                              "reason": "no cloud on this policy to confirm identity"})
         except Exception as e:
@@ -353,6 +403,8 @@ class MissionAgent(ConstrainedAgent):
                     "reason": f"arrived, identity being checked: {verdict.get('reason')}"}
         self._identity_refused = True
         self._refusal = verdict
+        if point is not None:
+            self._refused_local.append((point, verdict))
         return {**readout, "state": REFUSED,
                 "reason": f"arrived, but identity not confirmed: {verdict.get('reason')}"}
 
@@ -364,7 +416,10 @@ class MissionAgent(ConstrainedAgent):
             return scene  # a policy with no local perception: nothing to say
         self._confirmed_this_frame = False
         if readout["state"] == ARRIVED:
-            readout = self._confirm_identity(readout, frame)
+            try:
+                readout = self._confirm_identity(readout, frame)
+            finally:
+                self.arrival.refresh()
         else:
             self._identity_refused = False
             self._refusal = None

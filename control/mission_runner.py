@@ -42,6 +42,7 @@ in the microseconds *before* the stop is still possible; that residue is
 what robot/server.py's watchdog (B3.1) exists to catch.
 """
 
+import functools
 import logging
 import math
 import re
@@ -49,7 +50,8 @@ import threading
 import time
 from typing import Callable, Optional, Tuple
 
-from brain.agent import ObjectSearchAgent
+from brain.agent import ObjectSearchAgent, _takes_local_ok
+from brain.arrival import SOURCE_LOCAL
 from brain.explore import OWN_GOAL_TOLERANCE_M, ExploreAgent  # one tolerance for both (3.76)
 from brain.goal_policy import goal_policy_for
 from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
@@ -724,6 +726,9 @@ class MissionRunner:
                      "goal_policy": goal_policy_for(explore_goal_policy)}
             if policy == "tiered":
                 extra["sight_from"] = "perception"
+                # 3.80.O: the agent's vision_fn is the guarded wrapper below,
+                # so the tier's tracking switch is handed over by name.
+                extra["local_track_fn"] = getattr(vision_fn, "set_local_track", None)
         self._gated = _HaltGate(robot, self.is_running,
                                 on_frame=self._observe if self.inventory else None)
         self.agent = agent_class(
@@ -1331,7 +1336,16 @@ class MissionRunner:
     def _set_confirm_thread(self, thread: threading.Thread) -> None:
         self._confirm_thread = thread
 
-    def _guarded_confirm(self, frame: dict) -> dict:
+    def _cloud_only_confirmer(self, confirm):
+        """3.80.O: the policy's cloud-only confirmer, else its
+        `confirm_arrival` told to skip the local tier, else None (a confirmer
+        that cannot skip it is not asked)."""
+        only = getattr(self.vision_fn, "cloud_only_confirmer", None)
+        if only is not None:
+            return only()
+        return functools.partial(confirm, local_ok=False) if _takes_local_ok(confirm) else None
+
+    def _guarded_confirm(self, frame: dict, local_ok: bool = True) -> dict:
         """The policy's `confirm_arrival` (brain/tiered.py), wrapped in
         B3.2's timeout like `_guarded_vision`. A policy without one cannot
         confirm identity, so its arrivals are never confirmed (1a)."""
@@ -1363,7 +1377,29 @@ class MissionRunner:
         # call that outlives that is an unable answer, never a cloud outage.
         local = getattr(self.vision_fn, "confirm_local", None)
         cloud = getattr(self.vision_fn, "confirm_cloud", None)
-        if (local is not None and cloud is not None
+        if not local_ok:
+            # 3.80.O: an arrival the local VLM's box led to; the cloud decides
+            # (never the local tier, which would confirm its own sighting).
+            confirm = self._cloud_only_confirmer(confirm)
+            if confirm is None:
+                return {"confirmed": False, "undecided": True, "cloud_called": False,
+                        "reason": "no cloud-only confirmer for a local-led arrival"}
+            free = getattr(self.vision_fn, "wait_local_free", None)
+            remaining = left("the local question in flight")
+            if free is not None and not free(max(remaining - self.confirm_guard_s(),
+                                                  remaining / 2)):
+                # A frame's question still holds the local VLM (review): not a
+                # cloud outage -- undecided, asked again next frame.
+                return {"confirmed": False, "undecided": True, "cloud_called": False,
+                        "reason": "a local question is still in flight; asking again"}
+            with self._lock:
+                running = self._running
+            if not running:
+                # A Stop during that wait: nothing paid for an ended mission,
+                # and nothing refused either (review).
+                return {"confirmed": False, "undecided": True, "cloud_called": False,
+                        "reason": "the mission ended during the identity check"}
+        elif (local is not None and cloud is not None
                 and getattr(self.vision_fn, "local_identity_fn", None) is not None):
             # Only with a local tier configured: without one the step is
             # exactly what it was before 3.80 (`confirm_arrival`).
@@ -1418,6 +1454,13 @@ class MissionRunner:
             if prev.is_alive():
                 msg = "the previous arrival confirmation is still in flight"
                 raise VisionUnavailable(msg) from CloudUnavailable(msg)
+        if not local_ok:
+            with self._lock:
+                running = self._running
+            if not running:
+                # 3.80.O review: a Stop during the waits above pays nothing.
+                return {"confirmed": False, "undecided": True, "cloud_called": False,
+                        "reason": "the mission ended during the identity check"}
         guard = min(self.confirm_guard_s(), left("the arrival confirmation"))
         try:
             return call_with_timeout(confirm, frame, timeout_s=guard,
@@ -1697,6 +1740,10 @@ class MissionRunner:
                 return None
             frame = self._arrival_frame
             confirm = getattr(self.vision_fn, "confirm_arrival", None)
+            if confirm is not None and (self._arrival or {}).get("source") == SOURCE_LOCAL:
+                # 3.80.O: an arrival the local VLM's box led to is confirmed by
+                # the cloud alone, late as on time -- never by the local VLM.
+                confirm = self._cloud_only_confirmer(confirm)
             if confirm is None or frame is None:
                 return {"confirmed": False, "cloud_called": False,
                         "reason": "no confirmer or no arrival frame"}

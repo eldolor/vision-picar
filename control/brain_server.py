@@ -386,7 +386,10 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         # "sim ground truth", and every tier frame carries `synthesised`.
         from brain.perceive import FrameReportedPipeline
 
-        pipeline = FrameReportedPipeline(target)
+        # 3.80.O's evaluation switch, off unless set: perception blind to
+        # the target, so only the local tier can find it.
+        pipeline = FrameReportedPipeline(
+            target, blind=os.environ.get("SIM_PERCEPTION_BLIND", "") == "1")
         # 3.80.D: a local VLM's box is read in the render's field of view.
         pipeline.hfov_deg = SIM_HFOV_DEG
         return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
