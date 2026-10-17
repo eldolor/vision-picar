@@ -699,6 +699,7 @@ class TieredVision:
         max_calls: Optional[int] = None,
         corroboration_bar: float = DEFAULT_CORROBORATION_P,
         oov_cold_search_after: Optional[int] = None,
+        local_cold_search_after: Optional[int] = None,
         async_cloud: bool = False,
         hold_goal: bool = DEFAULT_HOLD_GOAL,
         steer_on_sight: bool = DEFAULT_STEER_ON_SIGHT,
@@ -819,6 +820,15 @@ class TieredVision:
         self.oov_cold_search_after = (
             None if oov_cold_search_after is None
             else max(1, int(oov_cold_search_after)))
+        # 3.80.P (the user's option a): the cold-search pace while the
+        # question goes to the local tier, whose answers are free. A
+        # question the cloud would answer -- the local tier absent, or
+        # unable `local_max_unable` times -- still waits the cloud's bar,
+        # so a dead VLM never brings the paid pace to this one. None: one
+        # pace, as before.
+        self.local_cold_search_after = (
+            None if local_cold_search_after is None
+            else max(1, int(local_cold_search_after)))
         # -------- Phase A: the cloud call stops blocking the tick --------
         #
         # 2.5 has specified this since the tiered architecture was written
@@ -1067,9 +1077,11 @@ class TieredVision:
             band=self._band_run > 0,
             # An absent local tier hands this to the cloud, which an
             # out-of-vocabulary question earns only at cold_search's bar.
+            # 3.80.P: a cold search asked at the local pace reaches the
+            # cloud only at the cloud's own bar.
             cloud_ok=(trigger != TRIGGER_TRACK
-                      and (trigger != TRIGGER_OOV
-                           or self._absent_streak >= self._cold_search_bar()
+                      and (trigger not in (TRIGGER_OOV, TRIGGER_COLD_SEARCH)
+                           or self._absent_streak >= self._cloud_cold_search_bar()
                            or self._distance_bar_reached())))
         if self.async_cloud:
             self._inflight_question = q
@@ -1906,6 +1918,14 @@ class TieredVision:
         }
 
     def _cold_search_bar(self) -> int:
+        """How many `absent` frames before a cold search is asked: the local
+        pace while the local tier takes the question (3.80.P), else the
+        cloud's (`_cloud_cold_search_bar`)."""
+        if self.local_cold_search_after is not None and self._local_first() is not None:
+            return self.local_cold_search_after
+        return self._cloud_cold_search_bar()
+
+    def _cloud_cold_search_bar(self) -> int:
         """How many `absent` frames before the cloud is asked to propose.
 
         One number unless the experiment above is switched on, in which

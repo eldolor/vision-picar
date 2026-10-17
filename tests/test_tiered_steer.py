@@ -229,20 +229,50 @@ def test_p_a_local_tier_asks_on_every_free_frame_and_the_cloud_keeps_six(monkeyp
     assert config["tier_cold_search_after"] == 6
     monkeypatch.delenv("LOCAL_VLM_URL", raising=False)
     tier = _tiered_vision_fn("backpack", Cloud(), load_brain_config(), simulated=True)
-    assert tier.local_identity_fn is None and tier.cold_search_after == 6
+    assert tier.local_identity_fn is None and tier.local_cold_search_after is None
+    assert tier.cold_search_after == 6
     tier.close()
     monkeypatch.setenv("LOCAL_VLM_URL", "http://127.0.0.1:9")
     tier = _tiered_vision_fn("backpack", Cloud(), load_brain_config(), simulated=True)
-    assert tier.local_identity_fn is not None and tier.cold_search_after == 1
+    assert tier.local_identity_fn is not None
+    assert tier.local_cold_search_after == 1 and tier.cold_search_after == 6
     tier.close()
     monkeypatch.setenv("TIER_LOCAL_COLD_SEARCH_AFTER", "6")
     tier = _tiered_vision_fn("backpack", Cloud(), load_brain_config(), simulated=True)
-    assert tier.cold_search_after == 6
+    assert tier.local_cold_search_after == 6
     tier.close()
     for bad in ("0", "x"):
         monkeypatch.setenv("TIER_LOCAL_COLD_SEARCH_AFTER", bad)
         with pytest.raises(ValueError, match="TIER_LOCAL_COLD_SEARCH_AFTER"):
             load_brain_config()
+
+
+def _cold_counts(local, **kw):
+    tier, cloud = tier_for([P(ABSENT)], local, async_cloud=False, cold_search_after=6, **kw)
+    play(tier, 36)
+    tier.close()
+    return tier.stats.local_triggers.get(TRIGGER_COLD_SEARCH, 0), cloud.calls
+
+
+def test_p_the_local_pace_asks_the_local_tier_every_frame():
+    local_asked, cloud_calls = _cold_counts(Local(no()), local_cold_search_after=1)
+    paced_asked, _ = _cold_counts(Local(no()))
+    assert local_asked >= 30 and paced_asked <= 6
+    assert cloud_calls <= 1           # the start's question at most: no is decided
+
+
+def test_p_a_dead_local_vlm_never_brings_the_local_pace_to_the_cloud():
+    """3.80.P review: an absent local tier hands its question to the cloud;
+    at the local pace that must still come only at the cloud's bar."""
+    _, fast = _cold_counts(Local(LocalVLMAbsent("down")), local_cold_search_after=1)
+    _, paced = _cold_counts(Local(LocalVLMAbsent("down")))
+    assert fast <= paced <= 8, (fast, paced)
+
+
+def test_p_unable_answers_reach_the_cloud_only_at_its_bar():
+    _, fast = _cold_counts(Local(unable("timeout")), local_cold_search_after=1)
+    _, paced = _cold_counts(Local(unable("timeout")))
+    assert fast <= paced + 1 and fast <= 8, (fast, paced)
 
 
 # --- F-b: YOLOE + CLIP steer on an uncertain candidate ----------------------

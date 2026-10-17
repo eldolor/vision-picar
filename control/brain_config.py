@@ -329,10 +329,10 @@ def load_brain_config(config_path=None) -> dict:
             if not re.fullmatch(r"[0-9]+", raw) or int(raw) < 1:
                 raise ValueError(f"{env} must be a whole number >= 1; got {raw!r}")
             merged[key] = int(raw)
-    local_pace = merged["tier_local_cold_search_after"]
-    if isinstance(local_pace, bool) or not isinstance(local_pace, int) or local_pace < 1:
-        raise ValueError("brain.tier_local_cold_search_after must be a whole number >= 1; "
-                         f"got {local_pace!r}")
+    for key in ("tier_cold_search_after", "tier_local_cold_search_after"):
+        pace = merged[key]
+        if isinstance(pace, bool) or not isinstance(pace, int) or pace < 1:
+            raise ValueError(f"brain.{key} must be a whole number >= 1; got {pace!r}")
     if os.environ.get("NAVIGATE_MODEL_ID"):
         merged["navigate_model_id"] = os.environ["NAVIGATE_MODEL_ID"]
     if os.environ.get("NAVIGATE_PROMPT_VARIANT"):

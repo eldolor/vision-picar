@@ -366,7 +366,7 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
     local = _local_identity_fn(target, config, local_secret)
     if local is not None:
         # 3.80.P: a local tier's questions are free; the cloud-only pace stays.
-        kwargs["cold_search_after"] = config["tier_local_cold_search_after"]
+        kwargs["local_cold_search_after"] = config["tier_local_cold_search_after"]
     try:
         kwargs["local_identity_fn"] = local
         kwargs["local_sighting_fn"] = (functools.partial(local.ask, box=True)
@@ -693,7 +693,7 @@ def create_app(
         runner.metrics_config = {
             k: config.get(k) for k in (
                 "tier_cold_search_after", "tier_local_cold_search_after",
-                "tier_cold_search_after_cm",
+                "tier_local_vlm_url", "tier_cold_search_after_cm",
                 "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
                 "tier_local_direction", "tier_steer_on_candidate", "tier_search",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",
@@ -1129,6 +1129,11 @@ def create_app(
             "perception_floor_mask": bool(config["perception_floor_mask"]),
             "tier_consecutive_frames": config["tier_consecutive_frames"],
             "tier_cold_search_after": config["tier_cold_search_after"],
+            # 3.80.P: the pace a mission with a local tier asks it at (the
+            # cloud keeps the bar above); the live bar is the policy's own
+            # `frames_bar` in the mission's tier status.
+            "tier_local_cold_search_after": config["tier_local_cold_search_after"],
+            "tier_local_vlm": bool((config.get("tier_local_vlm_url") or "").strip()),
             "tier_cold_search_after_cm": config["tier_cold_search_after_cm"],
             "tier_async_cloud": bool(config["tier_async_cloud"]),
             "tier_hold_goal": bool(config["tier_hold_goal"]),
