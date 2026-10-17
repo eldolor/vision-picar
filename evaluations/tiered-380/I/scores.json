@@ -1682,5 +1682,131 @@
     "FORWARD": 1
    }
   }
+ },
+ "Opus 4.5: action": {
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 50,
+    "rate": 0.833,
+    "turn_pairs": 30,
+    "turn_consistent": 23
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 42,
+    "acc_all": 0.7,
+    "acc_answered": 0.7,
+    "coverage": 1.0,
+    "side_right": 19,
+    "side_n": 32,
+    "answers": {
+     "RIGHT": 12,
+     "FORWARD": 30,
+     "LEFT": 7,
+     "other:STOP": 11
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 36,
+    "right": 34,
+    "acc_all": 0.944,
+    "acc_answered": 0.944,
+    "coverage": 1.0,
+    "side_right": 14,
+    "side_n": 16,
+    "answers": {
+     "RIGHT": 9,
+     "FORWARD": 21,
+     "LEFT": 5,
+     "other:STOP": 1
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 40,
+    "consistent": 23,
+    "rate": 0.575,
+    "turn_pairs": 36,
+    "turn_consistent": 20
+   },
+   "answers": {
+    "RIGHT": 25,
+    "FORWARD": 4,
+    "LEFT": 10,
+    "other:REVERSE": 1
+   }
+  },
+  "S3": {
+   "mirror": {
+    "pairs": 42,
+    "consistent": 15,
+    "rate": 0.357,
+    "turn_pairs": 40,
+    "turn_consistent": 13
+   },
+   "all": {
+    "n": 42,
+    "answered": 42,
+    "right": 16,
+    "acc_all": 0.381,
+    "acc_answered": 0.381,
+    "coverage": 1.0,
+    "side_right": 16,
+    "side_n": 35,
+    "answers": {
+     "RIGHT": 18,
+     "LEFT": 22,
+     "FORWARD": 2
+    }
+   },
+   "majority_share": 0.429
+  }
+ },
+ "Opus 4.5: target_direction": {
+  "S1": {
+   "mirror": {
+    "pairs": 58,
+    "consistent": 52,
+    "rate": 0.897,
+    "turn_pairs": 20,
+    "turn_consistent": 17
+   },
+   "all": {
+    "n": 60,
+    "answered": 58,
+    "right": 46,
+    "acc_all": 0.767,
+    "acc_answered": 0.793,
+    "coverage": 0.967,
+    "side_right": 20,
+    "side_n": 32,
+    "answers": {
+     "RIGHT": 13,
+     "FORWARD": 38,
+     "LEFT": 7,
+     "None": 2
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 34,
+    "right": 33,
+    "acc_all": 0.917,
+    "acc_answered": 0.971,
+    "coverage": 0.944,
+    "side_right": 15,
+    "side_n": 16,
+    "answers": {
+     "RIGHT": 10,
+     "FORWARD": 19,
+     "LEFT": 5,
+     "None": 2
+    }
+   }
+  }
  }
 }

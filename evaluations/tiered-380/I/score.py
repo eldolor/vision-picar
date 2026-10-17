@@ -57,9 +57,9 @@ def mirror(rows, field):
     Over frames with an answer both times."""
     both = [r for r in rows if pick(r, field) is not None
             and pick(r, "mirror." + field) is not None]
-    ok = sum(pick(r, "mirror." + field) == SWAP[pick(r, field)] for r in both)
+    ok = sum(pick(r, "mirror." + field) == SWAP.get(pick(r, field), pick(r, field)) for r in both)
     lr = [r for r in both if pick(r, field) != "FORWARD"]
-    ok_lr = sum(pick(r, "mirror." + field) == SWAP[pick(r, field)] for r in lr)
+    ok_lr = sum(pick(r, "mirror." + field) == SWAP.get(pick(r, field), pick(r, field)) for r in lr)
     return {"pairs": len(both), "consistent": ok,
             "rate": round(ok / len(both), 3) if both else None,
             "turn_pairs": len(lr), "turn_consistent": ok_lr}
