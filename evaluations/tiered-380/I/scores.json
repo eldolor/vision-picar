@@ -1689,8 +1689,8 @@
     "pairs": 60,
     "consistent": 50,
     "rate": 0.833,
-    "turn_pairs": 30,
-    "turn_consistent": 23
+    "turn_pairs": 19,
+    "turn_consistent": 14
    },
    "all": {
     "n": 60,
@@ -1730,8 +1730,8 @@
     "pairs": 40,
     "consistent": 23,
     "rate": 0.575,
-    "turn_pairs": 36,
-    "turn_consistent": 20
+    "turn_pairs": 35,
+    "turn_consistent": 19
    },
    "answers": {
     "RIGHT": 25,
