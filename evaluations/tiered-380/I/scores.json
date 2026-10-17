@@ -882,5 +882,554 @@
     "None": 40
    }
   }
+ },
+ "llama.cpp Q4 InternVL3.5-2B: direction": {
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 60,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 32,
+    "mirror_d_right": 27,
+    "lean_right": 21
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 28,
+    "acc_all": 0.467,
+    "acc_answered": 0.467,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 32,
+    "answers": {
+     "FORWARD": 60
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 36,
+    "right": 20,
+    "acc_all": 0.556,
+    "acc_answered": 0.556,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 16,
+    "answers": {
+     "FORWARD": 36
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 40,
+    "consistent": 40,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "FORWARD": 40
+   }
+  },
+  "S3": {
+   "mirror": {
+    "pairs": 42,
+    "consistent": 42,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 35,
+    "mirror_d_right": 13,
+    "lean_right": 18
+   },
+   "all": {
+    "n": 42,
+    "answered": 42,
+    "right": 7,
+    "acc_all": 0.167,
+    "acc_answered": 0.167,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 35,
+    "answers": {
+     "FORWARD": 42
+    }
+   },
+   "majority_share": 0.429
+  }
+ },
+ "llama.cpp Q4 InternVL3.5-2B: box": {
+  "S1": {
+   "mirror": {
+    "pairs": 20,
+    "consistent": 11,
+    "rate": 0.55,
+    "turn_pairs": 10,
+    "turn_consistent": 4
+   },
+   "all": {
+    "n": 60,
+    "answered": 23,
+    "right": 17,
+    "acc_all": 0.283,
+    "acc_answered": 0.739,
+    "coverage": 0.383,
+    "side_right": 11,
+    "side_n": 32,
+    "answers": {
+     "None": 37,
+     "LEFT": 8,
+     "FORWARD": 11,
+     "RIGHT": 4
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 15,
+    "right": 12,
+    "acc_all": 0.333,
+    "acc_answered": 0.8,
+    "coverage": 0.417,
+    "side_right": 6,
+    "side_n": 16,
+    "answers": {
+     "None": 21,
+     "FORWARD": 9,
+     "RIGHT": 3,
+     "LEFT": 3
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 0,
+    "consistent": 0,
+    "rate": null,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "None": 40
+   }
+  }
+ },
+ "llama.cpp Q4 InternVL3.5-4B: direction": {
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 60,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 32,
+    "mirror_d_right": 31,
+    "lean_right": 23
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 28,
+    "acc_all": 0.467,
+    "acc_answered": 0.467,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 32,
+    "answers": {
+     "FORWARD": 60
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 36,
+    "right": 20,
+    "acc_all": 0.556,
+    "acc_answered": 0.556,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 16,
+    "answers": {
+     "FORWARD": 36
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 40,
+    "consistent": 40,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "FORWARD": 40
+   }
+  },
+  "S3": {
+   "mirror": {
+    "pairs": 42,
+    "consistent": 42,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 35,
+    "mirror_d_right": 18,
+    "lean_right": 22
+   },
+   "all": {
+    "n": 42,
+    "answered": 42,
+    "right": 7,
+    "acc_all": 0.167,
+    "acc_answered": 0.167,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 35,
+    "answers": {
+     "FORWARD": 42
+    }
+   },
+   "majority_share": 0.429
+  }
+ },
+ "llama.cpp Q4 InternVL3.5-4B: box": {
+  "S1": {
+   "mirror": {
+    "pairs": 56,
+    "consistent": 44,
+    "rate": 0.786,
+    "turn_pairs": 23,
+    "turn_consistent": 16
+   },
+   "all": {
+    "n": 60,
+    "answered": 57,
+    "right": 50,
+    "acc_all": 0.833,
+    "acc_answered": 0.877,
+    "coverage": 0.95,
+    "side_right": 23,
+    "side_n": 32,
+    "answers": {
+     "RIGHT": 17,
+     "FORWARD": 33,
+     "LEFT": 7,
+     "None": 3
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 33,
+    "right": 33,
+    "acc_all": 0.917,
+    "acc_answered": 1.0,
+    "coverage": 0.917,
+    "side_right": 13,
+    "side_n": 16,
+    "answers": {
+     "RIGHT": 10,
+     "FORWARD": 20,
+     "LEFT": 3,
+     "None": 3
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 0,
+    "consistent": 0,
+    "rate": null,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "None": 40
+   }
+  }
+ },
+ "llama.cpp Q4 Youtu-VL-4B: direction": {
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 60,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 32,
+    "mirror_d_right": 28,
+    "lean_right": 24
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 28,
+    "acc_all": 0.467,
+    "acc_answered": 0.467,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 32,
+    "answers": {
+     "FORWARD": 60
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 36,
+    "right": 20,
+    "acc_all": 0.556,
+    "acc_answered": 0.556,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 16,
+    "answers": {
+     "FORWARD": 36
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 40,
+    "consistent": 40,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "FORWARD": 40
+   }
+  },
+  "S3": {
+   "mirror": {
+    "pairs": 42,
+    "consistent": 42,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 35,
+    "mirror_d_right": 21,
+    "lean_right": 18
+   },
+   "all": {
+    "n": 42,
+    "answered": 42,
+    "right": 7,
+    "acc_all": 0.167,
+    "acc_answered": 0.167,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 35,
+    "answers": {
+     "FORWARD": 42
+    }
+   },
+   "majority_share": 0.429
+  }
+ },
+ "llama.cpp Q4 Youtu-VL-4B: box": {
+  "S1": {
+   "mirror": {
+    "pairs": 54,
+    "consistent": 23,
+    "rate": 0.426,
+    "turn_pairs": 18,
+    "turn_consistent": 6
+   },
+   "all": {
+    "n": 60,
+    "answered": 57,
+    "right": 37,
+    "acc_all": 0.617,
+    "acc_answered": 0.649,
+    "coverage": 0.95,
+    "side_right": 14,
+    "side_n": 32,
+    "answers": {
+     "FORWARD": 36,
+     "LEFT": 17,
+     "RIGHT": 4,
+     "None": 3
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 33,
+    "right": 25,
+    "acc_all": 0.694,
+    "acc_answered": 0.758,
+    "coverage": 0.917,
+    "side_right": 8,
+    "side_n": 16,
+    "answers": {
+     "FORWARD": 22,
+     "LEFT": 8,
+     "RIGHT": 3,
+     "None": 3
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 13,
+    "consistent": 5,
+    "rate": 0.385,
+    "turn_pairs": 7,
+    "turn_consistent": 3
+   },
+   "answers": {
+    "None": 24,
+    "LEFT": 8,
+    "RIGHT": 2,
+    "FORWARD": 6
+   }
+  }
+ },
+ "llama.cpp Q4 MiniCPM-V 4.0: direction": {
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 60,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 32,
+    "mirror_d_right": 19,
+    "lean_right": 21
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 28,
+    "acc_all": 0.467,
+    "acc_answered": 0.467,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 32,
+    "answers": {
+     "FORWARD": 60
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 36,
+    "right": 20,
+    "acc_all": 0.556,
+    "acc_answered": 0.556,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 16,
+    "answers": {
+     "FORWARD": 36
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 40,
+    "consistent": 40,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "FORWARD": 40
+   }
+  },
+  "S3": {
+   "mirror": {
+    "pairs": 42,
+    "consistent": 42,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "lean": {
+    "n": 35,
+    "mirror_d_right": 16,
+    "lean_right": 18
+   },
+   "all": {
+    "n": 42,
+    "answered": 42,
+    "right": 7,
+    "acc_all": 0.167,
+    "acc_answered": 0.167,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 35,
+    "answers": {
+     "FORWARD": 42
+    }
+   },
+   "majority_share": 0.429
+  }
+ },
+ "llama.cpp Q4 MiniCPM-V 4.0: box": {
+  "S1": {
+   "mirror": {
+    "pairs": 13,
+    "consistent": 4,
+    "rate": 0.308,
+    "turn_pairs": 6,
+    "turn_consistent": 0
+   },
+   "all": {
+    "n": 60,
+    "answered": 23,
+    "right": 8,
+    "acc_all": 0.133,
+    "acc_answered": 0.348,
+    "coverage": 0.383,
+    "side_right": 3,
+    "side_n": 32,
+    "answers": {
+     "None": 37,
+     "LEFT": 15,
+     "FORWARD": 8
+    }
+   },
+   "clear_frames": {
+    "n": 36,
+    "answered": 15,
+    "right": 8,
+    "acc_all": 0.222,
+    "acc_answered": 0.533,
+    "coverage": 0.417,
+    "side_right": 3,
+    "side_n": 16,
+    "answers": {
+     "None": 21,
+     "LEFT": 9,
+     "FORWARD": 6
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 0,
+    "consistent": 0,
+    "rate": null,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "None": 40
+   }
+  }
  }
 }
