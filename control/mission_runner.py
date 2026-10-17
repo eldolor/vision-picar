@@ -1881,6 +1881,15 @@ class MissionRunner:
         3.76 C2): let go of what it holds."""
         if self._navigator is not None:
             self._navigator.end()
+        # The policy too: its perception models and the local VLM client, so
+        # the next start's build is not beside them (review of the 3.80
+        # rebase, 2026-10-17; 3.81.E's rule).
+        close = getattr(self.vision_fn, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception as e:  # noqa: BLE001 -- a discard never raises
+                logger.warning(f"could not close a discarded runner's policy: {e}")
 
     def _safe_stop(self) -> None:
         try:

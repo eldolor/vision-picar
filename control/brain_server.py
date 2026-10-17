@@ -364,62 +364,69 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
     # 3.80.C: the local VLM tier at arrival, when a URL is configured; 3.80.D:
     # the same client for every frame's question, asking where as well.
     local = _local_identity_fn(target, config, local_secret)
-    kwargs["local_identity_fn"] = local
-    kwargs["local_sighting_fn"] = (functools.partial(local.ask, box=True)
-                                   if local is not None else None)
-    # 3.80.F: the local tier's direction, and YOLOE + CLIP's candidate steer.
-    kwargs["local_direction_fn"] = (local.direction
-                                    if local is not None and config["tier_local_direction"]
-                                    else None)
-    # The candidate's steer covers the band question to the local tier; with
-    # no local tier there is no such question, and the policy stays as it was.
-    # 3.80.G: under an explore search a cloud failure ends nothing.
-    kwargs["cloud_errors_fatal"] = config["tier_search"] != "explore"
-    kwargs["steer_on_candidate"] = (local is not None
-                                    and bool(config["tier_steer_on_candidate"]))
-    if simulated:
-        # 1.12, built at last (PLAN-ros-alignment.md R1): the simulator
-        # reports what its geometry says is visible, and nothing loads YOLO
-        # or CLIP to look at a raycaster wall. Before this a tiered mission
-        # on the Sim tab ran both models on renders -- forbidden, and blind,
-        # so the tier could never steer there. The panel's Models line reads
-        # "sim ground truth", and every tier frame carries `synthesised`.
-        from brain.perceive import FrameReportedPipeline
-
-        # 3.80.O's evaluation switch, off unless set: perception blind to
-        # the target, so only the local tier can find it.
-        pipeline = FrameReportedPipeline(
-            target, blind=os.environ.get("SIM_PERCEPTION_BLIND", "") == "1")
-        # 3.80.D: a local VLM's box is read in the render's field of view.
-        pipeline.hfov_deg = SIM_HFOV_DEG
-        return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
-    pipeline_kwargs = {}
-    if config["perception_detector"]:
-        pipeline_kwargs["weights"] = config["perception_detector"]
-    if config["perception_clip_model"]:
-        pipeline_kwargs["clip_model"] = config["perception_clip_model"]
-    if config["perception_match_probability"]:
-        pipeline_kwargs["match_probability"] = float(config["perception_match_probability"])
-    if config["perception_match_margin"]:
-        pipeline_kwargs["match_margin"] = float(config["perception_match_margin"])
-    if config["perception_crop_path"]:
-        pipeline_kwargs["crop_path"] = config["perception_crop_path"]
-    if config["perception_floor_mask"]:
-        pipeline_kwargs["floor_mask"] = True
     try:
-        from brain.perceive import pipeline_for
+        kwargs["local_identity_fn"] = local
+        kwargs["local_sighting_fn"] = (functools.partial(local.ask, box=True)
+                                       if local is not None else None)
+        # 3.80.F: the local tier's direction, and YOLOE + CLIP's candidate steer.
+        kwargs["local_direction_fn"] = (local.direction
+                                        if local is not None and config["tier_local_direction"]
+                                        else None)
+        # The candidate's steer covers the band question to the local tier; with
+        # no local tier there is no such question, and the policy stays as it was.
+        # 3.80.G: under an explore search a cloud failure ends nothing.
+        kwargs["cloud_errors_fatal"] = config["tier_search"] != "explore"
+        kwargs["steer_on_candidate"] = (local is not None
+                                        and bool(config["tier_steer_on_candidate"]))
+        if simulated:
+            # 1.12, built at last (PLAN-ros-alignment.md R1): the simulator
+            # reports what its geometry says is visible, and nothing loads YOLO
+            # or CLIP to look at a raycaster wall. Before this a tiered mission
+            # on the Sim tab ran both models on renders -- forbidden, and blind,
+            # so the tier could never steer there. The panel's Models line reads
+            # "sim ground truth", and every tier frame carries `synthesised`.
+            from brain.perceive import FrameReportedPipeline
 
-        pipeline = pipeline_for(target, **pipeline_kwargs)
-    except PerceptionUnavailable as e:
-        # Re-raised as ValueError because start_mission() maps that to a
-        # 400 with the message intact, and the message is the useful part:
-        # it names the pip command.
-        raise ValueError(f"The tiered policy cannot start: {e}") from e
-    except Exception as e:  # noqa: BLE001 -- a bad weights file, a dead download
-        raise ValueError(
-            f"The tiered policy could not load its perception models: {e}"
-        ) from e
-    return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
+            # 3.80.O's evaluation switch, off unless set: perception blind to
+            # the target, so only the local tier can find it.
+            pipeline = FrameReportedPipeline(
+                target, blind=os.environ.get("SIM_PERCEPTION_BLIND", "") == "1")
+            # 3.80.D: a local VLM's box is read in the render's field of view.
+            pipeline.hfov_deg = SIM_HFOV_DEG
+            return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
+        pipeline_kwargs = {}
+        if config["perception_detector"]:
+            pipeline_kwargs["weights"] = config["perception_detector"]
+        if config["perception_clip_model"]:
+            pipeline_kwargs["clip_model"] = config["perception_clip_model"]
+        if config["perception_match_probability"]:
+            pipeline_kwargs["match_probability"] = float(config["perception_match_probability"])
+        if config["perception_match_margin"]:
+            pipeline_kwargs["match_margin"] = float(config["perception_match_margin"])
+        if config["perception_crop_path"]:
+            pipeline_kwargs["crop_path"] = config["perception_crop_path"]
+        if config["perception_floor_mask"]:
+            pipeline_kwargs["floor_mask"] = True
+        try:
+            from brain.perceive import pipeline_for
+
+            pipeline = pipeline_for(target, **pipeline_kwargs)
+        except PerceptionUnavailable as e:
+            # Re-raised as ValueError because start_mission() maps that to a
+            # 400 with the message intact, and the message is the useful part:
+            # it names the pip command.
+            raise ValueError(f"The tiered policy cannot start: {e}") from e
+        except Exception as e:  # noqa: BLE001 -- a bad weights file, a dead download
+            raise ValueError(
+                f"The tiered policy could not load its perception models: {e}"
+            ) from e
+        return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
+    except BaseException:
+        # A refused build (perception's models failed to load) keeps no
+        # local client open (review of the 3.80 rebase, 2026-10-17).
+        if local is not None:
+            local.close()
+        raise
 
 
 def create_app(
@@ -635,6 +642,11 @@ def create_app(
         except BaseException:
             if navigator is not None:
                 navigator.close()      # 3.76: a refused start keeps no client open
+            # The tiered policy too: its local VLM client and perception
+            # models (review of the 3.80 rebase, 2026-10-17).
+            close = getattr(vision_fn, "close", None)
+            if callable(close):
+                close()
             raise
         # Kept on the runner and applied once the start is committed (3.76):
         # set here, a drill whose start then failed left its deadline in
