@@ -458,7 +458,9 @@ cloud alone.
   first yes, it WAITs at most `LOCAL_WAIT_MAX_S` (6 s) a stretch, near the
   target too (a ranged sighting restarts the stretch, so only an unranged
   park runs out). A landed yes counts as seen on every tick, an escape's
-  included.
+  included. Where a glimpse's turns were given up (refused, backed off),
+  `_glimpse_spent` stops a local yes from starting them again until the
+  robot has moved `APPROACH_MOVED_M` away (amendment 3).
   `_sighting()` and the pan (`_pan()`) are read once a tick.
 * Evaluation only: `FrameReportedPipeline(target, blind=True)`
   (`SIM_PERCEPTION_BLIND=1` on the brain server) never reports the target.

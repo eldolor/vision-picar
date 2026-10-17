@@ -23,6 +23,10 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
+# --root <tree>: run against another checkout's code (the baseline arm runs
+# today's code, before 3.80.O); the stand-ins below are this file's own.
+if "--root" in sys.argv:
+    ROOT = Path(sys.argv[sys.argv.index("--root") + 1]).resolve()
 sys.path.insert(0, str(ROOT))
 from brain.perceive import FrameReportedPipeline  # noqa: E402
 from brain.tiered import TieredVision  # noqa: E402
@@ -31,57 +35,66 @@ from sim.grid_world import CELL_WALL  # noqa: E402
 from sim.maps import build_world  # noqa: E402
 from sim.mock_robot import MockRobot  # noqa: E402
 from sim.mock_world import MockWorld  # noqa: E402
-from tests.test_explore import FakeNav  # noqa: E402
-from tests.test_local_arrival import HFOV, TARGET, TruthCloud, TruthLocal, _seen  # noqa: E402
+from tests.test_explore import FakeNav, WalkingNav  # noqa: E402
+
+TARGET = "red backpack"
+HFOV = 60.0
+
+
+def _seen(frame):
+    return [d for d in frame.get("detections") or () if d.get("label") == TARGET
+            and d.get("bearing_deg") is not None]
+
+
+class TruthLocal:
+    """The local VLM from the simulator's report (as tests/test_local_arrival.py)."""
+
+    def __init__(self):
+        self.asked = 0
+
+    def __call__(self, frame, box=False):
+        self.asked += 1
+        seen = _seen(frame)
+        if not seen:
+            return {"status": "answered", "score": 0.0}
+        x = seen[0]["bearing_deg"] / HFOV + 0.5
+        return {"status": "answered", "score": 0.95, "box_frac": [x - 0.02, 0.4, x + 0.02, 0.6]}
+
+
+class TruthCloud:
+    def __init__(self, answer=None, raises=False):
+        self.calls, self.answer, self.raises = 0, answer, raises
+
+    def __call__(self, frame):
+        from brain.navigate import CloudUnavailable
+        self.calls += 1
+        if self.raises:
+            raise CloudUnavailable("refused (sweep)")
+        visible = bool(_seen(frame)) if self.answer is None else self.answer
+        return {"obstacles_ahead": [], "free_space": "clear", "doorway_visible": False,
+                "important_objects": [], "safest_direction": "LEFT",
+                "_navigate": {"reasoning": "cloud", "target_visible": visible}}
+
+
+class BlindPipeline:
+    """Perception blind to the target, for any checkout: the simulator's
+    report with the target taken out (what `blind=True` does since 3.80.O)."""
+
+    def __init__(self, target):
+        self.inner = FrameReportedPipeline(target)
+        self.hfov_deg = HFOV
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+    def perceive(self, frame):
+        if frame.get("detections") is not None:
+            frame = {**frame, "detections": [d for d in frame["detections"]
+                                             if d.get("label") != TARGET]}
+        return self.inner.perceive(frame)
 
 sys.path.insert(0, str(ROOT / "evaluations/tiered-380/E"))
 from pilot import SWEEP_HOUSES  # noqa: E402
-
-class WalkingNav(FakeNav):
-    """FakeNav that drives: each poll moves the robot one cell (0.3 m) along
-    the shortest 4-connected floor path and passes 1 s, so the tier sees a
-    frame per cell while a goal runs, as it does behind live nav2. FakeNav
-    jumps to the goal in one poll (four frames a goal in all), which starves
-    a blind search of questions (3.80.O amendment 1)."""
-
-    def _path(self, a, b):
-        from collections import deque
-        g, prev, q = self.grid, {a: None}, deque([a])
-        while q:
-            c = q.popleft()
-            if c == b:
-                out = []
-                while c is not None:
-                    out.append(c)
-                    c = prev[c]
-                return out[::-1]
-            for n in ((c[0] + 1, c[1]), (c[0] - 1, c[1]), (c[0], c[1] + 1), (c[0], c[1] - 1)):
-                if n not in prev and g._cell(*n) != CELL_WALL and n not in g.objects:
-                    prev[n] = c
-                    q.append(n)
-        return None
-
-    def get_goal(self):
-        self.calls.append(("get",))
-        if self.goal and self.goal["state"] == "active":
-            g = self.grid
-            to = (math.floor(self.goal["x_m"] / CELL_M), math.floor(self.goal["y_m"] / CELL_M))
-            path = None if to in g.objects else self._path((g.robot_x, g.robot_y), to)
-            self.robot.pass_time(1.0)
-            if path is None:
-                self.goal["state"] = "aborted"
-            elif len(path) <= 2:
-                tx, ty = self.goal["x_m"] / CELL_M, self.goal["y_m"] / CELL_M
-                if (tx, ty) != (g.x, g.y):
-                    g.theta = math.atan2(ty - g.y, tx - g.x)
-                g.x, g.y = tx, ty
-                self.goal["state"] = "succeeded"
-            else:
-                nx, ny = path[1][0] + 0.5, path[1][1] + 0.5
-                g.theta = math.atan2(ny - g.y, nx - g.x)
-                g.x, g.y = nx, ny
-        return {"goal": self.goal, "plan": []}
-
 
 DEV_HOUSES = [f"procthor:val:{i}" for i in (6, 7, 8, 14, 16, 19, 20, 22, 23, 24)]
 CELL_M = 0.3
@@ -116,8 +129,11 @@ def target_m(grid):
 def run(house, a):
     grid = build_world(house)
     robot = MockRobot(grid, render=False)
-    pipeline = FrameReportedPipeline(TARGET, blind=not a.sighted)
-    pipeline.hfov_deg = HFOV
+    if a.sighted:
+        pipeline = FrameReportedPipeline(TARGET)
+        pipeline.hfov_deg = HFOV
+    else:
+        pipeline = BlindPipeline(TARGET)
     sighting = DecoyLocal(a.decoy, hash(house) & 0xffff)
     identity = TruthLocal()
     cloud = {"truth": TruthCloud(), "no": TruthCloud(answer=False),
@@ -135,7 +151,7 @@ def run(house, a):
     while True:
         going = runner.tick()
         ticks += 1
-        now_asked = identity.asked + tier.stats.guarded
+        now_asked = identity.asked + getattr(tier.stats, "guarded", 0)
         if now_asked > asked:
             arrivals.append(round(target_m(grid), 2))
             asked = now_asked
@@ -148,7 +164,7 @@ def run(house, a):
             "goals": s["explore"]["goals_sent"], "arrivals": arrivals,
             "first_arrival_target_m": first, "end_target_m": end_m,
             "found_far": s["outcome"] == "found" and end_m > 0.9,
-            "local_identity_asked": identity.asked, "guarded": tier.stats.guarded,
+            "local_identity_asked": identity.asked, "guarded": getattr(tier.stats, "guarded", 0),
             "cloud_confirms": cloud.calls, "close_ins": runner.agent.close_ins,
             "local_triggers": dict(tier.stats.local_triggers),
             "decoy_false_yes": sighting.false_yes, "tail": s["log_tail"][-1:]}
@@ -165,6 +181,7 @@ def main():
                     help="tier cold_search_after (the brain's default 6)")
     ap.add_argument("--cloud", choices=("truth", "no", "down"), default="truth")
     ap.add_argument("--houses", default="dev")
+    ap.add_argument("--root", default=None, help="another checkout's code (read at import)")
     a = ap.parse_args()
     houses = (DEV_HOUSES if a.houses == "dev" else SWEEP_HOUSES if a.houses == "criterion"
               else a.houses.split(","))

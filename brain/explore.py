@@ -246,6 +246,7 @@ class ExploreAgent(MissionAgent):
         self._looked: list = []        # view-gap centres already visited
         self._backed_off: list = []    # targets a refused face has backed off from (3.69)
         self._glimpse_backoffs: list = []   # where the robot stood when a glimpse did
+        self._glimpse_spent: list = []      # where a glimpse's turns were given up (3.80.O)
         # Frontier goals already reached, with how often. A frontier still
         # there after the robot has stood at it TWICE cannot be cleared from
         # there -- the unknown under a table, behind a sofa -- and
@@ -337,6 +338,11 @@ class ExploreAgent(MissionAgent):
         pose = self._pose()
         if pose.get("usable"):
             self._note_room(pose)
+            # 3.80.O: a place where a glimpse's turns were given up stays given
+            # up only while the robot is still there (review).
+            self._glimpse_spent = [
+                (bx, by) for bx, by in self._glimpse_spent
+                if math.hypot(pose["x_m"] - bx, pose["y_m"] - by) < APPROACH_MOVED_M]
 
         state = self._goal_state()
         ended = None
@@ -1169,6 +1175,10 @@ class ExploreAgent(MissionAgent):
                     if backed or again:
                         if "FORWARD" in self._pending:
                             self._pending.remove("FORWARD")
+                        # 3.80.O: given up here; a local VLM's next yes must
+                        # not start the turns again (in-process val 3: 19,968
+                        # refused turns, the clock never moving).
+                        self._glimpse_spent.append(here)
                     else:
                         self._glimpse_backoffs.append(here)
                         self._pending[0:0] = ["REVERSE", ("FACE", (tx, ty), 90, True, kind),
@@ -1360,6 +1370,8 @@ class ExploreAgent(MissionAgent):
         pose = self._pose()
         if not pose.get("usable"):
             return None
+        if self._sighted_by_local and self._glimpse_spent:
+            return None     # turning to it was given up here; move first
         if abs(pan) <= 1.0 and not (
                 # 3.80.O amendment 1: the local VLM's yes well off centre (where
                 # the lidar's beam at its bearing may hit something else: dev

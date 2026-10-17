@@ -23,7 +23,7 @@ import rb_identity as rb                                    # noqa: E402
 from service.local_vlm.driver import parse_box              # noqa: E402
 
 _NUM = r"(-?\d+(?:\.\d+)?)"
-_LIST = re.compile(r"\[\s*\[?\s*\(?\s*" + r"\s*,\s*".join([_NUM] * 4))
+_LIST = re.compile(r"\[\s*\[?\s*[(\"']?\s*" + r"\s*,\s*".join([_NUM] * 4))
 _TAG = re.compile(r"<\|?box(?:_start)?\|?>(.*?)(?:</box>|<\|box_end\|>|$)", re.S)
 
 

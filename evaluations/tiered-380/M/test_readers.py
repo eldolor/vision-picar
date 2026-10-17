@@ -38,5 +38,6 @@ def test_parse_forms():
     assert parse_any_box("<box>10 20 50 60</box>") == [10, 20, 50, 60]
     assert parse_any_box("[0.1, 0.2, 0.5, 0.6]") == [0.1, 0.2, 0.5, 0.6]
     assert parse_any_box("<box><x_129><y_190><x_205><y_233></box>") == [129, 190, 205, 233]
+    assert parse_any_box('[["791, 376, 897, 516"]]<|im_end|>') == [791, 376, 897, 516]
     assert parse_any_box("[]") is None
     assert parse_any_box("[50, 20, 10, 60]") is None
