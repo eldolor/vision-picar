@@ -1,0 +1,8 @@
+home_first_floor: found calls=1 checks=1 at=0.52 contacts=0 833 s total $0.00
+procthor:val:0: found calls=1 checks=1 at=0.53 contacts=0 159 s total $0.00
+procthor:val:2: out_of_budget calls=0 checks=0 at=None contacts=0 1201 s total $0.00
+procthor:val:3: found calls=1 checks=1 at=0.52 contacts=0 690 s total $0.00
+procthor:val:4: found calls=1 checks=1 at=0.51 contacts=0 224 s total $0.00
+procthor:val:5: found calls=1 checks=1 at=0.53 contacts=0 31 s total $0.00
+procthor:val:9: out_of_budget calls=0 checks=0 at=None contacts=0 1200 s total $0.00
+procthor:val:10: found calls=1 checks=1 at=0.54 contacts=0 307 s total $0.00

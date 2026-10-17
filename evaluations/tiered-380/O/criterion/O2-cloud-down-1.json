@@ -1,0 +1,157 @@
+{
+ "args": {
+  "name": "criterion/O2-cloud-down-1",
+  "sighted": false,
+  "sync": false,
+  "jump": false,
+  "decoy": 0.0,
+  "cold_every": 1,
+  "cloud": "down",
+  "houses": "procthor:val:0,procthor:val:2,procthor:val:3,procthor:val:4,procthor:val:5",
+  "root": null
+ },
+ "missions": 5,
+ "arrivals_at_true_target": 4,
+ "arrival_m_median": 0.55,
+ "found": 0,
+ "found_far": 0,
+ "local_identity_on_guarded": 0,
+ "outcomes": {
+  "arrived_unconfirmed": 4,
+  "exhausted": 1
+ },
+ "rows": [
+  {
+   "house": "procthor:val:0",
+   "outcome": "arrived_unconfirmed",
+   "sim_s": 309,
+   "goals": 22,
+   "arrivals": [
+    0.55,
+    0.55,
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 0.55,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 3,
+   "cloud_confirms": 3,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 271,
+    "local_track": 47
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (arrived_unconfirmed): arrived (lidar 0.4 m, streak 4) but identity unconfirmed: vision unavailable 3 times in a row: arrival confirmation failed: refused (sweep)"
+   ]
+  },
+  {
+   "house": "procthor:val:2",
+   "outcome": "arrived_unconfirmed",
+   "sim_s": 258,
+   "goals": 24,
+   "arrivals": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 0.5,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 3,
+   "cloud_confirms": 3,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 259,
+    "local_track": 39
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (arrived_unconfirmed): arrived (lidar 0.355 m, streak 4) but identity unconfirmed: vision unavailable 3 times in a row: arrival confirmation failed: refused (sweep)"
+   ]
+  },
+  {
+   "house": "procthor:val:3",
+   "outcome": "exhausted",
+   "sim_s": 468,
+   "goals": 30,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 7.64,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 393,
+    "local_track": 133
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:4",
+   "outcome": "arrived_unconfirmed",
+   "sim_s": 91,
+   "goals": 13,
+   "arrivals": [
+    0.5,
+    0.5,
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 0.5,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 3,
+   "cloud_confirms": 3,
+   "close_ins": 2,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 96,
+    "local_track": 16
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (arrived_unconfirmed): arrived (lidar 0.355 m, streak 4) but identity unconfirmed: vision unavailable 3 times in a row: arrival confirmation failed: refused (sweep)"
+   ]
+  },
+  {
+   "house": "procthor:val:5",
+   "outcome": "arrived_unconfirmed",
+   "sim_s": 60,
+   "goals": 5,
+   "arrivals": [
+    0.55,
+    0.55,
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 0.55,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 3,
+   "cloud_confirms": 3,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 41,
+    "local_track": 23
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (arrived_unconfirmed): arrived (lidar 0.4 m, streak 4) but identity unconfirmed: vision unavailable 3 times in a row: arrival confirmation failed: refused (sweep)"
+   ]
+  }
+ ],
+ "wall_s": 29
+}
