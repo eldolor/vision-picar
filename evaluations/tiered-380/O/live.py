@@ -5,10 +5,11 @@ evaluations/tiered-380/O/live.py
 `tier_search: explore` on a fresh ROS stack per house, with
 * perception blind to the target (`SIM_PERCEPTION_BLIND=1` on the brain);
 * a stand-in local VLM on this host (the service's `/identity` route) that
-  answers from the simulator's report: the robot server's current `/frame`
-  detections -- a yes with a box at the target's bearing, else a no;
-* the cloud (the counting proxy, `--cloud standin`) answering from the same
-  report: `target_visible` iff the frame reports the target.
+  answers from the image it is sent: the renderer draws only the backpack in
+  `COLOR_TARGET`, so its pixels give the target's bearing -- a yes with a box
+  there, else a no;
+* the cloud (the counting proxy, `--cloud standin`) answering the same way:
+  `target_visible` iff the image shows the target.
 Records `G/live.py`'s row per house (contacts on ground truth, arrivals,
 found, calls). Free.
 
@@ -26,7 +27,6 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import httpx
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -34,27 +34,26 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "evaluations/tiered-380/G"))
 import live as glive                                         # noqa: E402  (G/live.py)
 from brain.local_vlm import model_size                       # noqa: E402
-from tests import demo_explore                               # noqa: E402
 from tests.demo_local_tier import free_port                  # noqa: E402
 
 TARGET = glive.TARGET
 SIM_HFOV_DEG = 60.0
-_robot = {"client": None}
+MIN_PIXELS = 12          # target-coloured pixels that make a sighting
+TOLERANCE = 60           # summed |RGB| distance, for JPEG's blur
 
 
-def _seen():
-    """The target's in-frame bearing in the robot server's current frame, or None."""
-    c = _robot["client"]
-    if c is None:
+def _seen_in(jpeg: bytes):
+    """The target's in-frame bearing in THIS image (the renderer draws only
+    the backpack in COLOR_TARGET), or None -- judged on the frame the brain
+    asked about, never on a later one (review)."""
+    import numpy as np
+    from sim.renderer import COLOR_TARGET
+    img = np.asarray(Image.open(io.BytesIO(jpeg)).convert("RGB"), dtype=np.int32)
+    hit = np.abs(img - np.array(COLOR_TARGET)).sum(axis=2) < TOLERANCE
+    if hit.sum() < MIN_PIXELS:
         return None
-    try:
-        frame = c.get("/frame").json()
-    except Exception:  # noqa: BLE001 -- no frame: say no
-        return None
-    for d in frame.get("detections") or ():
-        if d.get("label") == TARGET and d.get("bearing_deg") is not None:
-            return float(d["bearing_deg"])
-    return None
+    xs = np.nonzero(hit)[1]
+    return (float(xs.mean()) / img.shape[1] - 0.5) * SIM_HFOV_DEG
 
 
 class StandinLocal(BaseHTTPRequestHandler):
@@ -78,13 +77,14 @@ class StandinLocal(BaseHTTPRequestHandler):
     def do_POST(self):
         req = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         t0 = time.monotonic()
-        bearing = _seen()
+        jpeg = base64.b64decode(req.get("image_b64") or "")
+        bearing = _seen_in(jpeg) if jpeg else None
         if self.path.rstrip("/") != "/identity":
             return self._send(200, {"status": "error", "score": None, "reason": "stand-in: identity only"})
         if bearing is None:
             return self._send(200, {"status": "answered", "score": 0.0, "parsed": True, "box": None,
                                     "ms": (time.monotonic() - t0) * 1000})
-        w, h = model_size(*Image.open(io.BytesIO(base64.b64decode(req["image_b64"]))).size)
+        w, h = model_size(*Image.open(io.BytesIO(jpeg)).size)
         x = bearing / SIM_HFOV_DEG + 0.5
         box = [max(0.0, (x - 0.02) * w), 0.4 * h, min(w, (x + 0.02) * w), 0.6 * h]
         self._send(200, {"status": "answered", "score": 0.95, "parsed": True,
@@ -98,8 +98,9 @@ class TruthProxy(glive.Proxy):
     def do_POST(self):
         if self.mode != "standin" or self.path != "/navigate":
             return super().do_POST()
-        self.rfile.read(int(self.headers.get("Content-Length") or 0))
-        visible = _seen() is not None
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        image = base64.b64decode(body.get("image_base64") or "")
+        visible = bool(image) and _seen_in(image) is not None
         out = {"target_visible": visible,
                "target_direction": "center" if visible else "not_visible",
                "target_reached": False, "obstacle_ahead": False, "room_guess": "unclear",
@@ -111,15 +112,6 @@ class TruthProxy(glive.Proxy):
 
 
 def main():
-    _stack = demo_explore.stack
-
-    def stack(house, *a, **k):
-        client = _stack(house, *a, **k)
-        _robot["client"] = client
-        return client
-
-    demo_explore.stack = stack
-    glive.demo_explore.stack = stack
     glive.Proxy = TruthProxy
     port = free_port()
     httpd = ThreadingHTTPServer(("127.0.0.1", port), StandinLocal)
