@@ -24,6 +24,9 @@
 # and the summary reports its latency over the mission window and the local
 # VLM's calls. SIM_PERCEPTION_BLIND and TIER_COLD_SEARCH_AFTER, when set,
 # reach the brain through the environment (3.80.O's switch, the pace).
+# Since the default change (the user's option a, after P's runs) a mission
+# with the local VLM is paced by TIER_LOCAL_COLD_SEARCH_AFTER (default 1);
+# P@6 is now reproduced with TIER_LOCAL_COLD_SEARCH_AFTER=6.
 #
 # --- the shared harness header follows ---
 # 3.58 (docs/plans/ros-alignment/3.58-local-identity-decision.md), run L:

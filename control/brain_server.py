@@ -364,6 +364,9 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
     # 3.80.C: the local VLM tier at arrival, when a URL is configured; 3.80.D:
     # the same client for every frame's question, asking where as well.
     local = _local_identity_fn(target, config, local_secret)
+    if local is not None:
+        # 3.80.P: a local tier's questions are free; the cloud-only pace stays.
+        kwargs["cold_search_after"] = config["tier_local_cold_search_after"]
     try:
         kwargs["local_identity_fn"] = local
         kwargs["local_sighting_fn"] = (functools.partial(local.ask, box=True)
@@ -689,7 +692,8 @@ def create_app(
         # with no cause attached.
         runner.metrics_config = {
             k: config.get(k) for k in (
-                "tier_cold_search_after", "tier_cold_search_after_cm",
+                "tier_cold_search_after", "tier_local_cold_search_after",
+                "tier_cold_search_after_cm",
                 "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
                 "tier_local_direction", "tier_steer_on_candidate", "tier_search",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",

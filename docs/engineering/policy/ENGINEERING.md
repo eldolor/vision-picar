@@ -310,7 +310,8 @@ with `close()`, `reset_epoch()`, `set_searched_rooms()`, `confirm_arrival(frame)
 | Key | Shipped | Unit | Why |
 |---|---|---|---|
 | `tier_consecutive_frames` | 2 | frames | 6.1: 1 frame gives 2.8x fewer calls than frames, 2 gives 4.1x, 3 gives 4.5x for a frame of lag |
-| `tier_cold_search_after` | 6 | absent frames | measured 2026-09-12 with async on: 2, 3, 4 and 6 all covered 14 of 15 visible spans; 2 cost 41 more calls; env `TIER_COLD_SEARCH_AFTER` (3.80.P) |
+| `tier_cold_search_after` | 6 | absent frames | measured 2026-09-12 with async on: 2, 3, 4 and 6 all covered 14 of 15 visible spans; 2 cost 41 more calls; env `TIER_COLD_SEARCH_AFTER` (3.80.P). A cloud-only mission's pace |
+| `tier_local_cold_search_after` | 1 | absent frames | 3.80.P: the pace when a local VLM tier is configured (its questions are free); the Jetson at pace 1: perception p90 171 ms, `MemAvailable` min 823 MB, 0 OOM; env `TIER_LOCAL_COLD_SEARCH_AFTER` |
 | `tier_cold_search_after_cm` | 0 (off) | cm | needs odometry; no real-pixels backend has it yet |
 | `tier_async_cloud` | true | -- | 2026-09-12 (`evaluations/gpu/pacing/`): 14 of 15 spans looked at vs 12, 94 calls vs 100, worst latency 2 frames vs 4. The class default is False |
 | `tier_hold_goal` | true | -- | Phase F: on five rig walks the per-frame scan outvoted the cloud 5:1 |

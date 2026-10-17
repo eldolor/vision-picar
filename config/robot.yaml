@@ -217,6 +217,14 @@ brain:
   # passed for the next frame (the user, 2026-10-13). Not consecutive: a
   # detected frame does not reset it, as when the 6 was measured.
   tier_cold_search_after: 6
+  # 3.80.P (the user, 2026-10-17): the pace instead, when a local VLM tier is
+  # configured (tier_local_vlm_url). Its questions are free, and on the
+  # Jetson one on every free frame kept perception's p90 at 171 ms (budget
+  # 250) and MemAvailable >= 823 MB; in the simulator it reached the target
+  # in 17 of 21 houses with perception blind (6: 12 of 21, 3.80.O). A
+  # cloud-only mission keeps tier_cold_search_after. Env
+  # TIER_LOCAL_COLD_SEARCH_AFTER overrides.
+  tier_local_cold_search_after: 1
 
   # Phase C. How much NEW GROUND (centimetres) may be covered before the
   # cloud is asked to look again while the local tier is seeing nothing.

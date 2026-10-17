@@ -103,6 +103,11 @@ DEFAULTS = {
     # the target is even in this room. brain/tiered.py's own note says this
     # number is a guess and is the first thing to tune against a real walk.
     "tier_cold_search_after": 6,
+    # 3.80.P (the user, 2026-10-17, option a): the same pace when a local VLM
+    # tier is configured -- its questions are free and the board affords one
+    # on every free frame (perception p90 171 ms, MemAvailable min 823 MB);
+    # a cloud-only mission keeps tier_cold_search_after.
+    "tier_local_cold_search_after": 1,
     # Phase C: centimetres of new ground before the cloud looks again.
     # 0 disables, and is the shipped setting until Phase D measures one.
     "tier_cold_search_after_cm": 0.0,
@@ -316,12 +321,18 @@ def load_brain_config(config_path=None) -> dict:
             if value not in ("true", "false", "1", "0"):
                 raise ValueError(f"{env} must be true or false; got {os.environ[env]!r}")
             merged[key] = value in ("true", "1")
-    # 3.80.P: the board's pace arms set the local VLM's question pace per run.
-    if os.environ.get("TIER_COLD_SEARCH_AFTER", "").strip():
-        raw = os.environ["TIER_COLD_SEARCH_AFTER"].strip()
-        if not re.fullmatch(r"[0-9]+", raw) or int(raw) < 1:
-            raise ValueError(f"TIER_COLD_SEARCH_AFTER must be a whole number >= 1; got {raw!r}")
-        merged["tier_cold_search_after"] = int(raw)
+    # 3.80.P: the board's pace arms set the question pace per run.
+    for key, env in (("tier_cold_search_after", "TIER_COLD_SEARCH_AFTER"),
+                     ("tier_local_cold_search_after", "TIER_LOCAL_COLD_SEARCH_AFTER")):
+        if os.environ.get(env, "").strip():
+            raw = os.environ[env].strip()
+            if not re.fullmatch(r"[0-9]+", raw) or int(raw) < 1:
+                raise ValueError(f"{env} must be a whole number >= 1; got {raw!r}")
+            merged[key] = int(raw)
+    local_pace = merged["tier_local_cold_search_after"]
+    if isinstance(local_pace, bool) or not isinstance(local_pace, int) or local_pace < 1:
+        raise ValueError("brain.tier_local_cold_search_after must be a whole number >= 1; "
+                         f"got {local_pace!r}")
     if os.environ.get("NAVIGATE_MODEL_ID"):
         merged["navigate_model_id"] = os.environ["NAVIGATE_MODEL_ID"]
     if os.environ.get("NAVIGATE_PROMPT_VARIANT"):

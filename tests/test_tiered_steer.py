@@ -218,6 +218,33 @@ def test_p_env_sets_the_question_pace(monkeypatch):
             load_brain_config()
 
 
+def test_p_a_local_tier_asks_on_every_free_frame_and_the_cloud_keeps_six(monkeypatch):
+    """3.80.P, the user's option (a): pace 1 only with a local VLM tier."""
+    from control.brain_config import load_brain_config
+    from control.brain_server import _tiered_vision_fn
+    for env in ("TIER_COLD_SEARCH_AFTER", "TIER_LOCAL_COLD_SEARCH_AFTER"):
+        monkeypatch.delenv(env, raising=False)
+    config = load_brain_config()
+    assert config["tier_local_cold_search_after"] == 1
+    assert config["tier_cold_search_after"] == 6
+    monkeypatch.delenv("LOCAL_VLM_URL", raising=False)
+    tier = _tiered_vision_fn("backpack", Cloud(), load_brain_config(), simulated=True)
+    assert tier.local_identity_fn is None and tier.cold_search_after == 6
+    tier.close()
+    monkeypatch.setenv("LOCAL_VLM_URL", "http://127.0.0.1:9")
+    tier = _tiered_vision_fn("backpack", Cloud(), load_brain_config(), simulated=True)
+    assert tier.local_identity_fn is not None and tier.cold_search_after == 1
+    tier.close()
+    monkeypatch.setenv("TIER_LOCAL_COLD_SEARCH_AFTER", "6")
+    tier = _tiered_vision_fn("backpack", Cloud(), load_brain_config(), simulated=True)
+    assert tier.cold_search_after == 6
+    tier.close()
+    for bad in ("0", "x"):
+        monkeypatch.setenv("TIER_LOCAL_COLD_SEARCH_AFTER", bad)
+        with pytest.raises(ValueError, match="TIER_LOCAL_COLD_SEARCH_AFTER"):
+            load_brain_config()
+
+
 # --- F-b: YOLOE + CLIP steer on an uncertain candidate ----------------------
 
 def test_fb_a_band_candidate_off_centre_turns_toward_it():
