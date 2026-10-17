@@ -691,9 +691,12 @@ def create_app(
         # line without the config that produced it is a set of numbers
         # with no cause attached.
         runner.metrics_config = {
-            k: config.get(k) for k in (
+            # 3.80.P: whether a local tier was configured -- which pace held --
+            # never its URL, which leaves the machine with the row.
+            "tier_local_vlm": bool((config.get("tier_local_vlm_url") or "").strip()),
+            **{k: config.get(k) for k in (
                 "tier_cold_search_after", "tier_local_cold_search_after",
-                "tier_local_vlm_url", "tier_cold_search_after_cm",
+                "tier_cold_search_after_cm",
                 "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
                 "tier_local_direction", "tier_steer_on_candidate", "tier_search",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",
@@ -701,7 +704,7 @@ def create_app(
                 "perception_floor_mask", "perception_crop_path",
                 "navigate_model_id", "navigate_prompt_variant",
                 "explore_goal_policy",
-            ) if k in config
+            ) if k in config},
         }
         return runner
 

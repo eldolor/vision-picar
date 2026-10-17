@@ -241,17 +241,34 @@ def test_p_a_local_tier_asks_on_every_free_frame_and_the_cloud_keeps_six(monkeyp
     tier = _tiered_vision_fn("backpack", Cloud(), load_brain_config(), simulated=True)
     assert tier.local_cold_search_after == 6
     tier.close()
+    monkeypatch.delenv("TIER_LOCAL_COLD_SEARCH_AFTER")
+    import yaml
+    from pathlib import Path
+    cfg = yaml.safe_load(Path("config/robot.yaml").read_text())
+    cfg["brain"]["tier_cold_search_after"] = 6.0
+    tmp = Path(__import__("tempfile").mkdtemp()) / "robot.yaml"
+    tmp.write_text(yaml.safe_dump(cfg))
+    assert load_brain_config(tmp)["tier_cold_search_after"] == 6   # a 6.0 still starts
     for bad in ("0", "x"):
         monkeypatch.setenv("TIER_LOCAL_COLD_SEARCH_AFTER", bad)
         with pytest.raises(ValueError, match="TIER_LOCAL_COLD_SEARCH_AFTER"):
             load_brain_config()
 
 
-def _cold_counts(local, **kw):
-    tier, cloud = tier_for([P(ABSENT)], local, async_cloud=False, cold_search_after=6, **kw)
-    play(tier, 36)
+def _cold_counts(local, frames=36, cloud=None, **kw):
+    tier, cloud = tier_for([P(ABSENT)], local, async_cloud=False, cold_search_after=6,
+                           cloud=cloud, **kw)
+    play(tier, frames)
     tier.close()
     return tier.stats.local_triggers.get(TRIGGER_COLD_SEARCH, 0), cloud.calls
+
+
+def _cloud_only_calls(frames=60, cloud=None):
+    tier = TieredVision(Pipeline([P(ABSENT)]), cloud or Cloud(), async_cloud=False,
+                        cold_search_after=6, stale_after=0, spin_guard_after=0)
+    play(tier, frames)
+    tier.close()
+    return tier.stats.cloud_calls
 
 
 def test_p_the_local_pace_asks_the_local_tier_every_frame():
@@ -270,9 +287,22 @@ def test_p_a_dead_local_vlm_never_brings_the_local_pace_to_the_cloud():
 
 
 def test_p_unable_answers_reach_the_cloud_only_at_its_bar():
-    _, fast = _cold_counts(Local(unable("timeout")), local_cold_search_after=1)
-    _, paced = _cold_counts(Local(unable("timeout")))
-    assert fast <= paced + 1 and fast <= 8, (fast, paced)
+    """No more often than a cloud-only mission (the recorded change: the old
+    pace 6 for both tiers was one per ~8 frames)."""
+    _, fast = _cold_counts(Local(unable("timeout")), frames=60, local_cold_search_after=1)
+    assert fast <= _cloud_only_calls(60), fast
+
+
+def test_p_a_failing_cloud_behind_a_dead_vlm_is_paced_too():
+    """Review of 3.80.P: the sync handover's failure reset nothing."""
+    from brain.tiered import TieredVision as TV
+    failing = Cloud(fail=RuntimeError("503"))
+    tier = TV(Pipeline([P(ABSENT)]), failing, local_sighting_fn=Local(LocalVLMAbsent("down")),
+              async_cloud=False, cold_search_after=6, local_cold_search_after=1,
+              stale_after=0, spin_guard_after=0, cloud_errors_fatal=False)
+    play(tier, 60)
+    tier.close()
+    assert failing.calls <= _cloud_only_calls(60), failing.calls
 
 
 # --- F-b: YOLOE + CLIP steer on an uncertain candidate ----------------------

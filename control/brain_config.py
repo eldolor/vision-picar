@@ -331,8 +331,12 @@ def load_brain_config(config_path=None) -> dict:
             merged[key] = int(raw)
     for key in ("tier_cold_search_after", "tier_local_cold_search_after"):
         pace = merged[key]
-        if isinstance(pace, bool) or not isinstance(pace, int) or pace < 1:
+        # A whole number, as an int or a float like 6.0 (which TieredVision
+        # has always read through int()).
+        if (isinstance(pace, bool) or not isinstance(pace, (int, float))
+                or pace != int(pace) or pace < 1):
             raise ValueError(f"brain.{key} must be a whole number >= 1; got {pace!r}")
+        merged[key] = int(pace)
     if os.environ.get("NAVIGATE_MODEL_ID"):
         merged["navigate_model_id"] = os.environ["NAVIGATE_MODEL_ID"]
     if os.environ.get("NAVIGATE_PROMPT_VARIANT"):

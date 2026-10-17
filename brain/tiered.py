@@ -1096,6 +1096,13 @@ class TieredVision:
         try:
             got = self._ask_tiers(frame, q, fn)
         except Exception as exc:  # noqa: BLE001 -- the absent tier's cloud call
+            # Only the cloud's call raises out of _ask_tiers: it was made, so
+            # its pacing starts again, as the main path's does before its
+            # call -- else a failing cloud is retried on every frame (review
+            # of 3.80.P: 55 calls in 60 frames against 10).
+            self._absent_streak = 0
+            self._since_call = 0
+            self._mark_odometry_call()
             if self.cloud_errors_fatal:
                 raise
             self._count_cloud_error(exc)
@@ -1903,6 +1910,9 @@ class TieredVision:
             "rule": "distance" if distance_armed else "frames",
             "frames_absent": self._absent_streak,
             "frames_bar": self._cold_search_bar(),
+            # 3.80.P: the bar a question handed to the cloud waits, which
+            # differs from frames_bar while the local tier takes them.
+            "cloud_frames_bar": self._cloud_cold_search_bar(),
             "cm_since_call": (None if self._distance_since_call is None
                               else round(self._distance_since_call, 1)),
             "cm_bar": self.cold_search_after_cm,
@@ -2293,7 +2303,9 @@ class TieredVision:
         if self.vocabulary is None:
             return None
         out = self.vocabulary.as_dict()
-        out["cold_search_after"] = self._cold_search_bar()
+        # The cloud's bar: this readout is about the OOV experiment, which
+        # paces the cloud (3.80.P: the local pace is `pacing.frames_bar`).
+        out["cold_search_after"] = self._cloud_cold_search_bar()
         out["enforced"] = self.oov_cold_search_after is not None
         return out
 
