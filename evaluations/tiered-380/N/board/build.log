@@ -1,0 +1,13 @@
+NT llm_build exit 0 1066s
+NT V512 visual_build exit 0 93s
+NT V1024 visual_build exit 0 89s
+3.3G	/home/picar/bench-380N/NT/llm
+627M	/home/picar/bench-380N/NT/V512/visual
+625M	/home/picar/bench-380N/NT/V1024/visual
+NVE llm_build exit 0 125s
+NVE V512 visual_build exit 0 100s
+NVE V1024 visual_build exit 0 100s
+2.3G	/home/picar/bench-380N/NVE/llm
+624M	/home/picar/bench-380N/NVE/V512/visual
+625M	/home/picar/bench-380N/NVE/V1024/visual
+BUILD DONE; units active active; swap 0

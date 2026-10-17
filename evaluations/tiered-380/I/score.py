@@ -102,9 +102,10 @@ TIERS = [  # (tier, file, field, sets)
     ("llama.cpp Q4 MiniCPM-V 4.0: direction", "../M/minicpm.scaled.jsonl", "direction", ("S1", "S2", "S3")),
     ("llama.cpp Q4 MiniCPM-V 4.0: box", "../M/minicpm.scaled.jsonl", "box_answer", ("S1", "S2")),
     ("Edge-LLM InternVL3.5-4B NVE V512: direction", "../N/NVE-V512.scaled.jsonl", "direction", ("S1", "S2", "S3")),
-    ("Edge-LLM InternVL3.5-4B NVE V512: box", "../N/NVE-V512.scaled.jsonl", "box_answer", ("S1", "S2")),
+    ("Edge-LLM InternVL3.5-4B NVE V512: box (service, bbox_2d only)", "../N/NVE-V512.scaled.jsonl", "box_answer", ("S1", "S2")),
+    ("Edge-LLM InternVL3.5-4B NVE V512: box (full reply, amendment 1)", "../N/NVE-V512-box.scaled.jsonl", "box_answer", ("S1", "S2")),
     ("Edge-LLM InternVL3.5-4B NVE V1024: direction", "../N/NVE-V1024.scaled.jsonl", "direction", ("S1", "S2", "S3")),
-    ("Edge-LLM InternVL3.5-4B NVE V1024: box", "../N/NVE-V1024.scaled.jsonl", "box_answer", ("S1", "S2")),
+    ("Edge-LLM InternVL3.5-4B NVE V1024: box (full reply, amendment 1)", "../N/NVE-V1024-box.scaled.jsonl", "box_answer", ("S1", "S2")),
     ("Opus 4.5: action", "opus.jsonl", "action", ("S1", "S2", "S3")),
     ("Opus 4.5: target_direction", "opus.jsonl", "target_third", ("S1",)),
 ]

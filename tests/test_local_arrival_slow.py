@@ -44,5 +44,7 @@ def test_amendment3_a_refused_turn_to_a_local_yes_is_not_restarted_in_place():
     ticks = 0
     while runner.tick() and ticks < 6000:
         ticks += 1
-    assert runner.status()["outcome"] != "running", runner.status()["log_tail"][-1:]
+    # It ends, and on its own terms -- not parked until the time limit.
+    assert runner.status()["outcome"] not in ("running", "out_of_budget"), \
+        runner.status()["log_tail"][-1:]
     assert tier.stats.local_triggers.get("local_track", 0) < 2000

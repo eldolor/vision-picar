@@ -24,7 +24,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 # --root <tree>: run against another checkout's code (the baseline arm runs
-# today's code, before 3.80.O); the stand-ins below are this file's own.
+# today's code, before 3.80.O); the stand-ins below are this file's own, and
+# WalkingNav comes from this tree when that checkout has none.
 if "--root" in sys.argv:
     ROOT = Path(sys.argv[sys.argv.index("--root") + 1]).resolve()
 sys.path.insert(0, str(ROOT))
@@ -35,7 +36,18 @@ from sim.grid_world import CELL_WALL  # noqa: E402
 from sim.maps import build_world  # noqa: E402
 from sim.mock_robot import MockRobot  # noqa: E402
 from sim.mock_world import MockWorld  # noqa: E402
-from tests.test_explore import FakeNav, WalkingNav  # noqa: E402
+from tests.test_explore import FakeNav  # noqa: E402
+try:
+    from tests.test_explore import WalkingNav  # noqa: E402
+except ImportError:
+    # --root at a checkout older than 3.80.O (the baseline arm): this tree's
+    # WalkingNav, its test module loaded under another name (review).
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location(
+        "test_explore_380o", Path(__file__).resolve().parents[3] / "tests/test_explore.py")
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    WalkingNav = _mod.WalkingNav
 
 TARGET = "red backpack"
 HFOV = 60.0

@@ -1,0 +1,21 @@
+{
+ "chosen": "0-1000",
+ "close_second": null,
+ "by_scale": {
+  "pixels": {
+   "fits": false,
+   "answered": 11,
+   "agree": 4
+  },
+  "0-1000": {
+   "fits": false,
+   "answered": 11,
+   "agree": 11
+  },
+  "0-1": {
+   "fits": false,
+   "answered": 11,
+   "agree": 1
+  }
+ }
+}
