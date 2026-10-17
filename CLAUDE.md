@@ -183,7 +183,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   frame still in perception (30 s), and `pipeline_for` collects first: the
   new-target low is 508 MB (floor 500), set by the text child. Records:
   `evaluations/memory-381/`; `headroom_identity.sh SWITCH=release`.
-* **Tiered identity (3.80 A-C), merged 2026-10-14; the local tier is OFF by
+* **Tiered identity (3.80), A-C merged 2026-10-14; the local tier is OFF by
   default.** The user's strict order: perception, then local Qwen, then the
   cloud only after `tier_local_max_unable` (2) unable answers or when the
   local VLM is absent; thresholds approved (no_below 0.1, yes at 0.5,
@@ -193,10 +193,30 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   Board: 299/299 answers as 3.78, HTTP p90 1.17 s, 4.07 GB. C: the arrival
   question asks it first (`brain/local_vlm.py`, `TieredVision.confirm_local`,
   arrival state `checking`); on with `tier_local_vlm_url` / `LOCAL_VLM_URL`.
-  C1-C8 met (live: `found` offline, 0 cloud calls at arrival). D (per-frame
-  escalation) and E (board measurements, then turning it on) are open.
+  C1-C8 met (live: `found` offline, 0 cloud calls at arrival).
   `picar-stack` runs at `oom_score_adj` -900 on the Jetson (B4, checked
   2026-10-14 at `954cc68`). Survey room labels go through the same tiers in 3.70.S6.
+  **D-P merged 2026-10-17 (`e9b4017`):**
+  * D: every frame's question goes local first. F: Qwen's direction
+    question says FORWARD on every frame (`tier_local_direction` off);
+    YOLOE + CLIP's candidate steer is on. G: `tier_search: explore` (needs
+    nav2 and a local tier): explore picks where to look, the tiers decide
+    identity; cloud calls 765 -> 6 over 21 houses, 0 contacts.
+  * I-N: nine more local VLMs or builds (RoboBrain2.0-3B, InternVL3.5-2B/4B,
+    Youtu-VL-4B, MiniCPM-V 4.0, under llama.cpp and Edge-LLM); none
+    replaces VE. Opus 4.5's steering arm (3.80.I, ~$2.6) waits for the user.
+  * O: the local VLM's box finishes the approach and the arrival when
+    perception is silent, and only the cloud may confirm such an arrival
+    (never the local tier). Blind perception, 21 houses: 17 at pace 1, 12 at
+    pace 6, 0 `found` away from the target.
+  * P: on the Jetson at pace 1, perception p90 171 ms and `MemAvailable`
+    minimum 823 MB, 0 OOM. `tier_local_cold_search_after: 1` (the user's
+    option a) paces only questions the local tier takes; any question handed
+    to the cloud waits `tier_cold_search_after` (6).
+  * The local tier stays off unless `tier_local_vlm_url` is set.
+  * Open: a person's D-pad Stop during a local-led arrival's cloud confirm
+    can still end `found` (the brain cannot read 3.84's latch); 3.80.H
+    criterion 4; 3.80.E. Rebuild `vision-picar-ros:latest` from `dev`.
 * **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
   (67%); few-shot on the user's own rooms meets accuracy on three rooms
   (81%, within 1.1 points of the cloud) but not laptop-CPU cost. Not wired
