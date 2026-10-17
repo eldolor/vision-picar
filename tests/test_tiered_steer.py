@@ -208,10 +208,11 @@ def test_fa_config_refuses_a_bad_boolean(monkeypatch):
 
 def test_p_env_sets_the_question_pace(monkeypatch):
     from control.brain_config import load_brain_config
+    monkeypatch.delenv("TIER_COLD_SEARCH_AFTER", raising=False)
     assert load_brain_config()["tier_cold_search_after"] == 6
     monkeypatch.setenv("TIER_COLD_SEARCH_AFTER", "1")
     assert load_brain_config()["tier_cold_search_after"] == 1
-    for bad in ("0", "-1", "1.5", "often"):
+    for bad in ("0", "-1", "1.5", "often", "\u00b2"):
         monkeypatch.setenv("TIER_COLD_SEARCH_AFTER", bad)
         with pytest.raises(ValueError, match="TIER_COLD_SEARCH_AFTER"):
             load_brain_config()

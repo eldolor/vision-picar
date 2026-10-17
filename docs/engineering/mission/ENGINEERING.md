@@ -462,7 +462,7 @@ cancelled_by)` (`stopped` -> `cancelled`/`stop`, `preempted` ->
   its stop: it cancels the mission's OWN goal if nav2 still holds one
   within `OWN_GOAL_TOLERANCE_M` (0.05 m) of it -- the robot server spares a
   goal on the brain's stop -- then closes the client once no goal is on its
-  way. `discard()` does the same for a runner built and never started.
+  way. `discard()` does the same for a runner built and never started, and also closes its policy (perception models, the local VLM client); a start refused after the tiered policy was built, or whose vision drill replaced it, closes that policy too (3.80 rebase review, 2026-10-17).
 
 ## Parameters and configuration
 

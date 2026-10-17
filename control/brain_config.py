@@ -11,6 +11,7 @@ processes share one config *file* without sharing a code path.
 """
 
 import os
+import re
 from pathlib import Path
 
 import yaml
@@ -318,7 +319,7 @@ def load_brain_config(config_path=None) -> dict:
     # 3.80.P: the board's pace arms set the local VLM's question pace per run.
     if os.environ.get("TIER_COLD_SEARCH_AFTER", "").strip():
         raw = os.environ["TIER_COLD_SEARCH_AFTER"].strip()
-        if not raw.isdigit() or int(raw) < 1:
+        if not re.fullmatch(r"[0-9]+", raw) or int(raw) < 1:
             raise ValueError(f"TIER_COLD_SEARCH_AFTER must be a whole number >= 1; got {raw!r}")
         merged["tier_cold_search_after"] = int(raw)
     if os.environ.get("NAVIGATE_MODEL_ID"):

@@ -593,3 +593,49 @@ def test_rebase_review_a_refused_runner_closes_the_tiered_policy(monkeypatch):
         r = c.post("/mission/start", json={"target_object": TARGET, "policy": "tiered"})
     assert r.status_code == 400, r.text
     assert closed == [True]
+
+
+def _tier_start(monkeypatch, closed, close_raises=False):
+    from control import brain_server
+
+    class Tier:
+        def __call__(self, frame):
+            return {}
+
+        def close(self):
+            closed.append(True)
+            if close_raises:
+                raise RuntimeError("close failed")
+    monkeypatch.setattr(brain_server, "_tiered_vision_fn", lambda *a, **k: Tier())
+    monkeypatch.setattr(brain_server, "vision_fn_for", lambda *a, **k: (lambda f: {}))
+    monkeypatch.setattr(brain_server, "_validate_navigate_choices", lambda *a, **k: None)
+    monkeypatch.setenv("VISION_URL", "http://127.0.0.1:9")
+    return brain_server
+
+
+def test_rebase_review_a_failing_close_keeps_the_refusal_a_400(monkeypatch):
+    from control import drills
+    closed = []
+    brain_server = _tier_start(monkeypatch, closed, close_raises=True)
+
+    class Refuses(MissionRunner):
+        def __init__(self, *a, **k):
+            raise ValueError("a constructor that refuses")
+    monkeypatch.setattr(drills, "MissionRunner", Refuses)
+    app = brain_server.create_app(robot_factory=lambda: MockRobot(_build(), render=False))
+    with TestClient(app) as c:
+        r = c.post("/mission/start", json={"target_object": TARGET, "policy": "tiered"})
+    assert r.status_code == 400 and "refuses" in r.text, r.text
+    assert closed == [True]
+
+
+def test_rebase_review_a_vision_drill_closes_the_policy_it_replaced(monkeypatch):
+    closed = []
+    brain_server = _tier_start(monkeypatch, closed)
+    app = brain_server.create_app(robot_factory=lambda: MockRobot(_build(), render=False))
+    with TestClient(app) as c:
+        r = c.post("/mission/start", json={"target_object": TARGET, "policy": "tiered",
+                                           "fault": "vision_error"})
+        assert r.status_code == 200, r.text
+        assert closed == [True]
+        c.post("/mission/stop")

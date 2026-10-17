@@ -425,8 +425,19 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         # A refused build (perception's models failed to load) keeps no
         # local client open (review of the 3.80 rebase, 2026-10-17).
         if local is not None:
-            local.close()
+            _close_quietly(local)
         raise
+
+
+def _close_quietly(obj) -> None:
+    """Close what a refused or replaced start built; a close that fails never
+    replaces the start's own error (review of the 3.80 rebase, 2026-10-17)."""
+    close = getattr(obj, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("could not close a policy the start let go: %s", e)
 
 
 def create_app(
@@ -644,10 +655,12 @@ def create_app(
                 navigator.close()      # 3.76: a refused start keeps no client open
             # The tiered policy too: its local VLM client and perception
             # models (review of the 3.80 rebase, 2026-10-17).
-            close = getattr(vision_fn, "close", None)
-            if callable(close):
-                close()
+            _close_quietly(vision_fn)
             raise
+        if kwargs.get("vision_fn") is not vision_fn:
+            # A vision drill swapped the policy for its own function: the one
+            # built above has no other owner (review of the 3.80 rebase).
+            _close_quietly(vision_fn)
         # Kept on the runner and applied once the start is committed (3.76):
         # set here, a drill whose start then failed left its deadline in
         # /health until the next start.
