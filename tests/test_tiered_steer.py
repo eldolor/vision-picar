@@ -249,6 +249,10 @@ def test_p_a_local_tier_asks_on_every_free_frame_and_the_cloud_keeps_six(monkeyp
     tmp = Path(__import__("tempfile").mkdtemp()) / "robot.yaml"
     tmp.write_text(yaml.safe_dump(cfg))
     assert load_brain_config(tmp)["tier_cold_search_after"] == 6   # a 6.0 still starts
+    cfg["brain"]["tier_cold_search_after"] = float("inf")
+    tmp.write_text(yaml.safe_dump(cfg))
+    with pytest.raises(ValueError, match="tier_cold_search_after"):
+        load_brain_config(tmp)
     for bad in ("0", "x"):
         monkeypatch.setenv("TIER_LOCAL_COLD_SEARCH_AFTER", bad)
         with pytest.raises(ValueError, match="TIER_LOCAL_COLD_SEARCH_AFTER"):

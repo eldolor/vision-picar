@@ -1106,7 +1106,7 @@ class TieredVision:
             if self.cloud_errors_fatal:
                 raise
             self._count_cloud_error(exc)
-            got = None
+            return self._local_scene(perception, note="cloud call failed")
         if isinstance(got, _LocalAnswer) or got is None:
             if got is not None:
                 self._apply_local(got)

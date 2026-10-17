@@ -10,6 +10,7 @@ brain process. The brain is an HTTP client of the robot and nothing more
 processes share one config *file* without sharing a code path.
 """
 
+import math
 import os
 import re
 from pathlib import Path
@@ -334,7 +335,7 @@ def load_brain_config(config_path=None) -> dict:
         # A whole number, as an int or a float like 6.0 (which TieredVision
         # has always read through int()).
         if (isinstance(pace, bool) or not isinstance(pace, (int, float))
-                or pace != int(pace) or pace < 1):
+                or not math.isfinite(pace) or pace != int(pace) or pace < 1):
             raise ValueError(f"brain.{key} must be a whole number >= 1; got {pace!r}")
         merged[key] = int(pace)
     if os.environ.get("NAVIGATE_MODEL_ID"):
