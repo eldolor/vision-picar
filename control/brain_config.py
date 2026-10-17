@@ -315,6 +315,12 @@ def load_brain_config(config_path=None) -> dict:
             if value not in ("true", "false", "1", "0"):
                 raise ValueError(f"{env} must be true or false; got {os.environ[env]!r}")
             merged[key] = value in ("true", "1")
+    # 3.80.P: the board's pace arms set the local VLM's question pace per run.
+    if os.environ.get("TIER_COLD_SEARCH_AFTER", "").strip():
+        raw = os.environ["TIER_COLD_SEARCH_AFTER"].strip()
+        if not raw.isdigit() or int(raw) < 1:
+            raise ValueError(f"TIER_COLD_SEARCH_AFTER must be a whole number >= 1; got {raw!r}")
+        merged["tier_cold_search_after"] = int(raw)
     if os.environ.get("NAVIGATE_MODEL_ID"):
         merged["navigate_model_id"] = os.environ["NAVIGATE_MODEL_ID"]
     if os.environ.get("NAVIGATE_PROMPT_VARIANT"):

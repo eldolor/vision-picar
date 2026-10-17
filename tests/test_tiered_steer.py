@@ -206,6 +206,17 @@ def test_fa_config_refuses_a_bad_boolean(monkeypatch):
         load_brain_config()
 
 
+def test_p_env_sets_the_question_pace(monkeypatch):
+    from control.brain_config import load_brain_config
+    assert load_brain_config()["tier_cold_search_after"] == 6
+    monkeypatch.setenv("TIER_COLD_SEARCH_AFTER", "1")
+    assert load_brain_config()["tier_cold_search_after"] == 1
+    for bad in ("0", "-1", "1.5", "often"):
+        monkeypatch.setenv("TIER_COLD_SEARCH_AFTER", bad)
+        with pytest.raises(ValueError, match="TIER_COLD_SEARCH_AFTER"):
+            load_brain_config()
+
+
 # --- F-b: YOLOE + CLIP steer on an uncertain candidate ----------------------
 
 def test_fb_a_band_candidate_off_centre_turns_toward_it():

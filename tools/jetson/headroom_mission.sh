@@ -19,6 +19,12 @@
 # image runs this checkout's ROS side without a rebuild. TEXT_CACHE=empty
 # encodes the target's texts from scratch (the new-target worst case).
 #
+# 3.80.P: PERCEPTION_LOOP=1 runs the stand-in perception loop under `tiered`
+# too (the simulator's tiered perception is ground truth and loads no model),
+# and the summary reports its latency over the mission window and the local
+# VLM's calls. SIM_PERCEPTION_BLIND and TIER_COLD_SEARCH_AFTER, when set,
+# reach the brain through the environment (3.80.O's switch, the pace).
+#
 # --- the shared harness header follows ---
 # 3.58 (docs/plans/ros-alignment/3.58-local-identity-decision.md), run L:
 # 3.33's headroom conditions (~/headroom20.sh on the board: the split
@@ -124,7 +130,7 @@ echo "== stack up $(date +%T); MemAvailable with the stack: $(awk '/MemAvailable
 sudo tegrastats --interval 1000 --logfile "$OUT/tegrastats.log" &
 ( while true; do echo "$(date +%s) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)"; sleep 1; done ) > "$OUT/mem.log" &
 MEM=$!
-if [ "$POLICY" != tiered ]; then
+if [ "$POLICY" != tiered ] || [ "${PERCEPTION_LOOP:-0}" = 1 ]; then
   PYTHONPATH=. python tools/jetson/perception_loop.py 3600 > "$OUT/perception.log" 2> "$OUT/perception.err" &
   PERC=$!
   waitfor 300 "perception loaded" grep -q "loaded 1 pipeline" "$OUT/perception.log"
@@ -190,6 +196,25 @@ s = {"valid": valid, "mission_exit": int(sys.argv[8]), "mission_end": end,
      "drift_mb": st.median(first) - st.median(last),
      "oom_events": int(sys.argv[7]) - int(sys.argv[6]),
      "wheel_moving_ticks": int(w1[0]) - int(w0[0]), "wheel_late_ticks": int(w1[1]) - int(w0[1])}
+# 3.80.P: perception's latency inside the mission window, and VE's calls.
+import time as _t
+day = _t.strftime("%Y-%m-%d", _t.localtime(t0))
+ms = []
+if os.path.exists(f"{out}/perception.log"):
+    for l in open(f"{out}/perception.log"):
+        f = l.split()
+        if len(f) == 3 and f[1].isdigit() and f[0].count(":") == 2:
+            at = _t.mktime(_t.strptime(f"{day} {f[0]}", "%Y-%m-%d %H:%M:%S"))
+            if t0 <= at <= t1:
+                ms.append(int(f[1]))
+if ms:
+    ms.sort()
+    q = lambda p: ms[min(len(ms) - 1, int(p * len(ms)))]
+    s.update(perception_frames=len(ms), perception_p50_ms=q(0.5),
+             perception_p90_ms=q(0.9), perception_p99_ms=q(0.99))
+if os.path.exists(f"{out}/local_vlm.log"):
+    calls = sum('"POST /' in l for l in open(f"{out}/local_vlm.log"))
+    s.update(vlm_calls=calls, vlm_calls_per_min=round(calls * 60 / max(1, t1 - t0), 1))
 json.dump(s, open(f"{out}/summary.json", "w"), indent=1)
 print("== summary:", json.dumps(s))
 if not valid:
