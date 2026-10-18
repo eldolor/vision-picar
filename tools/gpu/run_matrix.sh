@@ -23,6 +23,10 @@ VARIANTS="yoloe-11s-seg yoloe-11m-seg yoloe-11l-seg \
           yoloe-26n-seg yoloe-26s-seg yoloe-26m-seg yoloe-26l-seg yoloe-26x-seg \
           yoloe-v8s-seg yoloe-v8m-seg yoloe-v8l-seg"
 
+# One layer of escaping: tools/hailo/ec2.sh `run` sends this text as is
+# (base64), so `\$x` here is `$x` on the box. 3.76 P3: `\\\$COMMON` reached
+# it as a literal `\$COMMON`, every call failed its argparse behind the
+# `grep || true`, and the run printed MATRIX-DONE having scored nothing.
 bash "$EC2" run "set -e
 cd $REMOTE && . /opt/pytorch/bin/activate
 mkdir -p out
@@ -33,15 +37,15 @@ COMMON='--recordings $REMOTE/recordings --clip RN50 --crop-path low_confidence \
 for ck in $VARIANTS; do
   for prop in none floor; do
     out=out/\${ck}_\${prop}.json
-    [ -f \"\\\$out\" ] && continue
+    [ -f \"\$out\" ] && continue
     echo \"=== \$ck \$prop \$(date +%H:%M:%S) ===\"
-    python -m control.perception_eval score \\\$COMMON --proposer \$prop \\
-      --detector crops:yoloe:\$ck.pt --save \\\$out 2>&1 | grep -E 'TOTAL|unavailable|per frame' || true
+    python -m control.perception_eval score \$COMMON --proposer \$prop \\
+      --detector crops:yoloe:\$ck.pt --save \$out 2>&1 | grep -E 'TOTAL|unavailable|per frame' || true
   done
 done
 for prop in none floor; do
   echo \"=== owlv2 \$prop \$(date +%H:%M:%S) ===\"
-  python -m control.perception_eval score \\\$COMMON --proposer \$prop \\
+  python -m control.perception_eval score \$COMMON --proposer \$prop \\
     --detector crops:owlv2 --save out/owlv2_\${prop}.json 2>&1 \\
     | grep -E 'TOTAL|unavailable|per frame' || true
 done

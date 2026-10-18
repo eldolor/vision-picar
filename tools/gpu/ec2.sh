@@ -49,18 +49,22 @@ aws_() { aws --region "$REGION" "$@"; }
 s3_uri() { printf 's3://%s/%s' "$BUCKET" "$PREFIX"; }
 
 instance_id() {
-  aws_ ec2 describe-instances \
+  # An AWS failure is not "no instance" (3.76 P3): with stderr dropped and
+  # `|| true`, an expired session made `down` print "no instance to
+  # terminate" and exit 0 with a GPU still billing, and `up` launch a second.
+  local out
+  out="$(aws_ ec2 describe-instances \
     --filters "Name=tag:Name,Values=$NAME" \
               "Name=instance-state-name,Values=pending,running,stopping,stopped" \
-    --query 'Reservations[].Instances[0].InstanceId' --output text 2>/dev/null \
-    | grep -v '^None$' | head -1 || true
-  # `|| true` is load-bearing under `set -euo pipefail` -- see the same note
-  # in tools/hailo/ec2.sh. With no instance, grep exits 1 and pipefail takes
-  # the whole script down on the one path that has to work first.
+    --query 'Reservations[].Instances[0].InstanceId' --output text)" || return 1
+  printf '%s\n' "$out" | grep -v '^None$' | head -1 || true
+  # `|| true` is load-bearing under `set -euo pipefail`: with no instance,
+  # grep matches nothing and exits 1, and pipefail would take the caller's
+  # `id="$(instance_id)"` -- and the whole script -- down on `up`'s first path.
 }
 
 require_instance() {
-  local id; id="$(instance_id)"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
   [ -n "$id" ] || die "no instance -- run: tools/gpu/ec2.sh up"
   printf '%s' "$id"
 }
@@ -123,7 +127,7 @@ ensure_sg() {
 
 # ---------------------------------------------------------------- up -------
 cmd_up() {
-  local id; id="$(instance_id)"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
   if [ -n "$id" ]; then say "already up: $id"; cmd_status; return; fi
 
   ensure_role
@@ -149,13 +153,16 @@ cmd_up() {
     --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME},{Key=Project,Value=vision-picar},{Key=Purpose,Value=perception-eval}]" \
     --query 'Instances[0].InstanceId' --output text)"
   say "instance $id -- waiting for SSM to come online (about two minutes)"
+  # From here a failure leaves a paid instance up: say which, and how to stop
+  # it (3.76 P3: `die` said "check the console").
+  trap 'printf "\033[31m[gpu] up failed with %s STILL RUNNING -- bash tools/gpu/ec2.sh down\033[0m\n" "$id" >&2' EXIT
   aws_ ec2 wait instance-running --instance-ids "$id"
   for _ in $(seq 60); do
     if aws_ ssm describe-instance-information \
         --filters "Key=InstanceIds,Values=$id" \
         --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null \
         | grep -q Online; then
-      say "SSM online"; cmd_status; return
+      trap - EXIT; say "SSM online"; cmd_status; return
     fi
     sleep 10
   done
@@ -164,7 +171,7 @@ cmd_up() {
 
 # ------------------------------------------------------------- status ------
 cmd_status() {
-  local id; id="$(instance_id)" || true
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
   if [ -z "$id" ]; then say "no instance ($NAME)"; return; fi
   local state itype launched
   # Read the type from AWS, not from $TYPE: the env var describes what the
@@ -306,7 +313,7 @@ cmd_pull() {
 
 # -------------------------------------------------------------- down -------
 cmd_down() {
-  local id; id="$(instance_id)" || true
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
   if [ -n "$id" ]; then
     say "terminating $id"
     aws_ ec2 terminate-instances --instance-ids "$id" >/dev/null
@@ -318,7 +325,13 @@ cmd_down() {
   aws_ ec2 delete-security-group --group-name "$NAME" 2>/dev/null \
     && say "security group deleted" || true
   delete_role
-  say "role and instance profile deleted"
+  # Said only if true (3.76 P3): a role with another policy attached
+  # (eval_host's corpus-read) survives delete_role's silent steps.
+  if aws iam get-role --role-name "$NAME" >/dev/null 2>&1; then
+    say "role $NAME is still there (another policy attached?) -- delete it by hand"
+  else
+    say "role and instance profile deleted"
+  fi
   say "NOTE: s3://$BUCKET/$PREFIX/ is left in place -- delete it by hand if you want it gone"
 }
 

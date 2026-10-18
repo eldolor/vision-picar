@@ -73,17 +73,21 @@ JSON
 case "${1:-}" in
   up)
     bash "$EC2" up
-    ensure_corpus_read
     # A dead-man switch. If this session dies, the box still goes away:
     # the user asked for teardown and an unattended GPU is $29 a day.
-    bash "$EC2" run "sudo shutdown -h +240" >/dev/null 2>&1 || true
+    # Armed BEFORE the corpus step (3.76 P3: a failure there left the box up
+    # with no switch), and "armed" said only if both halves took.
+    armed=1
     aws --region "$REGION" ec2 modify-instance-attribute \
       --instance-id "$(aws --region "$REGION" ec2 describe-instances \
         --filters "Name=tag:Name,Values=$HAILO_HOST_NAME" \
                   Name=instance-state-name,Values=running \
         --query 'Reservations[0].Instances[0].InstanceId' --output text)" \
-      --instance-initiated-shutdown-behavior terminate
-    say "dead-man switch armed: self-terminates in 4h if nothing stops it"
+      --instance-initiated-shutdown-behavior terminate || armed=0
+    bash "$EC2" run "sudo shutdown -h +240" >/dev/null 2>&1 || armed=0
+    if [ "$armed" = 1 ]; then say "dead-man switch armed: self-terminates in 4h if nothing stops it"
+    else printf '\033[31m[eval] dead-man switch NOT armed -- run `%s down` when done\033[0m\n' "$0" >&2; fi
+    ensure_corpus_read
     ;;
   setup)
     bash "$EC2" run "set -e

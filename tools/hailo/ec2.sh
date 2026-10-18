@@ -57,20 +57,22 @@ die() { printf '\033[31m[hailo] %s\033[0m\n' "$*" >&2; exit 1; }
 aws_() { aws --region "$REGION" "$@"; }
 
 instance_id() {
-  aws_ ec2 describe-instances \
+  # An AWS failure is not "no instance" (3.76 P3): with stderr dropped and
+  # `|| true`, an expired session made `down` print "no instance to
+  # terminate" and exit 0 with a GPU still billing, and `up` launch a second.
+  local out
+  out="$(aws_ ec2 describe-instances \
     --filters "Name=tag:Name,Values=$NAME" \
               "Name=instance-state-name,Values=pending,running,stopping,stopped" \
-    --query 'Reservations[].Instances[0].InstanceId' --output text 2>/dev/null \
-    | grep -v '^None$' | head -1 || true
+    --query 'Reservations[].Instances[0].InstanceId' --output text)" || return 1
+  printf '%s\n' "$out" | grep -v '^None$' | head -1 || true
   # `|| true` is load-bearing under `set -euo pipefail`: with no instance,
-  # grep matches nothing and exits 1, pipefail promotes that to the
-  # pipeline's status, and the caller's `id="$(instance_id)"` then takes the
-  # whole script down -- silently, on the ONE path that has to work first,
-  # which is `up` with nothing running yet.
+  # grep matches nothing and exits 1, and pipefail would take the caller's
+  # `id="$(instance_id)"` -- and the whole script -- down on `up`'s first path.
 }
 
 require_instance() {
-  local id; id="$(instance_id)"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
   [ -n "$id" ] || die "no instance named $NAME -- run 'up' first"
   printf '%s' "$id"
 }
@@ -154,7 +156,7 @@ ensure_cli() {
 
 # ---------------------------------------------------------------- up -------
 cmd_up() {
-  local id; id="$(instance_id)"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
   if [ -n "$id" ]; then say "already up: $id"; cmd_status; return; fi
 
   ensure_role
@@ -195,7 +197,7 @@ cmd_up() {
 
 # ------------------------------------------------------------- status ------
 cmd_status() {
-  local id; id="$(instance_id)" || true
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
   if [ -z "$id" ]; then say "no instance ($NAME)"; return; fi
   local launched state itype
   state="$(aws_ ec2 describe-instances --instance-ids "$id" \
@@ -371,7 +373,7 @@ cmd_compile() {
 
 # -------------------------------------------------------------- down -------
 cmd_down() {
-  local id; id="$(instance_id)" || true
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
   if [ -n "$id" ]; then
     say "terminating $id"
     aws_ ec2 terminate-instances --instance-ids "$id" >/dev/null
@@ -393,7 +395,13 @@ cmd_down() {
     done
   fi
   delete_role
-  say "IAM role and instance profile deleted"
+  # Said only if true (3.76 P3): a role with another policy attached
+  # (eval_host's corpus-read) survives delete_role's silent steps.
+  if aws iam get-role --role-name "$NAME" >/dev/null 2>&1; then
+    say "role $NAME is still there (another policy attached?) -- delete it by hand"
+  else
+    say "IAM role and instance profile deleted"
+  fi
   say "S3 under $(s3_uri) is LEFT IN PLACE -- it holds the wheel and the report."
   say "  remove it with: aws s3 rm $(s3_uri)/ --recursive"
 }

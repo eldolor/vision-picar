@@ -104,6 +104,16 @@ class FrameClockExecutor:
         def done(self):
             return self.due <= 0
 
+        def exception(self, timeout=None):
+            # `TieredVision._collect_inflight` reads it (3.76 P3: without it
+            # every landing raised, was swallowed, and the async rows recorded
+            # no calls at all).
+            try:
+                self.result()
+            except BaseException as e:  # noqa: BLE001
+                return e
+            return None
+
         def result(self, timeout=None):
             if not self._ran:
                 self._ran = True

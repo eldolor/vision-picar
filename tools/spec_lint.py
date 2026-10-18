@@ -103,7 +103,9 @@ REQUIRED_SECTIONS = {
 
 FENCE = re.compile(r"^(\s*)(`{3,}|~{3,})\s*([\w+-]*)")
 BACKTICK = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
-LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+# A title after the target is allowed (3.76 P3: `[x](missing.md "t")`
+# matched nothing, so a broken link with a title went unchecked).
+LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 HEADING = re.compile(r"^##\s+(.+?)\s*$")
 TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
 TABLE_RULE = re.compile(r"^\s*\|[\s:|-]+\|\s*$")
@@ -250,7 +252,10 @@ def collect(repo: Path, rep: Report) -> list[Spec]:
                       "naming kind, domain, status and verified")
             continue
         spec = Spec(path, rel, meta, body, start)
-        spec.sections = [m.group(1) for t in body if (m := HEADING.match(t))]
+        # Outside fences only (3.76 P3: a `## Purpose` inside a code block
+        # satisfied E7's required sections).
+        spec.sections = [m.group(1) for _, t, fenced, _ in iter_body(spec)
+                         if fenced is False and (m := HEADING.match(t))]
         specs.append(spec)
     return specs
 
@@ -398,6 +403,8 @@ def check_thin(spec: Spec, rep: Report) -> None:
 
 def check_stale(spec: Spec, rep: Report, today: dt.date) -> None:
     v = spec.meta.get("verified")
+    if isinstance(v, dt.datetime):   # YAML reads `2026-10-01 12:00:00` as one (3.76 P3: a crash)
+        v = v.date()
     try:
         d = v if isinstance(v, dt.date) else dt.date.fromisoformat(str(v))
     except ValueError:

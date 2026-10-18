@@ -34,7 +34,7 @@ import sys
 from pathlib import Path
 
 from brain.perceive import DETECTED
-from brain.tiered import TieredVision, _direction_for
+from brain.tiered import CENTER_BAND_DEG, STEER_BAND_DEG, TieredVision
 from control.perception_eval import frame_dict
 
 
@@ -75,9 +75,7 @@ def run(walk: Path, target: str, *, steer: bool, device=None):
             # off `_navigate`: on a PAID frame that block is the cloud's
             # reply, which carries no bearing at all. The question here is
             # about the measured one.
-            b = out["_perception"].get("bearing_deg")
-            want = ("unknown" if b is None
-                    else "left" if b < -10 else "right" if b > 10 else "center")
+            want = wanted(out["_perception"].get("bearing_deg"), steer)
             got = out["safest_direction"]
             if (want == "left" and got == "LEFT") or \
                (want == "right" and got == "RIGHT") or \
@@ -87,6 +85,17 @@ def run(walk: Path, target: str, *, steer: bool, device=None):
             print(f"    {i+1}/{len(frames)}", flush=True)
     tier.close()
     return seen, acts, agree
+
+
+def wanted(bearing, steer: bool) -> str:
+    """The direction a bearing calls for, on the band the policy acts on:
+    STEER_BAND_DEG when it steers on sight, CENTER_BAND_DEG otherwise.
+    3.76 P3: a fixed 10 deg band counted every correct LEFT/RIGHT between
+    3 and 10 deg as a disagreement under `steer_on_sight`."""
+    if bearing is None:
+        return "unknown"
+    band = STEER_BAND_DEG if steer else CENTER_BAND_DEG
+    return "left" if bearing < -band else "right" if bearing > band else "center"
 
 
 def main(argv=None) -> int:
