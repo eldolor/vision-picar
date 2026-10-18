@@ -327,8 +327,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   (bar 5). `nav2.yaml` now has the keepout filter: **rebuild
   `vision-picar-ros:latest` from `dev`** before trusting a live run.
 * **Review of the code written before the review rule (3.76): batches
-  A-I (the risky files) merged by 2026-10-14, J on 2026-10-18; K-P3 (risky
-  code changed since, then all non-risky code) to go.** Both reviewers on whole files, risky files only,
+  A-I (the risky files) merged by 2026-10-14, J and K1 on 2026-10-18;
+  K2-P3 (risky code changed since, then all non-risky code) to go.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
   `server.py`): 5 fixed -- a verb longer than the watchdog lost its
   driver's authority, the wheel loop could overwrite a stop, lost feedback
@@ -434,9 +434,19 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   later night read SKIPPED unmailed (now held by a python parent); a stop
   in a stalled fetch never landed; a night that died showed yesterday's
   verdict. Also fixed on the way: `test_pipeline_release` failed every
-  fast-tier run on `dev` (a 0.2 s bound timing `gc.collect()`). Next: K
-  (66 commits, +3,175/-943, on risky files after their batch, plus
-  `service/local_vlm/`), then L1-P3. Handoff:
+  fast-tier run on `dev` (a 0.2 s bound timing `gc.collect()`). K (66
+  commits on risky files after their batch, plus `service/local_vlm/`) is
+  split K1 robot, K2 control, K3 brain, K4 twin, K5 world/ROS/local VLM.
+  **K1 (the robot server and safety since A-B), merged 2026-10-18:** 5
+  fixed -- a person's STOP through `/action` latched nothing and ended no
+  nav2 goal (every `/action STOP` is now `/stop`); a brain goal landing
+  inside `/stop` was accepted (the stop is now counted with the latch,
+  before `robot.stop()`, and the goal ends even if that raises); a
+  malformed floor band raised out of `forward_clearance` (now
+  `floor_band_unusable`; a band seeing nothing ahead too); a battery
+  reading no pack gives (USB 5 V, a failed read of 0) ended every mission
+  on the floor (6-30 V or no reading); a brain refused under the latch
+  kept its claim. Four review rounds. Next: K2, then L1-P3. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
