@@ -57,9 +57,9 @@ def mirror(rows, field):
     Over frames with an answer both times."""
     both = [r for r in rows if pick(r, field) is not None
             and pick(r, "mirror." + field) is not None]
-    ok = sum(pick(r, "mirror." + field) == SWAP[pick(r, field)] for r in both)
-    lr = [r for r in both if pick(r, field) != "FORWARD"]
-    ok_lr = sum(pick(r, "mirror." + field) == SWAP[pick(r, field)] for r in lr)
+    ok = sum(pick(r, "mirror." + field) == SWAP.get(pick(r, field), pick(r, field)) for r in both)
+    lr = [r for r in both if pick(r, field) in SWAP and pick(r, field) != "FORWARD"]
+    ok_lr = sum(pick(r, "mirror." + field) == SWAP.get(pick(r, field), pick(r, field)) for r in lr)
     return {"pairs": len(both), "consistent": ok,
             "rate": round(ok / len(both), 3) if both else None,
             "turn_pairs": len(lr), "turn_consistent": ok_lr}
@@ -108,6 +108,10 @@ TIERS = [  # (tier, file, field, sets)
     ("Edge-LLM InternVL3.5-4B NVE V1024: box (full reply, amendment 1)", "../N/NVE-V1024-box.scaled.jsonl", "box_answer", ("S1", "S2")),
     ("Opus 4.5: action", "opus.jsonl", "action", ("S1", "S2", "S3")),
     ("Opus 4.5: target_direction", "opus.jsonl", "target_third", ("S1",)),
+    ("Opus 5.5: action", "opus55.jsonl", "action", ("S1", "S2", "S3")),
+    ("Opus 5.5: target_direction", "opus55.jsonl", "target_third", ("S1",)),
+    ("GPT-6 Astra: action", "astra.jsonl", "action", ("S1", "S2", "S3")),
+    ("GPT-6 Astra: target_direction", "astra.jsonl", "target_third", ("S1",)),
 ]
 
 
