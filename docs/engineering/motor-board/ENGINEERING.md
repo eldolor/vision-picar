@@ -66,7 +66,7 @@ which has spaces; the firmware accepts either.
 | `L`, `R` | float m/s | MEASURED wheel speeds: whole encoder edges per board loop, times `pi x WHEEL_D / pulses`, divided by dt |
 | `ax ay az gx gy gz mx my mz` | int | IMU. Zeros in the fake. |
 | `odl`, `odr` | int, cm | Each wheel's travel since boot, `(long)(en_odom * 100)`, truncated toward zero. So 0 means (-1, 1) cm. |
-| `v` | int, 1/100 V | Pack voltage. Read by `HardwareRobot.get_battery()` (3.70 E4). The fake sends 1200 unless given a drain: `FakeEsp32(battery_v=, drain_v_per_s=)` or `SIM_BATTERY_V` / `SIM_BATTERY_DRAIN_V_PER_S`, a straight line in wall time from power-up (a reboot does not recharge it). |
+| `v` | int, 1/100 V | Pack voltage. Read by `HardwareRobot.get_battery()` (3.70 E4); outside 6-30 V (`BATTERY_PLAUSIBLE_V`: a board on USB, a failed INA219 read) it is no reading, never a battery below the floor (3.76 K1). The fake sends 1200 unless given a drain: `FakeEsp32(battery_v=, drain_v_per_s=)` or `SIM_BATTERY_V` / `SIM_BATTERY_DRAIN_V_PER_S`, a straight line in wall time from power-up (a reboot does not recharge it). |
 | `odlt`, `odrt` | int, 0.1 mm | **Fork only.** `(long)(en_odom * 10000)`. One encoder edge is 0.38 mm. |
 | `ms` | unsigned long, ms | **Fork only.** `last_feedback_time`, the board's `millis()` when the frame was built. Zero at boot; wraps at 2^32. |
 

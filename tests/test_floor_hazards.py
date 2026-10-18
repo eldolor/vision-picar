@@ -250,10 +250,12 @@ def test_no_band_changes_nothing():
 
 
 def test_unusable_zones_never_enter_the_comparison():
+    """Never compared (M3); and since 3.76 K1 a band that saw nothing says
+    so, rather than reading as a clear corridor."""
     safety = SafetyController(_robot(None), 20.0)
     grid = {"floor": {"fov_deg": 73.0, "pan_deg": 0.0, "origin_x_cm": 6.5,
                       "zones": [{"status": interface.ZONE_UNUSABLE, "distance_cm": None}] * 32}}
-    assert safety.floor_clearance(grid) == (None, "floor_band_no_target")
+    assert safety.floor_clearance(grid) == (None, "floor_band_unusable")
 
 
 def test_a_tight_corridor_does_not_stop_the_robot():

@@ -741,8 +741,10 @@ def test_a_sock_inside_the_bands_blind_range_shows_as_blind_zones(caplog):
         agent._do_pending()
     creep = [json.loads(r.getMessage()[len("explore "):]) for r in caplog.records
              if '"creep"' in r.getMessage()][0]
-    assert creep["floor"][1] == "floor_band_no_target"     # the band's answer: clear
-    assert creep["floor_blind"] > 0                          # ...but it is blind there
+    # Since 3.76 K1 the band's own answer says it is blind there (it read
+    # "floor_band_no_target", clear, when every zone was unusable).
+    assert creep["floor"][1] == "floor_band_unusable"
+    assert creep["floor_blind"] > 0
 
 
 def test_a_failing_reading_never_stops_the_creep():

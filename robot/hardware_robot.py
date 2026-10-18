@@ -81,6 +81,7 @@ TRACK_WIDTH_M = 0.172
 COUNTS_PER_REV = 660
 # Odometers back at zero while the estimate is this far from them: a board
 # that rebooted and started counting again (`_absorb_reboot()`).
+BATTERY_PLAUSIBLE_V = (6.0, 30.0)   # a pack's reading, 3S and up (3.76 K1)
 REBOOT_JUMP_M = 0.03
 # Two feedback intervals: a frame later than this is lost, not late, and the
 # last speed is no longer a fair guess.
@@ -359,7 +360,11 @@ class HardwareRobot(RobotInterface):
             self._path_m += abs((after[0] + after[1]) / 2.0 - (before[0] + before[1]) / 2.0)
             self._speed = speed
             v = frame.get("v")
-            self._battery_v = v / 100.0 if isinstance(v, (int, float)) else None
+            # A pack's reading or none (3.76 K1): a board on USB (about 5 V),
+            # a failed INA219 read (0) or a bool is no 3S pack, and read as
+            # one it ended every mission on the 10.5 V floor.
+            volts = v / 100.0 if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+            self._battery_v = volts if volts is not None and BATTERY_PLAUSIBLE_V[0] <= volts <= BATTERY_PLAUSIBLE_V[1] else None
             self._last_frame_at = now
             self.frames += 1
             if fork is not None:

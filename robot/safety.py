@@ -767,7 +767,8 @@ class SafetyController:
         the stereo's minimum range -- never enters the comparison.
         `(None, "no_floor_band")` for a backend without a band (every real
         body today); `(None, "floor_band_no_target")` when the corridor is
-        clear."""
+        clear; `(None, "floor_band_unusable")` when no zone could be read
+        (3.76 K1: blind is not clear) or the band itself cannot be."""
         if grid is None:
             get_grid = getattr(self.robot, "get_depth_grid", None)
             grid = get_grid() if get_grid is not None else None
@@ -778,19 +779,40 @@ class SafetyController:
             fov = 0.0
         if not band or not band.get("zones") or fov <= 0:
             return None, "no_floor_band"
+        # 3.76 K1: a band this cannot read is unusable, never an exception --
+        # one raised out of forward_clearance() made every FORWARD a 400 and
+        # skipped the wheel loop's re-vet, so a standing command ran on. Its
+        # zones' centres need its own `cols`, so a band that lost a zone is
+        # unusable too. As M3: an unusable band (or zone) never compares,
+        # and the cone and the corridor go on vetting.
         zones = band["zones"]
-        pan = float(band.get("pan_deg") or 0.0)
-        origin = float(band.get("origin_x_cm") or 0.0)
-        best = None
+        try:
+            pan = float(band.get("pan_deg") or 0.0)
+            origin = float(band.get("origin_x_cm") or 0.0)
+            cols = band.get("cols")
+            if not isinstance(zones, list) or (cols is not None and int(cols) != len(zones)):
+                return None, "floor_band_unusable"
+        except (TypeError, ValueError):
+            return None, "floor_band_unusable"
+        best, seen = None, False
         for zone, centre in zip(zones, _zone_bearings_deg(len(zones), fov)):
-            if zone.get("status") != ZONE_RANGE or zone.get("distance_cm") is None:
+            if (not isinstance(zone, dict) or zone.get("status") != ZONE_RANGE
+                    or zone.get("distance_cm") is None):
                 continue
-            bearing = zone.get("bearing_deg")
-            b = math.radians((centre if bearing is None else float(bearing)) + pan)
-            d = float(zone["distance_cm"])
+            try:
+                bearing = zone.get("bearing_deg")
+                b = math.radians((centre if bearing is None else float(bearing)) + pan)
+                d = float(zone["distance_cm"])
+            except (TypeError, ValueError):
+                continue                     # unreadable: as unusable (M3)
+            if not (math.isfinite(b) and math.isfinite(d)):
+                continue
+            seen = True
             room = _corridor_room(origin + d * math.cos(b), abs(d * math.sin(b)))
             if room is not None:
                 best = room if best is None else min(best, room)
+        if not seen:
+            return None, "floor_band_unusable"      # blind, which is not clear (K1)
         if best is None:
             return None, "floor_band_no_target"
         return round(best, 1), "floor_band"
