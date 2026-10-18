@@ -480,7 +480,17 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   Stop after the local check read as a refusal. **For the user (L2.1):** a
   perception-led arrival forgets its refusal on one detector miss and pays
   the cloud again; remembering it makes one wrong no final -- paid repeats
-  vs a second chance. Next: M1-P3. Handoff:
+  vs a second chance. **M1 (the simulator's core), merged 2026-10-18:** 4
+  fixed -- the sim's event log grew for the robot server's life; a mover
+  hopped under the chassis (switching its collision off); the sim took any
+  wheel command; and, **on the car's path**, JSON NaN/Infinity passed
+  `/wheels`, `/action` and `/world/goal`, so the board was sent NaN and kept
+  its last setpoint (now a 422, and the car sends a non-finite command as a
+  stop). **For the user (M1.5-M1.11): the sim is kinder than the car** --
+  rays pass diagonal wall corners (scan, map, depth), the model's frame
+  labels the target, odometry never drifts, turns run ~6x the car's rate,
+  clearance rounds up; each moves pinned numbers, so a section of its own.
+  Next: M2-P3. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
