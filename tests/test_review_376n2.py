@@ -409,3 +409,142 @@ def test_the_metrics_page_paints_only_its_newest_load(browser):
     sync_api.expect(page.locator("#error")).to_be_visible()
     assert page.locator("td .pill").count() == 0
     page.context.close()
+
+
+# ---------- the fixes' round 1 ----------
+
+
+def test_a_secret_being_tried_is_sent_on_its_own_request_only(browser, admin_server):
+    """Round 1 (both): Connect set the page's secret before trying it, so the
+    queue and a Refresh went out under a typo meanwhile; and two failed
+    Connects answering out of order left the first typo in use."""
+    page, _ = _console(browser, admin_server)
+    held, sent = [], []
+
+    def walks(route):
+        key = route.request.headers.get("x-app-secret")
+        sent.append(key)
+        if key in ("A", "B"):
+            held.append(route)
+        else:
+            _json(route, WALKS)
+
+    page.route("**/recording/walks", walks)
+    page.fill("#secret", "A")
+    page.click("#btn-connect")
+    page.fill("#secret", "B")
+    page.click("#btn-connect")
+    page.wait_for_timeout(200)
+    page.click("#btn-refresh")
+    page.wait_for_timeout(300)
+    assert sent[-1] == "test", sent
+    for r in held:                                       # A's 401 first, then B's
+        _json(r, {"detail": "Missing or invalid x-app-secret header."}, status=401)
+    page.wait_for_timeout(200)
+    page.click("#btn-refresh")
+    page.wait_for_timeout(300)
+    assert sent[-1] == "test", sent
+    page.context.close()
+
+
+def test_play_waits_for_a_slow_frame(browser, admin_server):
+    """Round 1 (Thermos): each 1.2 s tick made the frame still loading stale,
+    so with frames slower than the tick Play showed no picture at all."""
+    held = []
+
+    def frame(route):
+        held.append(route)
+
+    page, _ = _console(browser, admin_server, routes=[
+        (f"**/recording/walks/{WALK}", lambda r: _json(r, _detail(3))),
+        ("**/frames/*", frame),
+    ])
+    page.locator(".walk").first.locator("button", has_text="View").click()
+    sync_api.expect(page.locator(".frame")).to_have_count(3)
+    page.locator(".frame").nth(0).locator("img").click()
+    page.click("#slideshow-play")
+    page.wait_for_timeout(2600)                          # two ticks, frame 0 still out
+    # Read once, not `expect` (which retries until a cycling caption agrees).
+    assert page.locator("#slideshow-pos").inner_text().startswith("1 / 3")
+    for r in list(held):
+        r.fulfill(status=200, content_type="image/png", body=_png(5))
+    held.clear()
+    sync_api.expect(page.locator("#slideshow-pos")).to_contain_text("2 / 3", timeout=4000)
+    page.context.close()
+
+
+def test_bulk_delete_skips_a_walk_whose_own_delete_is_out(browser, admin_server):
+    """Round 1 (both): bulk delete sent a second DELETE for a walk whose row
+    Delete was out; its 404 counted as a failure and kept a gone walk
+    selected."""
+    held, deletes = [], []
+
+    def walk(route):
+        if route.request.method != "DELETE":
+            return route.fallback()
+        deletes.append(route.request.url)
+        held.append(route)
+
+    page, _ = _console(browser, admin_server, routes=[("**/recording/walks/*", walk)])
+    row = page.locator(".walk").first
+    row.locator("button", has_text="Delete walk").click()
+    row.locator("button", has_text="Really delete").click()
+    row.locator("input[type=checkbox]").check()
+    page.click("#btn-bulk-delete")
+    page.click("#btn-bulk-delete")
+    page.wait_for_timeout(300)
+    assert len(deletes) == 1, deletes
+    held[0].fulfill(status=204, body="")
+    sync_api.expect(page.locator(".walk")).to_have_count(1)
+    page.context.close()
+
+
+def test_a_failed_manual_score_is_not_retried_by_itself(browser, admin_server):
+    """Round 1 (/code-review): a walk that arrived while the queue ran read
+    Evaluate; if its click failed, nothing marked it, and the queue's rescan
+    paid a second judge attempt nobody asked for."""
+    first = dict(WALKS["walks"][0], eval=None, finished=True)
+    second = dict(WALKS["walks"][1], eval=None, finished=True)
+    lists = [{"recording_dir": "/tmp/r", "walks": [first]},
+             {"recording_dir": "/tmp/r", "walks": [first, second]}]
+    n = {"lists": 0}
+    held, gets = [], []
+
+    def walks(route):
+        body = lists[min(n["lists"], 1)]
+        n["lists"] += 1
+        _json(route, body)
+
+    def evaluation(route):
+        gets.append(route.request.url)
+        if second["walk"] in route.request.url:
+            _json(route, {"score": 9})
+        else:
+            held.append(route)
+
+    page, _ = _console(browser, admin_server, lists[0], evaluation=evaluation,
+                       routes=[("**/recording/walks", walks),
+                               ("**/evaluate", lambda r: _json(r, {"detail": "judge down"}, status=500))])
+    page.click("#btn-refresh")                           # brings the second walk mid-queue
+    row = page.locator(".walk", has_text="qwen3")
+    row.locator("button", has_text="Evaluate").click()
+    sync_api.expect(row.locator(".inline-err")).to_contain_text("Evaluate failed")
+    for r in held:
+        _json(r, {"score": 40})
+    page.wait_for_timeout(500)
+    assert not [g for g in gets if second["walk"] in g], gets
+    page.context.close()
+
+
+def test_a_tag_that_crosses_a_refresh_is_shown(browser, admin_server):
+    """Round 1 (/code-review): the tag landed on the row and walk it was
+    clicked on; a Refresh meanwhile had replaced both."""
+    held = []
+    page, _ = _console(browser, admin_server, routes=[("**/tag", lambda r: held.append(r))])
+    page.locator(".label-select").first.select_option("good")
+    page.wait_for_timeout(200)
+    page.click("#btn-refresh")
+    page.wait_for_timeout(300)
+    held[0].fulfill(status=200, content_type="application/json", body='{"label": "good"}')
+    sync_api.expect(page.locator(".walk").first.locator(".label-badge")).to_contain_text("good")
+    page.context.close()

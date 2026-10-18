@@ -55,14 +55,16 @@
     if (r) r.repaint();
   }
 
-  function headers(extra) {
+  function headers(extra, trying) {
     const h = Object.assign({}, extra);
-    if (secret) h["x-app-secret"] = secret;
+    const s = trying === undefined ? secret : trying;
+    if (s) h["x-app-secret"] = s;
     return h;
   }
 
-  async function api(method, path, body) {
-    const opts = { method: method, headers: headers(body ? { "content-type": "application/json" } : {}) };
+  // `trying`: a secret being tried by Connect, sent on this request only.
+  async function api(method, path, body, trying) {
+    const opts = { method: method, headers: headers(body ? { "content-type": "application/json" } : {}, trying) };
     if (body !== undefined) opts.body = JSON.stringify(body);
     const res = await fetch(path, opts);
     if (res.status === 204) return null;
@@ -488,11 +490,12 @@
     labelSelect.value = w.label || "";
     labelSelect.onchange = async function () {
       try {
-        await api("PUT", "/recording/walks/" + encodeURIComponent(w.walk) + "/tag", { label: labelSelect.value || null });
-        w.label = labelSelect.value || null;
-        renderHead();
+        const label = labelSelect.value || null;
+        await api("PUT", "/recording/walks/" + encodeURIComponent(w.walk) + "/tag", { label: label });
+        live(w).label = label;
+        repaint(w.walk);
       } catch (e) {
-        labelSelect.value = w.label || "";   // what is stored (3.76 N2)
+        labelSelect.value = live(w).label || "";   // what is stored (3.76 N2)
         showInlineError(labelSelect, "Tag failed: " + e.message);
       }
     };
@@ -549,6 +552,7 @@
         live(w).eval = await api("POST", "/recording/walks/" + encodeURIComponent(w.walk) + "/evaluate");
         loadSummary();
       } catch (e) {
+        live(w).evalFailed = true;           // not retried by the queue on its own
         const r = walkRenderers[w.walk];
         showInlineError(r ? r.evalBtn : evalBtn, "Evaluate failed: " + e.message);
       } finally {
@@ -857,9 +861,10 @@
         function mark(x) {
           return x.stale ? x : Object.assign({}, x, { stale: true, stale_reason: "frames deleted" });
         }
+        const cur = live(w);
         if (!gone || gone.marked !== false) {
-          if (w.eval) w.eval = mark(w.eval);
-          w.replays = (w.replays || []).map(mark);
+          if (cur.eval) cur.eval = mark(cur.eval);
+          cur.replays = (cur.replays || []).map(mark);
         }
         const r = walkRenderers[w.walk];
         if (r) { r.renderHead(); r.renderReplays(); }
@@ -933,11 +938,16 @@
     const entry = s.detail.byFile[f.file];
     // Only the newest step's picture (3.76 N2: a slow frame landed under the
     // next frame's caption).
+    // Its own picture or none -- never the last frame's under this caption
+    // -- and Play waits for it (round 1: a frame slower than the 1.2 s tick
+    // was always stale by the time it landed, so Play showed nothing).
     const seq = ++slideSeq;
+    showSlideImage(null);
+    s.loading = true;
     frameBlobUrl(s.walk.walk, f.file).then(function (url) {
-      if (seq === slideSeq && slideshowState === s) showSlideImage(url);
+      if (seq === slideSeq && slideshowState === s) { showSlideImage(url); s.loading = false; }
       else URL.revokeObjectURL(url);
-    }).catch(function () {});
+    }).catch(function () { if (seq === slideSeq) s.loading = false; });
     slideshowAction.textContent = entry && entry.navigate ? (entry.navigate.action || "?") : "";
     if (entry && entry.navigate && entry.navigate.model_id) {
       const usage = entry.navigate.usage || {};
@@ -1007,7 +1017,7 @@
       s.timer = null;
       slideshowPlayBtn.textContent = "Play";
     } else {
-      s.timer = setInterval(function () { slideshowStep(1); }, 1200);
+      s.timer = setInterval(function () { if (!s.loading) slideshowStep(1); }, 1200);
       slideshowPlayBtn.textContent = "Pause";
     }
   };
@@ -1024,11 +1034,18 @@
   // --- Bulk delete -------------------------------------------------------
   armConfirm(btnBulkDelete, "Delete selected", async function () {
     btnBulkDelete.disabled = true;
-    const names = Array.from(selected);
+    // Not a walk whose own Delete is out (3.76 N2: a second DELETE, and a
+    // gone walk left "selected").
+    const names = Array.from(selected).filter(function (name) { return !flight(name).deleting; });
+    names.forEach(function (name) { flight(name).deleting = true; repaint(name); });
     const results = await Promise.allSettled(
       names.map(function (name) { return api("DELETE", "/recording/walks/" + encodeURIComponent(name)); })
     );
-    const failed = names.filter(function (_, i) { return results[i].status === "rejected"; });
+    names.forEach(function (name) { flight(name).deleting = false; });
+    // Gone already is gone (a 404), not a failure.
+    const failed = names.filter(function (_, i) {
+      return results[i].status === "rejected" && results[i].reason.status !== 404;
+    });
     allWalks = allWalks.filter(function (w) { return !names.includes(w.walk) || failed.includes(w.walk); });
     selected.clear();
     failed.forEach(function (name) { selected.add(name); });
@@ -1045,15 +1062,15 @@
 
   btnConnect.onclick = function () {
     const tried = secretEl.value.trim();
-    const previous = secret;
-    secret = tried;
     setStatus(connStatusEl, "Connecting…");
     // /recording/walks, not /health -- /health is deliberately unauthenticated
     // (same reasoning as robot/server.py's), so it can't tell a right secret
     // from a wrong one. This is also the first real data load, not just a check.
-    api("GET", "/recording/walks").then(function (data) {
-      // Kept only once it worked (3.76 N2), as metrics.js does: a mistyped
-      // secret replaced the saved one and served the old list with it.
+    // Tried on this request alone, and kept only once it worked (3.76 N2),
+    // as metrics.js does: a mistyped secret replaced the saved one, and the
+    // scoring queue's requests went out under it meanwhile.
+    api("GET", "/recording/walks", undefined, tried).then(function (data) {
+      secret = tried;
       try { localStorage.setItem(SECRET_KEY, tried); } catch (e) { /* private mode */ }
       setStatus(connStatusEl, "Connected.", "ok");
       btnRefresh.disabled = false;
@@ -1061,7 +1078,6 @@
       sortEl.disabled = false;
       onWalksLoaded(data);
     }).catch(function (e) {
-      if (secret === tried) secret = previous;
       setStatus(connStatusEl, "Failed: " + e.message, "err");
     });
   };
