@@ -474,6 +474,11 @@ class HardwareRobot(RobotInterface):
     # ---------- wheels ----------
 
     def set_wheel_velocity(self, left_rad_s: float, right_rad_s: float) -> dict:
+        if not (math.isfinite(left_rad_s) and math.isfinite(right_rad_s)):
+            # A stop, never sent on (3.76 M1): `NaN > 2.0` is false, so it
+            # reached the board's JSON, which drops it and keeps its last
+            # setpoint. The route refuses one too; this is the car's own.
+            left_rad_s = right_rad_s = 0.0
         # Both wheels by the same factor, so the ratio -- the turn -- holds.
         fastest = max(abs(left_rad_s), abs(right_rad_s)) * WHEEL_RADIUS_M
         if fastest > BOARD_MAX_WHEEL_M_S:

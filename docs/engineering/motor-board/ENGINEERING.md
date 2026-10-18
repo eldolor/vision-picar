@@ -46,7 +46,7 @@ which has spaces; the firmware accepts either.
 |---|---|---|
 | `{"T":136,"cmd":1500}` | At start, and after a reboot | Heartbeat: zero the wheel speeds after 1500 ms without a `T:1` or `T:11` |
 | `{"T":131,"cmd":1}` | At start, and after a reboot | Continuous feedback on (already the stock boot default) |
-| `{"T":1,"L":<m/s>,"R":<m/s>}` | Every wheel command; re-sent by `advance()` while non-zero | Closed-loop wheel surface speeds, `rad/s x WHEEL_RADIUS_M`, rounded to 5 places. The host scales both speeds by one factor into the board's +/-`BOARD_MAX_WHEEL_M_S` (2.0) first, keeping their ratio, because the firmware drops an out-of-range `T:1` and keeps the OLD setpoint running (handoff 4j). |
+| `{"T":1,"L":<m/s>,"R":<m/s>}` | Every wheel command; re-sent by `advance()` while non-zero | Closed-loop wheel surface speeds, `rad/s x WHEEL_RADIUS_M`, rounded to 5 places. The host scales both speeds by one factor into the board's +/-`BOARD_MAX_WHEEL_M_S` (2.0) first, keeping their ratio, because the firmware drops an out-of-range `T:1` and keeps the OLD setpoint running (handoff 4j). A non-finite command is sent as a stop (3.76 M1: `NaN` compared false against the window and reached the board, which dropped it the same way). |
 
 **Other commands the fake models** (the host never sends these):
 

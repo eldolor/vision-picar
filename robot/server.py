@@ -1337,8 +1337,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         return sim_objects()
 
     class GoalRequest(BaseModel):
-        x_m: float
-        y_m: float
+        x_m: Finite
+        y_m: Finite
 
     def _goals():
         """R6: only a world that can plan takes goals (world/ros_world.py);

@@ -110,6 +110,7 @@ import pytest  # noqa: E402
     ("/wheels", '{"left_rad_s": NaN, "right_rad_s": 1.0}'),
     ("/wheels", '{"left_rad_s": 1.0, "right_rad_s": Infinity}'),
     ("/action", '{"action": "FORWARD", "duration": Infinity}'),
+    ("/world/goal", '{"x_m": NaN, "y_m": 1.0}'),
 ])
 def test_a_non_finite_command_is_refused_before_it_reaches_the_body(monkeypatch, route, body):
     """Fixes' round 1 (/code-review, on the car's path): JSON's NaN and
@@ -121,3 +122,29 @@ def test_a_non_finite_command_is_refused_before_it_reaches_the_body(monkeypatch,
     client = TestClient(server.create_app(), raise_server_exceptions=False)
     r = client.post(route, content=body, headers={"content-type": "application/json"})
     assert r.status_code == 422, (r.status_code, r.text[:200])
+
+
+def test_the_car_reads_a_non_finite_wheel_command_as_zero():
+    """Round 2 (/code-review, low): the guard was only at the route; an
+    internal caller's NaN reached the board's JSON as NaN, which the board
+    drops, keeping its last setpoint."""
+    from tests.test_board_speed_clamp import _board_setpoint
+    import time
+    from robot.hardware_robot import HardwareRobot, WHEEL_RADIUS_M
+    from sim.fake_esp32 import FakeEsp32
+    from sim.maps.scaled_house import build_scaled_world
+    body = MockRobot(build_scaled_world(), render=False)
+    board = FakeEsp32(body)
+    robot = HardwareRobot(board.path, sensors=body)
+    try:
+        end = time.monotonic() + 2.0
+        while not robot.get_wheel_state()["usable"] and time.monotonic() < end:
+            time.sleep(0.01)
+        robot.set_wheel_velocity(0.5 / WHEEL_RADIUS_M, 0.5 / WHEEL_RADIUS_M)
+        assert _board_setpoint(board, [0.5, 0.5])
+        robot.set_wheel_velocity(float("nan"), 1.0)
+        assert _board_setpoint(board, [0.0, 0.0]), f"the board kept {board.setpoint}"
+    finally:
+        robot.set_wheel_velocity(0.0, 0.0)
+        robot.close()
+        board.close()
