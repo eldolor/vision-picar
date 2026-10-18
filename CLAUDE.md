@@ -316,6 +316,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   11/13 overall -- breakfast pinned in a pocket under the table, pantry an
   explore livelock ("already facing it", not 3.83's code). Code on branch
   `plan/3.83-dining-room-trap`; the user agreed to keep it off `dev`.
+  **Adopted with 3.85, merged 2026-10-18 with criteria 2-4 failed (the
+  user's call):** 3.83's code plus an approach counted only once nav2
+  took it (the pantry livelock), an escape that drives FORWARD when
+  REVERSE is refused and the front is open (the table pocket), and a stall
+  under way fails its place at once. Live 26/26 found over two batches
+  (median 389 s, 36.7 m), 0 contacts, R6 6/6 with 0 marks, sweeps hold.
+  Failed: criteria 2 and 3 by 0.1-0.6 s in four runs (their 120 s bar is
+  the goal timeout itself) and one hall run at 150.2 s; laundry 6 marks
+  (bar 5). `nav2.yaml` now has the keepout filter: **rebuild
+  `vision-picar-ros:latest` from `dev`** before trusting a live run.
 * **Review of the code written before the review rule (3.76): batches
   A-I (the risky files) merged by 2026-10-14, J on 2026-10-18; K-P3 (risky
   code changed since, then all non-risky code) to go.** Both reviewers on whole files, risky files only,
