@@ -778,7 +778,7 @@ class SafetyController:
             return None, "floor_band_unusable"      # 3.76 K1: never an exception
         try:
             fov = float(band["fov_deg"]) if band else 0.0
-        except (TypeError, ValueError, KeyError):
+        except (TypeError, ValueError, KeyError, OverflowError):
             fov = 0.0
         if not band or not band.get("zones") or not fov > 0:
             return None, "no_floor_band"
@@ -801,17 +801,21 @@ class SafetyController:
             return None, "floor_band_unusable"
         best, seen = None, False
         for zone, centre in zip(zones, _zone_bearings_deg(len(zones), fov)):
-            if isinstance(zone, dict) and zone.get("status") == ZONE_NO_TARGET:
-                seen = True                  # nothing in range: seen, and clear
+            if not isinstance(zone, dict):
                 continue
-            if (not isinstance(zone, dict) or zone.get("status") != ZONE_RANGE
-                    or zone.get("distance_cm") is None):
+            status = zone.get("status")
+            if status == ZONE_NO_TARGET and abs(centre + pan) <= PATH_HALF_ANGLE_DEG:
+                # Nothing in range straight ahead: seen, and clear. Open floor
+                # only to the sides says nothing about the corridor (round 3).
+                seen = True
+                continue
+            if status != ZONE_RANGE or zone.get("distance_cm") is None:
                 continue
             try:
                 bearing = zone.get("bearing_deg")
                 b = math.radians((centre if bearing is None else float(bearing)) + pan)
                 d = float(zone["distance_cm"])
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 continue                     # unreadable: as unusable (M3)
             if not (math.isfinite(b) and math.isfinite(d)):
                 continue

@@ -80,7 +80,6 @@ BOARD_MAX_WHEEL_M_S = 2.0
 TRACK_WIDTH_M = 0.172
 COUNTS_PER_REV = 660
 BATTERY_PLAUSIBLE_V = (6.0, 30.0)   # a pack's reading, 3S and up (3.76 K1)
-BATTERY_KEEP_S = 10.0               # how long a pack reading outlives glitch frames
 # Odometers back at zero while the estimate is this far from them: a board
 # that rebooted and started counting again (`_absorb_reboot()`).
 REBOOT_JUMP_M = 0.03
@@ -185,7 +184,6 @@ class HardwareRobot(RobotInterface):
         # 3.70 E4: the battery, as the board's last frame put it -- the
         # firmware's `v` is `(int)(loadVoltage_V * 100)`, so centivolts.
         self._battery_v: Optional[float] = None
-        self._battery_at = 0.0
         self._last_frame_at: Optional[float] = None
         # The fork's board clock (3.28): the last `ms`, board time unwrapped
         # since this process first heard the board (s), and the smallest
@@ -364,13 +362,13 @@ class HardwareRobot(RobotInterface):
             v = frame.get("v")
             # A pack's reading or none (3.76 K1): a board on USB (about 5 V),
             # a failed INA219 read (0) or a bool is no 3S pack, and read as
-            # one it ended every mission on the 10.5 V floor. One such frame
-            # keeps the last pack reading, so a glitch never hides a low one.
+            # one it ended every mission on the 10.5 V floor. Such a frame is
+            # no reading (never the last good one kept: the floor's two-low-
+            # readings rule would count one sag twice). Known limit: a sensor
+            # failing on alternate frames resets that count.
             volts = v / 100.0 if isinstance(v, (int, float)) and not isinstance(v, bool) else None
-            if volts is not None and BATTERY_PLAUSIBLE_V[0] <= volts <= BATTERY_PLAUSIBLE_V[1]:
-                self._battery_v, self._battery_at = volts, now
-            elif self._battery_v is not None and now - self._battery_at > BATTERY_KEEP_S:
-                self._battery_v = None       # no pack reading for 10 s: none at all
+            self._battery_v = (volts if volts is not None
+                               and BATTERY_PLAUSIBLE_V[0] <= volts <= BATTERY_PLAUSIBLE_V[1] else None)
             self._last_frame_at = now
             self.frames += 1
             if fork is not None:

@@ -1010,6 +1010,14 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 # so one arbitrated before it does not move after it; lifted
                 # only when a mission starts (POST /autonomy/resume).
                 goal_stop["autonomy_stopped"] = {"by": driver, "at": time.monotonic()}
+            if driver_priority(driver) == DRIVER_MANUAL:
+                # ...and the brain lets go now (3.76 K1): a brain waiting on a
+                # cloud call, or whose tick died, sends nothing that could
+                # lapse its claim, which held the slot for the watchdog's
+                # timeout. A verb still running keeps it until it ends.
+                with verbs_lock:
+                    if is_autonomy(state["driver"]) and not state["verbs_running"]:
+                        state["driver_at"] = 0.0
             if ends_goal:
                 # Counted with the latch, before the wheels stop (3.76 K1): a
                 # goal taking the lock after this is stale, whoever sent it --
@@ -1315,9 +1323,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                         stale = goal_stop["stops"] != stops
                         latch = goal_stop["autonomy_stopped"]
                     if autonomy and latch is not None:
-                        # Stale or not (3.76 K1): /stop latches before
-                        # robot.stop() and counts the stop after it, and a
-                        # brain goal in between saw the latch, no new count.
+                        # Stale or not (3.76 K1): a brain goal under a
+                        # person's Stop is that Stop's, whatever the count.
                         return {"accepted": False, **person_stop_refusal(person, latch)}
                     if stale:
                         # A stop was pressed while this waited: never sent.
@@ -1343,8 +1350,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                             # request arrived, before it got the lock, moved
                             # `gen` on; this one supersedes the loop all the
                             # same.) Nor does a brain goal a person's Stop
-                            # latched over (3.76 K1): /stop counts its stop
-                            # after robot.stop(), and its loop ends this goal.
+                            # latched over (3.76 K1): that Stop's loop ends it.
                             latch = goal_stop["autonomy_stopped"]
                             accepted = (goal_stop["stops"] == stops
                                         and not (autonomy and latch is not None))

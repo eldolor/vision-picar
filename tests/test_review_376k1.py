@@ -14,7 +14,7 @@ import pytest
 
 import robot.server as server
 from robot import interface
-from robot.safety import SafetyController
+from robot.safety import PATH_HALF_ANGLE_DEG, SafetyController
 from tests.conftest import asgi_client
 from tests.test_floor_hazards import _robot
 from tests.test_refused_goal_hold import _server_over
@@ -277,27 +277,37 @@ def test_the_brains_stop_through_action_is_never_refused(monkeypatch):
     assert r["executed"] is True, r
 
 
-def test_one_glitch_frame_keeps_the_last_pack_reading():
-    """Every implausible frame wiped the reading: alternate 0 V frames hid a
-    low pack from the floor's two-readings rule."""
-    from robot.hardware_robot import HardwareRobot
-    from sim.fake_esp32 import FakeEsp32
-    from sim.maps import build_world
-    from sim.mock_robot import MockRobot
-    body = MockRobot(build_world("scaled_house"), render=False)
-    board = FakeEsp32(body, battery_v=11.0)
-    robot = HardwareRobot(board.path)
-    try:
-        deadline = time.time() + 2.0
-        while not robot.get_battery().get("usable") and time.time() < deadline:
-            time.sleep(0.02)
-        assert robot.get_battery()["usable"], "no reading -- the test proves nothing"
-        board.battery_v = lambda: 0.0               # the INA219 fails for a moment
-        seen = robot.frames
-        while robot.frames < seen + 5 and time.time() < deadline + 2:
-            time.sleep(0.02)
-        b = robot.get_battery()
-        assert b["usable"] and abs(b["v"] - 11.0) < 0.1, b
-    finally:
-        robot.close()
-        board.close()
+# ---------- the fixes' review, round 3 ----------
+
+
+def test_a_band_blind_ahead_with_open_floor_beside_is_unusable():
+    """Round 2 counted any no_target zone as seen: a band blind across the
+    corridor (a sock inside its minimum range) but open to the sides read
+    clear -- the "blind is not clear" case again."""
+    safety = SafetyController(_robot(None), 20.0)
+    n = 32
+    zones = []
+    for i in range(n):
+        centre = -36.5 + (i + 0.5) * 73.0 / n
+        ahead = abs(centre) <= PATH_HALF_ANGLE_DEG + 0.5
+        zones.append({"status": interface.ZONE_UNUSABLE if ahead else interface.ZONE_NO_TARGET,
+                      "distance_cm": None})
+    assert safety.floor_clearance(_band(zones=zones)) == (None, "floor_band_unusable")
+
+
+@pytest.mark.parametrize("bad", [{"fov_deg": 10 ** 400},
+                                 {"zones": [{"status": interface.ZONE_RANGE, "distance_cm": 10 ** 400}]}])
+def test_huge_numbers_never_raise(bad):
+    safety = SafetyController(_robot(None), 20.0)
+    cm, source = safety.floor_clearance(_band(**bad))
+    assert cm is None, (cm, source)
+
+
+def test_a_persons_stop_lets_the_brain_go_even_if_it_sends_nothing(plain):
+    """The claim lapsed only when the brain's next command was refused: a
+    brain stuck on a cloud call kept the slot for the watchdog's timeout."""
+    client = plain
+    assert client.post("/action", json={"action": "LOOK_LEFT"},
+                       headers={"x-driver": "brain"}).json()["executed"]
+    client.post("/stop", headers={"x-driver": "twin-dpad"})
+    assert client.get("/health").json()["authority_holder"] is None
