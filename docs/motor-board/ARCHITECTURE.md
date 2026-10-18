@@ -121,12 +121,14 @@ mode, straight from the factory.
 the robot server's watchdog. The server always acts first. The board stops
 the wheels on its own if the server itself dies.
 
-**Rejected:** relying on the board's "emergency stop" command. What it does
-to the wheels is **disputed**: the project's audit of Waveshare's code read
-it as aimed at the arm's servos (3.26), while the fake board, which cites the
-firmware function behind each rule, models it as stopping the wheels. The
-firmware source is not in the repo to settle it. Either way the design never
-relies on it: the host never sends it, and stops by commanding zero speed.
+**Rejected:** relying on the board's "emergency stop" command (`T:0`). The
+firmware source (`uart_ctrl.h` at `2e7df97`, the commit our fork pins)
+settles what it does: it drops the torque of every bus servo, the pan-tilt
+included, then sets both wheel setpoints to zero once. It does not latch: the
+next speed command drives again. So it adds nothing to a zero-speed command
+for the wheels and drops the camera; 3.26 read it as the arm's alone, which
+3.76 M2.8 corrected (2026-10-18). The host never sends it, and stops by
+commanding zero speed.
 Nothing replaces the safety layer: the board sees no obstacle.
 
 ### D4. Odometry is a speed integral clamped by the board's odometers

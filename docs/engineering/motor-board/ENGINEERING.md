@@ -52,7 +52,7 @@ which has spaces; the firmware accepts either.
 
 | Command | Behaviour in the fake |
 |---|---|
-| `T:0` | `setGoalSpeed(0, 0)`. See Known gaps. |
+| `T:0` | `setGoalSpeed(0, 0)`, as the firmware does (`uart_ctrl.h`). Bus-servo torque is not modelled. |
 | `T:11` | Raw PWM +/-255: turns the PID off and feeds the heartbeat. |
 | `T:13` | `{X, Z}` twist. Does NOT feed the heartbeat. |
 | `T:130` | One frame now, subject to the rate limit. |
@@ -266,7 +266,8 @@ Expected:
 - If the wheels never stop, the heartbeat is not being honoured: do not run
   the car. If they stop at about 3 s, the `T:136` was lost and the firmware
   default applied.
-- **Do not send `T:0` to stop the wheels.** See Known gaps. A `T:1` of zero
+- **Do not send `T:0` to stop the wheels.** It also drops the pan-tilt's
+  torque and does not latch ([architecture](../../motor-board/ARCHITECTURE.md) D3). A `T:1` of zero
   stops them.
 
 **Odometry over a measured metre.** The same session, on the floor, with a
@@ -357,11 +358,11 @@ Checklist for a change:
 
 - **Not flashed; no real board yet.** Every number above is against the
   fake.
-- **`T:0` disagrees between sources.** The fake models `T:0` as
-  `setGoalSpeed(0, 0)`, which stops the wheels. `PLAN-ros-alignment.md`
-  3.26 and `CLAUDE.md` say the board's `T:0` releases the arm's servo
-  torque, not the wheels. The host never sends it. Settle this against the
-  firmware source before relying on either.
+- **`T:0`'s servo half is not modelled.** The firmware's `T:0` is
+  `emergencyStopProcessing()` (`st.EnableTorque(254, 0)`, every bus servo,
+  the pan-tilt included) then `setGoalSpeed(0, 0)` (`uart_ctrl.h` at
+  `2e7df97`; settled 2026-10-18, 3.76 M2.8). The fake does the wheel half.
+  The host never sends it.
 - **The fake's limits.** Its PID is ideal: no `THRESHOLD_PWM` deadband, no
   dynamics. Its IMU fields are zero and its voltage is constant. Its loop
   and feedback timing are assumed.

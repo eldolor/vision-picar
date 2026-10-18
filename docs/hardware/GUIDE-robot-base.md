@@ -329,8 +329,9 @@ with the versions written down next to it.
 **What the board cannot do for you: safety.** The lidar and cameras plug
 into the Jetson, so the firmware never sees an obstacle. Its only guard is a
 deadman heartbeat (`T:136`, default 3 s) that zeroes the wheel speed when
-commands stop. Its `T:0` "emergency stop" releases the robot arm's servos,
-not the wheels.
+commands stop. Its `T:0` "emergency stop" zeroes the wheel speed once and
+drops the torque of every bus servo (the pan-tilt too); it does not latch, so
+the next speed command drives again. The host never sends it.
 
 ---
 

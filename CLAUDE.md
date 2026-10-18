@@ -499,7 +499,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   bad line killed the fake board's reader. **For the user:** the board
   refreshes its battery reading every 10 s, so the mission's two low
   readings 0.5 s apart can be one sample (M2.7); the firmware's `T:0` does
-  stop the wheels, against 3c (M2.8). **N1 (contracts, config, control
+  stop the wheels (M2.8; 3c corrected 2026-10-18). **N1 (contracts, config, control
   helpers), merged 2026-10-18:** 8 fixed -- feedback lost on a verb's last
   read turned a Stop's verb into a fault (the mission read `failed`); the
   tick-hang drill shared the runner's tick count (no camera centring);
@@ -713,8 +713,11 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   Hailo / Pi path is closed; do not reopen it or spend on Hailo runs.
   Prices and records: `JETSON-BOM.md`, `BOM-COMPARISON.md`.
 * **The Rover's motor board speaks JSON, not ROS** (`T:1001` frames with
-  `odl`/`odr`, 660 pulses/rev). Its `T:0` "e-stop" releases the arm, not
-  the wheels; the heartbeat (1.5 s) is the board's only stop.
+  `odl`/`odr`, 660 pulses/rev). Its `T:0` "e-stop" zeroes the wheel
+  setpoints once (no latch: the next `T:1` drives) and drops the torque of
+  every bus servo, the pan-tilt included; the host never sends it (M2.8,
+  settled against the firmware source 2026-10-18). The heartbeat (1.5 s) is
+  the board's only stop of its own.
 * **Tiered phone walks end `out_of_budget` (before 3.70, `max_steps`)
   even when they arrive.** Arrival
   needs a lidar scan and a phone walk has none, so do not read a phone
