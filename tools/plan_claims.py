@@ -166,35 +166,42 @@ def _cells(line: str) -> list:
 
 
 def _items(cell: str) -> tuple:
-    """(entries, stray text): comma-separated plain entries (one with a space
-    or `;` in it is stray), or, once any entry is ticked, the ticked ones only
-    -- and the text beside them, which
+    """(entries, stray text). A cell that says only "nothing" (empty, a
+    dash, "none", "no" or "n/a": `_no_entry`) has no entries. Otherwise,
+    once any entry is ticked, the ticked paths are the entries; in a plain
+    cell, the comma-separated paths are. Everything else -- text beside the
+    paths, a word such as "no" or "none", an entry with a space or `;` in
+    it, a ticked list -- is stray text, in the author's order, which
     `assess` shows rather than guess at (3.76 J8: a plain entry beside ticked
-    ones was dropped without a word). Beside ticked entries `,` and `;`
-    separate, a dash is no text, and a word ("no", "none", "n/a") is text;
-    in a plain cell only `,` separates. A cell that says only "nothing" is
-    no entries either way, never a path."""
+    ones was dropped without a word; rounds 14-25). Dashes are dropped."""
     found = re.findall(r"`([^`]+)`", cell)
-    if found:                            # ticked: decided before the no-entry filter (round 18)
-        if all(_no_entry(x) for x in found + re.split(r"[,;]", re.sub(r"`[^`]+`", "", cell))):
-            return [], ""                # the whole cell says "nothing"
-        # Beside paths only a dash is nothing; a word -- "no", "none", ticked
-        # or not -- says something about them, and is shown, in the author's
-        # order (rounds 19-24).
-        ticked = [x for x in found if not _no_entry(x)]
-        stray = re.sub(r"`([^`]+)`", lambda m: m.group(1) if _no_entry(m.group(1))
-                       and not _no_entry(m.group(1), words=False) else "", cell)   # words stay
-        loose = [x for x in ticked if re.search(r"[\s,;]", x)]   # "`a.py, sim/`": a list
-        rest = all(_no_entry(t, words=False) for t in re.split(r"[,;]", stray))
-        stray = ", ".join(([] if rest else [re.sub(r"\s+", " ", stray).strip(" ,;")]) + loose)
-        return [x for x in ticked if x not in loose], stray
-    parts = [x.strip() for x in cell.split(",")]
-    if all(_no_entry(x) for x in parts):
-        return [], ""
-    words = [x for x in parts if _no_entry(x) and not _no_entry(x, words=False)]   # round 24
-    parts = [x for x in parts if not _no_entry(x)]
-    loose = [x for x in parts if re.search(r"\s|;", x)]   # "a.py and sim/": not one path
-    return [x for x in parts if x not in loose], ", ".join(words + loose)
+    if not found:
+        parts = [x.strip() for x in cell.split(",")]
+        if all(_no_entry(x) for x in parts):
+            return [], ""
+        entries = [x for x in parts if not _no_entry(x) and not re.search(r"\s|;", x)]
+        text = [x for x in parts if x not in entries and not _no_entry(x, words=False)]
+        return entries, ", ".join(text)
+    pieces = re.split(r"(`[^`]+`)", cell)                  # plain, ticked, plain, ...
+    plain = [t for p in pieces[::2] for t in re.split(r"[,;]", p)]
+    if all(_no_entry(x) for x in found + plain):
+        return [], ""                                      # the whole cell says "nothing"
+    entries, text = [], ""
+    for i, p in enumerate(pieces):
+        if i % 2:                                          # ticked
+            x = p[1:-1].strip()
+            if _no_entry(x, words=False):
+                continue
+            if _no_entry(x) or re.search(r"[\s,;]", x):   # a word, or "`a.py, sim/`": a list
+                text += f" {x} "
+            else:
+                entries.append(x)
+                text += " , "                              # where a path was: a break
+        else:                                              # the author's text and separators
+            text += "".join(t for t in re.split(r"([,;])", p) if not (t.strip() and _no_entry(t, words=False)))
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s*([,;])(\s*[,;])*\s*", r"\1 ", text)   # one separator, as written first
+    return entries, text.strip(" ,;")
 
 
 def _word(cell: str, allowed: tuple):

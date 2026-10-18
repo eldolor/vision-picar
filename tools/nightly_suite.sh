@@ -110,13 +110,13 @@ def mail(line):
     cmd = [shutil.which("aws") or "/usr/local/bin/aws", "sesv2", "send-email", "--region", "us-east-2",
            "--from-email-address", to, "--destination", f"ToAddresses={to}",
            "--content", json.dumps(content)]
-    # The lock is held meanwhile: up to 60 s, and 5 s more once a stop comes,
-    # even one that comes during the send (launchd allows a stop 20 s;
-    # rounds 22-24).
+    # The lock is held meanwhile: up to 60 s; 5 s if a stop already came, and
+    # 5 s more once one comes during the send (launchd allows a stop 20 s;
+    # rounds 22-25).
     ok = False
     try:
         aws = subprocess.Popen(cmd, stdout=subprocess.DEVNULL)
-        end, seen = time.monotonic() + 60, len(stop_seen)
+        end, seen = time.monotonic() + (5 if stop_seen else 60), len(stop_seen)
         while aws.poll() is None and time.monotonic() < end:
             if len(stop_seen) > seen:
                 seen, end = len(stop_seen), min(end, time.monotonic() + 5)
@@ -204,8 +204,11 @@ report(f"{day} - RUNNING  {'locked' if locked else 'unlocked'} {time.strftime('%
 try:
     child = subprocess.Popen([sh, script, *args], stdin=subprocess.DEVNULL)   # close_fds: no lock
 except OSError as exc:                   # no fork, no sh (round 20): a FAIL, said
-    report(f"{day} - FAIL  nightly: could not start {sh}: {exc}")
-    mail(f"nightly: could not start {sh}: {exc}")
+    if stop_seen:                        # ...unless the night was stopped first (round 26)
+        report(f"{day} - STOPPED  nightly: stopped by signal {stop_seen[0]} before the script started")
+    else:
+        report(f"{day} - FAIL  nightly: could not start {sh}: {exc}")
+        mail(f"nightly: could not start {sh}: {exc}")
     sys.exit(1)
 for s in pending:                        # already in stop_seen: passed on, once
     try:
@@ -218,7 +221,8 @@ rc = child.wait()                        # PEP 475: retried after a handler
 # ended before writing one, or the write failed), and this writes one from
 # what it knows -- never a run that looks hung, never yesterday's:
 #   * a stop came through this wrapper (TERM, HUP, INT) -> STOPPED;
-#   * otherwise a signal (an OOM kill, SIGQUIT) -> FAIL, mailed (round 22);
+#   * otherwise a signal (an OOM kill; a SIGQUIT sent to the sh alone) ->
+#     FAIL, mailed (round 22);
 #   * exit 0, a PASS whose write failed -> PASS;
 #   * any other exit (a set -u error, a check that failed, a FAIL whose
 #     write failed) -> FAIL, mailed.

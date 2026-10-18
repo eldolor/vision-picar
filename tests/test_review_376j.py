@@ -351,3 +351,19 @@ def test_r24_a_word_beside_a_path_is_text_and_keeps_its_place():
     assert pc._items("`a.py` but `no` tests") == (["a.py"], "but no tests")
     assert pc._items("none") == ([], "") and pc._items("--") == ([], "")
 
+
+def test_r25_stray_text_keeps_its_order_and_drops_dashes():
+    import plan_claims as pc
+    assert pc._items("`a.py`, --, `no`") == (["a.py"], "no")
+    assert pc._items("`a.py b.py` and `no` tests") == ([], "a.py b.py and no tests")
+    assert pc._items("a.py and b, none") == ([], "a.py and b, none")
+    assert pc._items("`a.py`but`no`tests") == (["a.py"], "but no tests")
+
+
+def test_r26_stray_text_keeps_the_authors_separators():
+    import plan_claims as pc
+    assert pc._items("`a.py`, b.py, c.py") == (["a.py"], "b.py, c.py")
+    assert pc._items("`a.py`; sim/ x; y") == (["a.py"], "sim/ x; y")
+    assert pc._items("`a.py`  but   no") == (["a.py"], "but no")
+    assert pc._items("`a.py`, ` none `") == (["a.py"], "none")
+

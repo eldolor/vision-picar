@@ -111,7 +111,8 @@ Continuing an existing section: work in its worktree
    that night's FAIL, a run past `NIGHTLY_TIMEOUT_S`, default 7000 s, is
    stopped and reported FAIL, a run someone stops (TERM, HUP, Ctrl-C)
    reads STOPPED and is not emailed -- a signal that reaches only the
-   script, an OOM kill, is a FAIL -- and one run holds a lock: a second is refused and adds a
+   script, an OOM kill, is a FAIL, and one that also kills the job's
+   wrapper (Ctrl-\\ in a terminal, a kill -9 of the job) leaves RUNNING -- and one run holds a lock: a second is refused and adds a
    SKIPPED line under the night's verdict, which stays the first line; if
    no run got the lock tonight, SKIPPED is the first line) and with
    `ready --full` before merging a section that changes the twin or the
