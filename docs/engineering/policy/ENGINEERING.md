@@ -383,9 +383,11 @@ surfaces), when it takes the nearest return, which is short of the target,
 never past it. A view goal (`ViewGap.face`) turns toward the part of the
 patch it was chosen to see. What the camera has seen (`ExploreAgent.seen`,
 `_note_seen()`, and the status's `camera_seen_m2`) is kept as cell centres
-on a lattice fixed in the house, not worked out from the map's origin,
-which a SLAM map moves by fractions of a cell as it grows (3.76 L2: the
-same floor was added again after every shift).
+on the first map's lattice, a later map placed on it by its origin's offset
+rounded to whole cells -- not worked out from each map's origin, which a
+SLAM map moves by fractions of a cell as it grows (3.76 L2: the same floor
+was added again after every shift; a lattice at the house's 0 put centres
+on cell borders for a half-cell origin).
 
 **Explore drives a tiered search (3.80.G).** `brain.tier_search` (env
 `TIER_SEARCH`, `cloud` | `explore`, default `cloud`). Under `explore` the
@@ -449,10 +451,9 @@ cloud alone.
   `source` is `local` if any frame of the streak was.
 * `brain/agent.py`: a `source: local` arrival calls the confirmer with
   `local_ok=False` (a confirmer without that keyword is not called: the
-  arrival stays `checking`, unconfirmed). An arrival within
-  `LOCAL_REFUSED_RADIUS_M` (0.5 m) of one that was refused is refused again
-  unpaid -- any source with a range since 3.76 L2 (one detector miss ended a
-  perception-led arrival and its refusal with it). `control/mission_runner.py`:
+  arrival stays `checking`, unconfirmed). A local-led arrival within
+  `LOCAL_REFUSED_RADIUS_M` (0.5 m) of one the cloud refused is refused again
+  unpaid. `control/mission_runner.py`:
   `_guarded_confirm(frame, local_ok=False)` waits for a local question still
   in flight (`TieredVision.wait_local_free`, its local phase, within the
   step's deadline less the cloud guard or half of it; still out: undecided,
@@ -589,7 +590,7 @@ alert colour.
 | `tests/test_tiered.py` (92) | triggers and hysteresis, call cap, staleness floor, async dispatch and epoch drop, an async failure reaching B3.2, landed verdicts shown once, local bearing beats a stale cloud goal, spin guard never overrides a sighting, timing on the worker |
 | `tests/test_review_376k3.py` (5) | 3.76 K3: a failing cloud (not fatal, explore) hands a frame's question back to the local tier; no frame question goes out beside an arrival identity call still running, and it is asked once that ends (a candidate's edge too); close-in's refusals before an accepted goal do not count after it, and an estimate that flips still trips the bound |
 | `tests/test_vision_policy.py` (39) | visible is not found; absent `obstacle_ahead` is `unknown`; room guess backfill and `searched_rooms`; the policy does not peek; replay missions |
-| `tests/test_review_376l2.py` (6) | 3.76 L2: a refused perception-led arrival is not paid for twice at one place; the same view on a shifted map origin adds no seen cells; one room named two ways is one room, `unclear`/`unknown` none; the found frame is not turned away from; a room-label seed off the grid owns no floor; a Stop after the local identity check is undecided, not a refusal |
+| `tests/test_review_376l2.py` (6) | 3.76 L2: the same view on a shifted map origin adds no seen cells, and on a half-cell origin the seen centres map back to exactly the cells the camera saw; one room named two ways is one room, `unclear`/`unknown` none; the found frame is not turned away from; a room-label seed off the grid owns no floor; a Stop after the local identity check is undecided, not a refusal |
 | `tests/test_agent.py`, `tests/test_mission_agent.py`, `tests/test_object_search.py` | constrained loop, frontier preference, look-around scan |
 | `tests/test_goal_pose.py` (12), `tests/test_memory.py` (9), `tests/test_rooms.py` (7) | anchoring under rotation, honesty without range; memory completion; room matching |
 

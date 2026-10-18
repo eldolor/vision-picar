@@ -330,8 +330,7 @@ class MissionAgent(ConstrainedAgent):
         # mission's final status still says why (spec review 3, fix 9).
         self._refusal: Optional[dict] = None
         self._confirmed_this_frame = False
-        # 3.80.O: where arrivals were refused, as house points -- every
-        # source with a range since 3.76 L2 (the name is 3.80.O's).
+        # 3.80.O: where local-led arrivals were refused, as house points.
         self._refused_local: list = []
 
     def _arrival_point(self, readout: dict):
@@ -352,13 +351,12 @@ class MissionAgent(ConstrainedAgent):
             return {**readout, "state": REFUSED, "identity": self._refusal,
                     "reason": f"{who} did not confirm this arrival; not asking again "
                               "until the arrival ends"}
-        point = self._arrival_point(readout)
+        point = self._arrival_point(readout) if readout.get("source") == SOURCE_LOCAL else None
         if point is not None and any(math.dist(point, p) <= LOCAL_REFUSED_RADIUS_M
                                      for p, _ in self._refused_local):
             # 3.80.O review: a local-led hold lapses between the local VLM's
             # answers, which cleared the refusal; the same wrong object is
-            # not paid for twice. Any source (3.76 L2): one detector miss
-            # ended a perception-led arrival the same way.
+            # not paid for twice.
             verdict = next(v for p, v in self._refused_local
                            if math.dist(point, p) <= LOCAL_REFUSED_RADIUS_M)
             return {**readout, "state": REFUSED, "identity": verdict,

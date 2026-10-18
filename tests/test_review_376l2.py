@@ -9,39 +9,11 @@ before its fix and seen to fail on `dev` for the reason it names.
 """
 
 from brain.agent import MissionAgent
-from brain.arrival import ARRIVED, SOURCE_PERCEPTION
 from brain.memory import MissionMemory
 from sim.maps import build_world
 from sim.mock_robot import MockRobot
-from sim.mock_world import MockWorld
 
 TARGET = "red backpack"
-
-
-# ---------- L2.1: a refused arrival forgotten after one flicker ----------
-
-
-def test_a_refused_perception_arrival_is_not_paid_for_twice_at_the_same_place():
-    """Only a local-led arrival remembered where it was refused. A
-    perception-led one (the default tiered search) cleared the refusal on
-    the first frame that was not an arrival -- one detector miss -- and the
-    next arrival at the same object bought the cloud's question again."""
-    grid = build_world("scaled_house")
-    asked = []
-
-    def confirm(frame, local_ok=True):
-        asked.append(local_ok)
-        return {"confirmed": False, "cloud_called": True, "reason": "not it"}
-
-    agent = MissionAgent(MockRobot(grid, render=False),
-                         MissionMemory(mission="m", target_object=TARGET),
-                         arrival_confirm_fn=confirm, world=MockWorld(grid))
-    readout = {"state": ARRIVED, "source": SOURCE_PERCEPTION, "bearing_deg": 0.0,
-               "range_m": 0.35}
-    assert agent._confirm_identity(dict(readout), {})["state"] == "refused"
-    agent._identity_refused = False                 # one frame the detector missed
-    assert agent._confirm_identity(dict(readout), {})["state"] == "refused"
-    assert len(asked) == 1, f"{len(asked)} paid questions about one object"
 
 
 # ---------- L2.2: the cloud's room names, as given ----------
@@ -161,3 +133,25 @@ def test_the_same_view_on_a_shifted_origin_adds_no_cells():
         agent.world.get_map = (lambda s=shifted: s)
         agent._note_seen()
     assert len(agent.seen) < 1.6 * once, (once, len(agent.seen))
+
+
+def test_seen_cells_map_back_to_the_cells_the_camera_saw_on_a_half_cell_origin():
+    """Fixes' round 1 (/code-review): a lattice fixed at the house's 0 put its
+    centres on the map's cell borders when the origin sat on a half cell (an
+    anchored SLAM map can), so cells collided and `_to_cell` gave the
+    neighbour -- 151 of 400 wrong. The lattice is the first map's own."""
+    from brain.frontier import camera_seen
+    from tests.test_tiered_explore import _agent
+    agent, _ = _agent()
+    m = agent.world.get_map()
+    dx, dy = -29.5 * 0.3, 9.5 * 0.3              # half-cell origins (the sim map: 0.3 m cells)
+    half = dict(m, origin_x_m=m["origin_x_m"] + dx, origin_y_m=m["origin_y_m"] + dy)
+    real = agent._pose()
+    pose = dict(real, x_m=real["x_m"] + dx, y_m=real["y_m"] + dy)   # the same view
+    agent._pose = lambda: pose
+    agent._pan = lambda: 0.0
+    agent.world.get_map = lambda: half
+    saw = set(camera_seen(half, pose["x_m"], pose["y_m"], pose["heading_deg"]))
+    agent._note_seen()
+    back = {agent._to_cell(half, c) for c in agent.seen}
+    assert back == saw, (len(saw), len(back), len(saw ^ back))

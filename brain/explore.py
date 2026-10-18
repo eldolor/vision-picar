@@ -276,6 +276,7 @@ class ExploreAgent(MissionAgent):
         self.escapes_charged = 0
         self._wedged: list = []        # goals that failed without the robot moving
         self.seen_res: Optional[float] = None
+        self._seen_lattice: Optional[tuple] = None   # the first map's origin (3.76 L2)
         self.goals_sent = 0
         # 3.77: a goal choice's wall time, from the start of `_next_frontier`
         # to its decision -- before the navigator is asked or an escape move
@@ -1385,15 +1386,21 @@ class ExploreAgent(MissionAgent):
         self._last_map = m
         res = m["resolution_m"]
         self.seen_res = res
+        if self._seen_lattice is None:
+            self._seen_lattice = (m["origin_x_m"], m["origin_y_m"])
+        lx, ly = self._seen_lattice
+        kx = round((m["origin_x_m"] - lx) / res)
+        ky = round((m["origin_y_m"] - ly) / res)
         for c in camera_seen(m, pose["x_m"], pose["y_m"], pose["heading_deg"] + pan):
-            # Snapped to a lattice fixed in the house (3.76 L2): a SLAM map's
-            # origin moves by fractions of a cell as it grows, and centres
-            # worked out from it put the same floor in the set again after
-            # every shift. On a whole-cell origin (the simulator's) this is
-            # the cell's own centre, as before.
-            x = math.floor((m["origin_x_m"] + (c[0] + 0.5) * res) / res)
-            y = math.floor((m["origin_y_m"] + (c[1] + 0.5) * res) / res)
-            self.seen.add((round((x + 0.5) * res, 3), round((y + 0.5) * res, 3)))
+            # On the first map's own lattice (3.76 L2): a SLAM map's origin
+            # moves by fractions of a cell as it grows, and centres worked out
+            # from each origin put the same floor in the set again after
+            # every shift. A later map is placed on it by its offset rounded
+            # to whole cells, so no centre lands on a cell border (a lattice
+            # at the house's 0 did, on a half-cell origin). The first map's
+            # cells -- every map's, in the simulator -- are their own centres.
+            self.seen.add((round(lx + (kx + c[0] + 0.5) * res, 3),
+                           round(ly + (ky + c[1] + 0.5) * res, 3)))
 
     def _verb(self, action: str, **kwargs):
         """A camera pan or an escape move, between goals. Any goal still live
