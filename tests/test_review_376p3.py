@@ -153,3 +153,24 @@ def test_a_link_with_a_title_is_still_checked(repo):  # noqa: F811
     """`[x](missing.md "title")` matched no link, so it went unchecked."""
     edit(repo, A, "(../engineering/brakes/ENGINEERING.md)", '(../engineering/brakes/MISSING.md "spec")')
     assert "E6" in codes(spec_lint.lint(repo, today=TODAY))
+
+
+@pytest.mark.parametrize("script", ["tools/gpu/ec2.sh", "tools/hailo/ec2.sh"])
+def test_a_good_launch_says_nothing_about_a_running_instance(tmp_path, script):
+    """Round 2 (/code-review): nothing pinned the trap's clearing -- without
+    `trap - EXIT`, a healthy `up` would warn "STILL RUNNING"."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    _stub(bindir, "aws", """
+case "$*" in
+  *"ec2 describe-instances"*) echo None ;;
+  *"run-instances"*) echo i-0abc123 ;;
+  *"describe-instance-information"*) echo Online ;;
+  *) echo stub ;;
+esac""")
+    _stub(bindir, "session-manager-plugin", "exit 0")
+    r = subprocess.run(["bash", str(ROOT / script), "up"], capture_output=True, text=True,
+                       cwd=ROOT, env={**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}",
+                                      "GPU_AMI": "ami-1", "HAILO_AMI": "ami-1"})
+    assert "STILL RUNNING" not in r.stderr, r.stderr[-400:]
+    assert "SSM online" in r.stdout, (r.returncode, r.stdout[-300:], r.stderr[-300:])
