@@ -180,6 +180,8 @@ def main(argv=None) -> int:
     cloud = cloud_records(walks)
     confab = confabulations(cloud)
     models = sorted({r.label for r in cloud if r.label})
+    print(f"cloud: answered {len(cloud)} of {len(labels)} labelled frames "
+          f"(its row covers only those)")
     print(f"frames: {len(labels)} in {len(walks)} walks, "
           f"{sum(labels.values())} visible (today's labels.json)")
     rows = [row(f"cloud ({', '.join(models) or 'unknown'})", cloud, CLOUD_GATE, confab)]

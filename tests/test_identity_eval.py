@@ -80,4 +80,5 @@ def test_the_command_prints_one_row_per_model_plus_the_cloud(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "cloud (opus-test)" in out and "| m | 0.5 |" in out
     assert "3 labelled frames not covered" in out
+    assert "cloud: answered 3 of 4 labelled frames" in out
     assert len(json.loads(out_json.read_text())) == 2
