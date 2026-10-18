@@ -80,18 +80,22 @@ def _brain_refused(robot_client):
     return reply.get("reason") == "person_stop"
 
 
-@pytest.mark.parametrize("request_body", [
-    {"target_object": "red backpack", "policy": "vision"},         # no vision_url: 400
-    {"target_object": "red backpack", "fault": "no_such_drill"},   # a 400/403 drill
+@pytest.mark.parametrize("request_body, brain_yaml, status", [
+    ({"target_object": "red backpack", "policy": "vision"}, "", 400),      # no vision_url
+    ({"target_object": "red backpack", "fault": "vision_error"},
+     "brain:\n  allow_drills: false\n", 403),                             # drills off
 ])
-def test_a_refused_start_leaves_a_persons_stop_latched(plain, request_body):  # noqa: F811
+def test_a_refused_start_leaves_a_persons_stop_latched(plain, tmp_path, request_body,  # noqa: F811
+                                                       brain_yaml, status):
     """The latch is lifted first, before the build; a start then refused
     (400, 403) began no mission but left autonomy unlatched after the
     person's D-pad Stop."""
+    config = tmp_path / "robot.yaml"
+    config.write_text(brain_yaml)
     plain.post("/stop", headers={"x-driver": "twin-dpad"})
-    with TestClient(_brain_over(plain)) as brain:
+    with TestClient(_brain_over(plain, config_path=str(config))) as brain:
         r = brain.post("/mission/start", json=request_body)
-    assert r.status_code in (400, 403, 422), r.text
+    assert r.status_code == status, r.text
     assert _brain_refused(plain), "a refused start lifted the person's Stop"
 
 
