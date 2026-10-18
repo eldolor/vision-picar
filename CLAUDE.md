@@ -204,7 +204,20 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     identity; cloud calls 765 -> 6 over 21 houses, 0 contacts.
   * I-N: nine more local VLMs or builds (RoboBrain2.0-3B, InternVL3.5-2B/4B,
     Youtu-VL-4B, MiniCPM-V 4.0, under llama.cpp and Edge-LLM); none
-    replaces VE. Opus 4.5's steering arm (3.80.I, ~$2.6) waits for the user.
+    replaces VE.
+  * Cloud models on 3.80.I's frames (2026-10-17, on dev at `ad4c774`):
+    with the target in view, GPT-6 Astra steers best of every tier (56/60,
+    the only one over the 80% bar); Opus 5.5 49/60, Opus 4.5 46/60. Out of
+    view, no model, local or cloud, gives a search direction (best 41%, below
+    the 43% of always naming the commoner side). So where to look is chosen
+    from the map: `docs/policy/ARCHITECTURE.md` "Where to look is chosen from
+    the map" -- the learned goal ranker (3.65) orders frontier candidates,
+    and a room prior (next), inventory distance and visual promise join it
+    as inputs.
+  * Q (2026-10-18): GPT-6 Astra as the identity check FAILED (precision
+    56.1% vs Opus 4.5's 67.9%, recall 100%; the teal bin). Opus 4.5 stays
+    `/navigate`'s default. Astra's Bedrock usage omits image tokens, so
+    its reported cost is a floor.
   * O: the local VLM's box finishes the approach and the arrival when
     perception is silent, and only the cloud may confirm such an arrival
     (never the local tier). Blind perception, 21 houses: 17 at pace 1, 12 at
