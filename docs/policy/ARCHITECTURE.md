@@ -377,6 +377,55 @@ nav2 and `robot/safety.py` stay rules. A bad weight makes a search slower,
 never a move unsafe. It is judged on houses it was not trained or selected
 on, and live on nav2, before the default could change.
 
+### Where to look is chosen from the map, never from a frame
+
+**Decision (3.80.G and 3.80.I, 2026-10-16/17).** With the target out of
+view, the next place to look comes from what the robot knows beyond the
+current frame -- its map, its memory and common sense about rooms -- never
+from a model asked "which way?" about one picture.
+
+**Why: the answer is not in the picture.** 3.80.I asked every tier, local
+and cloud, for a search direction on 42 out-of-view renders whose true
+answer is the first metre of the shortest path to the target. The bar was
+the majority side's share plus 15 points (58%). Nothing passed: the best
+were RoboBrain2.0-3B 41% and Opus 4.5 38%, then GPT-6 Astra 29% and Opus
+5.5 21%, all below always naming the more common side (43%); the local
+Qwens said FORWARD on all 42. The mirror test shows why: flipped left to
+right, the out-of-view answer swaps sides only 36-67% of the time, so it is
+mostly a guess. With the target in view the same models steer well (Astra
+56 / 60): seeing is solved, searching is not a vision question.
+
+**The layers, each feeding the one below it:**
+
+| Source of the answer | What it adds | State |
+|---|---|---|
+| **A map of what's unexplored** -- explore's frontier, view and approach goals over SLAM's map | the candidate places to go; coverage that eventually finds anything reachable | **built, the design** (3.80.G: arrivals 2 -> 16, cloud calls 765 -> 6) |
+| **A learned choice among those frontiers** -- `explore_goal_policy` (3.65) | the order in which the frontier's candidates are visited | built; default `rule` (the network saved 11% of median goals on fresh houses, bar 20%) |
+| **Memory of where things were seen** -- the object inventory (3.46) | a candidate's distance to the last place the target, or something like it, was seen | built; empty on real frames until a namer for camera frames passes |
+| **Common sense about rooms** -- one language-model call ranks room types for the target ("a charger: office, kitchen, bedroom") | a candidate's room prior | rooms from CLIP (3.51) built, not wired; the ranking not built |
+| **What is visible toward a frontier** -- a model rates how promising each unexplored edge looks for this target (published object-goal navigation work) | a candidate's visual promise | not built |
+
+**How reinforcement learning ties to the frontier.** The frontier map is
+where the candidates come from; RL only decides their order. 3.65's policy
+scores each candidate the rules allow (unleavable, set-aside and
+twice-reached places are never offered) and explore sends the best one;
+training rewards finding the target in fewer goals and metres. Today its
+ten inputs are all geometric -- path length, turn, frontier length, view-gap
+area, unknown and unseen share nearby, past failures and reaches nearby
+(`brain/goal_policy.py` `FEATURES`) -- which is why it gained so little over the rule: from
+geometry alone, one frontier looks much like another. The layers above are
+new inputs to that same ranker: a room prior, an inventory distance, a
+visual promise become columns beside the geometric facts, and training
+learns how much each is worth. So the search improves without a new policy
+or a new safety argument: the ranker still only orders places the rules
+already allow, and a bad weight makes a search slower, never a move unsafe.
+
+**Next, in order:** (1) the room prior as a ranker input, trained and judged
+on the ProcTHOR sweeps (their imports carry room types), against today's
+`rule` on goals and time to find, on houses it was not trained on; (2) the
+inventory distance, once real frames name objects; (3) visual promise, only
+if (1) and (2) leave a gap, since it costs a model call per frontier.
+
 ## Contracts
 
 | With | Direction | Category | Ownership |
@@ -407,7 +456,9 @@ on, and live on nav2, before the default could change.
 
 - **The room-level planner** -- an LLM reasoning over mission memory to
   choose which room to search next -- is designed and not built; it is the
-  main gap on the hardware path. Decided by the user; it has a slot (the
+  main gap on the hardware path. Since 3.80.I it is the second-to-last layer of
+  "where to look is chosen from the map" (above): a room prior fed to
+  explore's goal ranker, not a policy of its own. Decided by the user; it has a slot (the
   vision function) and a prompt shape (mission memory's context block)
   waiting.
 - **Dead-reckoned bearing**: stays off until a run both ways shows the run
