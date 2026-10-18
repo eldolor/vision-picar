@@ -37,3 +37,14 @@ def test_native_prompts_only_match_their_own_template():
     assert native_target("florence", "<CAPTION_TO_PHRASE_GROUNDING>blue bottle") == ("phrase", "blue bottle")
     assert native_target("florence", "Output the bounding box of the blue bottle as JSON") is None
     assert native_target("photon", "point: red backpack") == ("point", "red backpack")
+
+
+def test_locateanything_decides_after_box():
+    present = [step("<ref>", {"<ref>": 1.0}), step("cup", {"cup": 1.0}), step("</ref>", {"</ref>": 1.0}),
+               step("<box>", {"<box>": 1.0}), step("<932>", {"<932>": 0.5, "<931>": 0.3, "None": 0.2})]
+    s, parsed, at = p_native(present)
+    assert parsed and at == 4 and abs(s - 0.8) < 1e-9
+    absent = present[:4] + [step("None", {"None": 0.9, "<806>": 0.1})]
+    assert abs(p_native(absent)[0] - 0.1) < 1e-9
+    assert not decided_native(present[:3]) and decided_native(present)
+    assert parse_any_box("<ref>cup</ref><box>None</box>") is None

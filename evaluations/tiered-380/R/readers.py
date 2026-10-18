@@ -8,6 +8,8 @@ formats the R models answer in, each pinned in `test_readers.py`:
   Otherwise the first non-blank generated token decides: the share of its
   top-20 alternatives' probability that opens a box or point
   (`opens_native`), over all of them.
+  LocateAnything is read at the token after `<box>` instead: coordinate
+  tokens over coordinates + `None` / `<null>`.
 * `parse_any_box`: M's reader, then a point -- `<box><x><y></box>`
   (LocateAnything, 0-1000) or Molmo2's `coords="i x y"` (0-1000) -- as a
   1-unit box at the point, so the box centre is the point.
@@ -50,8 +52,33 @@ def _first(content: Sequence[dict]):
     return None, None
 
 
+_COORD = re.compile(r"^<\d+>$")
+
+
+def _after_box(content: Sequence[dict]):
+    """LocateAnything (smoke, 2026-10-18): `<ref>label</ref><box>` always
+    comes first; the token after `<box>` decides -- a coordinate `<n>` (a box
+    or point follows) or `None` / `<null>` (nothing there)."""
+    for i, step in enumerate(content[:-1]):
+        if step["token"] == "<box>":
+            return i + 1, content[i + 1]
+    return None, None
+
+
+def _la(content: Sequence[dict]) -> bool:
+    return bool(content) and content[0]["token"] == "<ref>"
+
+
 def p_native(content: Sequence[dict]) -> tuple:
     """`(score, parsed, decided_at)`, the bench's reader contract."""
+    if _la(content):
+        i, step = _after_box(content)
+        if step is None:
+            return 0.0, False, None
+        alts = step.get("top_logprobs") or [{"token": step["token"], "logprob": step["logprob"]}]
+        found = sum(math.exp(a["logprob"]) for a in alts if _COORD.match(a["token"].strip()))
+        empty = sum(math.exp(a["logprob"]) for a in alts if a["token"].strip() in ("None", "<null>"))
+        return (found / (found + empty) if found + empty > 0 else 0.0), True, i
     i, step = _first(content)
     if step is None:
         return 0.0, False, None
@@ -62,6 +89,8 @@ def p_native(content: Sequence[dict]) -> tuple:
 
 
 def decided_native(content: Sequence[dict]) -> bool:
+    if _la(content):
+        return _after_box(content)[1] is not None
     return _first(content)[1] is not None
 
 
