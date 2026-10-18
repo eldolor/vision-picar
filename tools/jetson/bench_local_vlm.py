@@ -45,6 +45,12 @@ def post(url: str, jpeg: bytes, target: str, deadline_s: float, secret: str) -> 
             got = json.loads(r.read())
     except urllib.error.HTTPError as e:
         got = {"status": f"http {e.code}", "score": None}
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        # One refused, timed-out or garbled call is one failed frame, not the
+        # end of a 299-frame run with nothing written (3.76 P1).
+        got = {"status": f"error {type(e).__name__}", "score": None}
+    if not isinstance(got, dict) or "status" not in got:
+        got = {"status": "error no status", "score": None}
     return got, (time.perf_counter() - t0) * 1000
 
 

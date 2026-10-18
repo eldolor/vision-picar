@@ -26,6 +26,15 @@ import os
 import re
 import sys
 import time
+
+# A secret on a command line (`curl -H 'x-app-secret: ...'` in the headroom
+# harnesses' waits) must not reach `account.jsonl`, which is committed
+# (3.76 P1: none was caught in the five committed files; latent).
+_SECRET_ARG = re.compile(r"""(x-app-secret:\s*|APP_SHARED_SECRET=|LOCAL_SECRET=)[^\s'"]+""", re.I)
+
+
+def redact(cmd: str) -> str:
+    return _SECRET_ARG.sub(r"\1***", cmd)
 from pathlib import Path
 
 NVMAP = Path("/sys/kernel/debug/nvmap")
@@ -92,7 +101,7 @@ def processes() -> list:
                 vals[k] = int(v.split()[0])
         if vals.get("Rss", 0) < 512 and vals.get("Swap", 0) < 512:
             continue
-        cmd = read(p / "cmdline").replace("\0", " ").strip()[:240]
+        cmd = redact(read(p / "cmdline").replace("\0", " ").strip())[:240]
         cg = read(p / "cgroup").strip().split("::")[-1]
         out.append({"pid": p.name, "comm": read(p / "comm").strip(), "cmd": cmd,
                     "cgroup": cg, **vals})

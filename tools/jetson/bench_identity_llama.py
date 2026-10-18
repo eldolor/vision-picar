@@ -192,6 +192,19 @@ def compare_decisions(new: Sequence[dict], old: Sequence[dict],
             "missing": missing, "max_score_diff": max(diffs) if diffs else None}
 
 
+def bare_object(content: Sequence[dict], decided) -> bool:
+    """A reply that is a bare `{"bbox_2d": ...}` object, not a list: its
+    deciding token is the reply's first that is not whitespace. 3.76 P1:
+    tested on the deciding token alone, every `[` + `{...}` list counted
+    (after a bare `[`, the deciding token IS the `{`), so `object_replies`
+    read 68-70 of 299 where every stored reply opened with `[`."""
+    if decided is None or decided >= len(content):
+        return False
+    if not content[decided]["token"].strip().startswith("{"):
+        return False
+    return all(not e["token"].strip() for e in content[:decided])
+
+
 def decision_ms(timings: dict, decided_at) -> Optional[float]:
     """Prompt (image included) plus generation up to and including the
     deciding token, from llama-server's `timings`. Reported beside, never
@@ -399,7 +412,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
             content = (choice.get("logprobs") or {}).get("content") or []
             score, parsed, decided = p_localised(content)
             noparse += 0 if parsed else 1
-            if parsed and content[decided]["token"].strip().startswith("{"):
+            if parsed and bare_object(content, decided):
                 object_replies += 1
             dm = decision_ms(out.get("timings") or {}, decided)
             if dm is not None:

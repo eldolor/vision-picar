@@ -9,7 +9,7 @@
 # CUDA 12.8 types (Edge-LLM issue #183).
 set -euo pipefail
 SRC="$(cd "$(dirname "$0")" && pwd)/edgellm_identity.cpp"
-TREE="${1:?usage: build_edgellm_identity.sh <edge-llm tree>}"
+TREE="$(cd "${1:?usage: build_edgellm_identity.sh <edge-llm tree>}" && pwd)"   # absolute: used after the cd
 cd "$TREE"
 cp "$SRC" examples/llm/edgellm_identity.cpp
 python3 "$(dirname "$SRC")/patch_edgellm_trt103.py" "$TREE"

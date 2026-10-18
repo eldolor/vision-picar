@@ -43,7 +43,9 @@ set -a; source ~/.vision-picar-local-secrets; set +a
 export APP_SHARED_SECRET="$LOCAL_SECRET"
 H=(-H "x-app-secret: $LOCAL_SECRET")
 wheel() { curl -s "${H[@]}" localhost:8000/health | python3 -c 'import sys,json; w=json.load(sys.stdin)["wheel_loop"]; print(w["moving_ticks"], w["late_ticks"], w["max_dt_s"])'; }
-oom() { sudo dmesg | grep -ciE "out of memory|oom-kill|killed process" || true; }
+# One line per kill (3.76 P1: matching all three lines a kill prints counted
+# each kill three times).
+oom() { sudo dmesg | grep -ciE "killed process" || true; }
 # Every wait is bounded, so a stack that never comes up reaches teardown.
 waitfor() {  # seconds what cmd...
   local s=$1 what=$2; shift 2
@@ -70,7 +72,9 @@ PERC=; MEM=; WHL=; NAV=
 trap teardown EXIT
 
 sudo systemctl isolate multi-user.target; sleep 5
-sudo systemctl stop picar-stack picar-ngrok 2>/dev/null; sleep 3
+# The production VLM too (3.76 P1): once enabled, multi-user starts it, and
+# the run would carry a second 4 GB model.
+sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3
 { echo "== desktop: $(systemctl is-active gdm); twin units: $(systemctl is-active picar-stack) $(systemctl is-active picar-ngrok); runtime $RUNTIME"
   echo "== run L $(date +%T) rev $(git rev-parse --short HEAD) image $IMAGE $(sudo nvpmodel -q | head -1)"
   echo "== MemAvailable before anything: $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) MB"; } | tee "$OUT/run.log"
@@ -91,6 +95,10 @@ waitfor 60 "wheels usable" sh -c "curl -s -H 'x-app-secret: $LOCAL_SECRET' local
 # rebuild (3.81 T3).
 LAUNCH_MOUNT=()
 [ "${LAUNCH_FROM_TREE:-0}" = 1 ] && LAUNCH_MOUNT=(-v "$PWD/service/slam/src/picar_bringup/launch/picar.launch.py:/ws/src/picar_bringup/launch/picar.launch.py:ro")
+# :8090 must be free (3.76 P1): a container left from README's G4 steps
+# (`--restart unless-stopped`) answered "bridge up" for this run's, so the
+# run measured the wrong stack -- and its memory.
+ss -ltn | grep -q ':8090 ' && { echo "STOP: :8090 is already in use ($(docker ps --format '{{.Names}}' | tr '\n' ' '))" | tee -a "$OUT/run.log"; exit 2; }
 docker run -d --name "$NAME" --network host "${LAUNCH_MOUNT[@]}" \
   -e APP_SHARED_SECRET -e ROBOT_URL=http://127.0.0.1:8000 -e BRAIN_URL=http://127.0.0.1:8001/brain \
   "$IMAGE" ros2 launch picar_bringup picar.launch.py >/dev/null
@@ -189,16 +197,25 @@ out, t0, t1 = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 w0, w1 = sys.argv[4].split(), sys.argv[5].split()
 mem = [int(l.split()[1]) for l in open(f"{out}/mem.log")
        if len(l.split()) == 2 and t0 <= int(l.split()[0]) <= t1]
-# Frame lines only: "HH:MM:SS <ms> <status>" (the loaded/done lines are not).
-perc = [int(m.group(1)) for m in
-        (re.fullmatch(r"\d\d:\d\d:\d\d (\d+) \w+", l.strip()) for l in open(f"{out}/perception.log"))
-        if m]
+# Frame lines only: "HH:MM:SS <ms> <status>" (the loaded/done lines are
+# not), inside the window, as headroom_mission.sh reads them (3.76 P1: every
+# frame since the loop began counted -- the cold first one, and under
+# ACCOUNT=1 the 30 s hold before the VLM loaded).
+import time as _t
+day = _t.strftime("%Y-%m-%d", _t.localtime(t0))
+def _at(hms):
+    return _t.mktime(_t.strptime(f"{day} {hms}", "%Y-%m-%d %H:%M:%S"))
+perc = [int(m.group(2)) for m in
+        (re.fullmatch(r"(\d\d:\d\d:\d\d) (\d+) \w+", l.strip()) for l in open(f"{out}/perception.log"))
+        if m and t0 <= _at(m.group(1)) <= t1]
 s = sorted(perc); p90 = s[max(0, -(-len(s) * 9 // 10) - 1)] if s else None
 nav = open(f"{out}/nav.log").read().strip().splitlines()
 temps, throttle = [], 0
 for line in open(f"{out}/tegrastats.log"):
     t = [float(x) for x in re.findall(r"(?:cpu|gpu|tj)@([\d.]+)C", line)]
     if t: temps.append(max(t))
+    # JetPack 6's tegrastats prints no "throttl" (3.76 P1: 0 in all nine
+    # committed logs), so this is always 0: criterion 9 rests on temperature.
     throttle += bool(re.search(r"throttl", line, re.I))
 summary = {
     "window_s": t1 - t0,

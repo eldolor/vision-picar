@@ -62,6 +62,7 @@ about 33 s. The venv needs the system TensorRT bindings linked in, plus
 SP=.venv/lib/python3.10/site-packages
 for d in tensorrt tensorrt-10.3.0.dist-info tensorrt_lean tensorrt_dispatch; do
   ln -s /usr/lib/python3.10/dist-packages/$d $SP/$d; done
+# /tmp/jetson-constraints.txt is written by setup.sh and gone after a reboot: re-run setup.sh first
 .venv/bin/pip install "onnx>=1.12,<1.18" "onnxslim>=0.1.71" -c /tmp/jetson-constraints.txt
 python -m tools.jetson.bench_trt build --recordings recordings --out build.json
 python -m tools.jetson.bench_trt run B1 --recordings recordings --out b1.json
@@ -141,6 +142,10 @@ docker run -d --name picar-ros --restart unless-stopped --network host \
   vision-picar-ros ros2 launch picar_bringup picar.launch.py
 until curl -s localhost:8090/health >/dev/null; do sleep 1; done
 SIM_MAP=scaled_house .venv/bin/python -m pytest tests/test_ros_chain_live.py tests/test_nav_live.py -rs
+
+# after the fifth run: `--restart unless-stopped` would bring it back at every
+# boot, beside picar-stack, holding :8090 (3.76 P1)
+docker rm -f picar-ros
 ```
 
 `restart.sh` prints `OK: robot and brain both running <rev>` only once both
@@ -165,7 +170,9 @@ before moving the robot.
 processing frames. It passes when all three hold:
 
 * 0 late ticks on the wheel loop (`/health`'s `wheel_loop`);
-* at least 1 GB of memory free;
+* at least 0.5 GB of memory free (`MemAvailable`), with the local VLM the
+  first process killed -- the user's floor of 2026-10-14 (CLAUDE.md 3b; 3.33
+  ran against 1 GB);
 * no thermal throttling in `tegrastats`.
 
 ## 5. The robot server, brain and tunnel as services (3.71)
@@ -225,9 +232,15 @@ Jetson's starts, or one of them fails with ERR_NGROK_334.
 ```bash
 git push jetson origin/dev:refs/heads/dev                     # on the Mac
 ssh picar-jetson 'cd ~/vision-picar-service && git checkout -q --detach dev \
-  && .venv/bin/pip install -q -r requirements.txt && sudo systemctl restart picar-stack'
+  && .venv/bin/pip install -q -r requirements.txt && bash tools/jetson/install_services.sh \
+  && sudo systemctl restart picar-stack \
+  && { ! systemctl is-active -q picar-local-vlm || sudo systemctl restart picar-local-vlm; }'
 curl -s https://<domain>/brain/health    # git_revision is the new commit
 ```
+
+`install_services.sh` again so a changed unit file is applied (3.76 P1: the
+restart alone kept the old units), and the local VLM restarted only if it
+was running -- it is installed but not enabled.
 
 `run.sh` exits when any one of its servers does (3.71), so systemd restarts
 the whole set after a crash.

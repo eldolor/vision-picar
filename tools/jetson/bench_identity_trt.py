@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from tools.jetson.bench_identity_llama import (
-    MAX_TOKENS, PROMPT, TOP_LOGPROBS, WARMUP, MemSampler, decision_reached,
+    MAX_TOKENS, PROMPT, TOP_LOGPROBS, WARMUP, MemSampler, bare_object, decision_reached,
     mem_available_mb, p_localised, percentile)
 
 
@@ -193,7 +193,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover
             score, parsed, decided = p_localised(content)
             noparse += 0 if parsed else 1
             undecided += 0 if got["decided"] else 1
-            if parsed and content[decided]["token"].strip().startswith("{"):
+            if parsed and bare_object(content, decided):
                 object_replies += 1
             replies[f"{w.name}/{p.name}"] = "".join(e["token"] for e in content)[:160]
             ms.append(got["ms"])
