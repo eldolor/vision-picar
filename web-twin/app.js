@@ -3699,7 +3699,10 @@
   // exponential backoff after an error -- so a stalled loop looks stalled.
   function robotStartCountdown(ms) {
     if (state.guidanceMode !== "robot") return;
-    robotCountdown.firstElementChild.style.animationDuration = ms + "ms";
+    // Important, so the reduced-motion rule's own `!important` 0.01 ms does
+    // not win (3.76 O: the bar filled at once): this bar is information, a
+    // countdown, not decoration.
+    robotCountdown.firstElementChild.style.setProperty("animation-duration", ms + "ms", "important");
     restartRobotAnimation(robotCountdown, "run");
   }
 

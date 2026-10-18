@@ -119,11 +119,15 @@
      page, and a second one competing for the viewport on iOS is how the
      bottom bar started drifting. Sticky keeps it visible while scrolling
      without leaving the normal flow. */
+  /* Bleeds by exactly .wrap's padding (3.76 O: -16px against 14 made every
+     tab scroll 2 px sideways on a phone), and sticks below the status bar,
+     not under it: the page is black-translucent, and the body's own top
+     inset scrolls away (the bottom inset it used to add was the wrong one). */
   .env-banner {
-    position: sticky; top: 0; z-index: 20;
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
     display: none;
-    margin: 0 -16px 12px;
-    padding: 7px 16px calc(7px + env(safe-area-inset-bottom, 0px));
+    margin: 0 -14px 12px;
+    padding: 7px 14px;
     background: var(--accent-alert);
     color: #16110D;
     font-family: var(--mono); font-size: var(--fs-small); font-weight: 700;
@@ -171,6 +175,10 @@
   }
   .telemetry .val { color: var(--text); }
   .telemetry .full { grid-column: 1 / -1; }
+  /* A readout outside the .telemetry grid, in its type (3.76 O). */
+  .telemetry-line {
+    font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin-top: 10px;
+  }
   .telemetry .safe { color: var(--accent-safe); }
   .telemetry .alert { color: var(--accent-alert); }
   .telemetry .warn { color: var(--accent-warn); }
@@ -387,7 +395,10 @@
   .toast-stack {
     position: fixed; left: 50%; transform: translateX(-50%);
     bottom: calc(94px + env(safe-area-inset-bottom));
-    z-index: 120; display: flex; flex-direction: column; gap: 8px;
+    /* Above Guide's fullscreen (200) and the onboarding sheet (150): a walk
+       recorded from Robot view warned of unsaved frames under them, unseen
+       (3.76 O). Never takes a tap (pointer-events: none). */
+    z-index: 260; display: flex; flex-direction: column; gap: 8px;
     width: min(360px, calc(100% - 32px)); pointer-events: none;
   }
   .toast {
@@ -761,8 +772,10 @@
   }
   .robot-bracket::before { width: 100%; height: 2px; }
   .robot-bracket::after { width: 2px; height: 100%; }
-  .robot-bracket.tl { top: 62px; left: 14px; }
-  .robot-bracket.tr { top: 62px; right: 14px; }
+  /* Below the top bar, which starts at the top inset (3.76 O: on a
+     home-screen install the HUD drew under Close, Mute and the budget). */
+  .robot-bracket.tl { top: calc(62px + env(safe-area-inset-top)); left: 14px; }
+  .robot-bracket.tr { top: calc(62px + env(safe-area-inset-top)); right: 14px; }
   .robot-bracket.bl { bottom: 96px; left: 14px; }
   .robot-bracket.br { bottom: 96px; right: 14px; }
   .robot-bracket.tr::before, .robot-bracket.br::before { right: 0; }
@@ -802,7 +815,7 @@
 
   /* Time until the next capture, so you know when to hold still. */
   .robot-countdown {
-    position: absolute; top: 56px; left: 14px; right: 14px; height: 2px;
+    position: absolute; top: calc(56px + env(safe-area-inset-top)); left: 14px; right: 14px; height: 2px;
     background: rgba(255,255,255,0.14); overflow: hidden;
   }
   .robot-countdown span { display: block; height: 100%; width: 0;
@@ -811,7 +824,7 @@
   @keyframes robotCountdown { from { width: 0 } to { width: 100% } }
 
   .robot-telemetry {
-    position: absolute; top: 68px; left: 26px;
+    position: absolute; top: calc(68px + env(safe-area-inset-top)); left: 26px;
     font-family: var(--mono); font-size: 10px; line-height: 1.65;
     letter-spacing: .06em; text-transform: uppercase;
     color: rgba(255,255,255,0.92); text-shadow: 0 1px 4px rgba(0,0,0,0.9);
@@ -919,6 +932,11 @@
     opacity: 0; transition: opacity .18s ease, transform .18s ease;
   }
   .robot-action-badge.visible { display: flex; opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  /* Portrait: the telemetry column runs to ~215 px, and at 18% the badge
+     sat on its SEQ, OUT and VF rows (3.76 O). Still above the chevron. */
+  @media (orientation: portrait) {
+    .robot-action-badge { top: max(18%, calc(260px + env(safe-area-inset-top))); }
+  }
   .robot-action-verb { font-size: 30px; font-weight: 700; letter-spacing: .06em; line-height: 1.1; }
   .robot-action-target { font-size: 12px; color: var(--text-dim); }
   .robot-action-badge[data-action="FORWARD"] .robot-action-verb { color: var(--accent-safe); }
@@ -961,6 +979,9 @@
     min-height: unset;
   }
   .guide-resume-btn.visible { display: block; }
+  /* Its own hover (3.76 O): `button:hover` outranked it and put a dark grey
+     behind its dark text -- unreadable, and a touch screen keeps the hover. */
+  .guide-resume-btn:hover { background: var(--accent-safe); filter: brightness(1.08); }
 
   /* Landscape is the intended default view for Guide (wider field of
      view for scanning a room) -- can't be enforced with a real
@@ -1136,9 +1157,11 @@
   }
   .conn-dot.connected .dot { background: var(--accent-safe); }
   .conn-dot.connected { color: var(--accent-safe); }
-  .conn-dot.connecting .dot { background: var(--accent-primary); animation: conn-pulse 1s ease-in-out infinite; }
+  .conn-dot.connecting .dot { background: var(--accent-primary); animation: conn-dot-pulse 1s ease-in-out infinite; }
   .conn-dot.connecting { color: var(--accent-primary); }
-  @keyframes conn-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+  /* Its own name (3.76 O): a second `conn-pulse` replaced the Settings
+     card's, whose halo then never ran. */
+  @keyframes conn-dot-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 
   .wrap { padding-bottom: 84px; } /* room for the fixed tab bar */
 
@@ -1228,6 +1251,7 @@
      not restructure into multiple columns, which would fork the layout. */
   @media (min-width: 720px) {
     .wrap { max-width: 560px; padding: 28px 20px 104px; }
+    .env-banner { margin: 0 -20px 12px; padding: 7px 20px; }
     .tab-bar-inner { max-width: 560px; }
     .panel { padding: 16px; border-radius: 14px; margin-bottom: 12px; }
     header h1 { font-size: 24px; }
@@ -1399,7 +1423,7 @@
         <button class="ghost turn-step-btn" data-turn-deg="45" aria-pressed="false">45&deg;</button>
         <button class="ghost turn-step-btn active-mode" data-turn-deg="90" aria-pressed="true">90&deg;</button>
       </div>
-      <div class="full" id="tel-safety">Safety: <span class="safe">OK</span></div>
+      <div class="full telemetry-line" id="tel-safety">Safety: <span class="safe">OK</span></div>
       <!-- Moved here from the deleted map panel: this log is written by the
            D-pad (and by any refused command), so it belongs beside the
            buttons that cause it rather than under a brain that no longer
@@ -1703,10 +1727,10 @@
     <div class="panel">
       <div class="section-label">Robot server connection</div>
       <div class="btn-row">
-        <input type="text" id="cfg-server-url" class="text-input" placeholder="http://192.168.1.x:8000" style="flex:2;">
+        <input type="text" id="cfg-server-url" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" class="text-input" placeholder="http://192.168.1.x:8000" style="flex:2;">
         <button id="btn-connect" class="primary" style="flex:1;">Connect</button>
       </div>
-      <input type="text" id="cfg-server-secret" class="text-input settings-input" placeholder="x-app-secret value (if this deployment requires one)">
+      <input type="text" id="cfg-server-secret" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" class="text-input settings-input" placeholder="x-app-secret value (if this deployment requires one)">
       <div class="endpoint-note" id="cfg-server-url-mismatch" hidden></div>
       <div class="conn-status" id="connection-status" role="status" aria-live="polite">
         <span class="conn-status-dot"></span>
@@ -1737,10 +1761,10 @@
         this browser.
       </div>
       <div class="btn-row" style="margin-top:8px;">
-        <input type="text" id="cfg-brain-url" class="text-input" placeholder="http://192.168.1.x:8001" style="flex:2;">
+        <input type="text" id="cfg-brain-url" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" class="text-input" placeholder="http://192.168.1.x:8001" style="flex:2;">
         <button id="btn-brain-connect" class="primary" style="flex:1;">Connect</button>
       </div>
-      <input type="text" id="cfg-brain-secret" class="text-input settings-input" placeholder="x-app-secret value (if this deployment requires one)">
+      <input type="text" id="cfg-brain-secret" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" class="text-input settings-input" placeholder="x-app-secret value (if this deployment requires one)">
       <div class="endpoint-note" id="cfg-brain-url-mismatch" hidden></div>
       <div class="conn-status" id="brain-connection-status" role="status" aria-live="polite">
         <span class="conn-status-dot"></span>
@@ -1785,10 +1809,10 @@
       <div class="section-label">Cloud endpoint settings</div>
       <div class="lede">Powers Guide and the vision policies.</div>
       <div class="btn-row" style="margin-top:8px;">
-        <input type="text" id="cfg-url" class="text-input" placeholder="Vision service base URL (https://...)" style="flex:2;">
+        <input type="text" id="cfg-url" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" class="text-input" placeholder="Vision service base URL (https://...)" style="flex:2;">
         <button id="btn-vision-connect" class="primary" style="flex:1;">Connect</button>
       </div>
-      <input type="text" id="cfg-secret" class="text-input settings-input" placeholder="x-app-secret value">
+      <input type="text" id="cfg-secret" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" class="text-input settings-input" placeholder="x-app-secret value">
       <div class="endpoint-note" id="cfg-url-mismatch" hidden></div>
       <!-- The same shape the brain connection has, and it exists because the
            failure it diagnoses is invisible without it. The vision service

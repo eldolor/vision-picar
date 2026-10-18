@@ -19,7 +19,7 @@ in the same commit as the code. For a button-by-button walkthrough, see
 
 | File | What it is |
 |---|---|
-| `web-twin/index.html` | Markup and all CSS. Three tab pages (`data-tab="guide"`, `"sim"`, `"settings"`). The tab bar carries Guide and Sim; Settings opens from the header gear (`#btn-settings`). |
+| `web-twin/index.html` | Markup and all CSS. Three tab pages (`data-tab="guide"`, `"sim"`, `"settings"`). The tab bar carries Guide and Sim; Settings opens from the header gear (`#btn-settings`). Layering: the toast stack (z 260) is above Guide's fullscreen (200) and the onboarding sheet (150), and never takes a tap. The URL and secret fields carry `autocapitalize`/`autocorrect`/`spellcheck` off (3.76 O: iOS capitalised a hand-typed secret). The env banner bleeds by exactly `.wrap`'s padding and sticks below the top inset; the Robot-view HUD sits below the top bar's inset, and in portrait the action badge clears the telemetry column. |
 | `web-twin/app.js` | All behaviour (about 5,400 lines): one IIFE in `"use strict"`, with no modules and no build step. Sections are marked by `// ---------- <name> ----------` banners, listed below. |
 | `web-twin/manifest.json`, `web-twin/icons/` | PWA manifest and the three home-screen icons |
 | `web-twin/README.md` | How to run, reach, deploy and test the page |
@@ -218,6 +218,7 @@ neighbours.
 | `tests/test_frame_source.py` | 3 | The readout says `server` for a real frame, and `none` (with nothing drawn) for a frame with no pixels |
 | `tests/test_static_assets.py` | 10 | Every file both pages and the manifest reference is published; keys mirror paths; `admin` stays extensionless; pages and scripts are no-cache; `sync.sh` reads the same manifest |
 | `tests/test_ui_admin.py` | 15 | The admin console at phone width (recordings domain) |
+| `tests/test_review_376o.py` | 8 | 3.76 O: a toast is seen over Guide's fullscreen; the env banner does not scroll the page sideways; the URL and secret fields are sent as typed; the Robot-view countdown keeps its time under reduced motion; the action badge clears the telemetry in portrait; Resume searching stays readable under hover; each keyframes name is defined once; the safety readout is set like the others |
 | `tests/test_ui_review_376d.py` | 10 | 3.76 batch D: a setup link moving a service does not carry its saved secret (robot, brain), and one to the same address keeps it; Close while Start awaits starts nothing; an older failure is not drawn over a newer answer; the Sim panel keeps watching after a status error and after a failed Stop; a long model and prompt give a walk name the brain accepts; a walk whose saves are in flight at Stop is still finished, after its frames; a STOP that never reached the robot says so |
 
 The UI tests skip without Chromium. A green run without a browser has
