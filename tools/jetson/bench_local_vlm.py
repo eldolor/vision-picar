@@ -129,8 +129,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover -- ne
         score = got.get("score")
         if got["status"] == "unparsed":
             score = 0.0  # 3.78 scored a reply that never opened a list as 0
-        if not got["status"].startswith("error"):
-            ms.append(took)      # a refused call's 1 ms is not the service's latency
+        # Every frame, errors too (round 2: dropping them emptied the list
+        # when every call failed -- the summary then raised -- and dropped
+        # the slowest calls, timeouts among them); `statuses` says how many.
+        ms.append(took)
         records.append({"walk": w.name, "frame": p.name, "visible": vis,
                         "status": ("unavailable" if score is None
                                    else "detected" if score >= 0.5 else "absent"),

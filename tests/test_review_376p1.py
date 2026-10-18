@@ -141,7 +141,10 @@ def test_the_headroom_runs_put_a_running_vlm_back():
     to the cloud after every bench."""
     for name in ("headroom_identity.sh", "headroom_mission.sh"):
         code = _code(name)
-        assert code.index("VLM_WAS=$(systemctl is-active picar-local-vlm") < code.index(
+        read = code.index("VLM_WAS=$(systemctl is-active picar-local-vlm")
+        # Before the trap too (round 2): read after it, an early exit's
+        # teardown would stop on an unbound VLM_WAS under `set -u`.
+        assert read < code.index("trap teardown EXIT") < code.index(
             "systemctl isolate multi-user.target"), name
         assert 'case "$VLM_WAS" in active|activating) sudo systemctl start picar-local-vlm' in code
 
@@ -187,3 +190,11 @@ def test_a_reply_of_the_wrong_shape_is_one_failed_frame():
         reply = b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n%s" % (len(body), body)
         got, _ = post(_serve_once(reply), b"\xff\xd8", "cup", 0.5, "x")
         assert got == {"status": "error malformed reply", "score": None}, (body, got)
+
+
+def test_the_mission_run_waits_for_its_own_vlm_before_restoring_the_production_one():
+    """Round 2 (/code-review): teardown sent SIGTERM to its hand-started
+    VLM and started the production unit at once, over a :8005 still held."""
+    code = _code("headroom_mission.sh")
+    teardown = code[code.index("teardown() {"):code.index("trap teardown EXIT")]
+    assert teardown.index('kill -0 "$VLMP"') < teardown.index("systemctl start picar-local-vlm")

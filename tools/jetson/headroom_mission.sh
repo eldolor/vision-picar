@@ -83,6 +83,13 @@ teardown() {
   [ -n "$pids" ] && kill $pids 2>/dev/null; sleep 3
   pids="$(for p in 8000 8001 8002 8003 8004 8080; do lsof -nP -tiTCP:$p -sTCP:LISTEN; done)"
   [ -n "$pids" ] && kill -9 $pids 2>/dev/null
+  # This run's VLM gone and :8005 free before the production one starts
+  # (round 2: started over a VLM still closing its driver, it failed to
+  # bind, spent a start of its limit, and two 4 GB loads overlapped).
+  if [ -n "$VLMP" ]; then
+    for _ in $(seq 40); do kill -0 "$VLMP" 2>/dev/null || break; sleep 0.5; done
+    kill -9 "$VLMP" 2>/dev/null
+  fi
   sudo systemctl isolate graphical.target
   # The production VLM as found (round 1: installed, not enabled -- stopped
   # here, nothing started it again, and identity fell to the cloud).

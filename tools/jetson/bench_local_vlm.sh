@@ -103,7 +103,7 @@ for n in 1 2 3 4; do
   end=$(( $(date +%s) + 20 ))
   stuck=0
   until ! health >/dev/null; do [ "$(date +%s)" -ge "$end" ] && { stuck=1; break; }; sleep 0.1; done
-  if [ "$stuck" = 1 ]; then log "B5 death $n: health STILL answering after 20s"; continue; fi
+  if [ "$stuck" = 1 ]; then log "B5 death $n: health STILL answering after 20s"; break; fi
   gone=$(python3 -c "import time; print(round(time.time()-$t0,2))")
   log "B5 death $n: health gone after ${gone}s"
   sleep 35
