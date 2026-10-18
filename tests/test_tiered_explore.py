@@ -379,8 +379,53 @@ def test_385_a_refused_approach_in_the_band_closes_in():
                          world=MockWorld(grid), sight_from="perception")
     agent.safety.check_and_execute = lambda action, **kw: {"executed": action}
     _, (tx, ty) = _ahead(agent, 0.62)
+    agent._last_seen = (tx, ty)          # _choose records the sighting first
     out = agent._send_approach(tx, ty, grid.sim_time,
                                {"_perception": {"status": "detected", "bearing_deg": 0.0}})
     assert out[0] == "FORWARD" and agent.close_ins == 1, out
     # And close-in keeps it: the next frame's sighting is not re-sent (review).
     assert agent._approach == (tx, ty)
+
+
+def test_385_review_close_ins_give_up_is_not_undone():
+    """Close-in's third refusal clears the approach and the sighting; the
+    refused-send path must not record the approach again (review)."""
+    from robot.safety import SafetyViolation
+    from tests.test_explore import FirstRefusedNav
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object=TARGET),
+                         navigator=FirstRefusedNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid), sight_from="perception")
+
+    def refuse(*a, **k):
+        raise SafetyViolation("Blocked FORWARD: clearance")
+    agent.safety.check_and_execute = refuse
+    _, (tx, ty) = _ahead(agent, 0.62)
+    agent._close_in_refused = 2
+    agent._last_seen = (tx, ty)
+    agent._send_approach(tx, ty, grid.sim_time,
+                         {"_perception": {"status": "detected", "bearing_deg": 0.0}})
+    assert agent._pending[:1] == ["REVERSE"]
+    assert agent._approach is None
+
+
+def test_385_review_here_and_not_seeing_it_forgets_the_approach():
+    """"A fresh sighting brings it back": a kept approach would make a new
+    sighting near it read as already approached (review)."""
+    agent, _ = _agent()
+    _, (tx, ty) = _ahead(agent, 0.62)
+    agent._last_seen = (tx, ty)
+    agent._approach = (tx, ty)
+    agent._back_to_sighting(1.0)
+    assert agent._approach is None
+
+
+def test_385_review_a_second_stall_in_the_band_counts_against_the_place():
+    agent, _ = _agent()
+    pose, (tx, ty) = _ahead(agent, 0.62)
+    for t in (30.0, 60.0):
+        agent._goal = {"x_m": tx, "y_m": ty, "kind": "approach", "target": (tx, ty),
+                       "sent_at": t - 25, "from": (pose["x_m"] - 0.5, pose["y_m"])}
+        agent._goal_ended("stalled", t)
+    assert agent.retry.failures_near(tx, ty) == 1

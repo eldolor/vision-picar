@@ -712,8 +712,10 @@ class ExploreAgent(MissionAgent):
                 closed = self._close_in(scene or {}, (tx, ty))
                 if closed is not None:
                     # Close-in owns it now; on record, the next frame's
-                    # sighting is not re-sent (review).
-                    self._approach = (tx, ty)
+                    # sighting is not re-sent (review) -- unless close-in
+                    # just gave it up (CLOSE_IN_REFUSED clears the sighting).
+                    if self._last_seen is not None:
+                        self._approach = (tx, ty)
                     return closed
         return out
 
@@ -736,8 +738,9 @@ class ExploreAgent(MissionAgent):
         # step budget ran out.
         if self._at_target(tx, ty):
             # Here and not seeing it: look once, then let it go. A fresh
-            # sighting brings it back.
+            # sighting brings it back (and so no approach stays on record).
             self._last_seen = None
+            self._approach = None
             self._pending = [("FACE", (tx, ty), 90, False, True)]
             return self._do_pending()
         out = self._send_approach(tx, ty, now)
@@ -1074,12 +1077,16 @@ class ExploreAgent(MissionAgent):
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
         if (state == "stalled" and g["kind"] == "approach"
-                and self.sight_from == "perception" and self._at_target(*target)):
+                and self.sight_from == "perception" and self._at_target(*target)
+                and not any(math.hypot(target[0] - wx, target[1] - wy) < self.retry.radius_m
+                            for wx, wy in self._wedged)):
             # 3.85 at merge: stalled with the robot already in the band --
             # close-in (3.80.G) finishes from here, as after a reached
             # approach. Neither backed out of (the escape turns it away) nor
-            # held against the place (its cooldown would block close-in);
-            # close-in's own CLOSE_IN_REFUSED bounds it.
+            # held against the place (its cooldown would block close-in).
+            # Once: a second stall near it is a wedge like any (review: a
+            # robot rocking at the band's edge re-sent and stalled unbounded).
+            self._wedged.append(target)
             self._approach = tuple(target)
             self.last_event = "approach goal stalled in the band; closing in"
             logger.info(self.last_event)
