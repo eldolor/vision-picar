@@ -702,21 +702,15 @@ class ExploreAgent(MissionAgent):
             self._approach = (tx, ty)
             self._goal["target"] = (tx, ty)
             self._close_in_refused = 0
+        elif self.sight_from == "perception" and self._at_target(tx, ty):
+            # 3.85 at merge: in the band, 3.80.G's close-in takes over on the
+            # next frame, as on dev before 3.85 -- on record, the sighting
+            # is not re-sent every frame. (Its CLOSE_IN_REFUSED bounds it.)
+            self._approach = (tx, ty)
         else:
             # Nor does an older one stay on record: _cancel() above ended
             # its goal, so a sighting back near it must be approached again.
             self._approach = None
-            if self._at_target(tx, ty):
-                # In the band, close-in (3.80.G) goes on meanwhile, as it did
-                # before 3.85, rather than a re-send on every frame.
-                closed = self._close_in(scene or {}, (tx, ty))
-                if closed is not None:
-                    # Close-in owns it now; on record, the next frame's
-                    # sighting is not re-sent (review) -- unless close-in
-                    # just gave it up (CLOSE_IN_REFUSED clears the sighting).
-                    if self._last_seen is not None:
-                        self._approach = (tx, ty)
-                    return closed
         return out
 
     def _back_to_sighting(self, now: float):
@@ -738,9 +732,8 @@ class ExploreAgent(MissionAgent):
         # step budget ran out.
         if self._at_target(tx, ty):
             # Here and not seeing it: look once, then let it go. A fresh
-            # sighting brings it back (and so no approach stays on record).
+            # sighting brings it back.
             self._last_seen = None
-            self._approach = None
             self._pending = [("FACE", (tx, ty), 90, False, True)]
             return self._do_pending()
         out = self._send_approach(tx, ty, now)
@@ -1076,22 +1069,13 @@ class ExploreAgent(MissionAgent):
             return
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
-        if (state == "stalled" and g["kind"] == "approach"
-                and self.sight_from == "perception" and self._at_target(*target)
-                and not any(math.hypot(target[0] - wx, target[1] - wy) < self.retry.radius_m
-                            for wx, wy in self._wedged)):
-            # 3.85 at merge: stalled with the robot already in the band --
-            # close-in (3.80.G) finishes from here, as after a reached
-            # approach. Neither backed out of (the escape turns it away) nor
-            # held against the place (its cooldown would block close-in).
-            # Once: a second stall near it is a wedge like any (review: a
-            # robot rocking at the band's edge re-sent and stalled unbounded).
-            self._wedged.append(target)
-            self._approach = tuple(target)
-            self.last_event = "approach goal stalled in the band; closing in"
-            logger.info(self.last_event)
-            return
-        if (state == "stalled" or (g.get("from") and pose.get("usable") and math.hypot(
+        # 3.85 at merge: with 3.80.G's close-in (perception sightings), an
+        # approach stalled with the robot already in the band is a plain
+        # failure, as its timeout was before the stall cut -- never the
+        # escape, which backs and turns it away from the target.
+        in_band = (state == "stalled" and g["kind"] == "approach"
+                   and self.sight_from == "perception" and self._at_target(*target))
+        if not in_band and (state == "stalled" or (g.get("from") and pose.get("usable") and math.hypot(
                 pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M)):
             # It never left (or, 3.83, stopped making progress on the way):
             # the robot is wedged, not the place unreachable.

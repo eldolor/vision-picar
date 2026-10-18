@@ -341,91 +341,46 @@ def _ahead(agent, d):
     return pose, (pose["x_m"] + d * math.sin(a), pose["y_m"] - d * math.cos(a))
 
 
-def test_385_a_stalled_approach_in_the_band_is_not_backed_away_from():
-    """3.85's stall cut (20 s) backs a wedged goal out; an approach that
-    stalls with the robot already in the band would reverse and turn away
-    from a target close-in could finish. It is set aside instead, as a
-    timed-out one was before, and no escape is queued."""
-    agent, _ = _agent()
-    pose, (tx, ty) = _ahead(agent, 0.62)
+def _stalled_approach(agent, d):
+    pose, (tx, ty) = _ahead(agent, d)
     agent._goal = {"x_m": tx, "y_m": ty, "kind": "approach", "target": (tx, ty),
-                   "sent_at": 0.0, "from": (pose["x_m"] - 0.5, pose["y_m"])}
-    agent._approach = (tx, ty)
+                   "sent_at": 5.0, "from": (pose["x_m"] - 0.5, pose["y_m"])}
     agent._goal_ended("stalled", 30.0)
+    return tx, ty
+
+
+def test_385_a_stalled_approach_in_the_band_is_a_plain_failure_not_an_escape():
+    """3.85's stall cut backs a wedged goal out; in the band (perception
+    sightings) that reversed and turned the robot away from a target 3.80.G's
+    close-in finishes. It is a plain failure there, as its timeout was."""
+    agent, _ = _agent()
+    tx, ty = _stalled_approach(agent, 0.62)
     assert "REVERSE" not in agent._pending, agent._pending
-    # Close-in owns it from the next frame: no cooldown on the place, and the
-    # approach stays on record so the sighting is not re-sent (review).
-    assert agent.retry.available(tx, ty, 31.0)
-    assert agent._approach == (tx, ty)
+    assert agent.retry.failures_near(tx, ty) == 1 and agent._approach is None
 
 
 def test_385_a_stalled_approach_out_of_the_band_still_backs_out():
     agent, _ = _agent()
-    pose, (tx, ty) = _ahead(agent, 2.0)
-    agent._goal = {"x_m": tx, "y_m": ty, "kind": "approach", "target": (tx, ty),
-                   "sent_at": 0.0, "from": (pose["x_m"] - 0.5, pose["y_m"])}
-    agent._goal_ended("stalled", 30.0)
+    _stalled_approach(agent, 2.0)
     assert agent._pending[:1] == ["REVERSE"]
 
 
-def test_385_a_refused_approach_in_the_band_closes_in():
-    """3.85 clears `_approach` on a refused send; in the band that must not
-    stop close-in (dev's 3.80.G path) -- every frame would re-send instead."""
+def test_385_a_refused_approach_in_the_band_stays_on_record_for_close_in():
+    """3.85 clears `_approach` on a refused send (the pantry livelock, frame
+    sightings); in the band with perception sightings that re-sent a goal
+    every frame instead of 3.80.G's close-in. Kept on record there."""
     from tests.test_explore import FirstRefusedNav
     grid = build_world("scaled_house")
     robot = MockRobot(grid, render=False)
     agent = ExploreAgent(robot, MissionMemory(mission="m", target_object=TARGET),
                          navigator=FirstRefusedNav(robot), clock=lambda: grid.sim_time,
                          world=MockWorld(grid), sight_from="perception")
-    agent.safety.check_and_execute = lambda action, **kw: {"executed": action}
     _, (tx, ty) = _ahead(agent, 0.62)
-    agent._last_seen = (tx, ty)          # _choose records the sighting first
-    out = agent._send_approach(tx, ty, grid.sim_time,
-                               {"_perception": {"status": "detected", "bearing_deg": 0.0}})
-    assert out[0] == "FORWARD" and agent.close_ins == 1, out
-    # And close-in keeps it: the next frame's sighting is not re-sent (review).
-    assert agent._approach == (tx, ty)
-
-
-def test_385_review_close_ins_give_up_is_not_undone():
-    """Close-in's third refusal clears the approach and the sighting; the
-    refused-send path must not record the approach again (review)."""
-    from robot.safety import SafetyViolation
-    from tests.test_explore import FirstRefusedNav
-    grid = build_world("scaled_house")
-    robot = MockRobot(grid, render=False)
-    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object=TARGET),
-                         navigator=FirstRefusedNav(robot), clock=lambda: grid.sim_time,
-                         world=MockWorld(grid), sight_from="perception")
-
-    def refuse(*a, **k):
-        raise SafetyViolation("Blocked FORWARD: clearance")
-    agent.safety.check_and_execute = refuse
-    _, (tx, ty) = _ahead(agent, 0.62)
-    agent._close_in_refused = 2
-    agent._last_seen = (tx, ty)
-    agent._send_approach(tx, ty, grid.sim_time,
-                         {"_perception": {"status": "detected", "bearing_deg": 0.0}})
-    assert agent._pending[:1] == ["REVERSE"]
-    assert agent._approach is None
-
-
-def test_385_review_here_and_not_seeing_it_forgets_the_approach():
-    """"A fresh sighting brings it back": a kept approach would make a new
-    sighting near it read as already approached (review)."""
-    agent, _ = _agent()
-    _, (tx, ty) = _ahead(agent, 0.62)
-    agent._last_seen = (tx, ty)
-    agent._approach = (tx, ty)
-    agent._back_to_sighting(1.0)
-    assert agent._approach is None
-
-
-def test_385_review_a_second_stall_in_the_band_counts_against_the_place():
-    agent, _ = _agent()
-    pose, (tx, ty) = _ahead(agent, 0.62)
-    for t in (30.0, 60.0):
-        agent._goal = {"x_m": tx, "y_m": ty, "kind": "approach", "target": (tx, ty),
-                       "sent_at": t - 25, "from": (pose["x_m"] - 0.5, pose["y_m"])}
-        agent._goal_ended("stalled", t)
-    assert agent.retry.failures_near(tx, ty) == 1
+    out = agent._send_approach(tx, ty, grid.sim_time)
+    assert out[0] != "GOAL" and agent._approach == (tx, ty), out
+    # Out of the band, or with frame sightings, 3.85's rule stands.
+    frame_agent = ExploreAgent(robot, MissionMemory(mission="m", target_object=TARGET),
+                               navigator=FirstRefusedNav(robot), clock=lambda: grid.sim_time,
+                               world=MockWorld(grid))
+    frame_agent._send_approach(tx, ty, grid.sim_time)
+    assert frame_agent._approach is None
