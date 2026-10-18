@@ -1,0 +1,76 @@
+"""
+evaluations/tiered-380/R/readers.py
+
+3.80.R: M's readers (`p_box`, `decided`, `parse_any_box`), widened for the
+formats the R models answer in, each pinned in `test_readers.py`:
+* `p_native`: the score of a native grounding reply. A synthetic one-step
+  reply (`native_server.py`'s Florence-2 / Photon answers) scores 1 or 0.
+  Otherwise the first non-blank generated token decides: the share of its
+  top-20 alternatives' probability that opens a box or point
+  (`opens_native`), over all of them.
+* `parse_any_box`: M's reader, then a point -- `<box><x><y></box>`
+  (LocateAnything, 0-1000) or Molmo2's `coords="i x y"` (0-1000) -- as a
+  1-unit box at the point, so the box centre is the point.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+import sys
+from pathlib import Path
+from typing import Optional, Sequence
+
+import importlib.util
+
+# M's module is also called `readers`: load it under its own name.
+_spec = importlib.util.spec_from_file_location(
+    "m_readers", Path(__file__).resolve().parent.parent / "M" / "readers.py")
+mr = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(mr)
+
+p_box = mr.p_box
+decided = mr.decided
+
+_NUM = r"(-?\d+(?:\.\d+)?)"
+_LA_POINT = re.compile(r"<box>\s*<(\d+)>\s*<(\d+)>\s*</box>")
+_MOLMO = re.compile(r"coords=\"\s*\d+\s+(\d{1,4})\s+(\d{1,4})")
+
+
+def opens_native(tok: str) -> bool:
+    t = tok.strip()
+    return ((t.startswith("[") and not t.startswith("[]")) or t.startswith("<box")
+            or t.startswith("<|box_start") or t.startswith("<point"))
+
+
+def _first(content: Sequence[dict]):
+    for i, step in enumerate(content):
+        if step["token"].strip():
+            return i, step
+    return None, None
+
+
+def p_native(content: Sequence[dict]) -> tuple:
+    """`(score, parsed, decided_at)`, the bench's reader contract."""
+    i, step = _first(content)
+    if step is None:
+        return 0.0, False, None
+    alts = step.get("top_logprobs") or [{"token": step["token"], "logprob": step["logprob"]}]
+    total = sum(math.exp(a["logprob"]) for a in alts)
+    found = sum(math.exp(a["logprob"]) for a in alts if opens_native(a["token"]))
+    return (found / total if total > 0 else 0.0), True, i
+
+
+def decided_native(content: Sequence[dict]) -> bool:
+    return _first(content)[1] is not None
+
+
+def parse_any_box(text: str) -> Optional[list]:
+    box = mr.parse_any_box(text)
+    if box is not None:
+        return box
+    m = _LA_POINT.search(text) or _MOLMO.search(text)
+    if m:
+        x, y = float(m.group(1)), float(m.group(2))
+        return [x, y, x + 1, y + 1]
+    return None

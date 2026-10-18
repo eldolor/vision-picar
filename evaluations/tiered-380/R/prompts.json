@@ -1,0 +1,24 @@
+{
+ "_doc": "3.80.R, fixed before the first run. R-A is the service's prompts, verbatim: tools.jetson.bench_identity_llama.PROMPT (identity) and service.local_vlm.driver.DIRECTION_PROMPT (direction). R-N is each model's native grounding call, from its model card; native[<backend>][<skill>] is the text sent, {target} the walk's target name. PaliGemma 2's 'detect {target}' is listed but blocked (gated repo).",
+ "native": {
+  "locateanything": {
+   "box": "Locate the {target}."
+  },
+  "photon": {
+   "detect": "detect: {target}",
+   "point": "point: {target}"
+  },
+  "florence": {
+   "phrase": "<CAPTION_TO_PHRASE_GROUNDING>{target}"
+  },
+  "molmo2": {
+   "point": "Point to the {target}."
+  },
+  "roborefer": {
+   "point": "Point to the {target}."
+  },
+  "paligemma": {
+   "detect": "detect {target}"
+  }
+ }
+}
