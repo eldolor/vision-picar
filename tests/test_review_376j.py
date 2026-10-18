@@ -290,3 +290,33 @@ def test_j4_a_held_step_stays_its_holders_whatever_its_state(repo, owners):
     assert pc.claim("3.90.A", cwd=repo, me=a)["pid"] == a["pid"]
     with pytest.raises(SystemExit, match="claimed by pid"):
         pc.claim("3.90.A", cwd=repo, me=b)
+
+
+def test_r14_a_marked_up_no_wait_is_no_wait():
+    """A ticked `--`, an em dash or "none" in Waits read as unknown text, and
+    the step was never free; a ticked `--` in Touches became a path."""
+    import plan_claims as pc
+    for cell in ("`--`", "\u2014", "none", " - ", "**--**"):
+        assert pc._waits(cell) == "", cell
+    assert pc._items("`--`") == ([], "")
+    assert pc._waits("`rover`") == "rover"
+
+
+def test_r15_a_dash_beside_ticked_paths_is_not_stray():
+    import plan_claims as pc
+    assert pc._items("`a.py`, --") == (["a.py"], "")
+    assert pc._items("`a.py` and b.py")[1]          # real stray text still shows
+
+
+def test_r18_a_ticked_dash_does_not_change_how_the_rest_reads():
+    import plan_claims as pc
+    assert pc._items("`--`, b.py") == ([], "b.py")       # as beside any ticked entry
+
+
+def test_r19_a_glob_is_an_entry_and_semicolons_separate():
+    import plan_claims as pc
+    assert pc._items("*") == (["*"], "")
+    assert pc._items("`**`") == (["**"], "")
+    assert pc._items("`a.py`; `b.py`") == (["a.py", "b.py"], "")
+    assert pc._waits("**--**") == "" and pc._waits("*") != ""
+

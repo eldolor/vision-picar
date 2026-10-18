@@ -107,7 +107,9 @@ Continuing an existing section: work in its worktree
    is reset and cleaned to that commit each night, a refresh that fails is
    that night's FAIL, a run past `NIGHTLY_TIMEOUT_S`, default 7000 s, is
    stopped and reported FAIL, a run someone stops reads STOPPED and is not
-   emailed, and one run holds a lock: a second reads SKIPPED) and with
+   emailed, and one run holds a lock: a second is refused and adds a
+   SKIPPED line under the night's verdict, which stays the first line; if
+   no run got the lock tonight, SKIPPED is the first line) and with
    `ready --full` before merging a section that changes the twin or the
    ROS stack. It reports; it never blocks a push. Only the user overrides
    the gate (`PICAR_SKIP_GATE=1`).

@@ -41,6 +41,9 @@ if [ "$1" = "-m" ] && [ "$2" = "pytest" ]; then
   fi
   echo "1 passed in 0.01s"
   [ -n "${FAKE_CHATTER:-}" ] && echo "INFO: a server a test left running"
+  [ -n "${FAKE_CHATTER_TIMED:-}" ] && echo "INFO: request handled in 0.03s"
+  [ -n "${FAKE_SUBTESTS:-}" ] && echo "3 failed, 2 passed, 1 subtests passed in 0.04s" \
+    && echo "INFO: a server a test left running" && exit 1
   exit 0
 fi
 exec "$REAL_PY" "$@"
@@ -78,6 +81,12 @@ def nightly(tmp_path, monkeypatch):
     (bindir / "git").write_text(                 # FAKE_GIT_FAIL: every refresh path fails
         '#!/bin/sh\nif [ -n "${FAKE_GIT_FAIL:-}" ]; then case " $* " in\n'
         '  *" checkout "*|*" worktree "*) echo "fatal: refused" >&2; exit 128 ;; esac; fi\n'
+        # FAKE_PIPE: what a pipe does in the script's own sh (git inherits it)
+        '[ -n "${FAKE_PIPE:-}" ] && (yes | head -n 1 > /dev/null) 2>> "$FAKE_PIPE"\n'
+        # FAKE_FETCH_HANG: a fetch that stalls until it is killed
+        '[ -n "${FAKE_FETCH_HANG:-}" ] && case " $* " in *" fetch "*) sleep 600 ;; esac\n'
+        # FAKE_DAEMON: a daemon git leaves running (fsmonitor, maintenance)
+        '[ -n "${FAKE_DAEMON:-}" ] && (sleep 30 > /dev/null 2>&1 & echo $! >> "$FAKE_DAEMON")\n'
         f'exec {shutil.which("git")} "$@"\n')
     (bindir / "git").chmod(0o755)
     base = {k: v for k, v in os.environ.items()          # round 12: a nightly run's own
@@ -96,8 +105,8 @@ def nightly(tmp_path, monkeypatch):
         return r, (latest.read_text() if latest.exists() else ""), \
             (out.read_text().strip() if out.exists() else "")
 
-    def start(shell=("sh",), **extra):
-        if shell != ("sh",):                     # the script runs again under its lock
+    def start(shell=("sh",), inner=True, **extra):
+        if shell != ("sh",) and inner:           # the script runs again under its lock
             wrap = tmp_path / "shell"
             wrap.write_text(f'#!/bin/sh\nexec {" ".join(shell)} "$@"\n')
             wrap.chmod(0o755)
@@ -115,6 +124,16 @@ def nightly(tmp_path, monkeypatch):
     wt = main / ".git" / "nightly-worktree"
     return run, push, {"wt": wt, "hang": tmp_path / "hang", "out": out, "start": start,
                        "latest": latest, "mails": mails, "main": main}
+
+
+def _until_running(p, wait_s=20.0):
+    """Until the sh's own RUNNING line is written: past the lock and its trap
+    (the wrapper's earlier line says "locked")."""
+    deadline = time.monotonic() + wait_s
+    while "RUNNING  started" not in (p["latest"].read_text() if p["latest"].exists() else ""):
+        if time.monotonic() > deadline:            # round 19: never go on silently
+            pytest.fail(f"no RUNNING line in {wait_s} s")
+        time.sleep(0.05)
 
 
 def _gone(pid, wait_s=5.0):
@@ -207,7 +226,10 @@ def test_j2_a_stop_at_any_moment_leaves_nothing_running(nightly, delay):
     logs = p["latest"].parent
     assert not any("Traceback" in f.read_text() for f in logs.glob("nightly-*.log"))
     if p["latest"].exists():
-        assert "STOPPED" in p["latest"].read_text() or "PASS" not in p["latest"].read_text()
+        latest = p["latest"].read_text()
+        # Round 14: "or no PASS" let a stop read as FAIL. Once the night's
+        # line is written, a stop is STOPPED (RUNNING only if it never got there).
+        assert "PASS" not in latest and "FAIL" not in latest, latest
 
 
 def test_j2_a_failure_a_late_stop_lands_on_is_still_a_failure(nightly):
@@ -216,9 +238,9 @@ def test_j2_a_failure_a_late_stop_lands_on_is_still_a_failure(nightly):
     run, push, p = nightly
     p["hang"].write_text("")
     proc = p["start"](NIGHTLY_EMAIL="me@example.com", NIGHTLY_TIMEOUT_S="1")
-    pidfile = f"{p['out']}.sig"
+    sig = f"{p['out']}.sig"
     deadline = time.monotonic() + 20                # the limit has passed: its SIGINT landed
-    while not os.path.exists(pidfile) and time.monotonic() < deadline:
+    while not os.path.exists(sig) and time.monotonic() < deadline:
         time.sleep(0.02)
     os.killpg(proc.pid, 15)
     proc.communicate(timeout=30)
@@ -281,7 +303,10 @@ def test_j1_one_run_at_a_time(nightly):
     with open(p["main"] / ".git" / "nightly.lock", "a") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
         r, latest, ran = run()
-        assert r.returncode != 0 and latest.split()[1:3] == ["-", "SKIPPED"], latest
+        # Round 14: added, never replacing the holder's verdict.
+        lines = latest.splitlines()
+        assert r.returncode != 0 and lines[-1].split()[1:3] == ["-", "SKIPPED"], latest
+        assert "PASS" in lines[0], latest
     new = push("nine\n")                         # released with its holder
     r, latest, ran = run()
     assert ran == new and "PASS" in latest
@@ -393,3 +418,272 @@ def test_j3_a_deleted_nightly_worktree_is_rebuilt(nightly):
     new = push("three\n")
     r, latest, ran = run()
     assert ran == new and "PASS" in latest, (latest, r.stdout, r.stderr)
+
+
+# ---------- round 14 ----------
+
+
+def test_r14_a_daemon_a_run_leaves_does_not_hold_the_lock(nightly, tmp_path):
+    """The lock fd was handed through exec to the sh and every child: a
+    daemon git starts (fsmonitor, maintenance) held it, and every later night
+    read SKIPPED, unmailed."""
+    import signal
+    run, push, p = nightly
+    pids = tmp_path / "daemons"
+    try:
+        r, latest, ran = run(FAKE_DAEMON=str(pids))
+        assert "PASS" in latest, latest
+        r, latest, ran = run()
+        assert "PASS" in latest and "SKIPPED" not in latest, latest
+    finally:                                     # round 15: no daemon outlives the test
+        for pid in (pids.read_text().split() if pids.exists() else []):
+            try:
+                os.kill(int(pid), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def test_r14_a_pipe_in_the_script_behaves(nightly, tmp_path):
+    """An exec from python left SIGPIPE ignored in the sh, which no sh can
+    reset: `grep ... | head -20` failed with "Broken pipe"."""
+    run, push, p = nightly
+    errs = tmp_path / "pipe-errors"
+    errs.write_text("")
+    run(FAKE_PIPE=str(errs))
+    assert errs.read_text() == "", errs.read_text()
+
+
+def test_r14_a_lock_error_that_is_not_held_still_runs(nightly):
+    """Any flock error read as "held", and a lock file that could not be
+    opened crashed the wrapper with a traceback and no report."""
+    run, push, p = nightly
+    (p["main"] / ".git" / "nightly.lock").mkdir()
+    r, latest, ran = run()
+    assert "PASS" in latest, (latest, r.stderr)
+    assert "Traceback" not in r.stderr
+
+
+def test_r14_a_stop_during_the_fetch_is_stopped_not_yesterdays_pass(nightly):
+    """The trap was set after the fetch, and the report written only at the
+    end: a stop in the fetch left yesterday's verdict standing."""
+    run, push, p = nightly
+    run()                                           # yesterday's PASS
+    proc = p["start"](FAKE_FETCH_HANG="1", NIGHTLY_EMAIL="me@example.com")
+    _until_running(p)
+    os.killpg(proc.pid, 15)
+    proc.communicate(timeout=30)
+    latest = p["latest"].read_text()
+    assert "PASS" not in latest and "STOPPED" in latest, latest
+    assert not p["mails"].exists() or "send-email" not in p["mails"].read_text()
+
+
+def test_r14_the_summary_is_pytests_not_a_servers_timed_line(nightly):
+    """Round 8's filter took any line ending "in <n>s"."""
+    run, push, p = nightly
+    r, latest, ran = run(FAKE_CHATTER_TIMED="1")
+    assert latest.rstrip().endswith("1 passed in 0.01s"), latest
+
+
+# ---------- round 15 ----------
+
+
+def test_r15_a_stop_to_the_job_alone_ends_a_stalled_fetch(nightly):
+    """launchd TERMs the job's main process only. The wrapper passed it to
+    the sh, which runs a trap only after its foreground command: a stalled
+    fetch (120 s) outlasted launchd's 20 s, and the night read RUNNING."""
+    run, push, p = nightly
+    proc = p["start"](FAKE_FETCH_HANG="1", NIGHTLY_EMAIL="me@example.com")
+    _until_running(p)
+    t0 = time.monotonic()
+    os.kill(proc.pid, 15)                           # the wrapper alone, as launchd does
+    try:
+        proc.communicate(timeout=15)
+    finally:                                        # round 16: the fake fetch's sleep too
+        try:
+            os.killpg(proc.pid, 9)
+        except ProcessLookupError:
+            pass
+    assert time.monotonic() - t0 < 15
+    latest = p["latest"].read_text()
+    assert latest.split()[2] == "STOPPED" and "before the suite ran" in latest, latest
+    assert not p["mails"].exists() or "send-email" not in p["mails"].read_text()
+
+
+def test_r15_pytest_9s_subtests_summary_is_the_summary(nightly):
+    """pytest 9 adds "N subtests passed" to its summary; the anchored match
+    missed it and took a later line."""
+    run, push, p = nightly
+    r, latest, ran = run(FAKE_SUBTESTS="1")
+    assert "1 subtests passed in 0.04s" in latest, latest
+
+
+def test_r15_an_unlocked_run_says_so_in_the_report(nightly):
+    """A lock error other than "held" ran unlocked with a word only in
+    launchd.log; every later night could run two at once unnoticed."""
+    run, push, p = nightly
+    (p["main"] / ".git" / "nightly.lock").mkdir()
+    r, latest, ran = run()
+    assert "PASS" in latest and "(unlocked: " in latest, latest
+
+
+# ---------- round 16 ----------
+
+
+def test_r16_a_refused_run_under_a_stale_line_is_the_line(nightly):
+    """Appending SKIPPED kept an old night's PASS on top when the holder was
+    no nightly run (a daemon from before round 14): it read PASS for good."""
+    import fcntl
+    run, push, p = nightly
+    run()
+    p["latest"].write_text("2026-01-01 abc PASS  1 passed in 0.01s\n")    # an old night
+    with open(p["main"] / ".git" / "nightly.lock", "a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        r, latest, ran = run()
+    assert latest.splitlines()[0].split()[1:3] == ["-", "SKIPPED"], latest
+
+
+def test_r16_a_sh_killed_before_its_trap_still_leaves_a_report(nightly, tmp_path):
+    """A stop forwarded before the sh set its trap killed it by default: no
+    RUNNING, no STOPPED, yesterday's verdict standing."""
+    run, push, p = nightly
+    run()                                           # yesterday's PASS
+    killer = tmp_path / "sh-dies"
+    killer.write_text('#!/bin/sh\nkill -TERM $$\n')        # dies of TERM before any trap
+    killer.chmod(0o755)
+    r, latest, ran = run(NIGHTLY_SH=str(killer))
+    assert "STOPPED" in latest and "died of signal 15" in latest, latest
+
+
+
+
+# ---------- round 17 ----------
+
+
+def test_r17_a_refused_run_survives_the_holders_verdict(nightly):
+    """The SKIPPED a refused run adds under tonight's line was erased when the
+    holder wrote its verdict over the whole file."""
+    run, push, p = nightly
+    p["hang"].write_text("")
+    proc = p["start"](NIGHTLY_TIMEOUT_S="3")
+    _until_running(p)
+    r, latest, ran = run()                          # refused while the first runs
+    assert "SKIPPED" in latest, latest
+    proc.communicate(timeout=60)
+    lines = p["latest"].read_text().splitlines()
+    assert "FAIL" in lines[0] and any(" SKIPPED " in l for l in lines[1:]), lines
+
+
+def test_r17_the_wrapper_never_writes_over_a_verdict(nightly, tmp_path):
+    """The wrapper's line replaced a verdict the sh had already written when
+    the sh then died of a signal it does not trap (SIGQUIT, an OOM kill)."""
+    run, push, p = nightly
+    late = tmp_path / "sh-writes-then-dies"
+    late.write_text('#!/bin/sh\nNIGHTLY_LOCKED=wrapper:$$ /bin/sh "$@"\nkill -KILL $$\n')   # the run, then death
+    late.chmod(0o755)
+    r, latest, ran = run(NIGHTLY_SH=str(late))
+    assert latest.split()[2] == "PASS", latest
+
+
+def test_r17_a_stale_exported_handshake_never_skips_the_lock(nightly):
+    """NIGHTLY_LOCKED left exported in a shell skipped the wrapper, the lock
+    and the "(unlocked" note; NIGHTLY_UNLOCKED put a false note on the line."""
+    import fcntl
+    run, push, p = nightly
+    run()
+    with open(p["main"] / ".git" / "nightly.lock", "a") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        r, latest, ran = run(NIGHTLY_LOCKED="1")
+        assert "SKIPPED" in latest, latest
+    r, latest, ran = run(NIGHTLY_UNLOCKED="stale")
+    assert "unlocked" not in latest, latest
+
+
+# ---------- round 18 ----------
+
+
+def _shell(tmp_path, name, body):
+    """A NIGHTLY_SH: `body`, then (unless it ends the run itself) the real sh."""
+    f = tmp_path / name
+    f.write_text("#!/bin/sh\n" + body)
+    f.chmod(0o755)
+    return str(f)
+
+
+def test_r18_tonights_skipped_lines_survive_the_scripts_own_lines(nightly, tmp_path):
+    """The sh's RUNNING line truncated the file the wrapper wrote, and with it
+    a SKIPPED a refused run had just added."""
+    run, push, p = nightly
+    sh = _shell(tmp_path, "skip-then-run",
+                f'echo "$(date +%Y-%m-%d) - SKIPPED  refused" >> "{p["latest"]}"\nexec /bin/sh "$@"\n')
+    r, latest, ran = run(NIGHTLY_SH=sh)
+    lines = latest.splitlines()
+    assert "PASS" in lines[0] and any(" SKIPPED " in l for l in lines[1:]), lines
+
+
+def test_r18_the_wrappers_stopped_line_keeps_tonights_skipped(nightly, tmp_path):
+    """The wrapper's STOPPED fallback rewrote the file without them."""
+    run, push, p = nightly
+    sh = _shell(tmp_path, "skip-then-die",
+                f'echo "$(date +%Y-%m-%d) - SKIPPED  refused" >> "{p["latest"]}"\nkill -KILL $$\n')
+    r, latest, ran = run(NIGHTLY_SH=sh)
+    lines = latest.splitlines()
+    assert "STOPPED" in lines[0] and any(" SKIPPED " in l for l in lines[1:]), lines
+
+
+def test_r18_an_unlocked_run_says_so_while_it_runs(nightly, tmp_path):
+    """The wrapper wrote "RUNNING  locked" though it held no lock."""
+    run, push, p = nightly
+    (p["main"] / ".git" / "nightly.lock").mkdir()
+    seen = tmp_path / "first-line"
+    sh = _shell(tmp_path, "peek", f'head -n 1 "{p["latest"]}" > "{seen}"\nexec /bin/sh "$@"\n')
+    run(NIGHTLY_SH=sh)
+    assert "RUNNING  unlocked" in seen.read_text(), seen.read_text()
+
+
+# ---------- round 19 ----------
+
+
+def test_r19_the_unlocked_note_stays_on_the_running_line(nightly):
+    """The sh's own RUNNING line replaced the wrapper's "unlocked" at once,
+    so the note was gone for the whole run."""
+    run, push, p = nightly
+    (p["main"] / ".git" / "nightly.lock").mkdir()
+    proc = p["start"](FAKE_FETCH_HANG="1")
+    try:
+        _until_running(p)
+        assert "(unlocked: " in p["latest"].read_text(), p["latest"].read_text()
+    finally:
+        try:
+            os.killpg(proc.pid, 9)
+        except ProcessLookupError:
+            pass
+        proc.communicate(timeout=30)
+
+
+def test_r19_a_skipped_first_line_survives_the_next_run(nightly):
+    """The wrapper kept only lines after the first, so tonight's SKIPPED on
+    line 1 (a holder that was no nightly run) vanished with the next run."""
+    import datetime
+    run, push, p = nightly
+    run()
+    day = datetime.date.today().isoformat()
+    p["latest"].write_text(f"{day} - SKIPPED  another nightly run holds x\n")
+    r, latest, ran = run()
+    lines = latest.splitlines()
+    assert "PASS" in lines[0] and any(" SKIPPED " in l for l in lines[1:]), lines
+
+
+def test_r19_nohup_keeps_the_run_going(nightly, tmp_path):
+    """The wrapper replaced nohup's ignored HUP with its forwarder, and the
+    sh's trap read the HUP as a stop."""
+    run, push, p = nightly
+    p["hang"].write_text("")
+    proc = p["start"](("nohup", "sh"), inner=False, NIGHTLY_TIMEOUT_S="4")   # as typed
+    deadline = time.monotonic() + 20                # the suite is running (git resets
+    while not p["out"].exists() and time.monotonic() < deadline:   # HUP in its own children)
+        time.sleep(0.05)
+    os.killpg(proc.pid, 1)                          # the terminal closes
+    proc.communicate(timeout=60)
+    latest = p["latest"].read_text()
+    assert "timed out" in latest and "STOPPED" not in latest, latest
+

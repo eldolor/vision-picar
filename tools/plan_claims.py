@@ -171,13 +171,15 @@ def _items(cell: str) -> tuple:
     -- and the text beside them, which
     `assess` shows rather than guess at (3.76 J8: a plain entry beside ticked
     ones was dropped without a word)."""
-    ticked = re.findall(r"`([^`]+)`", cell)
-    if ticked:
+    found = re.findall(r"`([^`]+)`", cell)
+    if found:                            # ticked: decided before the no-entry filter (round 18)
+        ticked = [x for x in found if not _no_entry(x)]
         stray = re.sub(r"`[^`]+`", "", cell)
         loose = [x for x in ticked if re.search(r"[\s,;]", x)]   # "`a.py, sim/`": a list
-        stray = ", ".join(([] if re.fullmatch(r"[\s,]*", stray) else [stray.strip(" ,")]) + loose)
+        rest = stray.replace(",", "").replace(";", "")     # separators only (round 19)
+        stray = ", ".join(([] if _no_entry(rest) else [stray.strip(" ,;")]) + loose)
         return [x for x in ticked if x not in loose], stray
-    parts = [x.strip() for x in cell.split(",") if x.strip() and x.strip() not in ("--", "-")]
+    parts = [x.strip() for x in cell.split(",") if not _no_entry(x)]
     loose = [x for x in parts if re.search(r"\s|;", x)]   # "a.py and sim/": not one path
     return [x for x in parts if x not in loose], ", ".join(loose)
 
@@ -203,9 +205,18 @@ def _waits(cell: str) -> str:
     wait; any other text is kept, and `assess` shows it (round 13: a ticked
     or annotated `rover` read as no wait, and the step as free)."""
     cell = cell.strip().lower()
-    if cell in ("", "-", "--"):
+    if _no_entry(cell):
         return ""
     return _word(cell, WAITS) or "?" + cell
+
+
+def _no_entry(cell: str) -> bool:
+    """Empty, or a dash or "none" however marked up (round 14: a ticked
+    `--` or an em dash read as unknown text, and the step was never free)."""
+    # Bold or italic around the word only: a bare `*` or `**` is a glob (the
+    # step touches everything), never "no entry" (round 19).
+    return re.fullmatch(r"[`\s]*(?:(\*\*|\*|__|_)?(?:-|--|\u2013|\u2014|none|no|n/a)\1?)?[`\s]*",
+                        cell, re.IGNORECASE) is not None
 
 
 def parse_steps(text: str, section: str) -> list:
