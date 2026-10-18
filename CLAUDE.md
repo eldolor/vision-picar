@@ -538,7 +538,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   verdict moved (Gemma 4 E2B: ~0.97 right boxes a frame, not 0.85; 74 search
   false alarms, not 72); atomic paid caches. YOLO-World's low proposal floor
   is by design (my "fix" reverted). Reviewers on Sonnet from here (the
-  user's call, to spend less quota). Next: P3. Handoff:
+  user's call, to spend less quota). **P3 (the remaining tools, hooks,
+  firmware patch), merged 2026-10-18 -- the review is done:** 8 fixed --
+  `ec2.sh` (both) read an AWS failure as "no instance", so `down` left a
+  GPU billing and exited 0; a failed `up` now names the instance it left
+  running; `eval_host`'s dead-man switch is armed first and reported
+  truthfully; `run_matrix.sh` never ran as committed; `pacing_sweep`'s async
+  rows recorded no calls; `steer_check` scored on the wrong band;
+  `spec_lint` gaps. The firmware patch is clean. **Waiting on the user:**
+  the plan's closing list (deploys of N2 and O, the board's VLM env file,
+  six decisions). Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
