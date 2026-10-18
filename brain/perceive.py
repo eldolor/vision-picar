@@ -755,7 +755,7 @@ class PerceptionPipeline:
         if not target or not target.strip():
             raise ValueError("PerceptionPipeline needs a target string")
         self._busy = threading.Lock()      # one frame in the models at a time
-        self._busy_since = 0.0
+        self._busy_since: Optional[float] = None
         self.detector = detector
         self.scorer = scorer
         self.target = target.strip()
@@ -915,7 +915,8 @@ class PerceptionPipeline:
         model, and met the first frame's release. It is `unavailable` until
         the first ends; nothing waits."""
         if not self._busy.acquire(blocking=False):
-            if time.monotonic() - self._busy_since > BUSY_WEDGED_S:
+            since = self._busy_since    # None until the holder stamps it
+            if since is not None and time.monotonic() - since > BUSY_WEDGED_S:
                 # In the models far longer than a first frame's text encode
                 # can take: a wedge, not a slow frame. Raised, so B3.2 counts
                 # it and ends the mission `failed` as it did when the tick
@@ -932,6 +933,7 @@ class PerceptionPipeline:
         try:
             return self._perceive_counted(frame)
         finally:
+            self._busy_since = None     # before the release: never read stale
             self._busy.release()
 
     def _perceive_counted(self, frame: dict) -> Perception:
