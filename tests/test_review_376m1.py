@@ -84,3 +84,17 @@ def test_a_wheel_command_is_capped_as_the_board_caps_it_and_never_non_finite():
     assert right / left == 0.5
     assert cmd(robot.set_wheel_velocity(float("nan"), float("inf"))) == (0.0, 0.0)
     robot.step(0.05)                                      # no raise
+
+
+def test_a_chassis_touching_a_wall_does_not_freeze_the_movers():
+    """Fixes' round 1 (Thermos): the cover check still counted walls, so with
+    the rectangle clipping a wall (a pivot into a corner) every cell in the
+    house read as under the chassis and every mover waited."""
+    world = build_world("scaled_house")
+    mover = build_movers("scaled_house", "hallway_crossing")[0]
+    world.add_mover(mover)
+    world.x, world.y, world.theta = 1.5, 1.5, math.radians(30)
+    assert world.footprint_overlaps(world.x, world.y)      # clips a wall
+    start = mover.cell
+    world.advance_time(mover.hop_s + 1e-6)
+    assert mover.cell != start, "a mover across the house froze"

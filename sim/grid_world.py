@@ -595,13 +595,15 @@ class GridWorld:
         """Whether the chassis, where it stands, would overlap `cell` were it
         solid (a mover's next hop, 3.76 M1). Never by swapping `objects`:
         the scan reads it from another thread."""
-        return self.footprint_overlaps(self.x, self.y, solid=frozenset((cell,)))
+        # Walls left out (round 1): a chassis clipping one (a pivot into a
+        # corner) read every cell as covered, and froze every mover.
+        return self.footprint_overlaps(self.x, self.y, solid=frozenset((cell,)), walls=False)
 
     def footprint_overlaps(self, x: float, y: float,
-                           solid: Optional[frozenset] = None) -> bool:
+                           solid: Optional[frozenset] = None, walls: bool = True) -> bool:
         """Whether the chassis rectangle, at (x, y) and the current heading,
-        overlaps a wall or a solid object (`solid`, default every object's
-        cell) -- separating axes, touching allowed."""
+        overlaps a wall (unless `walls` is False) or a solid object (`solid`,
+        default every object's cell) -- separating axes, touching allowed."""
         ux, uy = math.cos(self.theta), math.sin(self.theta)
         nx, ny = -uy, ux
         hl, hw = FOOTPRINT_HALF_LENGTH, FOOTPRINT_HALF_WIDTH
@@ -613,7 +615,8 @@ class GridWorld:
         solid = self.solid_cells if solid is None else solid
         for cy in range(math.floor(min(ys)), math.floor(max(ys)) + 1):
             for cx in range(math.floor(min(xs)), math.floor(max(xs)) + 1):
-                if renderer._cell_at(self.layout, cx, cy) != CELL_WALL and (cx, cy) not in solid:
+                if (cx, cy) not in solid and not (
+                        walls and renderer._cell_at(self.layout, cx, cy) == CELL_WALL):
                     continue
                 if max(xs) <= cx or min(xs) >= cx + 1 or max(ys) <= cy or min(ys) >= cy + 1:
                     continue
