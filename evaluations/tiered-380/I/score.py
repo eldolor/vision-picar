@@ -108,6 +108,10 @@ TIERS = [  # (tier, file, field, sets)
     ("Edge-LLM InternVL3.5-4B NVE V1024: box (full reply, amendment 1)", "../N/NVE-V1024-box.scaled.jsonl", "box_answer", ("S1", "S2")),
     ("Opus 4.5: action", "opus.jsonl", "action", ("S1", "S2", "S3")),
     ("Opus 4.5: target_direction", "opus.jsonl", "target_third", ("S1",)),
+    ("Opus 5.5: action", "opus55.jsonl", "action", ("S1", "S2", "S3")),
+    ("Opus 5.5: target_direction", "opus55.jsonl", "target_third", ("S1",)),
+    ("GPT-6 Astra: action", "astra.jsonl", "action", ("S1", "S2", "S3")),
+    ("GPT-6 Astra: target_direction", "astra.jsonl", "target_third", ("S1",)),
 ]
 
 
