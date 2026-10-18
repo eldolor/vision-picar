@@ -181,7 +181,7 @@ The bridge's routes and their fields are specified once, in the
 | Key or constant | Default | Unit | Where read | Why this value |
 |---|---|---|---|---|
 | `WORLD_MODE` env, else `world.mode` | `none` in code; `sim` in `config/robot.yaml` | -- | `world/factory.py` | `none` is the honest setting for teleop and for hardware without SLAM. `ros` is the SLAM world. |
-| `ROS_BRIDGE_URL` env, else `world.bridge_url` | `http://127.0.0.1:8090` | URL | `world/factory.py` | The bridge's published port. `world.bridge_url` is not in the shipped yaml, so the env var or the code default applies. |
+| `ROS_BRIDGE_URL` env, else `world.bridge_url`, else `drive.bridge_url` | `http://127.0.0.1:8090` | URL | `world/factory.py` | The bridge's published port. `world.bridge_url` is not in the shipped yaml; a yaml that moves only `drive.bridge_url` moves the world with it (3.76 N1: the world kept the default and talked to another session's bridge, or none). |
 | `APP_SHARED_SECRET` | empty | -- | `world/factory.py` passes it to `RosWorld` | It is sent as `x-app-secret` to the bridge. |
 | `CELL_M` | 0.30 | m | `sim/mock_world.py` | One grid cell. It must equal the body's cell size, and `test_the_world_and_the_body_agree_about_cell_size` pins that. |
 | `DEFAULT_RAYS` | 360 | rays | `sim/mock_world.py` | One per degree, a 360-degree scanner. A forward cone would never discover the corridor behind the robot. |

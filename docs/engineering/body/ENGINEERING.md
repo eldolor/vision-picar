@@ -93,6 +93,10 @@ This applies before the first frame too. A verb already running when
 feedback stops ends `no_feedback` in `carry_out_verb()`, and
 `SafetyController.check_and_execute()` then stops the body and raises
 `WheelFeedbackLost` (the settle pass returns `no_feedback` the same way).
+Feedback lost on the loop's own last read, after the verb ended for
+another reason (a stop, a preemption, a refusal), keeps that reason: the
+last read falls back to the last tick's `done` (3.76 N1; it raised, and a
+mission a Stop ended read `failed`).
 `RosDriveRobot._encoders()` raises it when the wrapped body's wheels are
 unusable. The robot server answers `no_feedback` from `/action` and
 `/wheels` (unlogged for driver `ros`), and `/health`'s `motor_board` is
@@ -203,7 +207,7 @@ above raises `RobotTransportError`. Sensing routes catch only `HTTP 404`.
 | `teleop.stall_timeout_s` | 15.0 s | Teleop staleness window |
 | `ROBOT_SERIAL` / `hardware.serial_port` | none (required) | The board's serial device under `mode: hardware` |
 | `ROBOT_LIDAR` / `hardware.lidar_port` | none | The D500's serial device under `mode: hardware` (3.42); without it the scan stays the `sensors`' (or unusable) |
-| `LIDAR_YAW_DEG` | -90 | The lidar's mounting yaw (`[CAD]`, verify on the car: a box dead ahead must read 0 +/- 2 deg) |
+| `LIDAR_YAW_DEG` | -90 | The lidar's mounting yaw (`[CAD]`, verify on the car: a box dead ahead must read 0 +/- 2 deg). Set but empty is unset (3.76 N1), as for `TRACK_SCRUB` |
 | `SIM_LIDAR=fake` | unset | `service/tunnel/run.sh` starts `sim/fake_lidar.py` and points `ROBOT_LIDAR` at its pty |
 | `TRACK_SCRUB` / `hardware.track_scrub` | 1.0 | Skid steer's effective/geometric track for a real board (3.35); ignored for the fake board. Set the env var for the ROS container too. `[PLACEHOLDER]` |
 | `SIM_MOTOR_BOARD=fake` | unset | `mode: hardware` against `sim/fake_esp32.py` on a pty, the board and its sim body in **another program** (`PLAN-ros-alignment.md` 3.36): `sim/body_server.py` for physics and the board, `sim/sensor_server.py` for the sensors, read through `sim/body_client.py`'s `SimBodyClient` as `sensors`. Requires the two URLs below; a `ValueError` without them. The in-process build is gone from the factory |

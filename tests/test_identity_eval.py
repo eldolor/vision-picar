@@ -39,9 +39,11 @@ def test_the_cloud_is_scored_like_any_model_and_silence_is_never_a_yes(tmp_path)
     walks = _corpus(tmp_path)
     cloud = cloud_records(walks)
     r = row("cloud", cloud, 0.5, confabulations(cloud))
-    assert (r["tp"], r["fp"], r["visible"]) == (1, 1, 2)
-    assert r["precision"] == 0.5 and r["recall"] == 0.5
-    assert {c.frame: c.score for c in cloud}["f3.jpg"] is None
+    # f3, never asked, is neither a YES nor a NO (3.76 N1: it counted as a
+    # miss against recall, against this module's own rule).
+    assert (r["tp"], r["fp"], r["visible"]) == (1, 1, 1)
+    assert r["precision"] == 0.5 and r["recall"] == 1.0
+    assert "f3.jpg" not in {c.frame for c in cloud}
     assert r["yes_on_confabulations"] == 1 == r["confabulation_frames"]
 
 

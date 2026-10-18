@@ -159,7 +159,7 @@ class WorldInterface(ABC):
              "map_id": str|None,       # WHICH map these coordinates mean
              "x_m": float|None,        # metres, map frame
              "y_m": float|None,
-             "heading_deg": float|None}  # compass, 0 = +y_m, 90 = +x_m
+             "heading_deg": float|None}  # compass, 0 = -y_m (north), 90 = +x_m
 
         **`map_id` is not bookkeeping.** A pose without a map is two
         numbers that mean nothing, and the failure is silent: coordinates
@@ -178,7 +178,7 @@ class WorldInterface(ABC):
 
         **Degrees, to match `get_odometry()`'s `heading_deg`, and the same
         direction** -- clockwise, positive to the robot's right. The zero
-        differs on purpose: this is a compass bearing (0 = +y_m), odometry's
+        differs on purpose: this is a compass bearing (0 = -y_m, north), odometry's
         is wherever the robot started (handoff 2d). That is what every other angle in this project
         already uses (1.15.3's pan, the depth grid's columns). Radians and
         a maths-convention angle are what `sim/renderer.py` takes and what

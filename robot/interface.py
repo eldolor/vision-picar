@@ -363,7 +363,13 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
             robot.set_wheel_velocity(0.0, 0.0)
     if ended == "no_feedback":
         return {"done": last["done"], "ended": ended, "reason": reason}
-    return {"done": achieved(), "ended": ended, "reason": reason}
+    try:
+        done = achieved()
+    except WheelFeedbackLost:
+        # The verb had ended (3.76 N1): feedback lost on this last read is not
+        # its outcome -- a Stop's verb read as a fault, and the mission failed.
+        done = last["done"]
+    return {"done": done, "ended": ended, "reason": reason}
 
 
 def unusable_scan() -> dict:

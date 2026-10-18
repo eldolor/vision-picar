@@ -31,7 +31,7 @@ def _lidar(config: dict):
         return None
     from robot.lidar_ld19 import LIDAR_YAW_DEG, Ld19Lidar
 
-    yaw = float(os.environ.get("LIDAR_YAW_DEG", LIDAR_YAW_DEG))
+    yaw = float(os.environ.get("LIDAR_YAW_DEG") or LIDAR_YAW_DEG)   # "" is unset (3.76 N1)
     return Ld19Lidar(port, yaw_deg=yaw)
 
 
@@ -39,7 +39,7 @@ def _track_scrub(config: dict) -> float:
     """3.35: the real chassis' effective/geometric track ratio. TRACK_SCRUB
     wins over `hardware.track_scrub`; 1.0 (no correction) when neither is
     set. The ROS container reads the same TRACK_SCRUB at launch -- set both."""
-    raw = os.environ.get("TRACK_SCRUB")
+    raw = os.environ.get("TRACK_SCRUB") or None     # "" is unset (3.76 N1): it raised
     if raw is None:
         raw = (config.get("hardware") or {}).get("track_scrub", 1.0)
     return float(raw)

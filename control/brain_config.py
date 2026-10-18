@@ -389,6 +389,14 @@ def load_brain_config(config_path=None) -> dict:
     # (MissionRunner.confirm_timeout_s), never refused: config/robot.yaml
     # sets this key, so a refusal would make a deployment that lowers only
     # vision_timeout_s fail at load -- the walks Lambda's cold start.
+    # 3.76 N1: 0 made every call time out (vision), or aborted every mission
+    # on its first tick as a hung loop (tick) -- and clamped the
+    # confirmation's deadline to 0 with it.
+    for key in ("vision_timeout_s", "tick_timeout_s", "request_timeout_s"):
+        value = merged[key]
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or value <= 0):
+            raise ValueError(f"brain.{key} must be a number of seconds > 0; got {value!r}")
     confirm_s = float(merged["arrival_confirm_timeout_s"])
     if confirm_s <= 0:
         raise ValueError(f"brain.arrival_confirm_timeout_s must be > 0; got {confirm_s}")

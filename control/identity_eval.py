@@ -76,10 +76,13 @@ def relabel(records: Sequence[FrameScore], labels: dict) -> tuple:
 
 
 def cloud_records(walks) -> list:
-    """The cloud's recorded answer on every labelled frame, as records.
+    """The cloud's recorded answer on every labelled frame it was asked
+    about, as records.
 
-    A frame whose row carries no `navigate.target_visible` is unscored
-    (score None), so it can never count as a YES or a NO."""
+    A frame whose row carries no `navigate.target_visible` is left out, so
+    it can never count as a YES or a NO (3.76 N1: kept unscored, `score_at`
+    counted every such visible frame as a miss against the cloud's recall,
+    and a tiered walk asks only on triggers)."""
     out = []
     for w in walks:
         answers, models = {}, set()
@@ -98,10 +101,12 @@ def cloud_records(walks) -> list:
                     models.add(nav["model_id"])
         for p, vis, adj in w.frames:
             said = answers.get(p.name)
+            if said is None:
+                continue
             out.append(FrameScore(
                 walk=w.name, frame=p.name, visible=vis,
                 status=DETECTED if said else ABSENT,
-                score=None if said is None else (1.0 if said else 0.0),
+                score=1.0 if said else 0.0,
                 metric="cloud_target_visible",
                 label=",".join(sorted(models)) or None,
                 adjudicated=adj))

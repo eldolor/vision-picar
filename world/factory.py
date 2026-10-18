@@ -112,8 +112,12 @@ def get_world(
         elif grid is not None:
             from sim.mock_world import MockWorld
             truth = MockWorld(grid)
+        # The drive's key too (3.76 N1): only `drive.bridge_url` is in the
+        # yaml, so moving it sent verbs to one bridge and pose, map and goals
+        # to whatever answered on 8090.
         url = (os.environ.get("ROS_BRIDGE_URL")
                or (config.get("world") or {}).get("bridge_url")
+               or (config.get("drive") or {}).get("bridge_url")
                or "http://127.0.0.1:8090")
         return RosWorld(url, secret=os.environ.get("APP_SHARED_SECRET", ""), truth=truth)
 

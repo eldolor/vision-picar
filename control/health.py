@@ -74,6 +74,10 @@ UNHEALTHY = "unhealthy"
 UNREACHABLE = "unreachable"
 
 
+# Over B3.3's tick deadline before the loop reads as not turning: its own
+# sleep between ticks (`tick_interval_s`, 0.25 s) and a little more.
+TICK_SLACK_S = 1.0
+
 def _get(url: str, path: str, secret: Optional[str], timeout: float) -> dict:
     headers = {"x-app-secret": secret} if secret else {}
     response = httpx.get(f"{url.rstrip('/')}{path}", headers=headers, timeout=timeout)
@@ -155,7 +159,10 @@ def check_brain(url: str, secret=None, timeout=DEFAULT_TIMEOUT_S) -> dict:
     since_tick = body.get("seconds_since_last_tick")
     deadline = body.get("tick_timeout_s")
     if body.get("mission_running") and since_tick is not None and deadline:
-        if since_tick > deadline:
+        # The loop's own sleep between ticks counts too (3.76 N1): a tick just
+        # inside B3.3's deadline plus the interval read as a loop not turning
+        # before B3.3 itself fired.
+        if since_tick > deadline + TICK_SLACK_S:
             problems.append(
                 f"a mission is running but no tick has completed for {since_tick}s "
                 f"(deadline {deadline}s) -- the mission loop is not turning"

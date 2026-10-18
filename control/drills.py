@@ -70,11 +70,14 @@ class TickHangRunner(MissionRunner):
     def __init__(self, *args, hang_s: float = 10.0, **kwargs):
         super().__init__(*args, **kwargs)
         self.hang_s = hang_s
-        self._ticks = 0
+        # Its own count (3.76 N1): it shared MissionRunner's `_ticks`, so the
+        # runner read its first tick as its second -- no camera centring --
+        # and status counted every tick twice.
+        self._drill_ticks = 0
 
     def tick(self) -> bool:
-        self._ticks += 1
-        if self._ticks > 1:
+        self._drill_ticks += 1
+        if self._drill_ticks > 1:
             logger.warning(f"drill: hanging this tick for {self.hang_s}s")
             time.sleep(self.hang_s)
         return super().tick()
