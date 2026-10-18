@@ -195,3 +195,18 @@ def test_the_fake_board_takes_no_boolean_speed():
     finally:
         os.close(fd)
         board.close()
+
+
+def test_a_slow_reply_is_aged_from_its_snapshot_when_the_program_says():
+    """Round 1 (/code-review): aged from the ask, a slow request overstated
+    the age by its whole time -- every other window stale under load. The
+    sensor program stamps its snapshot; that stamp is used when it lies
+    inside the request."""
+    def handler(request):
+        time.sleep(0.2)
+        return httpx.Response(200, json={"captured_at": time.monotonic(), "scan": _scan(0.9),
+                                         "depth": {}, "distance_cm": 50.0})
+
+    c = _client(handler)
+    c.get_scan(max_range_m=0.9)
+    assert c.sensor_age_s() < 0.05, c.sensor_age_s()

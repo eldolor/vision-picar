@@ -21,6 +21,7 @@ the robot server's vet never mixes two instants.
 """
 
 import os
+import time
 import threading
 from typing import Optional
 
@@ -103,7 +104,12 @@ def create_app() -> FastAPI:
         snapshot: the hinted scan, the depth grid, the scalar distance."""
         with lock:
             body, seq = synced()
-            return {"scan": body.get_scan(max_range_m=max_range_m),
+            # When the snapshot was taken, on the client's own clock (one host,
+            # CLOCK_MONOTONIC is system-wide): the bundle's age runs from here,
+            # not from the ask or the reply (3.76 M2).
+            captured_at = time.monotonic()
+            return {"captured_at": captured_at,
+                    "scan": body.get_scan(max_range_m=max_range_m),
                     "depth": body.get_depth_grid(),
                     "distance_cm": body.get_distance(), "state_seq": seq,
                     "pid": os.getpid()}

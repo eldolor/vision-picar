@@ -96,16 +96,20 @@ class SimBodyClient:
 
     def _fetch_bundle(self, http: httpx.Client, hint: Optional[float]) -> None:
         params = {} if hint is None else {"max_range_m": hint}
-        # Aged from the ask (3.76 M2): the program reads the body when the
-        # request lands, and a reply that took 0.4 s read as 0 s old, so
-        # SafetyController._aged took no travel off it.
+        # Aged from its snapshot (3.76 M2): stamped on arrival, a reply that
+        # took 0.4 s read as 0 s old and SafetyController._aged took no
+        # travel off it. The program's `captured_at` (one host, one monotonic
+        # clock) when it lies inside this request; else the ask, a bound.
         asked = time.monotonic()
         r = http.get("/safety", params=params)
         r.raise_for_status()
         bundle = r.json()
+        got = time.monotonic()
+        at = bundle.get("captured_at") if isinstance(bundle, dict) else None
+        at = at if isinstance(at, (int, float)) and asked <= at <= got else asked
         with self._lock:
             if hint == self._hint:               # a bundle for a stale hint is not kept
-                self._bundle, self._bundle_at = bundle, asked
+                self._bundle, self._bundle_at = bundle, at
                 self._fresh.notify_all()
 
     def _poller(self) -> None:

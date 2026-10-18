@@ -130,8 +130,11 @@ detector.
   scan answers `usable: false`, the zones unusable and the distance `0.0`,
   the existing fail-safe path, so a dead sensor program stops forward motion
   within the bound plus one wheel-loop period. The client never raises into
-  the wheel loop. `sensor_age_s()` reports the bundle's age, counted from when
-  it was asked for (3.76 M2: from the reply, a slow one read as fresh), and the safety
+  the wheel loop. `sensor_age_s()` reports the bundle's age, counted from the
+  sensor program's `captured_at` (its snapshot, on the one host's monotonic
+  clock) when that lies inside the request, else from the ask (3.76 M2: from
+  the reply, a slow one read as fresh; from the ask alone, every other window
+  read stale under load), and the safety
   layer takes the way covered since off the clearance (`SafetyController._aged()`,
   safety engineering).
 - The robot server opens the board's pty (`board_path` from the body
@@ -359,7 +362,7 @@ docstring. It renders the starter house from (5.5, 7.5) facing east to
 | `tests/test_floor_hazards.py` | 3.74 A2: a 5 cm object is absent from the scan, the level row, the scalar and the map, and in the floor band at its true range +/- one cell from MinZ to 1.5 m (unusable inside MinZ); the band is body-fixed; a low object is still a contact; heights follow a moved object; the stand-in detector's rates; the hazard house's contents, and the Rover reaches every room of it |
 | `tests/test_sim_fingerprint.py` | 3.74 A1 (slow tier): over a seeded 500-step drive in each of the four houses, scans, the fake lidar, the level depth row, the scalar, detections and the map digest to what `dev` gave before 3.74. A deliberate change to how the sim senses re-pins it in the same commit |
 | `tests/test_review_376m1.py` (9) | 3.76 M1: the event log is bounded; a non-finite `/wheels`, `/action` or `/world/goal` value is a 422, and the car reads a non-finite wheel command as a stop; a mover never hops under the chassis (a pose search over the crossing person's next cell), and a chassis clipping a wall freezes no mover; a wheel command is capped as the board caps it and a non-finite one is zero |
-| `tests/test_review_376m2.py` (14) | 3.76 M2: an inventory read leaves the safety bundle and gets its own range; a slow reply is aged from its ask; every house's room cells are floor and in one room, and every free cell of the default house has one; an overlapping teleop push returns its own number, and the teleop log is bounded; a replay plays frames by number; the fake board keeps reading after a bad line and refuses a boolean speed |
+| `tests/test_review_376m2.py` (15) | 3.76 M2: an inventory read leaves the safety bundle and gets its own range; a slow reply is aged from its snapshot (or its ask without one); every house's room cells are floor and in one room, and every free cell of the default house has one; an overlapping teleop push returns its own number, and the teleop log is bounded; a replay plays frames by number; the fake board keeps reading after a bad line and refuses a boolean speed |
 | `tests/test_movers.py` | 3.30 criteria 1 and 4: a move is seen at once by scan, collision and map; movers are deterministic and keep out; with no movers the object table is untouched by time |
 | `tests/test_mover_safety.py` | 3.30 criterion 2 on a sample (scaled house, 2 starts, 8 headings), and that the same sample FAILS with the clamp off |
 | `tests/test_footprint_safety.py`, `tests/test_pivot_safety.py` | 3.18 and 3.19 bars on ground truth, run through the sim's rectangle collision |

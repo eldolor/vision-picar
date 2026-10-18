@@ -85,7 +85,8 @@ class ReplayRobot(RobotInterface):
         # four digits, so by name `frame-10000` played before `frame-1001`.
         self.frames = sorted(
             (p for p in self.dir.iterdir() if p.suffix.lower() in SUFFIXES),
-            key=lambda p: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", p.name)],
+            key=lambda p: ([int(t) if t.isascii() and t.isdigit() else t
+                            for t in re.split(r"([0-9]+)", p.name)], p.name),
         ) if self.dir.is_dir() else []
         if not self.frames:
             raise ValueError(
