@@ -1396,9 +1396,11 @@ class ExploreAgent(MissionAgent):
             # moves by fractions of a cell as it grows, and centres worked out
             # from each origin put the same floor in the set again after
             # every shift. A later map is placed on it by its offset rounded
-            # to whole cells, so no centre lands on a cell border (a lattice
-            # at the house's 0 did, on a half-cell origin). The first map's
-            # cells -- every map's, in the simulator -- are their own centres.
+            # to whole cells. The first map's cells -- every map's, in the
+            # simulator -- are their own centres (a lattice at the house's 0
+            # put them on cell borders for a half-cell origin); a later map
+            # shifted by nearly half a cell can still read a cell as its
+            # neighbour, for that map version.
             self.seen.add((round(lx + (kx + c[0] + 0.5) * res, 3),
                            round(ly + (ky + c[1] + 0.5) * res, 3)))
 
