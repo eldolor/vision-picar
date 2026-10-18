@@ -63,12 +63,19 @@ house.
 **One tick of motion** (`MockRobot.step(dt)`). With wheel speeds
 `v_left`, `v_right` (m/s), `v = (v_right + v_left) / 2` and
 `omega = (v_right - v_left) / track`, counter-clockwise positive (REP-103).
-The grid's `theta` increases clockwise, so `step()` is the one place the
-sign flips. The tick is split into sub-steps of at most 0.1 cell and 5
+`set_wheel_velocity()` caps a command as the car's board does (both wheels
+by one factor into `BOARD_MAX_WHEEL_M_S`, 2.0 m/s) and reads a non-finite
+one as zero (3.76 M1: unbounded, a large command ran its substeps on the
+event loop `/stop` needs). The grid's `theta` increases clockwise, so
+`step()` is the one place the sign flips. The tick is split into sub-steps of at most 0.1 cell and 5
 degrees. Each sub-step rotates (`GridWorld.rotate()`), then translates
 along the new heading (`GridWorld.translate()`), then advances the
 encoders from what was **achieved**. A blocked wheel does not count. After
-the motion, `GridWorld.advance_time(dt)` lets due movers hop.
+the motion, `GridWorld.advance_time(dt)` lets due movers hop -- never onto
+a cell under the chassis rectangle where it stands (3.76 M1: a cell no
+nearer the centre can lie under a corner, and an overlapping pose switches
+the footprint's checks off). `GridWorld.log`, the event lines tests read,
+keeps the last `LOG_KEEP` (2,000).
 
 **Collision.** `translate()` caps travel with a head-on ray from the centre
 (the half-cell body reach) and checks the chassis rectangle (the URDF
@@ -347,6 +354,7 @@ docstring. It renders the starter house from (5.5, 7.5) facing east to
 | `tests/test_bearing_turns.py` | R1: sized turns, against quarter turns, on RELATIVE bars: sized turns close more than 2 cells more on average, with fewer than half the reversals. It does not pin the absolute numbers (R1 recorded 4.06 cells / 0.6 reversals against -1.23 / 4.8 in the starter house on 2026-09-25), so those can drift without failing it. Quote a fresh run, not the R1 figures |
 | `tests/test_floor_hazards.py` | 3.74 A2: a 5 cm object is absent from the scan, the level row, the scalar and the map, and in the floor band at its true range +/- one cell from MinZ to 1.5 m (unusable inside MinZ); the band is body-fixed; a low object is still a contact; heights follow a moved object; the stand-in detector's rates; the hazard house's contents, and the Rover reaches every room of it |
 | `tests/test_sim_fingerprint.py` | 3.74 A1 (slow tier): over a seeded 500-step drive in each of the four houses, scans, the fake lidar, the level depth row, the scalar, detections and the map digest to what `dev` gave before 3.74. A deliberate change to how the sim senses re-pins it in the same commit |
+| `tests/test_review_376m1.py` (3) | 3.76 M1: the event log is bounded; a mover never hops under the chassis (a pose search over the crossing person's next cell); a wheel command is capped as the board caps it and a non-finite one is zero |
 | `tests/test_movers.py` | 3.30 criteria 1 and 4: a move is seen at once by scan, collision and map; movers are deterministic and keep out; with no movers the object table is untouched by time |
 | `tests/test_mover_safety.py` | 3.30 criterion 2 on a sample (scaled house, 2 starts, 8 headings), and that the same sample FAILS with the clamp off |
 | `tests/test_footprint_safety.py`, `tests/test_pivot_safety.py` | 3.18 and 3.19 bars on ground truth, run through the sim's rectangle collision |
