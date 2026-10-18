@@ -147,3 +147,78 @@ def test_room_switches_are_weighted_by_transitions():
     from tools.clip_rooms_fewshot import report
     s = report(Path(REPO_ROOT) / "docs" / "evaluations" / "clip-rooms-3.54-cpu.json")["smoothing"]
     assert round(s["switches_raw"], 2) == 14.89 and round(s["switches_voted"], 2) == 4.43, s
+
+
+# ---------- the fixes' round 1 ----------
+
+
+def test_a_second_ctrl_c_during_the_wait_keeps_what_landed(tmp_path, monkeypatch):
+    """Round 1 (Thermos): the only save came after waiting for the calls out;
+    a second Ctrl-C there lost every answer since the checkpoint."""
+    import tools.inventory_label as il
+    monkeypatch.setattr(il, "OUT", tmp_path)
+    dets = {f"w/f{i:02d}.jpg": {"boxes": [{"label": "cup", "conf": 0.9, "xyxy": [0, 0, 1, 1]}]}
+            for i in range(10)}
+    (tmp_path / "detections.json").write_text(json.dumps(dets))
+    monkeypatch.setattr(il, "load_vocab", lambda: {"cup": True})
+    monkeypatch.setattr(il, "_client", lambda: None)
+    monkeypatch.setattr(il, "judge_one", lambda c, p, b, s: {"verdicts": {"1": "correct"}, "missed": []})
+
+    def as_completed(futures):
+        for fut in list(futures)[:3]:
+            fut.result()
+            yield fut
+        raise KeyboardInterrupt
+
+    def shutdown(self, wait=True, cancel_futures=False):
+        raise KeyboardInterrupt                          # the second Ctrl-C
+
+    monkeypatch.setattr(il, "as_completed", as_completed)
+    monkeypatch.setattr(il.ThreadPoolExecutor, "shutdown", shutdown, raising=False)
+    with pytest.raises(KeyboardInterrupt):
+        il.cmd_judge(types.SimpleNamespace(limit=0, budget=80.0, workers=1))
+    assert len(json.loads((tmp_path / "judge.json").read_text())) == 3
+
+
+def test_any_error_out_of_the_loop_stops_the_queue(tmp_path, monkeypatch):
+    """Round 1 (Thermos): only Ctrl-C stopped it; a failed checkpoint write
+    let the pool's exit bill all of the queue (200 of 200)."""
+    import threading
+    import tools.inventory_label as il
+    monkeypatch.setattr(il, "OUT", tmp_path)
+    dets = {f"w/f{i:02d}.jpg": {"boxes": [{"label": "cup", "conf": 0.9, "xyxy": [0, 0, 1, 1]}]}
+            for i in range(30)}
+    (tmp_path / "detections.json").write_text(json.dumps(dets))
+    monkeypatch.setattr(il, "load_vocab", lambda: {"cup": True})
+    monkeypatch.setattr(il, "_client", lambda: None)
+    calls, gate = [], threading.Event()
+
+    def judge_one(c, p, b, s):
+        calls.append(p)
+        if len(calls) > 2:
+            gate.wait(2)
+        return {"verdicts": {"1": "correct"}, "missed": []}
+
+    def as_completed(futures):
+        for fut in list(futures)[:2]:
+            fut.result()
+            yield fut
+        gate.set()
+        raise OSError("disk full")
+
+    monkeypatch.setattr(il, "judge_one", judge_one)
+    monkeypatch.setattr(il, "as_completed", as_completed)
+    with pytest.raises(OSError):
+        il.cmd_judge(types.SimpleNamespace(limit=0, budget=80.0, workers=2))
+    assert len(calls) <= 4, f"{len(calls)} of 30 billed"
+
+
+def test_two_writers_never_share_a_temp_file(tmp_path, monkeypatch):
+    import os
+    from tools.inventory_label import write_atomic
+    seen = []
+    real = os.replace
+    monkeypatch.setattr(os, "replace", lambda a, b: (seen.append(str(a)), real(a, b))[1])
+    for _ in range(3):
+        write_atomic(tmp_path / "judge.json", "{}")
+    assert len(set(seen)) == 3, seen

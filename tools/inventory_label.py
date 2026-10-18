@@ -38,6 +38,7 @@ import os
 import random
 import re
 import sys
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -73,10 +74,17 @@ EXTRA_BOXES = 100           # other boxes on the page, to measure the judge
 
 def write_atomic(path: Path, text: str) -> None:
     """A paid cache written in one step (3.76 P2): a kill mid-`write_text`
-    tore the file, and the next run's `json.loads` lost every answer in it."""
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text)
-    os.replace(tmp, path)
+    tore the file, and the next run's `json.loads` lost every answer in it.
+    Its own temp file each time (round 1: one fixed name, shared by two runs
+    on one cache, tore the file between them)."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def walks(root: Path = ROOT) -> list:
@@ -315,15 +323,18 @@ def cmd_judge(args) -> None:
         futures = [pool.submit(work, fid) for fid in todo]
         try:
             _collect(futures, done, lock, out_path, spend)
-        except KeyboardInterrupt:
+        except BaseException:
             # 3.76 P2: the `with` exit waited for every queued frame, so a
-            # Ctrl-C still sent -- and billed -- them all, and the answers
-            # since the last checkpoint were never saved.
+            # Ctrl-C -- or any error out of the loop (round 1: a failed
+            # checkpoint write) -- still sent and billed them all, and the
+            # answers since the last checkpoint were never saved.
             stop.set()
             for fut in futures:
                 fut.cancel()
-            # The calls already out are billed: keep what they bring back
-            # (round 1: up to `--workers` paid answers were dropped).
+            # Saved before the wait, so a second Ctrl-C there loses nothing
+            # (round 1); then the calls already out, billed, kept too.
+            with lock:
+                write_atomic(out_path, json.dumps(done))
             pool.shutdown(wait=True)
             for fut in futures:
                 if fut.cancelled() or fut.exception() is not None:
