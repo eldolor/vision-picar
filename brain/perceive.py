@@ -807,7 +807,8 @@ class PerceptionPipeline:
         # only when that text IS the COCO word ("backpack", not "red
         # backpack"); otherwise it discarded every box and every frame read
         # `absent`. Refused here (the soft gate's case once its accept set
-        # exists, below), and `auto` takes the open-vocabulary path for it.
+        # exists, below), and `auto` takes the open-vocabulary path for it
+        # unless the target is its COCO word.
         text_prompted = isinstance(detector, OpenVocabCropSource)
         spoken = target.strip().lower()
         if (text_prompted and crop_path == CROP_LABEL_GATE
@@ -847,7 +848,8 @@ class PerceptionPipeline:
             self.crop_source = CROP_SOFT_GATE
         else:
             self.crop_source = (
-                CROP_LABEL_GATE if self.coco_class and not text_prompted
+                CROP_LABEL_GATE if self.coco_class and (not text_prompted
+                                                        or spoken == self.coco_class)
                 else CROP_LOW_CONFIDENCE)
 
         # The accept set, built once. `ranked` is kept whole so the sweep
@@ -913,7 +915,8 @@ class PerceptionPipeline:
         in a child for up to 20 s -- and the next tick's frame beside it
         started a second child, ran a second predict on one ultralytics
         model, and met the first frame's release. It is `unavailable` until
-        the first ends; nothing waits."""
+        the first ends; nothing waits. Past `BUSY_WEDGED_S` it raises
+        `PerceptionWedged` instead, for B3.2 to count."""
         if not self._busy.acquire(blocking=False):
             since = self._busy_since    # None until the holder stamps it
             if since is not None and time.monotonic() - since > BUSY_WEDGED_S:

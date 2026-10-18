@@ -179,7 +179,10 @@ brain:
   # "" uses brain/perceive.py's default, which is now the OPEN-VOCABULARY
   # path: both rig walks measured 4.2's label gate ("auto") losing most of
   # the true positives, because at close range YOLO relabels the object.
-  # Set "auto" for 4.2's original rule or "label_gate" to force it.
+  # Set "auto" for 4.2's original rule or "label_gate" to force it. With the
+  # shipped text-prompted YOLOE (every box labelled with the whole target
+  # text) "auto" gates only a target that is its COCO word, and "label_gate"
+  # is refused at start for any other (3.76 L1).
   perception_crop_path: ""
   # 4.2's class-agnostic crop source: anything that is not floor, stands on
   # the floor, and does not reach the top of the frame. UNIONED with the

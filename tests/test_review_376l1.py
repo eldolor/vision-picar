@@ -130,3 +130,11 @@ def test_a_one_word_target_keeps_the_label_gate_on_a_text_prompted_detector():
                            FakeScorer({"_default": (0.95, 0.01)}), "backpack",
                            crop_path=CROP_LABEL_GATE)
     assert p.perceive(frame()).status == DETECTED
+
+
+def test_auto_keeps_the_label_gate_for_a_one_word_target_on_a_text_prompted_detector():
+    """Round 2 (/code-review, low): `auto` took the open-vocabulary path
+    even where the label gate works."""
+    p = PerceptionPipeline(OpenVocabCropSource(TextPrompted(), "backpack"),
+                           FakeScorer(), "backpack", crop_path=CROP_PATH_AUTO)
+    assert p.crop_source == CROP_LABEL_GATE
