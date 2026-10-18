@@ -83,6 +83,7 @@ DEFAULT_CELL_M = DEFAULT_CELL_CM / 100.0
 # "UGV Rover" (`waveshareteam/ugv_base_ros`, the board the kit ships, 3.25)
 # -- and the tyre agrees with the product page:
 WHEEL_RADIUS_M = 0.040  # 80mm tyres [V]
+BOARD_MAX_WHEEL_M_S = 2.0  # the board's per-wheel limit, as robot/hardware_robot.py
 # ONE_CIRCLE_PLUSES for mainType 2 [V]: 11 lines x 2 (half quad) x 30:1, and
 # Waveshare support says the same. The General Driver's 1650, carried until
 # 3.25, was a stale constant that firmware never used for control.
@@ -242,8 +243,18 @@ class MockRobot(RobotInterface):
         `stop()` has to zero it -- a stop that only halted the current move
         would leave the robot rolling on the next tick.
         """
-        self._cmd_left_rad_s = float(left_rad_s)
-        self._cmd_right_rad_s = float(right_rad_s)
+        left, right = float(left_rad_s), float(right_rad_s)
+        if not (math.isfinite(left) and math.isfinite(right)):
+            left = right = 0.0          # NaN raised on every tick (3.76 M1)
+        # As the car's board (robot/hardware_robot.py): both wheels by one
+        # factor into BOARD_MAX_WHEEL_M_S, so the turn holds. Unbounded, a
+        # large command ran its substeps on the event loop /stop needs.
+        fastest = max(abs(left), abs(right)) * WHEEL_RADIUS_M
+        if fastest > BOARD_MAX_WHEEL_M_S:
+            k = BOARD_MAX_WHEEL_M_S / fastest
+            left, right = left * k, right * k
+        self._cmd_left_rad_s = left
+        self._cmd_right_rad_s = right
         return self.get_wheel_state()
 
     def step(self, dt: float) -> dict:

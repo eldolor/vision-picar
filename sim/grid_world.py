@@ -51,8 +51,10 @@ uses: clockwise from north, positive to the robot's right. That is
 """
 
 from enum import Enum
+import collections
 import logging
 import math
+from typing import Optional
 
 # The raycaster the twin draws with, reused here so that the geometry a
 # move is checked against is the SAME geometry the picture is drawn from.
@@ -63,6 +65,9 @@ from robot.safety import FOOTPRINT_LENGTH_M, FOOTPRINT_WIDTH_M
 from sim.movers import MOVER_KEEPOUT_M, point_to_cell_cells as movers_point_to_cell
 
 logger = logging.getLogger("grid_world")
+
+# The event log's last lines (3.76 M1): tests read it, nothing else.
+LOG_KEEP = 2000
 
 
 class Heading(Enum):
@@ -279,7 +284,10 @@ class GridWorld:
         # unchanged by it to the last bit.
         self.sim_time = 0.0
         self.movers = []
-        self.log = [] if log is None else log
+        # Bounded (3.76 M1): every depth grid, distance read and frame lands
+        # here -- 20 Hz under the wheel loop's vet, for the life of a robot
+        # server -- and only tests read it.
+        self.log = collections.deque(maxlen=LOG_KEEP) if log is None else log
         self.pan = pan
         self.height = len(self.layout)
         self.width = len(self.layout[0])
@@ -488,7 +496,11 @@ class GridWorld:
         # second live run, 5/6). A person keeps walking.
         floor = min(keepout, movers_point_to_cell(self.x, self.y, mover.cell))
         if (dst in self.objects or not self._is_passable(*dst)
-                or movers_point_to_cell(self.x, self.y, dst) < floor - 1e-9):
+                or movers_point_to_cell(self.x, self.y, dst) < floor - 1e-9
+                # Not under the chassis either (3.76 M1): a cell no nearer
+                # the centre can lie under a corner of the rectangle, and an
+                # overlapping pose switches the footprint's checks off.
+                or self._footprint_covers(dst)):
             mover.waits += 1
             return
         objects = dict(self.objects)
@@ -579,10 +591,17 @@ class GridWorld:
             )
         return sign * allowed
 
-    def footprint_overlaps(self, x: float, y: float) -> bool:
+    def _footprint_covers(self, cell: tuple) -> bool:
+        """Whether the chassis, where it stands, would overlap `cell` were it
+        solid (a mover's next hop, 3.76 M1). Never by swapping `objects`:
+        the scan reads it from another thread."""
+        return self.footprint_overlaps(self.x, self.y, solid=frozenset((cell,)))
+
+    def footprint_overlaps(self, x: float, y: float,
+                           solid: Optional[frozenset] = None) -> bool:
         """Whether the chassis rectangle, at (x, y) and the current heading,
-        overlaps a wall or a solid object -- separating axes, touching
-        allowed."""
+        overlaps a wall or a solid object (`solid`, default every object's
+        cell) -- separating axes, touching allowed."""
         ux, uy = math.cos(self.theta), math.sin(self.theta)
         nx, ny = -uy, ux
         hl, hw = FOOTPRINT_HALF_LENGTH, FOOTPRINT_HALF_WIDTH
@@ -591,7 +610,7 @@ class GridWorld:
         xs = [c[0] for c in corners]
         ys = [c[1] for c in corners]
         c_u, c_n = x * ux + y * uy, x * nx + y * ny
-        solid = self.solid_cells
+        solid = self.solid_cells if solid is None else solid
         for cy in range(math.floor(min(ys)), math.floor(max(ys)) + 1):
             for cx in range(math.floor(min(xs)), math.floor(max(xs)) + 1):
                 if renderer._cell_at(self.layout, cx, cy) != CELL_WALL and (cx, cy) not in solid:
