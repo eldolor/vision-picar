@@ -222,3 +222,14 @@ def test_two_writers_never_share_a_temp_file(tmp_path, monkeypatch):
     for _ in range(3):
         write_atomic(tmp_path / "judge.json", "{}")
     assert len(set(seen)) == 3, seen
+
+
+def test_a_cache_keeps_its_usual_file_mode(tmp_path):
+    """Round 2 (both): `mkstemp`'s 0600 replaced the 0644 `write_text` gave."""
+    import os
+    from tools.inventory_label import write_atomic
+    path = tmp_path / "judge.json"
+    write_atomic(path, "{}")
+    umask = os.umask(0)
+    os.umask(umask)
+    assert path.stat().st_mode & 0o777 == 0o666 & ~umask

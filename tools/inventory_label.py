@@ -78,6 +78,9 @@ def write_atomic(path: Path, text: str) -> None:
     Its own temp file each time (round 1: one fixed name, shared by two runs
     on one cache, tore the file between them)."""
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    umask = os.umask(0)
+    os.umask(umask)
+    os.fchmod(fd, 0o666 & ~umask)   # as `write_text` made it, not mkstemp's 0600 (round 2)
     try:
         with os.fdopen(fd, "w") as fh:
             fh.write(text)
@@ -331,8 +334,9 @@ def cmd_judge(args) -> None:
             stop.set()
             for fut in futures:
                 fut.cancel()
-            # Saved before the wait, so a second Ctrl-C there loses nothing
-            # (round 1); then the calls already out, billed, kept too.
+            # Saved before the wait, so a second Ctrl-C there loses only the
+            # calls still out (at most `--workers`), never what had landed
+            # (round 1); then those calls, billed, kept too.
             with lock:
                 write_atomic(out_path, json.dumps(done))
             pool.shutdown(wait=True)
