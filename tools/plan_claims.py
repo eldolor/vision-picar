@@ -178,8 +178,9 @@ def _items(cell: str) -> tuple:
         ticked = [x for x in found if not _no_entry(x)]
         stray = re.sub(r"`[^`]+`", "", cell)
         loose = [x for x in ticked if re.search(r"[\s,;]", x)]   # "`a.py, sim/`": a list
-        # Separators and no-entry tokens only (rounds 19-20): each token checked.
-        rest = all(_no_entry(t) for t in re.split(r"[,;]", stray))
+        # Separators and dashes only (rounds 19-22): beside paths, a word --
+        # "no", "none" -- says something about them, and is shown.
+        rest = all(_no_entry(t) and not re.search(r"[a-z]", t, re.I) for t in re.split(r"[,;]", stray))
         stray = ", ".join(([] if rest else [stray.strip(" ,;")]) + loose)
         return [x for x in ticked if x not in loose], stray
     parts = [x.strip() for x in cell.split(",") if not _no_entry(x)]
@@ -218,7 +219,7 @@ def _no_entry(cell: str) -> bool:
     `--` or an em dash read as unknown text, and the step was never free)."""
     # Bold or italic around the word only: a bare `*` or `**` is a glob (the
     # step touches everything), never "no entry" (round 19).
-    word = r"(?:-|--|\u2013|\u2014|none|n/a)"   # not "no": "`a.py` no `b.py`" says something
+    word = r"(?:-|--|\u2013|\u2014|none|no|n/a)"
     return re.fullmatch(rf"[`\s]*(?:(\*\*|\*|__|_){word}\1|{word})?[`\s]*",   # balanced (round 20)
                         cell, re.IGNORECASE) is not None
 

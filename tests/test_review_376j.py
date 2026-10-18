@@ -331,3 +331,9 @@ def test_r21_no_beside_ticked_paths_is_text():
     import plan_claims as pc
     assert pc._items("`a.py` no `b.py`")[1], "the annotation vanished"
 
+
+def test_r22_no_is_no_entry_alone_but_text_beside_paths():
+    import plan_claims as pc
+    assert pc._waits("no") == "" and pc._items("no") == ([], "")
+    assert pc._items("`a.py` none `b.py`")[1] and pc._items("`a.py` no `b.py`")[1]
+

@@ -624,7 +624,7 @@ def test_r18_the_wrappers_stopped_line_keeps_tonights_skipped(nightly, tmp_path)
     """The wrapper's STOPPED fallback rewrote the file without them."""
     run, push, p = nightly
     sh = _shell(tmp_path, "skip-then-die",
-                f'echo "$(date +%Y-%m-%d) - SKIPPED  refused" >> "{p["latest"]}"\nkill -KILL $$\n')
+                f'echo "$(date +%Y-%m-%d) - SKIPPED  refused" >> "{p["latest"]}"\nkill -TERM $$\n')
     r, latest, ran = run(NIGHTLY_SH=sh)
     lines = latest.splitlines()
     assert "STOPPED" in lines[0] and any(" SKIPPED " in l for l in lines[1:]), lines
@@ -714,7 +714,7 @@ def test_r20_a_script_that_exits_before_its_report_is_a_fail(nightly, tmp_path):
     its own line left "RUNNING  locked" for good, unmailed."""
     run, push, p = nightly
     r, latest, ran = run(NIGHTLY_SH=_shell(tmp_path, "exits", "exit 2\n"))
-    assert latest.split()[2] == "FAIL" and "exited 2 before its report" in latest, latest
+    assert latest.split()[2] == "FAIL" and "exited 2 without a report" in latest, latest
 
 
 def test_r20_a_refused_run_that_cannot_write_says_so(nightly):
@@ -754,4 +754,49 @@ def test_r21_a_verdict_that_could_not_be_written_never_reads_running(nightly, tm
                 f'echo "$(date +%Y-%m-%d) - RUNNING  started 03:00" > "{p["latest"]}"\nexit 1\n')
     r, latest, ran = run(NIGHTLY_SH=sh)
     assert latest.split()[2] == "FAIL", latest
+
+
+# ---------- round 22 ----------
+
+
+def _running_then(p, tmp_path, name, end):
+    """A NIGHTLY_SH that writes the sh's own RUNNING line, then ends as `end`."""
+    return _shell(tmp_path, name,
+                  f'echo "$(date +%Y-%m-%d) - RUNNING  started 03:00" > "{p["latest"]}"\n{end}\n')
+
+
+def test_r22_a_stop_whose_report_failed_is_stopped_and_not_mailed(nightly, tmp_path):
+    """A stop's exit (124) with no verdict landed read as a FAIL, and was mailed."""
+    run, push, p = nightly
+    r, latest, ran = run(NIGHTLY_SH=_running_then(p, tmp_path, "stop", "exit 3"),
+                         NIGHTLY_EMAIL="me@example.com")
+    assert latest.split()[2] == "STOPPED", latest
+    assert not p["mails"].exists() or "send-email" not in p["mails"].read_text()
+
+
+def test_r22_an_oom_killed_script_is_a_mailed_fail(nightly, tmp_path):
+    """Any untrapped signal read as STOPPED and went unmailed; only a stop's is."""
+    run, push, p = nightly
+    r, latest, ran = run(NIGHTLY_SH=_running_then(p, tmp_path, "oom", "kill -KILL $$"),
+                         NIGHTLY_EMAIL="me@example.com")
+    assert latest.split()[2] == "FAIL" and "signal 9" in latest, latest
+    assert "send-email" in p["mails"].read_text()
+
+
+def test_r22_a_pass_whose_report_failed_is_a_pass(nightly, tmp_path):
+    run, push, p = nightly
+    r, latest, ran = run(NIGHTLY_SH=_running_then(p, tmp_path, "pass", "exit 0"))
+    assert latest.split()[2] == "PASS", latest
+
+
+def test_r22_the_real_script_exits_3_when_stopped(nightly):
+    """The code the wrapper reads: a stopped run's sh exits 3."""
+    run, push, p = nightly
+    p["hang"].write_text("")
+    proc = p["start"]()
+    _until_running(p)
+    os.killpg(proc.pid, 15)
+    proc.communicate(timeout=30)
+    assert "STOPPED" in p["latest"].read_text()
+    assert proc.returncode == 3, proc.returncode
 
