@@ -507,7 +507,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   dead loop; the ROS world ignored `drive.bridge_url`; an empty
   `LIDAR_YAW_DEG`/`TRACK_SCRUB` stopped the robot server; `identity_eval`
   counted never-asked frames as cloud misses; the pose heading comment
-  pointed south. Next: N2-P3. Handoff:
+  pointed south. **N2 (the consoles), merged 2026-10-18, NOT YET
+  DEPLOYED:** 14 fixed, one a security bug -- a frame's stored token counts
+  went into the admin page's `innerHTML` (script beside the walks secret,
+  posted under the brain's). Also: rebuilt rows forgot what was out (a
+  second paid replay or judge run one click away), bulk delete stayed armed,
+  a Refresh mid-scoring lost every score, Download on S3 was a CORS request
+  the bucket refuses (now `?link=1` on the walks route), and the slideshow
+  and metrics loads raced. **For the user:** deploy the consoles
+  (`sync.sh`) and the walks Lambda (`?link=1`) from the laptop. Next: O-P3.
+  Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
