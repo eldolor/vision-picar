@@ -179,6 +179,10 @@
   .telemetry-line {
     font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin-top: 10px;
   }
+  /* Its state's colour (round 1: OK was never green, VETOED never red). */
+  .telemetry-line .safe { color: var(--accent-safe); }
+  .telemetry-line .alert { color: var(--accent-alert); }
+  .telemetry-line .warn { color: var(--accent-warn); }
   .telemetry .safe { color: var(--accent-safe); }
   .telemetry .alert { color: var(--accent-alert); }
   .telemetry .warn { color: var(--accent-warn); }
@@ -933,9 +937,14 @@
   }
   .robot-action-badge.visible { display: flex; opacity: 1; transform: translate(-50%, -50%) scale(1); }
   /* Portrait: the telemetry column runs to ~215 px, and at 18% the badge
-     sat on its SEQ, OUT and VF rows (3.76 O). Still above the chevron. */
+     sat on its SEQ, OUT and VF rows (3.76 O) -- so below it, but never
+     lower than 100 px above centre, where the chevron (74 px, pulsing to
+     ~98) sits: on a phone shorter than ~700 px the chevron wins and the
+     badge covers the last telemetry rows instead (round 1). */
   @media (orientation: portrait) {
-    .robot-action-badge { top: max(18%, calc(260px + env(safe-area-inset-top))); }
+    .robot-action-badge {
+      top: min(max(18%, calc(260px + env(safe-area-inset-top))), calc(50% - 100px));
+    }
   }
   .robot-action-verb { font-size: 30px; font-weight: 700; letter-spacing: .06em; line-height: 1.1; }
   .robot-action-target { font-size: 12px; color: var(--text-dim); }

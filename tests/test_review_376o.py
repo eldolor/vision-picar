@@ -164,3 +164,45 @@ def test_the_safety_readout_is_set_like_the_other_readouts(browser, twin_server)
     assert "mono" in font[0].lower() or "menlo" in font[0].lower() or "courier" in font[0].lower(), font
     assert font[1] == "12px", font
     page.context.close()
+
+
+# ---------- the fixes' round 1 ----------
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("size", [(360, 640), (375, 553), (390, 844)])
+def test_the_action_badge_stays_above_the_chevron(browser, twin_server, size):
+    """Round 1 (/code-review, medium): the 260 px floor put the badge on the
+    centre chevron (74 px, pulsing to ~98) on any phone under ~690 px tall."""
+    width, height = size
+    context = browser.new_context(viewport={"width": width, "height": height})
+    page = context.new_page()
+    page.goto(twin_server, wait_until="load")
+    _fullscreen(page)
+    page.evaluate("""() => {
+      document.getElementById('robot-hud').classList.add('visible');
+      const b = document.querySelector('.robot-action-badge');
+      b.classList.add('visible');
+      b.querySelector('.robot-action-verb').textContent = 'FORWARD';
+    }""")
+    page.wait_for_timeout(300)
+    badge = page.locator(".robot-action-badge").bounding_box()
+    assert badge["y"] + badge["height"] <= height / 2 - 49, (size, badge)
+    context.close()
+
+
+def test_the_safety_readout_says_vetoed_in_red(browser, twin_server):
+    """Round 1 (/code-review): outside `.telemetry` its state colours never
+    applied -- OK was never green, VETOED never red."""
+    page, _ = open_twin(browser, twin_server)
+    page.click('.tab-btn[data-tab="sim"]')
+    page.evaluate("document.getElementById('tel-safety').innerHTML ="
+                  " 'Safety: <span class=\"alert\">VETOED</span>'")
+    colour, alert = page.evaluate("""() => [
+      getComputedStyle(document.querySelector('#tel-safety .alert')).color,
+      (() => { const d = document.createElement('div'); d.style.color = 'var(--accent-alert)';
+               document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove(); return c; })()]""")
+    assert colour == alert, (colour, alert)
+    page.context.close()
