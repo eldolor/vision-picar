@@ -218,7 +218,7 @@ def _no_entry(cell: str) -> bool:
     `--` or an em dash read as unknown text, and the step was never free)."""
     # Bold or italic around the word only: a bare `*` or `**` is a glob (the
     # step touches everything), never "no entry" (round 19).
-    word = r"(?:-|--|\u2013|\u2014|none|no|n/a)"
+    word = r"(?:-|--|\u2013|\u2014|none|n/a)"   # not "no": "`a.py` no `b.py`" says something
     return re.fullmatch(rf"[`\s]*(?:(\*\*|\*|__|_){word}\1|{word})?[`\s]*",   # balanced (round 20)
                         cell, re.IGNORECASE) is not None
 

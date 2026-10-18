@@ -692,17 +692,21 @@ def test_r19_nohup_keeps_the_run_going(nightly, tmp_path):
 
 
 @pytest.mark.skipif(not os.path.exists("/dev/full"), reason="needs /dev/full (Linux)")
-def test_r20_a_write_that_fails_never_empties_the_report(nightly):
-    """The sh's report moved its .new into place even when the write had
-    failed (a full disk): the report became an empty file."""
+def test_r20_a_write_that_fails_never_empties_the_report(nightly, tmp_path):
+    """The sh's report moved its temp file into place even when the write had
+    failed (a full disk): the report became an empty file -- here, /dev/full
+    itself. The sh's first write (RUNNING) fails; the temp file is dropped,
+    so its verdict, later, lands."""
     run, push, p = nightly
     run()
-    before = p["latest"].read_text()
-    new = p["latest"].parent / "nightly-latest.txt.new"
-    new.symlink_to("/dev/full")                     # every write fails: ENOSPC
-    r, latest, ran = run()
-    assert p["latest"].read_text().strip(), "the report was emptied"
-    assert not p["latest"].is_symlink()
+    full = f'{p["latest"]}.new.$$'                  # the sh's own temp name, after the exec
+    sh = _shell(tmp_path, "disk-full", f'ln -s /dev/full "{full}"\nexec /bin/sh "$@"\n')
+    r, latest, ran = run(NIGHTLY_SH=sh)
+    assert "could not write the report" in r.stderr, r.stderr
+    assert not p["latest"].is_symlink(), "a failed write was moved into place"
+    assert latest.split()[2] == "PASS", latest
+    for f in p["latest"].parent.glob("nightly-latest.txt.new.*"):
+        f.unlink()
 
 
 def test_r20_a_script_that_exits_before_its_report_is_a_fail(nightly, tmp_path):
@@ -727,4 +731,27 @@ def test_r20_a_refused_run_that_cannot_write_says_so(nightly):
     finally:
         shutil.rmtree(p["latest"])
     assert r.returncode == 1 and "Traceback" not in r.stderr and "could not write" in r.stderr, r.stderr
+
+
+# ---------- round 21 ----------
+
+
+def test_r21_the_wrappers_own_fail_is_mailed(nightly, tmp_path):
+    """A FAIL only the wrapper saw (the sh exited before its report) was
+    reported but never emailed: a broken nightly failed in silence."""
+    run, push, p = nightly
+    r, latest, ran = run(NIGHTLY_SH=_shell(tmp_path, "exits", "exit 2\n"),
+                         NIGHTLY_EMAIL="me@example.com")
+    assert "FAIL" in latest and "send-email" in p["mails"].read_text(), latest
+
+
+def test_r21_a_verdict_that_could_not_be_written_never_reads_running(nightly, tmp_path):
+    """The wrapper's fallback took only its own RUNNING line: a sh whose own
+    RUNNING landed but whose verdict write failed left the night RUNNING."""
+    run, push, p = nightly
+    # the sh's own RUNNING line, then an exit before any verdict
+    sh = _shell(tmp_path, "running-then-exits",
+                f'echo "$(date +%Y-%m-%d) - RUNNING  started 03:00" > "{p["latest"]}"\nexit 1\n')
+    r, latest, ran = run(NIGHTLY_SH=sh)
+    assert latest.split()[2] == "FAIL", latest
 

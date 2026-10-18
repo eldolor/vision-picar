@@ -326,3 +326,8 @@ def test_r20_dashes_beside_ticked_paths_and_unbalanced_markup():
     assert pc._items("`a.py`, -, -") == (["a.py"], "")
     assert pc._no_entry("**--**") and not pc._no_entry("**none") and not pc._no_entry("*-")
 
+
+def test_r21_no_beside_ticked_paths_is_text():
+    import plan_claims as pc
+    assert pc._items("`a.py` no `b.py`")[1], "the annotation vanished"
+

@@ -66,6 +66,10 @@ fi
 # launchd's PATH is /usr/bin:/bin:/usr/sbin:/sbin; aws may be Homebrew's.
 PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"; export PATH
 mkdir -p "$logs"
+# Where a FAIL is emailed (see the end); the wrapper mails its own FAILs too.
+# SES is in sandbox mode on this account, so the address must be a verified
+# identity. NIGHTLY_EMAIL overrides it; NIGHTLY_EMAIL="" turns the email off.
+to="${NIGHTLY_EMAIL-anshu.gaind@gmail.com}"
 # One run at a time (rounds 10-11): every checkout of this repo shares $wt,
 # and a second run's refresh would rewrite the tree under the first's
 # pytest. A kernel lock (flock, through the venv's python: macOS has no
@@ -85,11 +89,33 @@ mkdir -p "$logs"
 # wrapper's own child: NIGHTLY_SH (a test hook) must exec its shell.
 [ "${NIGHTLY_LOCKED:-}" = "wrapper:$PPID" ] || unset NIGHTLY_LOCKED NIGHTLY_UNLOCKED
 if [ -z "${NIGHTLY_LOCKED:-}" ] && [ -x "$main/.venv/bin/python" ]; then
-  exec "$main/.venv/bin/python" - "$common/nightly.lock" "$logs/nightly-latest.txt" \
+  NIGHTLY_TO="$to" exec "$main/.venv/bin/python" - "$common/nightly.lock" "$logs/nightly-latest.txt" \
     "${NIGHTLY_SH:-/bin/sh}" "$0" ${1+"$@"} <<'PY'
-import errno, fcntl, os, signal, subprocess, sys, time
+import errno, fcntl, json, os, shutil, signal, subprocess, sys, time
 lock, latest, sh, script, args = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
 day = time.strftime('%Y-%m-%d')
+to = os.environ.pop("NIGHTLY_TO", "")
+
+def mail(line):
+    """The sh's email, for a FAIL only this wrapper saw (round 21: a broken
+    night was reported but never mailed)."""
+    if not to:
+        return
+    content = {"Simple": {"Subject": {"Data": "vision-picar nightly suite FAILED (-)"},
+                          "Body": {"Text": {"Data": f"Nightly full suite FAILED ({day}).\n\n{line}\n"}}}}
+    cmd = [shutil.which("aws") or "/usr/local/bin/aws", "sesv2", "send-email", "--region", "us-east-2",
+           "--from-email-address", to, "--destination", f"ToAddresses={to}",
+           "--content", json.dumps(content)]
+    try:
+        ok = subprocess.run(cmd, stdout=subprocess.DEVNULL, timeout=120).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        ok = False
+    if not ok:
+        try:
+            with open(latest, "a") as fh:
+                fh.write(f"{day} email failed (see launchd.log)\n")
+        except OSError:
+            pass
 
 def lines():
     try:
@@ -102,10 +128,11 @@ def report(line):
     any line, the first too: round 19). A failed write is said and never
     stops the run (round 19: a full disk ended the night before the suite)."""
     keep = [l for l in lines() if l.startswith(f"{day} - SKIPPED ")]
+    tmp = f"{latest}.new.{os.getpid()}"              # its own name (round 21)
     try:
-        with open(latest + ".new", "w") as fh:
+        with open(tmp, "w") as fh:
             fh.write("\n".join([line, *keep]) + "\n")
-        os.replace(latest + ".new", latest)
+        os.replace(tmp, latest)
     except OSError as exc:
         print(f"nightly: could not write {latest}: {exc}", file=sys.stderr)
 
@@ -156,24 +183,29 @@ try:
     child = subprocess.Popen([sh, script, *args], stdin=subprocess.DEVNULL)   # close_fds: no lock
 except OSError as exc:                   # no fork, no sh (round 20): a FAIL, said
     report(f"{day} - FAIL  nightly: could not start {sh}: {exc}")
+    mail(f"nightly: could not start {sh}: {exc}")
     sys.exit(1)
 for s in pending:
     forward(s, None)
 rc = child.wait()                        # PEP 475: retried after a handler
+# One rule (round 21): if the sh ended with tonight's line still RUNNING (its
+# own or this wrapper's) or not tonight's, it wrote no verdict, and this
+# writes one from how it ended -- never a run that looks hung, never
+# yesterday's. A signal it does not trap (SIGQUIT, an OOM kill, one before
+# its trap) is STOPPED; an exit before its report (a set -u error, a check
+# that failed) is a FAIL, and mailed; a 0 whose report failed to write
+# (a full disk) is a PASS. Known limit: what a dead sh left running (the
+# driver, and through it pytest) runs on unlocked -- under launchd the job's
+# group is killed with it; a killpg here would hit a caller's own group.
 first = (lines() or [""])[0]
-if rc < 0:
-    # The sh died of a signal it does not trap (round 16: before its trap;
-    # round 17: SIGQUIT, an OOM kill). Its report wins if it wrote one;
-    # otherwise this one, never yesterday's. Known limit: what it left
-    # running (the driver, and through it pytest) runs on unlocked -- under
-    # launchd the job's group is killed with it; a killpg here would hit a
-    # caller's own group (round 17's attempt stopped the shell that ran it).
-    if not first.startswith(day + " ") or first.startswith(f"{day} - RUNNING"):
+if not first.startswith(day + " ") or first.startswith(f"{day} - RUNNING"):
+    if rc < 0:
         report(f"{day} - STOPPED  nightly: the script died of signal {-rc}")
-elif rc and first.startswith((f"{day} - RUNNING  locked", f"{day} - RUNNING  unlocked")):
-    # It exited before writing any line of its own (round 20: a set -u
-    # error, a check that failed): a FAIL, never a run that looks hung.
-    report(f"{day} - FAIL  nightly: the script exited {rc} before its report")
+    elif rc:
+        report(f"{day} - FAIL  nightly: the script exited {rc} before its report")
+        mail(f"nightly: the script exited {rc} before its report")
+    else:
+        report(f"{day} - PASS  nightly: the script's own report could not be written")
 sys.exit(128 - rc if rc < 0 else rc)
 PY
 fi
@@ -205,8 +237,9 @@ report() {
   skipped="$(grep "^$day - SKIPPED " "$logs/nightly-latest.txt" 2>/dev/null)"
   # Moved only if every write succeeded (round 20: a full disk wrote nothing,
   # the group still succeeded, and an empty file replaced the report).
-  { echo "$1" && { [ -z "$skipped" ] || echo "$skipped"; }; } > "$logs/nightly-latest.txt.new" \
-    && mv "$logs/nightly-latest.txt.new" "$logs/nightly-latest.txt"
+  { echo "$1" && { [ -z "$skipped" ] || echo "$skipped"; }; } > "$logs/nightly-latest.txt.new.$$" \
+    && mv "$logs/nightly-latest.txt.new.$$" "$logs/nightly-latest.txt" \
+    || { rm -f "$logs/nightly-latest.txt.new.$$"; echo "nightly: could not write the report" >&2; }
 }
 report "$day - RUNNING  started $(date +%H:%M)${unlocked:+  (unlocked: $unlocked)}"
 : > "$log"
@@ -335,9 +368,13 @@ PY
   # (round 8), nor its own "... in 0.03s" (round 14).
   w='(subtests )?(passed|failed|errors?|skipped|deselected|xfailed|xpassed|warnings?|rerun)'
   summary="$(grep -E "^nightly: |^(=+ )?[0-9]+ $w(, [0-9]+ $w)* in [0-9.]+s( \(.*\))?( =+)?\$|^(=+ )?no tests ran in " "$log" | tail -n 1)"
-  # A driver killed before its handlers wrote no line of its own (round 20).
-  [ -n "$summary" ] || { [ $was_stopped -eq 1 ] && [ $rc -gt 128 ] \
-    && summary="nightly: stopped by signal $((rc - 128))"; } || summary="$(tail -n 1 "$log")"
+  # A driver killed before it wrote a line of its own: by a stop (round 20)
+  # or by anything else, an OOM kill (round 21).
+  if [ -z "$summary" ] && [ $rc -gt 128 ]; then
+    if [ $was_stopped -eq 1 ]; then summary="nightly: stopped by signal $((rc - 128))"
+    else summary="nightly: the driver died of signal $((rc - 128))"; fi
+  fi
+  [ -n "$summary" ] || summary="$(tail -n 1 "$log")"
 fi
 # STOPPED only when the stop ended the run: the driver's own line decides
 # when it wrote one; otherwise it died of the signal. A FAIL or a timeout a
@@ -352,10 +389,7 @@ else verdict=FAIL; fi
 report "$day $sha $verdict  $summary${unlocked:+  (unlocked: $unlocked)}"
 head -n 1 "$logs/nightly-latest.txt"
 
-# On failure only, an email through Amazon SES (user, 2026-10-09). SES is in
-# sandbox mode on this account, so the address must be a verified identity.
-# NIGHTLY_EMAIL overrides it; NIGHTLY_EMAIL="" turns the email off.
-to="${NIGHTLY_EMAIL-anshu.gaind@gmail.com}"
+# On failure only, an email through Amazon SES (user, 2026-10-09) to $to.
 if [ "$verdict" = FAIL ] && [ -n "$to" ]; then
   aws="$(command -v aws || echo /usr/local/bin/aws)"
   failed="$(grep -E '^(FAILED|ERROR) ' "$log" | head -20)"

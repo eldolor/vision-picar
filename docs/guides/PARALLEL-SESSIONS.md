@@ -103,7 +103,9 @@ Continuing an existing section: work in its worktree
    `reviewed` on a branch that had them. A new
    sweep that runs hundreds of missions belongs on that list. The **full suite** runs once a night on the latest
    `origin/dev` (`tools/nightly_suite.sh`, installed with `--install`;
-   result in `~/Library/Logs/vision-picar/nightly-latest.txt`; its worktree
+   result in `~/Library/Logs/vision-picar/nightly-latest.txt`, whose first
+   line reads RUNNING while a run is going and is never left so once it
+   ends; its worktree
    is reset and cleaned to that commit each night, a refresh that fails is
    that night's FAIL, a run past `NIGHTLY_TIMEOUT_S`, default 7000 s, is
    stopped and reported FAIL, a run someone stops reads STOPPED and is not
