@@ -12,8 +12,9 @@ formats the R models answer in, each pinned in `test_readers.py`:
   tokens over coordinates + `None` / `<null>`.
 * `parse_any_box`: PaliGemma's `<locY1><locX1><locY2><locX2>` (0-1023, read
   as x1, y1, x2, y2 on 0-1000) first, then M's reader, then a point -- `<box><x><y></box>`
-  (LocateAnything, 0-1000) or Molmo2's `coords="i x y"` (0-1000) -- as a
-  1-unit box at the point, so the box centre is the point.
+  (LocateAnything, 0-1000), Molmo2's `coords="i x y"` (0-1000) or RoboRefer's
+  `[(x, y), ...]` (0-1) -- as a box one unit of its scale wide at the point
+  (a thousandth when both numbers are <= 1), so the box centre is the point.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ _NUM = r"(-?\d+(?:\.\d+)?)"
 _LA_POINT = re.compile(r"<box>\s*<(\d+)>\s*<(\d+)>\s*</box>")
 _LOC = re.compile(r"<loc(\d{4})><loc(\d{4})><loc(\d{4})><loc(\d{4})>")
 _MOLMO = re.compile(r"coords=\"\s*\d+\s+(\d{1,4})\s+(\d{1,4})")
+_TUPLE = re.compile(r"\[\s*\(\s*(\d*\.?\d+)\s*,\s*(\d*\.?\d+)\s*\)")
 
 
 def opens_native(tok: str) -> bool:
@@ -105,8 +107,9 @@ def parse_any_box(text: str) -> Optional[list]:
     box = mr.parse_any_box(text)
     if box is not None:
         return box
-    m = _LA_POINT.search(text) or _MOLMO.search(text)
+    m = _LA_POINT.search(text) or _MOLMO.search(text) or _TUPLE.search(text)
     if m:
         x, y = float(m.group(1)), float(m.group(2))
-        return [x, y, x + 1, y + 1]
+        w = 0.001 if max(x, y) <= 1 else 1   # one unit of its scale
+        return [x, y, x + w, y + w]
     return None

@@ -263,6 +263,38 @@ class Photon:
         return boxes_reply([[p["x"] * w, p["y"] * h, p["x"] * w + 1, p["y"] * h + 1] for p in pts])
 
 
+class RoboRefer(HFGenerate):
+    """Zhoues/RoboRefer-2B-SFT through its own VILA code (`llava`, from
+    `$ROBOREFER_SRC`, default ~/bench-380R/roborefer): `generate_content` as
+    its API does, RGB only (no depth), greedy. Its inner `generate` is wrapped
+    so the scores come back too and the reply has llama-server's logprobs."""
+
+    def __init__(self, model_id, device):
+        import os
+        sys.path.insert(0, os.path.expanduser(os.environ.get("ROBOREFER_SRC", "~/bench-380R/roborefer")))
+        import llava
+        from llava import conversation as clib
+        self.model = llava.load(model_id)
+        clib.default_conversation = clib.conv_templates["auto"].copy()
+        self.tok, self.Image, self._last = self.model.tokenizer, llava.Image, None
+        inner = self.model.generate
+
+        def generate(**kw):
+            self._last = inner(**kw)
+            return self._last.sequences
+        self.model.generate = generate
+
+    def answer(self, image, text, max_tokens):
+        import tempfile
+        gc = self.model.default_generation_config
+        gc.update(max_new_tokens=max_tokens, do_sample=False, num_beams=1,
+                  output_scores=True, return_dict_in_generate=True)
+        with tempfile.NamedTemporaryFile(suffix=".jpg") as f:
+            image.save(f.name, quality=95)
+            self.model.generate_content([self.Image(f.name), text], generation_config=gc)
+        return self.steps(self.tok, self._last, 0)
+
+
 def build(spec: str, device: str):
     backend, model_id = spec.split(":", 1)
     if backend == "florence":
@@ -277,6 +309,8 @@ def build(spec: str, device: str):
         return PaliGemma(model_id, device)
     if backend == "eagle":
         return Eagle(model_id, device, model_id)
+    if backend == "roborefer":
+        return RoboRefer(model_id, device)
     raise SystemExit(f"unknown backend {backend}")
 
 

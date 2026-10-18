@@ -1,4 +1,6 @@
 import math
+
+import pytest
 import sys
 from pathlib import Path
 
@@ -54,3 +56,11 @@ def test_paligemma_loc_tokens():
     assert parse_any_box("<loc0256><loc0512><loc0768><loc1023> blue bottle") == [500.0, 250.0, 999.0234375, 750.0]
     s, parsed, _ = p_native([step("<loc0256>", {"<loc0256>": 0.7, "<eos>": 0.3})])
     assert parsed and abs(s - 0.7) < 1e-9
+
+
+def test_roborefer_tuple_points():
+    # RoboRefer (VILA) answers a list of (x, y) tuples, normalised 0-1; a
+    # point's box is a thousandth of the frame wide, so its centre stays put.
+    assert parse_any_box("[(0.43, 0.52)]") == pytest.approx([0.43, 0.52, 0.431, 0.521])
+    assert parse_any_box("[(0.1, 0.2), (0.3, 0.4)]")[:2] == [0.1, 0.2]
+    assert p_native([step("[(", {"[(": 0.8, "There": 0.2})])[0] == 0.8
