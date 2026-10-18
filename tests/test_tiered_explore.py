@@ -353,7 +353,10 @@ def test_385_a_stalled_approach_in_the_band_is_not_backed_away_from():
     agent._approach = (tx, ty)
     agent._goal_ended("stalled", 30.0)
     assert "REVERSE" not in agent._pending, agent._pending
-    assert agent._approach is None
+    # Close-in owns it from the next frame: no cooldown on the place, and the
+    # approach stays on record so the sighting is not re-sent (review).
+    assert agent.retry.available(tx, ty, 31.0)
+    assert agent._approach == (tx, ty)
 
 
 def test_385_a_stalled_approach_out_of_the_band_still_backs_out():
@@ -379,3 +382,5 @@ def test_385_a_refused_approach_in_the_band_closes_in():
     out = agent._send_approach(tx, ty, grid.sim_time,
                                {"_perception": {"status": "detected", "bearing_deg": 0.0}})
     assert out[0] == "FORWARD" and agent.close_ins == 1, out
+    # And close-in keeps it: the next frame's sighting is not re-sent (review).
+    assert agent._approach == (tx, ty)

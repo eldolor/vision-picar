@@ -711,6 +711,9 @@ class ExploreAgent(MissionAgent):
                 # before 3.85, rather than a re-send on every frame.
                 closed = self._close_in(scene or {}, (tx, ty))
                 if closed is not None:
+                    # Close-in owns it now; on record, the next frame's
+                    # sighting is not re-sent (review).
+                    self._approach = (tx, ty)
                     return closed
         return out
 
@@ -1070,12 +1073,18 @@ class ExploreAgent(MissionAgent):
             return
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
-        # 3.85 at merge: an approach that stalls with the robot already in
-        # the band is set aside, not backed out of -- close-in (3.80.G)
-        # finishes from here, where the escape would turn it away.
-        closing = (state == "stalled" and g["kind"] == "approach"
-                   and self.sight_from == "perception" and self._at_target(*target))
-        if not closing and (state == "stalled" or (g.get("from") and pose.get("usable") and math.hypot(
+        if (state == "stalled" and g["kind"] == "approach"
+                and self.sight_from == "perception" and self._at_target(*target)):
+            # 3.85 at merge: stalled with the robot already in the band --
+            # close-in (3.80.G) finishes from here, as after a reached
+            # approach. Neither backed out of (the escape turns it away) nor
+            # held against the place (its cooldown would block close-in);
+            # close-in's own CLOSE_IN_REFUSED bounds it.
+            self._approach = tuple(target)
+            self.last_event = "approach goal stalled in the band; closing in"
+            logger.info(self.last_event)
+            return
+        if (state == "stalled" or (g.get("from") and pose.get("usable") and math.hypot(
                 pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M)):
             # It never left (or, 3.83, stopped making progress on the way):
             # the robot is wedged, not the place unreachable.
