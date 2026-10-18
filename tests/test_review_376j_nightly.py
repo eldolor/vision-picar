@@ -102,7 +102,7 @@ def nightly(tmp_path, monkeypatch):
     def run(timeout=60, **extra):
         r = sp.run(["sh", str(main / "tools" / "nightly_suite.sh")], capture_output=True,
                    text=True, env={**env, **extra}, timeout=timeout)
-        return r, (latest.read_text() if latest.exists() else ""), \
+        return r, (latest.read_text() if latest.is_file() else ""), \
             (out.read_text().strip() if out.exists() else "")
 
     def start(shell=("sh",), inner=True, **extra):
@@ -686,4 +686,45 @@ def test_r19_nohup_keeps_the_run_going(nightly, tmp_path):
     proc.communicate(timeout=60)
     latest = p["latest"].read_text()
     assert "timed out" in latest and "STOPPED" not in latest, latest
+
+
+# ---------- round 20 ----------
+
+
+@pytest.mark.skipif(not os.path.exists("/dev/full"), reason="needs /dev/full (Linux)")
+def test_r20_a_write_that_fails_never_empties_the_report(nightly):
+    """The sh's report moved its .new into place even when the write had
+    failed (a full disk): the report became an empty file."""
+    run, push, p = nightly
+    run()
+    before = p["latest"].read_text()
+    new = p["latest"].parent / "nightly-latest.txt.new"
+    new.symlink_to("/dev/full")                     # every write fails: ENOSPC
+    r, latest, ran = run()
+    assert p["latest"].read_text().strip(), "the report was emptied"
+    assert not p["latest"].is_symlink()
+
+
+def test_r20_a_script_that_exits_before_its_report_is_a_fail(nightly, tmp_path):
+    """Only a death by signal was reported: a sh that exited non-zero before
+    its own line left "RUNNING  locked" for good, unmailed."""
+    run, push, p = nightly
+    r, latest, ran = run(NIGHTLY_SH=_shell(tmp_path, "exits", "exit 2\n"))
+    assert latest.split()[2] == "FAIL" and "exited 2 before its report" in latest, latest
+
+
+def test_r20_a_refused_run_that_cannot_write_says_so(nightly):
+    """The refused run's write had no guard: a traceback, not a line."""
+    import fcntl, shutil
+    run, push, p = nightly
+    run()
+    p["latest"].unlink()
+    p["latest"].mkdir()                             # the report cannot be written
+    try:
+        with open(p["main"] / ".git" / "nightly.lock", "a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
+            r, latest, ran = run()
+    finally:
+        shutil.rmtree(p["latest"])
+    assert r.returncode == 1 and "Traceback" not in r.stderr and "could not write" in r.stderr, r.stderr
 

@@ -170,14 +170,17 @@ def _items(cell: str) -> tuple:
     or `;` in it is stray), or, once any entry is ticked, the ticked ones only
     -- and the text beside them, which
     `assess` shows rather than guess at (3.76 J8: a plain entry beside ticked
-    ones was dropped without a word)."""
+    ones was dropped without a word). Beside ticked entries, `,` and `;`
+    separate, and a dash or "none" (`_no_entry`) is no text; in a plain cell
+    only `,` separates. Either way a no-entry item is dropped, never a path."""
     found = re.findall(r"`([^`]+)`", cell)
     if found:                            # ticked: decided before the no-entry filter (round 18)
         ticked = [x for x in found if not _no_entry(x)]
         stray = re.sub(r"`[^`]+`", "", cell)
         loose = [x for x in ticked if re.search(r"[\s,;]", x)]   # "`a.py, sim/`": a list
-        rest = stray.replace(",", "").replace(";", "")     # separators only (round 19)
-        stray = ", ".join(([] if _no_entry(rest) else [stray.strip(" ,;")]) + loose)
+        # Separators and no-entry tokens only (rounds 19-20): each token checked.
+        rest = all(_no_entry(t) for t in re.split(r"[,;]", stray))
+        stray = ", ".join(([] if rest else [stray.strip(" ,;")]) + loose)
         return [x for x in ticked if x not in loose], stray
     parts = [x.strip() for x in cell.split(",") if not _no_entry(x)]
     loose = [x for x in parts if re.search(r"\s|;", x)]   # "a.py and sim/": not one path
@@ -215,7 +218,8 @@ def _no_entry(cell: str) -> bool:
     `--` or an em dash read as unknown text, and the step was never free)."""
     # Bold or italic around the word only: a bare `*` or `**` is a glob (the
     # step touches everything), never "no entry" (round 19).
-    return re.fullmatch(r"[`\s]*(?:(\*\*|\*|__|_)?(?:-|--|\u2013|\u2014|none|no|n/a)\1?)?[`\s]*",
+    word = r"(?:-|--|\u2013|\u2014|none|no|n/a)"
+    return re.fullmatch(rf"[`\s]*(?:(\*\*|\*|__|_){word}\1|{word})?[`\s]*",   # balanced (round 20)
                         cell, re.IGNORECASE) is not None
 
 

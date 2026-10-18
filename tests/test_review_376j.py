@@ -320,3 +320,9 @@ def test_r19_a_glob_is_an_entry_and_semicolons_separate():
     assert pc._items("`a.py`; `b.py`") == (["a.py", "b.py"], "")
     assert pc._waits("**--**") == "" and pc._waits("*") != ""
 
+
+def test_r20_dashes_beside_ticked_paths_and_unbalanced_markup():
+    import plan_claims as pc
+    assert pc._items("`a.py`, -, -") == (["a.py"], "")
+    assert pc._no_entry("**--**") and not pc._no_entry("**none") and not pc._no_entry("*-")
+

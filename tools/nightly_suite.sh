@@ -126,8 +126,11 @@ except OSError as exc:
         # its verdict); otherwise it IS tonight's line (round 16: a holder
         # that is no nightly run, a daemon from before round 14, left an old
         # PASS on top for good).
-        with open(latest, "a" if first.startswith(day + " ") else "w") as fh:
-            fh.write(line + "\n")
+        try:
+            with open(latest, "a" if first.startswith(day + " ") else "w") as fh:
+                fh.write(line + "\n")
+        except OSError as werr:              # said, never a traceback (round 20)
+            print(f"nightly: could not write {latest}: {werr}", file=sys.stderr)
         sys.exit(1)
 os.environ["NIGHTLY_LOCKED"] = f"wrapper:{os.getpid()}"
 child, pending = None, []
@@ -149,10 +152,15 @@ for s in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
 # Tonight's line, before the sh can die (round 17): an earlier run today
 # must not stand in for this one.
 report(f"{day} - RUNNING  {'locked' if locked else 'unlocked'} {time.strftime('%H:%M')}")  # the sh's: "started"
-child = subprocess.Popen([sh, script, *args], stdin=subprocess.DEVNULL)   # close_fds: no lock
+try:
+    child = subprocess.Popen([sh, script, *args], stdin=subprocess.DEVNULL)   # close_fds: no lock
+except OSError as exc:                   # no fork, no sh (round 20): a FAIL, said
+    report(f"{day} - FAIL  nightly: could not start {sh}: {exc}")
+    sys.exit(1)
 for s in pending:
     forward(s, None)
 rc = child.wait()                        # PEP 475: retried after a handler
+first = (lines() or [""])[0]
 if rc < 0:
     # The sh died of a signal it does not trap (round 16: before its trap;
     # round 17: SIGQUIT, an OOM kill). Its report wins if it wrote one;
@@ -160,9 +168,12 @@ if rc < 0:
     # running (the driver, and through it pytest) runs on unlocked -- under
     # launchd the job's group is killed with it; a killpg here would hit a
     # caller's own group (round 17's attempt stopped the shell that ran it).
-    first = (lines() or [""])[0]
     if not first.startswith(day + " ") or first.startswith(f"{day} - RUNNING"):
         report(f"{day} - STOPPED  nightly: the script died of signal {-rc}")
+elif rc and first.startswith((f"{day} - RUNNING  locked", f"{day} - RUNNING  unlocked")):
+    # It exited before writing any line of its own (round 20: a set -u
+    # error, a check that failed): a FAIL, never a run that looks hung.
+    report(f"{day} - FAIL  nightly: the script exited {rc} before its report")
 sys.exit(128 - rc if rc < 0 else rc)
 PY
 fi
@@ -192,7 +203,9 @@ trap 'stopped=1; was_stopped=1; [ -n "$drv" ] && stop_job "$drv"
 # between the grep and the mv is lost.
 report() {
   skipped="$(grep "^$day - SKIPPED " "$logs/nightly-latest.txt" 2>/dev/null)"
-  { echo "$1"; if [ -n "$skipped" ]; then echo "$skipped"; fi; } > "$logs/nightly-latest.txt.new" \
+  # Moved only if every write succeeded (round 20: a full disk wrote nothing,
+  # the group still succeeded, and an empty file replaced the report).
+  { echo "$1" && { [ -z "$skipped" ] || echo "$skipped"; }; } > "$logs/nightly-latest.txt.new" \
     && mv "$logs/nightly-latest.txt.new" "$logs/nightly-latest.txt"
 }
 report "$day - RUNNING  started $(date +%H:%M)${unlocked:+  (unlocked: $unlocked)}"
@@ -322,7 +335,9 @@ PY
   # (round 8), nor its own "... in 0.03s" (round 14).
   w='(subtests )?(passed|failed|errors?|skipped|deselected|xfailed|xpassed|warnings?|rerun)'
   summary="$(grep -E "^nightly: |^(=+ )?[0-9]+ $w(, [0-9]+ $w)* in [0-9.]+s( \(.*\))?( =+)?\$|^(=+ )?no tests ran in " "$log" | tail -n 1)"
-  [ -n "$summary" ] || summary="$(tail -n 1 "$log")"
+  # A driver killed before its handlers wrote no line of its own (round 20).
+  [ -n "$summary" ] || { [ $was_stopped -eq 1 ] && [ $rc -gt 128 ] \
+    && summary="nightly: stopped by signal $((rc - 128))"; } || summary="$(tail -n 1 "$log")"
 fi
 # STOPPED only when the stop ended the run: the driver's own line decides
 # when it wrote one; otherwise it died of the signal. A FAIL or a timeout a
