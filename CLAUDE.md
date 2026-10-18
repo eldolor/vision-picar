@@ -399,8 +399,21 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   and counted `docs/` data tests read; `new` leaked a branch or nested a
   worktree; the venv was missed from a subdirectory; 3.100 sat on ROS
   domain 0; `git push origin :dev` passed unchecked. `tools/plan_claims.py`
-  and `tools/nightly_suite.sh` joined the risky list (the user). Handoff:
-  `HANDOFF-2026-10-13-3.76-legacy-review.md`.
+  and `tools/nightly_suite.sh` joined the risky list (the user).
+  **Scope widened to everything outstanding (the user, 2026-10-15): steps
+  J-P3. Batch J (`plan_claims.py`, `nightly_suite.sh`), merged 2026-10-18:**
+  8 fixed (the nightly refresh tested the previous commit; no time limit; a
+  stale worktree failed every night; `done (...)` read as open; a glob
+  missed by `overlap`; an old branch table over `dev`'s; a claim race; a
+  plain Touches entry dropped) and 26 review rounds on the fixes -- above
+  all, the nightly's lock was inherited by daemons git starts, so every
+  later night read SKIPPED unmailed (now held by a python parent); a stop
+  in a stalled fetch never landed; a night that died showed yesterday's
+  verdict. Also fixed on the way: `test_pipeline_release` failed every
+  fast-tier run on `dev` (a 0.2 s bound timing `gc.collect()`). Next: K
+  (66 commits, +3,175/-943, on risky files after their batch, plus
+  `service/local_vlm/`), then L1-P3. Handoff:
+  `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
   ran late on 9.7% of wheel ticks on the Jetson (dev's own explore, H1).
