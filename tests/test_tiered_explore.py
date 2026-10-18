@@ -384,3 +384,15 @@ def test_385_a_refused_approach_in_the_band_stays_on_record_for_close_in():
                                world=MockWorld(grid))
     frame_agent._send_approach(tx, ty, grid.sim_time)
     assert frame_agent._approach is None
+
+
+def test_385_a_never_left_stall_in_the_band_still_backs_out():
+    """Only an approach that got under way is a plain failure in the band; a
+    robot wedged at its start backs out, as dev's never-left rule does (review
+    round 4, both reviewers)."""
+    agent, _ = _agent()
+    pose, (tx, ty) = _ahead(agent, 0.62)
+    agent._goal = {"x_m": tx, "y_m": ty, "kind": "approach", "target": (tx, ty),
+                   "sent_at": 5.0, "from": (pose["x_m"], pose["y_m"])}
+    agent._goal_ended("stalled", 30.0)
+    assert agent._pending[:1] == ["REVERSE"]
