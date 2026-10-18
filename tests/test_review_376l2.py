@@ -88,3 +88,52 @@ def test_the_found_frame_is_not_turned_away_from():
                                 executed=True, detail="") for i in range(3)]
     scene = {"safest_direction": "STOP", "_navigate": {"target_reached": True}}
     assert ConstrainedAgent.decide(agent, scene) == "STOP"
+
+
+# ---------- L2.3: a seed off the grid took the map's corner ----------
+
+
+def test_a_seed_off_the_grid_names_nothing():
+    """`cut.cell(...) or (-1, -1)`: a seed outside the current map (a smaller
+    map after a session change) became cell (-1, -1), which `_floor_near`
+    clamps to floor near the corner -- so it owned, and named, the floor
+    there, and suppressed asks in it (both reviewers)."""
+    import numpy as np
+    from brain.room_labels import _walk
+    seg = np.zeros((40, 40), dtype=int)               # one room, all floor
+    d, owner = _walk(seg, [(-1, -1)], 0.05, 3.0)     # what both callers passed
+    assert (owner < 0).all(), "a seed off the grid owns floor"
+
+
+# ---------- L2.6: a Stop after the local check read as a refusal ----------
+
+
+def test_a_stop_after_the_local_check_is_undecided_not_refused():
+    """The return for a Stop landing after the local identity check lacked
+    `undecided`, unlike the same returns before and after it, so the agent
+    recorded a refusal (and a refused place) for a cancelled mission."""
+    from control.mission_runner import MissionRunner
+    runner = MissionRunner(MockRobot(build_world("scaled_house"), render=False),
+                           target_object=TARGET, policy="tiered", vision_fn=lambda f: {},
+                           vision_timeout_s=2.0, arrival_confirm_timeout_s=1.0)
+
+    class Policy:
+        local_identity_fn = object()
+
+        def confirm_arrival(self, frame, local_ok=True):
+            raise AssertionError("not asked")
+
+        def confirm_local(self, frame, *a):
+            runner.stop("the operator pressed Stop")
+            return None                      # absent: handed to the cloud
+
+        def confirm_cloud(self, frame, guarded=False):
+            raise AssertionError("the cloud was asked after a Stop")
+
+        def close(self):
+            pass
+
+    runner.vision_fn = Policy()
+    runner.start()
+    verdict = runner._guarded_confirm({})
+    assert verdict["cloud_called"] is False and verdict.get("undecided") is True, verdict

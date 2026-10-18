@@ -1424,8 +1424,9 @@ class MissionRunner:
                 # A Stop landed during the local check (close() drops the
                 # client, which reads as absent): the cloud is not asked for
                 # a mission that has ended (bug pass, 2026-10-14; 3.76 E's
-                # class).
-                return {"confirmed": False, "cloud_called": False,
+                # class). Undecided, as the same returns around it (3.76 L2:
+                # without it the agent recorded a refusal for a Stop).
+                return {"confirmed": False, "undecided": True, "cloud_called": False,
                         "reason": "the mission ended during the identity check"}
             confirm = cloud
 

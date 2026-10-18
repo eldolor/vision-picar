@@ -211,6 +211,10 @@ def _floor_near(seg: np.ndarray, c: tuple, r: int) -> Optional[tuple]:
     can turn the cell it stood on into a wall or unknown; None if none."""
     h, w = seg.shape
     j0, i0 = c
+    if not (0 <= j0 < h and 0 <= i0 < w):
+        # Off this map (a seed from a larger one: `cut.cell() or (-1, -1)`):
+        # clamped, the search planted it on floor at the corner (3.76 L2).
+        return None
     best = None
     for j in range(max(0, j0 - r), min(h, j0 + r + 1)):
         for i in range(max(0, i0 - r), min(w, i0 + r + 1)):

@@ -44,7 +44,8 @@ mission is built").
 `robot/safety.py` `SafetyController` over the gated body; `SafetyViolation`
 means not executed) -> `StepResult` appended to `history`.
 `MissionAgent.step()` then backfills `frame["room"]` from
-`_navigate.room_guess` when the frame says `unknown`, attaches the world pose
+`_navigate.room_guess` when the frame says `unknown` (stripped and
+lowercased, `unclear`/`unknown` dropped: free text, 3.76 L2), attaches the world pose
 to the frame, and records observation, searched room and action in memory.
 
 **Frontier `decide()`:** complete -> STOP; right after an executed turn ->
@@ -52,7 +53,8 @@ FORWARD; else peek right, left, centre with `get_distance()` against
 `side_clearance_cm + VERB_MIN_MOVE_M*100`; with a usable pose, prefer the
 first of FORWARD/RIGHT/LEFT whose lookahead bucket is unvisited, else the
 first clear one; with no pose, the right-hand rule; boxed in -> the
-stuck-breaker (three STOPs in a row -> RIGHT).
+stuck-breaker (three STOPs in a row -> RIGHT; never on a scene whose
+`_navigate.target_reached` is true, the frame an arrival is found, 3.76 L2).
 
 **Tier free-frame precedence** (`TieredVision._local_scene()`): measured
 local bearing (`_steer_to`) > dead-reckoned bearing (`_dead_reckoned_direction`,
@@ -443,9 +445,10 @@ cloud alone.
   `source` is `local` if any frame of the streak was.
 * `brain/agent.py`: a `source: local` arrival calls the confirmer with
   `local_ok=False` (a confirmer without that keyword is not called: the
-  arrival stays `checking`, unconfirmed). A local-led arrival within
-  `LOCAL_REFUSED_RADIUS_M` (0.5 m) of one the cloud refused is refused again
-  unpaid. `control/mission_runner.py`:
+  arrival stays `checking`, unconfirmed). An arrival within
+  `LOCAL_REFUSED_RADIUS_M` (0.5 m) of one that was refused is refused again
+  unpaid -- any source with a range since 3.76 L2 (one detector miss ended a
+  perception-led arrival and its refusal with it). `control/mission_runner.py`:
   `_guarded_confirm(frame, local_ok=False)` waits for a local question still
   in flight (`TieredVision.wait_local_free`, its local phase, within the
   step's deadline less the cloud guard or half of it; still out: undecided,
@@ -582,6 +585,7 @@ alert colour.
 | `tests/test_tiered.py` (92) | triggers and hysteresis, call cap, staleness floor, async dispatch and epoch drop, an async failure reaching B3.2, landed verdicts shown once, local bearing beats a stale cloud goal, spin guard never overrides a sighting, timing on the worker |
 | `tests/test_review_376k3.py` (5) | 3.76 K3: a failing cloud (not fatal, explore) hands a frame's question back to the local tier; no frame question goes out beside an arrival identity call still running, and it is asked once that ends (a candidate's edge too); close-in's refusals before an accepted goal do not count after it, and an estimate that flips still trips the bound |
 | `tests/test_vision_policy.py` (39) | visible is not found; absent `obstacle_ahead` is `unknown`; room guess backfill and `searched_rooms`; the policy does not peek; replay missions |
+| `tests/test_review_376l2.py` (5) | 3.76 L2: a refused perception-led arrival is not paid for twice at one place; one room named two ways is one room, `unclear`/`unknown` none; the found frame is not turned away from; a room-label seed off the grid owns no floor; a Stop after the local identity check is undecided, not a refusal |
 | `tests/test_agent.py`, `tests/test_mission_agent.py`, `tests/test_object_search.py` | constrained loop, frontier preference, look-around scan |
 | `tests/test_goal_pose.py` (12), `tests/test_memory.py` (9), `tests/test_rooms.py` (7) | anchoring under rotation, honesty without range; memory completion; room matching |
 

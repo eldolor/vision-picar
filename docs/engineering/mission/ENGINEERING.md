@@ -93,7 +93,7 @@ end at `_finish`, and the status's `explore` block). With no
    share is the policy's `abandon_local()` verdict (undecided), never a
    cloud failure. None (no local tier, absent, or its tries spent) goes on
    to the steps above with `confirm_cloud` as the confirmation -- unless the
-   runner has stopped meanwhile, which returns a refusal with no call. `late_ask()`
+   runner has stopped meanwhile, which returns an undecided verdict with no call (3.76 L2: it read as a refusal). `late_ask()`
    is unchanged: the policy is closed by then, so it asks the cloud.
 3. Exceptions: `MissionHalted` -> return False (stop landed mid-tick);
    `VisionUnavailable` -> `_handle_vision_failure()`. An arrival
