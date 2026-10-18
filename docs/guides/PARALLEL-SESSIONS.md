@@ -110,8 +110,8 @@ Continuing an existing section: work in its worktree
    is reset and cleaned to that commit each night, a refresh that fails is
    that night's FAIL, a run past `NIGHTLY_TIMEOUT_S`, default 7000 s, is
    stopped and reported FAIL, a run someone stops (TERM, HUP, Ctrl-C)
-   reads STOPPED and is not emailed -- any other signal, an OOM kill or
-   Ctrl-\\, is a FAIL -- and one run holds a lock: a second is refused and adds a
+   reads STOPPED and is not emailed -- a signal that reaches only the
+   script, an OOM kill, is a FAIL -- and one run holds a lock: a second is refused and adds a
    SKIPPED line under the night's verdict, which stays the first line; if
    no run got the lock tonight, SKIPPED is the first line) and with
    `ready --full` before merging a section that changes the twin or the

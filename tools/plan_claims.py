@@ -176,21 +176,25 @@ def _items(cell: str) -> tuple:
     no entries either way, never a path."""
     found = re.findall(r"`([^`]+)`", cell)
     if found:                            # ticked: decided before the no-entry filter (round 18)
-        stray = re.sub(r"`[^`]+`", "", cell)
-        tokens = re.split(r"[,;]", stray)
-        if all(_no_entry(x) for x in found + tokens):
+        if all(_no_entry(x) for x in found + re.split(r"[,;]", re.sub(r"`[^`]+`", "", cell))):
             return [], ""                # the whole cell says "nothing"
         # Beside paths only a dash is nothing; a word -- "no", "none", ticked
-        # or not -- says something about them, and is shown (rounds 19-23).
+        # or not -- says something about them, and is shown, in the author's
+        # order (rounds 19-24).
         ticked = [x for x in found if not _no_entry(x)]
-        words = [x for x in found if _no_entry(x) and not _no_entry(x, words=False)]
+        stray = re.sub(r"`([^`]+)`", lambda m: m.group(1) if _no_entry(m.group(1))
+                       and not _no_entry(m.group(1), words=False) else "", cell)   # words stay
         loose = [x for x in ticked if re.search(r"[\s,;]", x)]   # "`a.py, sim/`": a list
-        rest = all(_no_entry(t, words=False) for t in tokens)
-        stray = ", ".join(([] if rest else [stray.strip(" ,;")]) + words + loose)
+        rest = all(_no_entry(t, words=False) for t in re.split(r"[,;]", stray))
+        stray = ", ".join(([] if rest else [re.sub(r"\s+", " ", stray).strip(" ,;")]) + loose)
         return [x for x in ticked if x not in loose], stray
-    parts = [x.strip() for x in cell.split(",") if not _no_entry(x)]
+    parts = [x.strip() for x in cell.split(",")]
+    if all(_no_entry(x) for x in parts):
+        return [], ""
+    words = [x for x in parts if _no_entry(x) and not _no_entry(x, words=False)]   # round 24
+    parts = [x for x in parts if not _no_entry(x)]
     loose = [x for x in parts if re.search(r"\s|;", x)]   # "a.py and sim/": not one path
-    return [x for x in parts if x not in loose], ", ".join(loose)
+    return [x for x in parts if x not in loose], ", ".join(words + loose)
 
 
 def _word(cell: str, allowed: tuple):
@@ -220,8 +224,9 @@ def _waits(cell: str) -> str:
 
 
 def _no_entry(cell: str, words: bool = True) -> bool:
-    """Empty, or a dash or "none" however marked up (round 14: a ticked
-    `--` or an em dash read as unknown text, and the step was never free)."""
+    """Empty, or a dash, "none", "no" or "n/a" (with `words=False`: a dash
+    only), ticked or in balanced bold/italic (round 14: a ticked `--` or an
+    em dash read as unknown text, and the step was never free)."""
     # Bold or italic around the word only: a bare `*` or `**` is a glob (the
     # step touches everything), never "no entry" (round 19).
     word = r"(?:-|--|\u2013|\u2014|none|no|n/a)" if words else r"(?:-|--|\u2013|\u2014)"

@@ -801,3 +801,26 @@ def test_r23_pytests_internal_error_is_a_fail_not_a_stop(nightly, tmp_path):
                          NIGHTLY_EMAIL="me@example.com")
     assert latest.split()[2] == "FAIL", latest
     assert "send-email" in p["mails"].read_text()
+
+
+# ---------- round 24 ----------
+
+
+def test_r24_a_stop_during_the_wrappers_mail_ends_it_soon(nightly, tmp_path):
+    """The mail's 60 s was fixed when it started: a stop during the send was
+    recorded but waited the full minute, past launchd's 20 s."""
+    run, push, p = nightly
+    bindir = tmp_path / "bin"
+    (bindir / "aws").write_text(f'#!/bin/sh\necho "$*" >> {p["mails"]}\nexec sleep 120\n')
+    sh = _shell(tmp_path, "exits", "exit 2\n")
+    proc = p["start"](NIGHTLY_SH=sh, NIGHTLY_EMAIL="me@example.com")
+    deadline = time.monotonic() + 20
+    while not (p["mails"].exists() and "send-email" in p["mails"].read_text()) \
+            and time.monotonic() < deadline:
+        time.sleep(0.05)
+    t0 = time.monotonic()
+    os.kill(proc.pid, 15)                           # launchd's stop, to the wrapper
+    proc.communicate(timeout=60)
+    assert time.monotonic() - t0 < 12, time.monotonic() - t0
+    assert "email failed" in p["latest"].read_text()
+

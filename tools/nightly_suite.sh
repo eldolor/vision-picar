@@ -19,8 +19,10 @@
 #                        -- or, when no run got the lock tonight (a holder
 #                        that is not a nightly run), tonight's "- SKIPPED".
 # and, on a FAIL only, emails the failing tests (see the end). STOPPED (the
-# job was stopped mid-run: TERM, HUP, Ctrl-C) is not emailed; any other
-# signal -- an OOM kill, and so also a person's kill -9 or Ctrl-\\ -- is a FAIL.
+# job was stopped mid-run: TERM, HUP, Ctrl-C) is not emailed; a signal that
+# reaches only the script (an OOM kill, a kill -9 of its pid) is a FAIL. A
+# signal that also kills the wrapper (Ctrl-\ in a terminal, a kill -9 of
+# the job) leaves RUNNING: nothing is left to write the verdict.
 #
 # Install the schedule (03:00 daily, macOS) with:
 #   sh tools/nightly_suite.sh --install
@@ -108,13 +110,23 @@ def mail(line):
     cmd = [shutil.which("aws") or "/usr/local/bin/aws", "sesv2", "send-email", "--region", "us-east-2",
            "--from-email-address", to, "--destination", f"ToAddresses={to}",
            "--content", json.dumps(content)]
+    # The lock is held meanwhile: up to 60 s, and 5 s more once a stop comes,
+    # even one that comes during the send (launchd allows a stop 20 s;
+    # rounds 22-24).
+    ok = False
     try:
-        # The lock is held meanwhile: 60 s, or 10 s once a stop has come
-        # (launchd allows a stop 20 s; rounds 22-23).
-        ok = subprocess.run(cmd, stdout=subprocess.DEVNULL,
-                            timeout=10 if stop_seen else 60).returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        ok = False
+        aws = subprocess.Popen(cmd, stdout=subprocess.DEVNULL)
+        end, seen = time.monotonic() + 60, len(stop_seen)
+        while aws.poll() is None and time.monotonic() < end:
+            if len(stop_seen) > seen:
+                seen, end = len(stop_seen), min(end, time.monotonic() + 5)
+            time.sleep(0.1)
+        if aws.poll() is None:
+            aws.kill()
+            aws.wait()
+        ok = aws.returncode == 0
+    except OSError:
+        pass
     if not ok:
         try:
             with open(latest, "a") as fh:
@@ -195,8 +207,11 @@ except OSError as exc:                   # no fork, no sh (round 20): a FAIL, sa
     report(f"{day} - FAIL  nightly: could not start {sh}: {exc}")
     mail(f"nightly: could not start {sh}: {exc}")
     sys.exit(1)
-for s in pending:
-    forward(s, None)
+for s in pending:                        # already in stop_seen: passed on, once
+    try:
+        child.send_signal(s)
+    except OSError:
+        pass
 rc = child.wait()                        # PEP 475: retried after a handler
 # One rule (round 21): if the sh ended with tonight's line still RUNNING (its
 # own or this wrapper's) or not tonight's, its verdict never landed (it
@@ -208,8 +223,9 @@ rc = child.wait()                        # PEP 475: retried after a handler
 #   * any other exit (a set -u error, a check that failed, a FAIL whose
 #     write failed) -> FAIL, mailed.
 # Round 23: decided by the stop this wrapper saw, never by an exit code
-# (pytest's own 3 is an internal error). Known limits: a FAIL whose write
-# failed may be mailed twice (the sh mails first; two beat none); what a
+# (pytest's own 3 is an internal error). Known limits: a stop that came
+# after the sh had decided, with its write failed, reads STOPPED; a FAIL
+# whose write failed may be mailed twice (the sh mails first); what a
 # dead sh left running (the driver, and through it pytest) runs on unlocked
 # -- under launchd the job's group is killed with it; a killpg here would
 # hit a caller's own group.
