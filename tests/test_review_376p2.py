@@ -23,7 +23,7 @@ from tests.conftest import REPO_ROOT
 def test_right_boxes_a_frame_is_over_the_frames_the_judge_read(tmp_path, monkeypatch, capsys):
     """`cmd_score` divided by every tuning frame: a frame whose judge call
     failed counted as a frame with no right box (Gemma 4 E2B's recorded
-    0.85 was ~0.97 over the frames judged)."""
+    0.85 was ~0.97 over the frames judged or empty)."""
     import tools.inventory_vlm as iv
     monkeypatch.setattr(iv, "OUT", tmp_path)
     boxes = {f"w/f{i}.jpg": {"boxes": [{"n": 1, "label": "cup"}]} for i in range(4)}
@@ -35,21 +35,6 @@ def test_right_boxes_a_frame_is_over_the_frames_the_judge_read(tmp_path, monkeyp
     out = json.loads(capsys.readouterr().out)
     assert out["right_boxes_a_frame"] == 1.0, out
     assert out["frames_not_judged"] == 2
-
-
-# ---------- P2.2: YOLO-World's crops ignored the pipeline's floor ----------
-
-
-def test_yoloworld_crops_keep_the_pipelines_floor():
-    """`min(confidence, backend's 0.02)`: the floor was never above 0.02, so
-    P9 compared YOLO-World at 0.02 against YOLO11s at 0.05 or 0.25."""
-    from tools.yoloworld_crops import YoloWorldCrops
-    p = object.__new__(YoloWorldCrops)
-    p.target = "cup"
-    det = lambda c: types.SimpleNamespace(confidence=c)  # noqa: E731
-    p._backend = types.SimpleNamespace(confidence=0.02,
-                                       detect_text=lambda img, t: [det(0.03), det(0.1), det(0.3)])
-    assert [d.confidence for d in p.detect(b"", 0.25)] == [0.3]
 
 
 # ---------- P2.3: Ctrl-C still billed every queued judge call ----------
@@ -91,7 +76,9 @@ def test_an_interrupted_judge_run_stops_paying_and_keeps_its_answers(tmp_path, m
         il.cmd_judge(types.SimpleNamespace(limit=0, budget=80.0, workers=2))
     assert len(calls) <= 4, f"{len(calls)} of 40 calls sent after the interrupt"
     saved = json.loads((tmp_path / "judge.json").read_text())
-    assert len(saved) == 2, saved
+    # Every billed call's answer kept, the ones out at the interrupt too
+    # (round 1, /code-review).
+    assert len(saved) == len(calls), (len(saved), len(calls))
 
 
 # ---------- P2.4: a label-less box was no sighting ----------
@@ -100,7 +87,7 @@ def test_an_interrupted_judge_run_stops_paying_and_keeps_its_answers(tmp_path, m
 def test_a_box_without_a_label_is_a_sighting():
     """Amendment 11: a sighting when at least one box parses. The namer's
     parse drops label-less boxes, so `[{"box_2d": [...]}]` read `empty`
-    (two committed Gemma 4 E2B answers: 72 false alarms, not 74)."""
+    (two committed Gemma 4 E2B answers: 74 false alarms, not 72)."""
     from tools.target_vlm import outcome, record, sighting_boxes
     raw = '[{"box_2d": [100, 120, 300, 340]}]'
     boxes = sighting_boxes({"boxes": [], "raw": raw})

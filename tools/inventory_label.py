@@ -322,6 +322,15 @@ def cmd_judge(args) -> None:
             stop.set()
             for fut in futures:
                 fut.cancel()
+            # The calls already out are billed: keep what they bring back
+            # (round 1: up to `--workers` paid answers were dropped).
+            pool.shutdown(wait=True)
+            for fut in futures:
+                if fut.cancelled() or fut.exception() is not None:
+                    continue
+                fid, res = fut.result()
+                if res is not None:
+                    done.setdefault(fid, res)
             with lock:
                 write_atomic(out_path, json.dumps(done))
             print(f"interrupted: {len(done)} frames saved; {spend.line()}", file=sys.stderr)
