@@ -490,7 +490,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   rays pass diagonal wall corners (scan, map, depth), the model's frame
   labels the target, odometry never drifts, turns run ~6x the car's rate,
   clearance rounds up; each moves pinned numbers, so a section of its own.
-  Next: M2-P3. Handoff:
+  **M2 (simulated bodies and maps), merged 2026-10-18:** 6 fixed -- the
+  split body's inventory read evicted the safety bundle (the vet waited
+  inside `motion_lock`, the inventory got a 0.9 m scan) and a slow reply read
+  as fresh (now aged from the sensor program's snapshot); the default house's
+  rooms disagreed with its layout (the target was in the "hallway"); teleop's
+  frame number was read outside its lock; replay ordered frames by name; one
+  bad line killed the fake board's reader. **For the user:** the board
+  refreshes its battery reading every 10 s, so the mission's two low
+  readings 0.5 s apart can be one sample (M2.7); the firmware's `T:0` does
+  stop the wheels, against 3c (M2.8). Next: N1-P3. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
