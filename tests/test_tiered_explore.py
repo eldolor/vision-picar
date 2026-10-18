@@ -396,3 +396,12 @@ def test_385_a_never_left_stall_in_the_band_still_backs_out():
                    "sent_at": 5.0, "from": (pose["x_m"], pose["y_m"])}
     agent._goal_ended("stalled", 30.0)
     assert agent._pending[:1] == ["REVERSE"]
+
+
+def test_385_an_unknown_start_in_the_band_is_not_read_as_never_left():
+    agent, _ = _agent()
+    pose, (tx, ty) = _ahead(agent, 0.62)
+    agent._goal = {"x_m": tx, "y_m": ty, "kind": "approach", "target": (tx, ty),
+                   "sent_at": 5.0, "from": None}
+    agent._goal_ended("stalled", 30.0)
+    assert "REVERSE" not in agent._pending

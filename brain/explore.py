@@ -1073,13 +1073,13 @@ class ExploreAgent(MissionAgent):
         # approach stalled with the robot already in the band is a plain
         # failure (one retry failure), as its timeout was before the stall
         # cut -- not the escape, which backs and turns it away from the
-        # target. Only once under way: one wedged at its start still backs
-        # out (dev's never-left rule, below).
-        in_band = (state == "stalled" and g["kind"] == "approach"
-                   and self.sight_from == "perception" and self._at_target(*target)
-                   and g.get("from") is not None and pose.get("usable")
-                   and math.hypot(pose["x_m"] - g["from"][0],
-                                  pose["y_m"] - g["from"][1]) >= STUCK_MOVED_M)
+        # target. Unless known never to have left: one wedged at its start
+        # still backs out (dev's never-left rule, below; an unknown start is
+        # not read as never-left, as there).
+        never_left = bool(g.get("from") and pose.get("usable") and math.hypot(
+            pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M)
+        in_band = (state == "stalled" and g["kind"] == "approach" and not never_left
+                   and self.sight_from == "perception" and self._at_target(*target))
         if not in_band and (state == "stalled" or (g.get("from") and pose.get("usable") and math.hypot(
                 pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M)):
             # It never left (or, 3.83, stopped making progress on the way):
