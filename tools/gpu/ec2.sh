@@ -64,7 +64,7 @@ instance_id() {
 }
 
 require_instance() {
-  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- if an instance may be up, check the console"
   [ -n "$id" ] || die "no instance -- run: tools/gpu/ec2.sh up"
   printf '%s' "$id"
 }
@@ -127,7 +127,7 @@ ensure_sg() {
 
 # ---------------------------------------------------------------- up -------
 cmd_up() {
-  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- if an instance may be up, check the console"
   if [ -n "$id" ]; then say "already up: $id"; cmd_status; return; fi
 
   ensure_role
@@ -173,7 +173,7 @@ cmd_up() {
 
 # ------------------------------------------------------------- status ------
 cmd_status() {
-  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- if an instance may be up, check the console"
   if [ -z "$id" ]; then say "no instance ($NAME)"; return; fi
   local state itype launched
   # Read the type from AWS, not from $TYPE: the env var describes what the
@@ -315,7 +315,7 @@ cmd_pull() {
 
 # -------------------------------------------------------------- down -------
 cmd_down() {
-  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- if an instance may be up, check the console"
   if [ -n "$id" ]; then
     say "terminating $id"
     aws_ ec2 terminate-instances --instance-ids "$id" >/dev/null

@@ -72,7 +72,7 @@ instance_id() {
 }
 
 require_instance() {
-  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- if an instance may be up, check the console"
   [ -n "$id" ] || die "no instance named $NAME -- run 'up' first"
   printf '%s' "$id"
 }
@@ -156,7 +156,7 @@ ensure_cli() {
 
 # ---------------------------------------------------------------- up -------
 cmd_up() {
-  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- if an instance may be up, check the console"
   if [ -n "$id" ]; then say "already up: $id"; cmd_status; return; fi
 
   ensure_role
@@ -182,13 +182,17 @@ cmd_up() {
     --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME},{Key=Project,Value=vision-picar},{Key=Purpose,Value=hailo-dfc-owlv2}]" \
     --query 'Instances[0].InstanceId' --output text)"
   say "instance $id -- waiting for SSM to come online (about two minutes)"
+  # From here a failure leaves a paid instance up: say which (3.76 P3,
+  # round 1 -- tools/gpu/eval_host.sh's `up` comes through here). Expanded
+  # now: `id` is a local, gone by the time an EXIT trap runs.
+  trap "printf '\033[31m[hailo] up failed with %s STILL RUNNING -- bash tools/hailo/ec2.sh down\033[0m\n' '$id' >&2" EXIT
   aws_ ec2 wait instance-running --instance-ids "$id"
   for _ in $(seq 60); do
     if aws_ ssm describe-instance-information \
         --filters "Key=InstanceIds,Values=$id" \
         --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null \
         | grep -q Online; then
-      say "SSM online"; ensure_cli; cmd_status; return
+      trap - EXIT; say "SSM online"; ensure_cli; cmd_status; return
     fi
     sleep 10
   done
@@ -197,7 +201,7 @@ cmd_up() {
 
 # ------------------------------------------------------------- status ------
 cmd_status() {
-  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- if an instance may be up, check the console"
   if [ -z "$id" ]; then say "no instance ($NAME)"; return; fi
   local launched state itype
   state="$(aws_ ec2 describe-instances --instance-ids "$id" \
@@ -373,7 +377,7 @@ cmd_compile() {
 
 # -------------------------------------------------------------- down -------
 cmd_down() {
-  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- nothing was changed"
+  local id; id="$(instance_id)" || die "could not list instances (is the AWS session valid?) -- if an instance may be up, check the console"
   if [ -n "$id" ]; then
     say "terminating $id"
     aws_ ec2 terminate-instances --instance-ids "$id" >/dev/null

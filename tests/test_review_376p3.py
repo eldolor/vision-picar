@@ -88,7 +88,8 @@ def test_down_with_an_expired_session_does_not_claim_no_instance(tmp_path, scrip
     assert "could not list instances" in r.stderr
 
 
-def test_a_failed_launch_names_the_instance_left_running(tmp_path):
+@pytest.mark.parametrize("script", ["tools/gpu/ec2.sh", "tools/hailo/ec2.sh"])
+def test_a_failed_launch_names_the_instance_left_running(tmp_path, script):
     """`up` died after `run-instances` with "check the console" (/code-review);
     round 1 (/code-review, medium): the trap then read a `local id` gone by
     exit time and, under `set -u`, died without its warning."""
@@ -101,9 +102,11 @@ case "$*" in
   *"ec2 wait"*) echo "Waiter InstanceRunning failed" >&2; exit 255 ;;
   *) echo stub ;;
 esac""")
-    r = subprocess.run(["bash", str(ROOT / "tools/gpu/ec2.sh"), "up"], capture_output=True, text=True,
+    # Round 1 (Thermos): eval_host.sh's `up` comes through hailo's, which
+    # had no trap at all.
+    r = subprocess.run(["bash", str(ROOT / script), "up"], capture_output=True, text=True,
                        cwd=ROOT, env={**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}",
-                                      "GPU_AMI": "ami-1"})
+                                      "GPU_AMI": "ami-1", "HAILO_AMI": "ami-1"})
     assert r.returncode != 0
     assert "i-0abc123 STILL RUNNING" in r.stderr, r.stderr[-400:]
     assert "unbound variable" not in r.stderr
