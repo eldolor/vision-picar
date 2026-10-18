@@ -11,8 +11,9 @@ both sides rather than guessed.
 
 A frame FIRES when the detector returns any box. On a person frame a firing
 is a hit only if a box overlaps the person, which this tool cannot know --
-it writes every box so the hits can be checked by eye, and `--verified`
-takes the frames confirmed that way.
+it writes every box so the hits can be checked by eye; `score()` takes the
+frames confirmed that way as `verified_hits` (no command-line flag -- 3.52
+part D counted its verified recall by eye from the written boxes).
 
     python -m tools.person_eval --recordings ../vision-picar/recordings --out person-eval.json
 """

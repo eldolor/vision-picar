@@ -71,6 +71,14 @@ EXTRA_BOXES = 100           # other boxes on the page, to measure the judge
 
 # ---------------------------------------------------------------- frames
 
+def write_atomic(path: Path, text: str) -> None:
+    """A paid cache written in one step (3.76 P2): a kill mid-`write_text`
+    tore the file, and the next run's `json.loads` lost every answer in it."""
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
 def walks(root: Path = ROOT) -> list:
     return sorted(p for p in root.iterdir()
                   if p.is_dir() and p.name != OUT.name and any(p.glob("frame-*.jpg")))
@@ -152,6 +160,8 @@ def cmd_vocab(args) -> None:
     chunk = 600
     keep = set()
     for start in range(0, len(names), chunk):
+        if spend.over():   # 3.76 P2: `--budget` did nothing here
+            sys.exit(f"stopped at the budget after {start} names: {spend.line()}")
         part = names[start:start + chunk]
         listing = "\n".join(f"{start + i}: {n}" for i, n in enumerate(part))
         r = client.messages.create(model=JUDGE_MODEL, max_tokens=16000,
@@ -194,10 +204,10 @@ def cmd_detect(args) -> None:
                 for b in r.boxes]}
             n += 1
             if n % 200 == 0:
-                out_path.write_text(json.dumps(done))
+                write_atomic(out_path, json.dumps(done))
                 print(f"{n} frames, {(time.perf_counter() - t0) / n * 1000:.0f} ms each",
                       file=sys.stderr)
-    out_path.write_text(json.dumps(done))
+    write_atomic(out_path, json.dumps(done))
     print(f"{len(done)} frames -> {out_path}")
 
 
@@ -293,30 +303,49 @@ def cmd_judge(args) -> None:
     client, spend = _client(), Spend(args.budget)
     lock = threading.Lock()
 
+    stop = threading.Event()
+
     def work(fid):
-        if spend.over():
+        if spend.over() or stop.is_set():
             return fid, None
         boxes = object_boxes(dets[fid], vocab)
         return fid, judge_one(client, ROOT / fid, boxes, spend)
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = [pool.submit(work, fid) for fid in todo]
-        for k, fut in enumerate(as_completed(futures), 1):
-            try:
-                fid, res = fut.result()
-            except Exception as exc:  # noqa: BLE001 -- one bad frame is not a bad run
-                print(f"frame failed: {exc}", file=sys.stderr)
-                continue
-            if res is None:
-                continue
+        try:
+            _collect(futures, done, lock, out_path, spend)
+        except KeyboardInterrupt:
+            # 3.76 P2: the `with` exit waited for every queued frame, so a
+            # Ctrl-C still sent -- and billed -- them all, and the answers
+            # since the last checkpoint were never saved.
+            stop.set()
+            for fut in futures:
+                fut.cancel()
             with lock:
-                done[fid] = res
-                if k % 50 == 0:
-                    out_path.write_text(json.dumps(done))
-                    print(f"{len(done)} judged  {spend.line()}", file=sys.stderr)
-    out_path.write_text(json.dumps(done))
+                write_atomic(out_path, json.dumps(done))
+            print(f"interrupted: {len(done)} frames saved; {spend.line()}", file=sys.stderr)
+            raise
+    write_atomic(out_path, json.dumps(done))
     stopped = " -- STOPPED at the budget" if spend.over() else ""
     print(f"{len(done)} frames judged -> {out_path}; this run: {spend.line()}{stopped}")
+
+
+def _collect(futures, done, lock, out_path, spend) -> None:
+    """The judge's answers as they land, checkpointed every 50."""
+    for k, fut in enumerate(as_completed(futures), 1):
+        try:
+            fid, res = fut.result()
+        except Exception as exc:  # noqa: BLE001 -- one bad frame is not a bad run
+            print(f"frame failed: {exc}", file=sys.stderr)
+            continue
+        if res is None:
+            continue
+        with lock:
+            done[fid] = res
+            if k % 50 == 0:
+                write_atomic(out_path, json.dumps(done))
+                print(f"{len(done)} judged  {spend.line()}", file=sys.stderr)
 
 
 # ---------------------------------------------------------------- sample

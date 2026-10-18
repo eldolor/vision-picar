@@ -43,7 +43,7 @@ the inventory remembers.
 | CLIP RN50 renaming (50-frame pilot) | 12.0% | -- | yes | failed |
 | Qwen2.5-VL-3B, full precision | 58.9% | 1.56 | no (7.5 GB) | failed; primed by the prompt's examples |
 | Qwen3.5-4B, 3-bit (IQ3_XXS) | **64.1%** (909 boxes; 72.4% even if every unjudged box were right) | 2.52 | 2.91 GB of files; not measured on the Jetson | failed |
-| Gemma 4 E2B, LiteRT-LM GPU (amendment 9) | **41.0%** (625 boxes; 48.0% even if every unjudged box were right) | 0.85 | **yes: 2.67 GB measured under the robot stack** | failed; "office chair" 4 of 73 right |
+| Gemma 4 E2B, LiteRT-LM GPU (amendment 9) | **41.0%** (625 boxes; 48.0% even if every unjudged box were right) | 0.85 (~0.97 over the frames judged; 3.76 P2) | **yes: 2.67 GB measured under the robot stack** | failed; "office chair" 4 of 73 right |
 | Gemma 4 E2B, prompt with no object words (amendment 10, 40-frame pilot) | **60.0%** (110 boxes; 95% upper bound 68.7%) | 1.65 | yes (as above) | failed the continue rule |
 | Gemma 4 E4B, prompt with no object words (amendment 10, 40-frame pilot) | **63.5%** (148 boxes; 95% upper bound 70.8%) | 2.35 | **no: 4.07 GB under the stack** (amendment 9) | failed on memory and the continue rule |
 | InternVL3.5-2B, 4-bit | not judged | -- | 1.92 GB | cancelled by the user before judging |
@@ -158,7 +158,7 @@ target, 685 frames, 313 with the target), on the Jetson GPU.
 | | target frames found | false alarms | ms a frame |
 |---|---|---|---|
 | YOLOE + CLIP (shipped, gate 0.8) | 80.8% | 0 | 69 |
-| Gemma 4 E2B | 98.4% | 72 | ~5,000 |
+| Gemma 4 E2B | 98.4% | 72 (74 with two label-less boxes; 3.76 P2) | ~5,000 |
 
 Gemma finds almost every sighting but says yes too readily: 45 of its
 false alarms are a teal bin it calls the "blue bottle". That is the bin

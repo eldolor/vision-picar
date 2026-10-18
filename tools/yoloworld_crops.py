@@ -59,12 +59,13 @@ class YoloWorldCrops:
         self.model_name = f"{weights} <- {self.target!r}"
 
     def detect(self, image: bytes, confidence: float) -> Sequence:
-        # `confidence` is the PIPELINE's proposal floor; the backend was
-        # built with its own. Take the lower of the two so this can never
-        # silently discard crops the caller expected to see.
+        # `confidence` is the PIPELINE's proposal floor, as it is for YOLO11s
+        # (3.76 P2: `min()` with the backend's 0.02 meant the floor was never
+        # above 0.02, so P9 compared crops at 0.02 against YOLO11s at 0.05 or
+        # 0.25 -- the crop source was not the only variable). The backend
+        # filters at its own, lower, `confidence` first.
         dets = self._backend.detect_text(image, self.target)
-        floor = min(confidence, self._backend.confidence)
-        return [d for d in dets if d.confidence >= floor]
+        return [d for d in dets if d.confidence >= confidence]
 
 
 def pipeline_with_yoloworld(target: str, *, clip_model: str = "RN50",

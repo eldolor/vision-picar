@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 
 from PIL import Image, ImageDraw
@@ -33,7 +34,8 @@ LABEL_H = 18
 
 
 def _frames(walk_dir: str) -> list[str]:
-    return sorted(f for f in os.listdir(walk_dir) if f.endswith(".jpg"))
+    # Frames only (3.76 P2: any other .jpg in the folder crashed the index).
+    return sorted(f for f in os.listdir(walk_dir) if re.fullmatch(r"frame-\d+\.jpg", f))
 
 
 def build_sheets(walk_dir: str, out_dir: str, cols: int, rows: int,

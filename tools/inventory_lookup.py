@@ -24,6 +24,7 @@ of the frame's height, and a match needs P >= the gate.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -52,8 +53,13 @@ def walks(path: Path = WALKS) -> list:
 
 
 def embed_path(walks_file) -> Path:
-    """One embeddings file per walk list, so two lists never mix."""
-    return OUT / f"lookup_embeddings-{Path(walks_file).stem}.npz"
+    """One embeddings file per walk LIST, so two lists never mix: keyed by
+    the list's contents too (3.76 P2: by the file's stem alone, an edited
+    list or a same-named file elsewhere reused the old embeddings, and a
+    walk added after `embed` scored as plain misses)."""
+    names = json.dumps(sorted(dict.fromkeys(json.loads(Path(walks_file).read_text()))))
+    digest = hashlib.sha256(names.encode()).hexdigest()[:10]
+    return OUT / f"lookup_embeddings-{Path(walks_file).stem}-{digest}.npz"
 
 
 def big_enough(m: dict, min_side: float) -> bool:

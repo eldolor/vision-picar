@@ -23,7 +23,7 @@ import re
 import sys
 import time
 
-from tools.inventory_label import (OUT, ROOT, Spend, _client, _correct, judge_one,
+from tools.inventory_label import (OUT, ROOT, Spend, _client, _correct, judge_one, write_atomic,
                                    precision_at)
 
 MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"
@@ -54,7 +54,8 @@ def frame_set() -> list:
     return sorted(random.Random(TUNING_SEED).sample(rest, TUNING_FRAMES)) + sorted(sample)
 
 
-def parse_boxes(text: str, scale_x: float, scale_y: float, order: str = "xyxy") -> list:
+def parse_boxes(text: str, scale_x: float, scale_y: float, order: str = "xyxy",
+                require_label: bool = True) -> list:
     """The model's JSON, in the RESIZED image's pixels, back to the frame's.
     Identical repeated boxes are dropped (the model sometimes repeats one).
     Anything unparseable is skipped, never guessed. `order` "yxyx" reads
@@ -73,7 +74,7 @@ def parse_boxes(text: str, scale_x: float, scale_y: float, order: str = "xyxy") 
             continue
         box = it.get("bbox_2d") or it.get("box_2d")
         label = str(it.get("label", "")).strip().lower()
-        if not label or not isinstance(box, list) or len(box) != 4:
+        if (require_label and not label) or not isinstance(box, list) or len(box) != 4:
             continue
         try:
             a, b, c, d = (float(v) for v in box)
@@ -206,11 +207,11 @@ def cmd_name(args) -> None:
             print(f"{time.strftime('%T')} {fid} {r['s']} s {len(r['boxes'])} boxes "
                   f"rss/hwm MB {_rss_mb()}", file=sys.stderr, flush=True)
             if k % 10 == 0 or k == len(todo):
-                out_path.write_text(json.dumps(done))
+                write_atomic(out_path, json.dumps(done))
                 rate = (time.perf_counter() - t0) / k
                 print(f"{len(done)} frames, {rate:.1f} s each, "
                       f"~{rate * (len(todo) - k) / 60:.0f} min left", file=sys.stderr)
-        out_path.write_text(json.dumps(done))
+        write_atomic(out_path, json.dumps(done))
         print(f"{len(done)} frames -> {out_path}; {errors} failed calls (not saved)")
         return
     if args.backend == "llama":
@@ -220,7 +221,7 @@ def cmd_name(args) -> None:
         for k, fid in enumerate(todo, 1):
             done[fid] = name_llama(fid, args.url)
             if k % 10 == 0 or k == len(todo):
-                out_path.write_text(json.dumps(done))
+                write_atomic(out_path, json.dumps(done))
                 rate = (time.perf_counter() - t0) / k
                 print(f"{len(done)} frames, {rate:.1f} s each, "
                       f"~{rate * (len(todo) - k) / 60:.0f} min left", file=sys.stderr)
@@ -250,7 +251,7 @@ def cmd_name(args) -> None:
         boxes = parse_boxes(text, img.width / (gw * 14), img.height / (gh * 14))
         done[fid] = {"boxes": boxes, "raw": text[:2000]}
         if k % 10 == 0 or k == len(todo):
-            out_path.write_text(json.dumps(done))
+            write_atomic(out_path, json.dumps(done))
             rate = (time.perf_counter() - t0) / k
             print(f"{len(done)} frames, {rate:.1f} s each, ~{rate * (len(todo) - k) / 60:.0f} min left",
                   file=sys.stderr)
@@ -283,8 +284,8 @@ def cmd_judge(args) -> None:
         except Exception as exc:  # noqa: BLE001 -- one bad frame is not a bad run
             print(f"{fid}: {exc}", file=sys.stderr)
         if len(done) % 25 == 0:
-            out_path.write_text(json.dumps(done))
-    out_path.write_text(json.dumps(done))
+            write_atomic(out_path, json.dumps(done))
+    write_atomic(out_path, json.dumps(done))
     print(f"{len(done)} frames judged; {spend.line()}")
 
 
@@ -305,20 +306,28 @@ def cmd_score(args) -> None:
     tune = [f for f in vlm if f not in sample]
     if args.frames:  # amendment 10's pilot: score these frames only
         tune = [f for f in tune if f in set(json.loads(open(args.frames).read()))]
-    rows, empty = [], 0
+    rows, empty, unjudged = [], 0, 0
     for fid in tune:
         if not vlm[fid]["boxes"]:
             empty += 1
             continue
+        verdicts = (judged.get(fid) or {}).get("verdicts", {})
+        if not verdicts:
+            unjudged += 1    # the judge never reached it: not a frame of 0 right boxes
+            continue
         for b in vlm[fid]["boxes"]:
-            ok = _correct((judged.get(fid) or {}).get("verdicts", {}).get(str(b["n"])))
+            ok = _correct(verdicts.get(str(b["n"])))
             if ok is not None:
                 rows.append((1.0, ok))
     p, n = precision_at(rows, 0.0)
     right = sum(ok for _, ok in rows)
+    # 3.76 P2: over the frames the judge read (or that had no boxes), not
+    # every tuning frame -- 35 unjudged frames read Gemma 4 E2B's 0.97 as 0.85.
+    scored = len(tune) - unjudged
     print(json.dumps({"tuning_frames": len(tune), "frames_with_no_boxes": empty,
+                      "frames_not_judged": unjudged,
                       "judged_boxes": n, "judge_precision": round(p, 3),
-                      "right_boxes_a_frame": round(right / len(tune), 2),
+                      "right_boxes_a_frame": round(right / scored, 2) if scored else None,
                       "earns_the_users_page": bool(p >= 0.75) and not args.frames,
                       "pilot_upper_95": round(wilson_upper(p, n), 3)}, indent=1))
 

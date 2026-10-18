@@ -29,7 +29,7 @@ import sys
 import time
 from pathlib import Path
 
-from tools.inventory_label import (JUDGE_FLOOR, OUT, ROOT, _correct, choose_threshold,
+from tools.inventory_label import (JUDGE_FLOOR, OUT, ROOT, _correct, choose_threshold, write_atomic,
                                      load_vocab, object_boxes, precision_at)
 
 PROMPT = "a photo of a {}"
@@ -51,8 +51,7 @@ def cmd_score(args) -> None:
     text = clip._text_features(tuple(PROMPT.format(n) for n in names))
     out_path = OUT / "clip.json"
     done = json.loads(out_path.read_text()) if out_path.exists() else {}
-    jobs = [(fid, b) for fid in sorted(dets) if fid not in done
-            for b in object_boxes(dets[fid], vocab)]
+    jobs = pending_boxes(dets, vocab, done)
     t0 = time.perf_counter()
     for start in range(0, len(jobs), BATCH):
         part = jobs[start:start + BATCH]
@@ -73,11 +72,19 @@ def cmd_score(args) -> None:
                 "p_label": round(float(p[mine]), 4), "rank": rank,
                 "top": [[names[int(i)], round(float(p[i]), 4)] for i in order[:TOP]]}
         if (start // BATCH) % 20 == 0:
-            out_path.write_text(json.dumps(done))
+            write_atomic(out_path, json.dumps(done))
             rate = (time.perf_counter() - t0) / (start + len(part)) * 1000
             print(f"{start + len(part)}/{len(jobs)} boxes, {rate:.1f} ms each", file=sys.stderr)
-    out_path.write_text(json.dumps(done))
+    write_atomic(out_path, json.dumps(done))
     print(f"{sum(len(v) for v in done.values())} boxes -> {out_path}")
+
+
+def pending_boxes(dets: dict, vocab: dict, done: dict) -> list:
+    """(frame, box) still to score -- by box, not by frame (3.76 P2): a
+    checkpoint can fall inside a frame, and a resume that skipped any frame
+    already in the file lost the rest of its boxes for good."""
+    return [(fid, b) for fid in sorted(dets)
+            for b in object_boxes(dets[fid], vocab) if str(b["n"]) not in done.get(fid, {})]
 
 
 def tuning_rows(dets, vocab, judged, clip, sample):
@@ -101,10 +108,15 @@ def cmd_verify(args) -> None:
     sample = set(json.loads((OUT / "sample.json").read_text()))
     rows = list(tuning_rows(dets, vocab, judged, clip, sample))
     right = sum(ok for _, _, ok in rows)
+    if not rows or not right:
+        sys.exit(f"{len(rows)} judged boxes on the tuning frames, {right} right: nothing to verify")
     print(f"{len(rows)} judged boxes on the tuning frames, {right} right "
           f"({right / len(rows):.1%})")
     for k in (1, 2, 3, 5):
         kept = [ok for _, c, ok in rows if c["rank"] <= k]
+        if not kept:
+            print(f"  CLIP ranks the detector's name in its top {k}: no box")
+            continue
         print(f"  CLIP ranks the detector's name in its top {k}: precision "
               f"{sum(kept) / len(kept):.1%} over {len(kept)} boxes, keeps "
               f"{sum(kept) / right:.0%} of the right ones")

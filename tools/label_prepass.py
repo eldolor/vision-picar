@@ -28,6 +28,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 import time
 
@@ -45,7 +46,8 @@ def run(walk_dir: str, target: str, dtype: str | None,
     from brain.perceive import pipeline_for
     from brain.perceive_lab import Owlv2
 
-    names = sorted(f for f in os.listdir(walk_dir) if f.endswith(".jpg"))
+    # Frames only (3.76 P2: every .jpg in the folder was scored).
+    names = sorted(f for f in os.listdir(walk_dir) if re.fullmatch(r"frame-\d+\.jpg", f))
     print(f"{len(names)} frames, target {target!r}", file=sys.stderr)
 
     pipe = pipeline_for(target)

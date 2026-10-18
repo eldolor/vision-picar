@@ -27,7 +27,7 @@ from pathlib import Path
 from brain.perceive import ABSENT, DETECTED
 from control.perception_eval import FrameScore, load_walk
 from tools.inventory_label import ROOT  # RECORDINGS_DIR, as LiteRTNamer reads it
-from tools.inventory_vlm import LiteRTNamer
+from tools.inventory_vlm import LiteRTNamer, parse_boxes
 
 PROMPT = (
     "Look for this object in the photo: {target}. If it is there, output JSON with one "
@@ -60,8 +60,16 @@ def record(walk: str, frame: str, visible: bool, adjudicated: bool,
     return FrameScore(walk=walk, frame=frame, visible=visible,
                       status=DETECTED if boxes else ABSENT,
                       score=1.0 if boxes else 0.0, metric=METRIC,
-                      label=boxes[0]["label"] if boxes else None,
+                      label=(boxes[0]["label"] or None) if boxes else None,
                       candidates=len(boxes), adjudicated=adjudicated, ms=ms)
+
+
+def sighting_boxes(got: dict) -> list:
+    """The answer's boxes, a label-less one included: a box is a sighting
+    whether or not it names what it boxes (amendment 11's rule). 3.76 P2:
+    the namer's parse drops label-less boxes, so two committed answers read
+    as `empty` -- 72 false alarms where there were 74."""
+    return got["boxes"] or parse_boxes(got["raw"], 1, 1, order="yxyx", require_label=False)
 
 
 def _write(path: Path, doc: dict) -> None:
@@ -108,10 +116,11 @@ def main(argv=None) -> None:
                 print(f"{walk.name}/{path.name}: {exc}", file=sys.stderr)
                 continue
             ms = (time.perf_counter() - t) * 1000
-            r = record(walk.name, path.name, visible, adjudicated, got["boxes"], ms)
+            boxes = sighting_boxes(got)
+            r = record(walk.name, path.name, visible, adjudicated, boxes, ms)
             doc["records"].append(asdict(r))
             doc["raw"][f"{walk.name}/{path.name}"] = got["raw"][:500]
-            doc["outcome"][f"{walk.name}/{path.name}"] = outcome(got["raw"], got["boxes"])
+            doc["outcome"][f"{walk.name}/{path.name}"] = outcome(got["raw"], boxes)
             print(f"{time.strftime('%T')} {walk.name}/{path.name} {ms / 1000:.1f} s "
                   f"visible={visible} boxes={len(got['boxes'])}", file=sys.stderr, flush=True)
             if k % 10 == 0 or k == len(todo):

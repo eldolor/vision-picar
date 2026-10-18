@@ -204,11 +204,14 @@ def report(path: Path) -> dict:
         s = smooth(p, SMOOTH_N)
         raw += [(r["label"], x) for r, x in zip(seq, p)]
         voted += [(r["label"], x) for r, x in zip(seq, s)]
-        sw_raw += switches_per_100(p) * len(p)
-        sw_voted += switches_per_100(s) * len(s)
-    n = len(rows)
-    out["smoothing"] = {"n": SMOOTH_N, "switches_raw": sw_raw / n,
-                        "switches_voted": sw_voted / n,
+        # Weighted by transitions, which is what switches_per_100 divides by
+        # (3.76 P2: by frames; the committed 14.84 / 4.42 read exactly 14.89
+        # / 4.43).
+        sw_raw += switches_per_100(p) * max(len(p) - 1, 0)
+        sw_voted += switches_per_100(s) * max(len(s) - 1, 0)
+    n = sum(max(len([r for r in rows if r["walk"] == w]) - 1, 0) for w in walks)
+    out["smoothing"] = {"n": SMOOTH_N, "switches_raw": sw_raw / n if n else 0.0,
+                        "switches_voted": sw_voted / n if n else 0.0,
                         "accuracy_raw": accuracy(raw), "accuracy_voted": accuracy(voted)}
     enc, cls = data["encode_ms"], data["classify_ms"]
     total = [e + c for e, c in zip(enc, cls)]
