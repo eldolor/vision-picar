@@ -1,0 +1,101 @@
+S1 a-white-phone-charger-ca-20260921-203250/frame-0010.jpg RIGHT LEFT RIGHT None LEFT
+S1 a-white-phone-charger-ca-20260921-203250/frame-0015.jpg RIGHT LEFT RIGHT None FORWARD
+S1 a-white-phone-charger-ca-20260921-203250/frame-0016.jpg RIGHT LEFT RIGHT LEFT FORWARD
+S1 a-white-phone-charger-ca-20260921-203250/frame-0025.jpg FORWARD LEFT FORWARD LEFT None
+S1 a-white-phone-charger-ca-20260921-203250/frame-0049.jpg RIGHT None None None None
+S1 a-white-phone-charger-ca-20260921-203355/frame-0006.jpg LEFT None LEFT LEFT RIGHT
+S1 a-white-phone-charger-ca-20260921-203355/frame-0009.jpg LEFT None FORWARD LEFT RIGHT
+S1 a-white-phone-charger-ca-20260921-203355/frame-0019.jpg FORWARD None RIGHT LEFT FORWARD
+S1 a-white-phone-charger-ca-20260921-203355/frame-0033.jpg FORWARD LEFT FORWARD LEFT FORWARD
+S1 a-white-phone-charger-ca-20260921-203355/frame-0039.jpg FORWARD LEFT None None FORWARD
+S1 a-white-phone-charger-ca-20260921-203355/frame-0053.jpg RIGHT LEFT None LEFT FORWARD
+S1 a-white-phone-charger-ca-20260921-203355/frame-0054.jpg RIGHT LEFT RIGHT LEFT LEFT
+S1 blue-bottle-20260907-142454/frame-0025.jpg FORWARD LEFT None LEFT None
+S1 blue-bottle-20260907-142454/frame-0027.jpg FORWARD LEFT None LEFT None
+S1 blue-bottle-20260907-185007/frame-0204.jpg FORWARD LEFT FORWARD LEFT RIGHT
+S1 blue-bottle-20260907-185007/frame-0208.jpg FORWARD LEFT RIGHT LEFT RIGHT
+S1 blue-bottle-20260907-185007/frame-0209.jpg FORWARD LEFT RIGHT LEFT LEFT
+S1 blue-shoes-20260907-152528/frame-0004.jpg RIGHT LEFT RIGHT LEFT FORWARD
+S1 blue-shoes-20260907-152528/frame-0010.jpg FORWARD LEFT FORWARD LEFT RIGHT
+S1 blue-shoes-20260908-210511/frame-0018.jpg RIGHT LEFT RIGHT LEFT LEFT
+S1 blue-shoes-20260908-210511/frame-0028.jpg RIGHT LEFT None LEFT None
+S1 blue-shoes-20260908-210511/frame-0029.jpg RIGHT LEFT FORWARD LEFT LEFT
+Traceback (most recent call last):
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 250, in handle_request
+    resp = self._pool.handle_request(req)
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
+    raise exc from None
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
+    response = connection.handle_request(
+        pool_request.request
+    )
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
+    return self._connection.handle_request(request)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
+    raise exc
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 106, in handle_request
+    ) = self._receive_response_headers(**kwargs)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers
+    event = self._receive_event(timeout=timeout)
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 231, in _receive_event
+    raise RemoteProtocolError(msg)
+httpcore.RemoteProtocolError: Server disconnected without sending a response.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/R/steer.py", line 35, in <module>
+    rl.main(*args)
+    ~~~~~~~^^^^^^^
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/J/run_llama.py", line 87, in main
+    **answer(c, url, jpeg, target), "mirror": answer(c, url, mirrored(jpeg), target)}
+                                              ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/M/run_steer.py", line 32, in answer
+    row = _answer(c, url, jpeg, target)
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/J/run_llama.py", line 54, in answer
+    text, content, id_ms = chat(c, url, jpeg, PROMPT.format(target=target), 64)
+                           ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/J/run_llama.py", line 46, in chat
+    r = c.post(f"{url}/v1/chat/completions", json=body)
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1144, in post
+    return self.request(
+           ~~~~~~~~~~~~^
+        "POST",
+        ^^^^^^^
+    ...<11 lines>...
+        extensions=extensions,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 914, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 249, in handle_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/anaconda3/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.RemoteProtocolError: Server disconnected without sending a response.

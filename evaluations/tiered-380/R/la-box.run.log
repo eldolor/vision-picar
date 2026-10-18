@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/R/steer.py", line 34, in <module>
+    rl.p_localised = readers.p_native
+                     ^^^^^^^^^^^^^^^^
+AttributeError: module 'readers' has no attribute 'p_native'

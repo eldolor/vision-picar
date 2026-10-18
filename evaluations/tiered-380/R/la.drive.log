@@ -1,0 +1,9 @@
+13:51:52 la identity A
+14:06:49 la identity N:locateanything:box
+14:22:15 la steering A -> la
+14:22:27 MemAvailable with la: 2099
+14:33:12 la steer exit 0
+14:33:13 la steering N:locateanything:box -> la-box
+14:33:26 MemAvailable with la-box: 55
+14:33:26 la-box steer exit 0
+14:33:27 la DONE

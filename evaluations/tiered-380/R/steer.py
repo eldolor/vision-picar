@@ -14,10 +14,11 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
-sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "M"))
-import readers                                              # noqa: E402
+sys.path.insert(0, str(HERE))
+import readers                                              # noqa: E402  (R's: first on the path)
 import run_steer as ms                                      # noqa: E402
+assert hasattr(readers, "p_native"), "M's readers shadowed R's"
 
 rl = ms.rl
 rl.HERE = HERE
