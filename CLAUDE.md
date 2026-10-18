@@ -499,7 +499,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   bad line killed the fake board's reader. **For the user:** the board
   refreshes its battery reading every 10 s, so the mission's two low
   readings 0.5 s apart can be one sample (M2.7); the firmware's `T:0` does
-  stop the wheels, against 3c (M2.8). Next: N1-P3. Handoff:
+  stop the wheels, against 3c (M2.8). **N1 (contracts, config, control
+  helpers), merged 2026-10-18:** 8 fixed -- feedback lost on a verb's last
+  read turned a Stop's verb into a fault (the mission read `failed`); the
+  tick-hang drill shared the runner's tick count (no camera centring);
+  deadlines of 0 or NaN loaded; health read a tick inside its deadline as a
+  dead loop; the ROS world ignored `drive.bridge_url`; an empty
+  `LIDAR_YAW_DEG`/`TRACK_SCRUB` stopped the robot server; `identity_eval`
+  counted never-asked frames as cloud misses; the pose heading comment
+  pointed south. Next: N2-P3. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
