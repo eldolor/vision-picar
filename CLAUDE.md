@@ -532,7 +532,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   on JetPack 6 prints no throttling: "no throttling" rests on temperature.
   **For the user:** check `~/.vision-picar-local-vlm.env` on the board
   before 3.80 E (the old bench may have left its driver-log path there).
-  Next: P2-P3. Handoff:
+  **P2 (the evaluation tools), merged 2026-10-18:** 11 fixed -- Ctrl-C in
+  the inventory judge still sent and billed every queued frame (now stops,
+  saves, keeps what was out); two recorded numbers corrected in place, no
+  verdict moved (Gemma 4 E2B: ~0.97 right boxes a frame, not 0.85; 74 search
+  false alarms, not 72); atomic paid caches. YOLO-World's low proposal floor
+  is by design (my "fix" reverted). Reviewers on Sonnet from here (the
+  user's call, to spend less quota). Next: P3. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
