@@ -102,6 +102,7 @@ import logging
 import math
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Optional, Protocol, Sequence
 
@@ -721,6 +722,11 @@ class PerceptionUnavailable(Exception):
     pipeline, never allowed to look like `ABSENT`."""
 
 
+class PerceptionWedged(PerceptionUnavailable):
+    """3.76 L1: a frame has been in the models past `BUSY_WEDGED_S`. Raised
+    OUT of `perceive` (never converted), so the mission's B3.2 counts it."""
+
+
 class PerceptionPipeline:
     """detector -> crops -> CLIP -> match, for one mission's target.
 
@@ -749,6 +755,7 @@ class PerceptionPipeline:
         if not target or not target.strip():
             raise ValueError("PerceptionPipeline needs a target string")
         self._busy = threading.Lock()      # one frame in the models at a time
+        self._busy_since = 0.0
         self.detector = detector
         self.scorer = scorer
         self.target = target.strip()
@@ -796,15 +803,19 @@ class PerceptionPipeline:
                 "proposer exists. Use 'low_confidence' (the default) or drop "
                 "the proposer.")
         # 3.76 L1: a text-prompted detector (YOLOE, the shipped one) labels
-        # every box with the whole target text, never its COCO word, so a
-        # label gate discards every box and the pipeline reads `absent` on
-        # every frame. `auto` takes the open-vocabulary path for it below.
+        # every box with the whole target text, so a label gate keeps them
+        # only when that text IS the COCO word ("backpack", not "red
+        # backpack"); otherwise it discarded every box and every frame read
+        # `absent`. Refused here (the soft gate's case once its accept set
+        # exists, below), and `auto` takes the open-vocabulary path for it.
         text_prompted = isinstance(detector, OpenVocabCropSource)
-        if text_prompted and crop_path in (CROP_LABEL_GATE, CROP_SOFT_GATE):
+        spoken = target.strip().lower()
+        if (text_prompted and crop_path == CROP_LABEL_GATE
+                and spoken != coco_class_for(target)):
             raise ValueError(
-                f"crop_path={crop_path!r} gates on labels, and a text-prompted "
-                "detector labels every box with the target text itself: every "
-                "box would be discarded. Use 'low_confidence' (the default).")
+                f"crop_path='label_gate' with a text-prompted detector: it "
+                f"labels every box {spoken!r}, which is not the COCO word, so "
+                "every box would be discarded. Use 'low_confidence' (the default).")
         self.crop_path = crop_path
         # UNIONED with the detector's boxes, never substituted for them.
         # Measured over the three-walk corpus at P >= 0.8, against the
@@ -857,6 +868,13 @@ class PerceptionPipeline:
                     "text_similarity(); falling back to the literal COCO "
                     "word %r. This run is a LABEL GATE, not a soft one.",
                     self.coco_class)
+            if text_prompted and proposer is None and spoken not in self.affinity:
+                # 3.76 L1: every box is labelled with the target text; outside
+                # the accept set and with no floor regions, nothing survives.
+                raise ValueError(
+                    f"crop_path='soft_gate' with a text-prompted detector: it "
+                    f"labels every box {spoken!r}, which is outside the accept "
+                    "set, so every box would be discarded. Use 'low_confidence'.")
 
         # The confidence the detector is asked for. The soft gate sits on
         # the open-vocabulary path's threshold, not the hard gate's: the
@@ -897,11 +915,20 @@ class PerceptionPipeline:
         model, and met the first frame's release. It is `unavailable` until
         the first ends; nothing waits."""
         if not self._busy.acquire(blocking=False):
+            if time.monotonic() - self._busy_since > BUSY_WEDGED_S:
+                # In the models far longer than a first frame's text encode
+                # can take: a wedge, not a slow frame. Raised, so B3.2 counts
+                # it and ends the mission `failed` as it did when the tick
+                # hung -- an `unavailable` answer would let it search blind
+                # to its time limit (3.76 L1 review).
+                raise PerceptionWedged(
+                    f"a frame has been in perception for over {BUSY_WEDGED_S:g} s")
             return Perception(status=UNAVAILABLE,
                               reason="the previous frame is still in perception",
                               crop_source=self.crop_source,
                               pan_deg=float(frame.get("pan_deg") or 0.0),
                               tilt_deg=float(frame.get("tilt_deg") or 0.0))
+        self._busy_since = time.monotonic()
         try:
             return self._perceive_counted(frame)
         finally:
@@ -1537,6 +1564,10 @@ def pipeline_for(target: str, *, weights: str = DEFAULT_DETECTOR,
 _in_flight = threading.Condition()
 _perceiving: set = set()   # one token per frame in perception
 PERCEIVE_WAIT_S = 30.0
+# 3.76 L1: a frame still in the models after this is wedged. A new target's
+# first frame runs at most two text-encoder children (CHILD_TIMEOUT_S, 20 s
+# each) and a predict; 3.81 measured 11-36 s.
+BUSY_WEDGED_S = 60.0
 # Frames given up on (still in flight when a wait timed out): a hung frame
 # costs one wait, not one per later start. A frame leaves it when it returns.
 _abandoned: set = set()
@@ -1581,7 +1612,7 @@ def detector_for(weights: str, target: str, *, device: Optional[str] = None):
 
 
 __all__ = [
-    "ABSENT", "DETECTED", "UNAVAILABLE",
+    "ABSENT", "DETECTED", "UNAVAILABLE", "PerceptionWedged",
     "CROP_LABEL_GATE", "CROP_LOW_CONFIDENCE", "CROP_SOFT_GATE",
     "CROP_SOURCES",
     "CROP_PATH_AUTO", "CROP_PATHS", "DEFAULT_CROP_PATH",

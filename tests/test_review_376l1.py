@@ -97,3 +97,36 @@ def test_a_closed_vocabulary_detector_keeps_the_label_gate():
                            crop_path=CROP_PATH_AUTO)
     assert p.crop_source == CROP_LABEL_GATE
     assert p.perceive(frame()).status in (ABSENT, DETECTED)
+
+
+def test_a_wedged_frame_is_a_failure_not_a_blind_search(monkeypatch):
+    """Fixes' round 1 (both reviewers): with the lock, a wedged model left
+    every later frame `unavailable` -- a successful tick each, the failure
+    budget reset, the mission searching blind to its time limit. Past the
+    bound the busy answer is raised, for B3.2 to count."""
+    import brain.perceive as perceive_mod
+    from brain.perceive import PerceptionWedged
+    gate = threading.Event()
+    detector = FirstCallBlocks([det("backpack")], gate)
+    p = PerceptionPipeline(detector, FakeScorer(), "backpack",
+                           crop_path=CROP_LOW_CONFIDENCE)
+    first = threading.Thread(target=p.perceive, args=(frame(),), daemon=True)
+    first.start()
+    assert detector.entered.wait(5)
+    try:
+        assert p.perceive(frame()).status == UNAVAILABLE      # slow, not wedged
+        monkeypatch.setattr(perceive_mod, "BUSY_WEDGED_S", 0.0)
+        with pytest.raises(PerceptionWedged):
+            p.perceive(frame())
+    finally:
+        gate.set()
+        first.join(5)
+
+
+def test_a_one_word_target_keeps_the_label_gate_on_a_text_prompted_detector():
+    """Round 1 (both reviewers): YOLOE's label IS the COCO word for
+    "backpack", so the label gate kept every box and still may."""
+    p = PerceptionPipeline(OpenVocabCropSource(TextPrompted(), "backpack"),
+                           FakeScorer({"_default": (0.95, 0.01)}), "backpack",
+                           crop_path=CROP_LABEL_GATE)
+    assert p.perceive(frame()).status == DETECTED
