@@ -502,3 +502,140 @@ def test_review3_a_busy_frame_is_not_counted_as_a_local_call():
     tier._local_inflight = 99                    # a check still out
     v = tier.confirm_local({})
     assert v["local_status"] == "busy" and tier.stats.local_calls == 0
+
+
+# --- 3.80.D: the client asks for the box (D9) --------------------------------
+
+def _jpeg_frame_sized(w, h):
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new("RGB", (w, h)).save(out, format="JPEG")
+    return {"image_base64": base64.b64encode(out.getvalue()).decode()}
+
+
+def test_d9_client_box_comes_back_as_fractions_of_the_image_qwen_saw(tmp_path, monkeypatch):
+    from brain.local_vlm import model_size
+    # Qwen2.5-VL's smart_resize: each side to a multiple of 28.
+    assert model_size(640, 480) == (644, 476)
+    tc = _service(tmp_path, monkeypatch)
+    try:
+        client = LocalVLMClient("http://testserver", "yes thing", client=tc)
+        got = client.ask(_jpeg_frame_sized(640, 480), box=True)
+        assert got["status"] == "answered" and got["box"] == [282.0, 40.0, 362.0, 160.0]
+        assert got["box_frac"] == pytest.approx([282 / 644, 40 / 476, 362 / 644, 160 / 476])
+        # The arrival question asks for no box.
+        assert client.ask(_jpeg_frame_sized(640, 480)).get("box") is None
+    finally:
+        tc.__exit__(None, None, None)
+
+
+def test_3_80_i_a_large_frame_is_sized_as_the_engines_see_it():
+    """3.80.I: the board's engines are built with max_image_tokens 512 and
+    min_image_tokens 128 (visual/config.json), so Qwen sees a 1280x720 frame
+    at 840x448, not the stock limit's 1288x728 -- every box on such a frame
+    read 0.65x its true position."""
+    from brain.local_vlm import model_size
+    assert model_size(1280, 720) == (840, 448)
+    assert model_size(640, 480) == (644, 476)          # under both limits: unchanged
+    assert model_size(320, 200) == (420, 252)          # renders: lifted to 128 tokens
+
+
+# --- review of the 3.80 rebase (2026-10-17): refused and discarded starts ---
+
+def test_rebase_review_a_discarded_runner_closes_its_policy():
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        local_identity_fn=Local())
+    runner = MissionRunner(MockRobot(_build(), render=False), target_object=TARGET,
+                           policy="tiered", vision_fn=tier)
+    runner.discard()      # a Stop landed on its start (3.76 C2)
+    assert tier._closed and tier.local_identity_fn is None
+
+
+def test_rebase_review_a_failed_perception_load_closes_the_local_client(monkeypatch):
+    import brain.perceive
+    from control import brain_server
+    from control.brain_config import load_brain_config
+    closed = []
+    monkeypatch.setattr(LocalVLMClient, "close", lambda self: closed.append(self))
+    monkeypatch.setenv("LOCAL_VLM_URL", "http://127.0.0.1:9")
+
+    def broken(*a, **k):
+        raise RuntimeError("bad weights file")
+    monkeypatch.setattr(brain.perceive, "pipeline_for", broken)
+    with pytest.raises(ValueError, match="could not load its perception models"):
+        brain_server._tiered_vision_fn(TARGET, _quiet_cloud, load_brain_config(),
+                                       simulated=False)
+    assert len(closed) == 1
+
+
+def test_rebase_review_a_refused_runner_closes_the_tiered_policy(monkeypatch):
+    from control import brain_server
+    closed = []
+
+    class Tier:
+        def __call__(self, frame):
+            return {}
+
+        def close(self):
+            closed.append(True)
+    monkeypatch.setattr(brain_server, "_tiered_vision_fn", lambda *a, **k: Tier())
+    monkeypatch.setattr(brain_server, "vision_fn_for", lambda *a, **k: (lambda f: {}))
+    monkeypatch.setattr(brain_server, "_validate_navigate_choices", lambda *a, **k: None)
+    monkeypatch.setenv("VISION_URL", "http://127.0.0.1:9")
+
+    class Refuses(MissionRunner):
+        def __init__(self, *a, **k):
+            raise ValueError("a constructor that refuses")
+    from control import drills
+    monkeypatch.setattr(drills, "MissionRunner", Refuses)
+    app = brain_server.create_app(robot_factory=lambda: MockRobot(_build(), render=False))
+    with TestClient(app) as c:
+        r = c.post("/mission/start", json={"target_object": TARGET, "policy": "tiered"})
+    assert r.status_code == 400, r.text
+    assert closed == [True]
+
+
+def _tier_start(monkeypatch, closed, close_raises=False):
+    from control import brain_server
+
+    class Tier:
+        def __call__(self, frame):
+            return {}
+
+        def close(self):
+            closed.append(True)
+            if close_raises:
+                raise RuntimeError("close failed")
+    monkeypatch.setattr(brain_server, "_tiered_vision_fn", lambda *a, **k: Tier())
+    monkeypatch.setattr(brain_server, "vision_fn_for", lambda *a, **k: (lambda f: {}))
+    monkeypatch.setattr(brain_server, "_validate_navigate_choices", lambda *a, **k: None)
+    monkeypatch.setenv("VISION_URL", "http://127.0.0.1:9")
+    return brain_server
+
+
+def test_rebase_review_a_failing_close_keeps_the_refusal_a_400(monkeypatch):
+    from control import drills
+    closed = []
+    brain_server = _tier_start(monkeypatch, closed, close_raises=True)
+
+    class Refuses(MissionRunner):
+        def __init__(self, *a, **k):
+            raise ValueError("a constructor that refuses")
+    monkeypatch.setattr(drills, "MissionRunner", Refuses)
+    app = brain_server.create_app(robot_factory=lambda: MockRobot(_build(), render=False))
+    with TestClient(app) as c:
+        r = c.post("/mission/start", json={"target_object": TARGET, "policy": "tiered"})
+    assert r.status_code == 400 and "refuses" in r.text, r.text
+    assert closed == [True]
+
+
+def test_rebase_review_a_vision_drill_closes_the_policy_it_replaced(monkeypatch):
+    closed = []
+    brain_server = _tier_start(monkeypatch, closed)
+    app = brain_server.create_app(robot_factory=lambda: MockRobot(_build(), render=False))
+    with TestClient(app) as c:
+        r = c.post("/mission/start", json={"target_object": TARGET, "policy": "tiered",
+                                           "fault": "vision_error"})
+        assert r.status_code == 200, r.text
+        assert closed == [True]
+        c.post("/mission/stop")

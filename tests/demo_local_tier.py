@@ -7,7 +7,13 @@ service (`service/local_vlm`, on tests/fake_edgellm_driver.py told to say
 yes) and the cloud unreachable. Expected: `found`, identity from the local
 tier, no cloud call at arrival.
 
-    python -m tests.demo_local_tier [--answer yes|no] [--out evaluations/tiered-380/C/C8.json]
+3.80.D acceptance D11, the same run: with `LOCAL_VLM_URL` set the brain puts
+every frame's question to the local tier too (the fake says no to those,
+amendment 1: it cannot see the scene), so the whole mission makes 0 cloud
+calls.
+
+    python -m tests.demo_local_tier [--answer yes|no] [--sightings no|yes]
+        [--out evaluations/tiered-380/D/D11.json]
 
 Three servers on free ports; nothing on :8000/:8001/:8005 is touched.
 """
@@ -33,8 +39,18 @@ import sys, uvicorn
 from service.local_vlm.driver import EdgeDriver
 from service.local_vlm.server import create_app
 fake = [sys.executable, "tests/fake_edgellm_driver.py"]
-app = create_app(lambda: EdgeDriver(fake, dict(__import__("os").environ),
-                                    {6: "[{", 7: "[]", 9: "x"}.get))
+WORDS = {"yes": "yes thing", "no": "plain thing"}
+
+
+class Driver(EdgeDriver):
+    # The fake answers by the words it is sent: the arrival as argv[2] says,
+    # sightings (3.80.D, `box`) as argv[3] says (amendment 1: no).
+    def ask(self, jpeg, target, deadline_s, box=False):
+        return super().ask(jpeg, WORDS[sys.argv[3 if box else 2]], deadline_s, box=box)
+vocab = {6: "[{", 7: "[]", 9: "x", 10: '"bbox_2d": [', 11: "282", 12: ", ",
+         13: "40", 14: "362", 15: "160", 16: "]}]"}   # tests/test_local_vlm.py's
+import os
+app = create_app(lambda: Driver(fake, dict(os.environ), vocab.get))
 uvicorn.run(app, host="127.0.0.1", port=int(sys.argv[1]), log_level="warning")
 """
 
@@ -61,6 +77,8 @@ def wait(url, path="/health", ok=lambda r: r.status_code == 200, limit=60):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--answer", default="yes", choices=("yes", "no"))
+    ap.add_argument("--sightings", default="no", choices=("yes", "no"),
+                    help="3.80.D: what the fake says to every frame's question")
     ap.add_argument("--house", default="scaled_house")
     ap.add_argument("--out")
     args = ap.parse_args()
@@ -72,8 +90,8 @@ def main():
     logs = Path(os.environ.get("TMPDIR", "/tmp")) / f"demo_local_tier-{int(time.time())}"
     logs.mkdir(parents=True, exist_ok=True)
     procs = [
-        subprocess.Popen([PY, "-c", SERVICE, str(vlm_p)], cwd=ROOT,
-                         env=dict(env, FAKE_ANSWER=args.answer),
+        subprocess.Popen([PY, "-c", SERVICE, str(vlm_p), args.answer, args.sightings],
+                         cwd=ROOT, env=env,
                          stdout=open(logs / "vlm.log", "w"), stderr=subprocess.STDOUT),
         subprocess.Popen([PY, "-m", "uvicorn", "robot.server:app", "--port", str(robot_p),
                           "--host", "127.0.0.1", "--log-level", "warning"], cwd=ROOT, env=env,
@@ -112,11 +130,17 @@ def main():
                "identity_tier": identity.get("tier"),
                "arrival_cloud_calls": (stats.get("triggers") or {}).get("arrival_confirmation", 0),
                "local_calls": stats.get("local_calls"), "local": stats.get("local"),
+               "cloud_calls": stats.get("cloud_calls"),
+               "local_triggers": stats.get("local_triggers"),
+               "local_frame": stats.get("local_frame"),
+               "frame_escalations": stats.get("frame_escalations"),
                "service_served": served, "log_tail": (status.get("log_tail") or [])[-5:],
                "logs": str(logs)}
         want = "found" if args.answer == "yes" else None
         doc["met"] = (doc["outcome"] == "found" and doc["identity_tier"] == "local"
                       and doc["arrival_cloud_calls"] == 0) if want else None
+        doc["d11_met"] = (doc["met"] and doc["cloud_calls"] == 0
+                          and sum((doc["local_triggers"] or {}).values()) > 0) if want else None
         print(json.dumps(doc, indent=1))
         if args.out:
             Path(args.out).parent.mkdir(parents=True, exist_ok=True)

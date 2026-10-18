@@ -1,0 +1,180 @@
+{
+ "rows": [
+  {
+   "kind": "render",
+   "image": "home_first_floor-1.0m.jpg",
+   "target": "red backpack",
+   "visible": null,
+   "rtt_ms": 583,
+   "status": "answered",
+   "direction": "forward",
+   "p": 0.6714,
+   "mass": 0.9821,
+   "probs": {
+    "left": 0.1667,
+    "right": 0.156,
+    "forward": 0.6594
+   },
+   "ms": 490.99285795819014
+  },
+  {
+   "kind": "render",
+   "image": "home_first_floor-3.0m.jpg",
+   "target": "red backpack",
+   "visible": null,
+   "rtt_ms": 585,
+   "status": "answered",
+   "direction": "forward",
+   "p": 0.6259,
+   "mass": 0.9844,
+   "probs": {
+    "left": 0.2316,
+    "right": 0.1367,
+    "forward": 0.6161
+   },
+   "ms": 469.86060100607574
+  },
+  {
+   "kind": "render",
+   "image": "procthor-val-18-2.0m.jpg",
+   "target": "red backpack",
+   "visible": null,
+   "rtt_ms": 491,
+   "status": "answered",
+   "direction": "forward",
+   "p": 0.7928,
+   "mass": 0.9809,
+   "probs": {
+    "left": 0.086,
+    "right": 0.1172,
+    "forward": 0.7777
+   },
+   "ms": 470.40496399858966
+  },
+  {
+   "kind": "render",
+   "image": "procthor-val-5-1.5m.jpg",
+   "target": "red backpack",
+   "visible": null,
+   "rtt_ms": 512,
+   "status": "answered",
+   "direction": "forward",
+   "p": 0.8142,
+   "mass": 0.9804,
+   "probs": {
+    "left": 0.0729,
+    "right": 0.1093,
+    "forward": 0.7982
+   },
+   "ms": 482.3594850022346
+  },
+  {
+   "kind": "render",
+   "image": "procthor-val-5-1.0m.jpg",
+   "target": "red backpack",
+   "visible": null,
+   "rtt_ms": 502,
+   "status": "answered",
+   "direction": "forward",
+   "p": 0.8689,
+   "mass": 0.9848,
+   "probs": {
+    "left": 0.0473,
+    "right": 0.0818,
+    "forward": 0.8557
+   },
+   "ms": 470.2244540094398
+  },
+  {
+   "kind": "real",
+   "image": "frame-0005.jpg",
+   "target": "burgundy backpack",
+   "visible": false,
+   "rtt_ms": 1037,
+   "status": "answered",
+   "direction": "forward",
+   "p": 0.5826,
+   "mass": 0.9804,
+   "probs": {
+    "left": 0.2465,
+    "right": 0.1627,
+    "forward": 0.5712
+   },
+   "ms": 978.2063559978269
+  },
+  {
+   "kind": "real",
+   "image": "frame-0030.jpg",
+   "target": "burgundy backpack",
+   "visible": true,
+   "rtt_ms": 1038,
+   "status": "answered",
+   "direction": "forward",
+   "p": 0.6988,
+   "mass": 0.9749,
+   "probs": {
+    "left": 0.178,
+    "right": 0.1156,
+    "forward": 0.6812
+   },
+   "ms": 976.2823679484427
+  },
+  {
+   "kind": "real",
+   "image": "frame-0010.jpg",
+   "target": "blue bottle",
+   "visible": false,
+   "rtt_ms": 1033,
+   "status": "answered",
+   "direction": "forward",
+   "p": 0.6688,
+   "mass": 0.9832,
+   "probs": {
+    "left": 0.2047,
+    "right": 0.1209,
+    "forward": 0.6576
+   },
+   "ms": 977.8722259798087
+  },
+  {
+   "kind": "real",
+   "image": "frame-0015.jpg",
+   "target": "blue and yellow running shoes",
+   "visible": true,
+   "rtt_ms": 1034,
+   "status": "answered",
+   "direction": "forward",
+   "p": 0.674,
+   "mass": 0.9742,
+   "probs": {
+    "left": 0.2063,
+    "right": 0.1113,
+    "forward": 0.6567
+   },
+   "ms": 977.8649070067331
+  },
+  {
+   "kind": "real",
+   "image": "frame-0015.jpg",
+   "target": "Grey backpack",
+   "visible": false,
+   "rtt_ms": 1293,
+   "status": "answered",
+   "direction": "forward",
+   "p": 0.5164,
+   "mass": 0.9858,
+   "probs": {
+    "left": 0.3196,
+    "right": 0.1571,
+    "forward": 0.509
+   },
+   "ms": 1215.866238984745
+  }
+ ],
+ "mass_ok": 10,
+ "of": 10,
+ "words": [
+  "forward"
+ ],
+ "met": false
+}

@@ -15,7 +15,14 @@ from service.local_vlm.driver import DriverGone, EdgeDriver
 from service.local_vlm.server import create_app
 
 FAKE = Path(__file__).with_name("fake_edgellm_driver.py")
-VOCAB = {6: "[{", 7: "[]", 9: "x"}
+VOCAB = {6: "[{", 7: "[]", 9: "x",
+         # 3.80.D: the rest of a box, `[{"bbox_2d": [282, 40, 362, 160]}]`
+         # (centred in a 640-wide frame as Qwen sees it, 644 wide).
+         10: '"bbox_2d": [', 11: "282", 12: ", ", 13: "40", 14: "362", 15: "160",
+         16: "]}]",
+         # 3.80.F: the direction words.
+         20: " left", 21: " Left", 22: "right", 23: " forward", 24: "for", 25: " ",
+         26: "Move", 27: ":"}
 JPEG = b"\xff\xd8\xff\xe0" + b"\0" * 64
 IMAGE = base64.b64encode(JPEG).decode()
 
@@ -232,3 +239,110 @@ def test_a_death_seen_by_one_reader_is_seen_by_the_next(drv):
     for _ in range(2):
         with pytest.raises(DriverGone):
             drv._next(0.1)
+
+
+# --- 3.80.D: the box, for sightings (D9) -----------------------------------
+
+BOX = [282.0, 40.0, 362.0, 160.0]
+
+
+def test_d9_box_yes_returns_the_same_score_and_the_box(drv):
+    plain = drv.ask(JPEG, "yes thing", 5.0)
+    got = drv.ask(JPEG, "yes thing", 5.0, box=True)
+    assert got["status"] == "answered" and got["score"] == pytest.approx(plain["score"])
+    assert got["box"] == BOX
+    # Without `box` the reply carries none: the arrival question is unchanged.
+    assert plain.get("box") is None
+
+
+def test_d9_box_no_ends_at_the_decision_with_no_box(drv):
+    t0 = time.monotonic()
+    got = drv.ask(JPEG, "plain thing", 5.0, box=True)
+    assert got["status"] == "answered" and got["score"] == pytest.approx(0.05)
+    assert got["box"] is None and time.monotonic() - t0 < 1.0
+
+
+def test_d9_a_deadline_after_the_decision_keeps_the_score_without_a_box(drv):
+    t0 = time.monotonic()
+    got = drv.ask(JPEG, "boxslow thing", 0.5, box=True)
+    assert got["status"] == "answered" and got["score"] == pytest.approx(0.9)
+    assert got["box"] is None
+    assert time.monotonic() - t0 < 0.9
+    # The cancelled tail is drained; the runtime answers the next request.
+    assert drv.ask(JPEG, "yes thing", 5.0, box=True)["box"] == BOX
+
+
+def test_d9_http_box_flag(tmp_path, monkeypatch):
+    c, _ = app_client(tmp_path, monkeypatch)
+    with c:
+        wait_ready(c)
+        r = c.post("/identity", json={"image_b64": IMAGE, "target": "yes thing", "box": True})
+        assert r.status_code == 200 and r.json()["box"] == BOX
+        r = c.post("/identity", json={"image_b64": IMAGE, "target": "yes thing"})
+        assert r.status_code == 200 and r.json().get("box") is None
+
+
+# ---------- 3.80.F: the direction question ----------
+
+def test_f_direction_reads_the_first_word_and_its_alternatives(drv):
+    got = drv.ask(JPEG, "goleft thing", 5.0, question="direction")
+    assert got["status"] == "answered" and got["parsed"] and got["score"] is None
+    # `left` 0.6 and ` Left` 0.2 are left; `for` 0.15 is forward; right 0.05.
+    assert got["direction"] == "left"
+    assert got["probs"] == pytest.approx({"left": 0.8, "right": 0.05, "forward": 0.15})
+    assert got["mass"] == pytest.approx(1.0) and got["p"] == pytest.approx(0.8)
+    # Cancelled at the word: the runtime is free again at once.
+    assert drv.lock.acquire(timeout=1.0)
+    drv.lock.release()
+
+
+@pytest.mark.parametrize("target,want", [("goright x", "right"), ("gofwd x", "forward"),
+                                         ("gospace goright x", "right")])
+def test_f_direction_each_word_and_a_leading_space(drv, target, want):
+    got = drv.ask(JPEG, target, 5.0, question="direction")
+    assert got["status"] == "answered" and got["direction"] == want
+
+
+def test_f_direction_little_mass_on_the_words_is_unable(drv):
+    got = drv.ask(JPEG, "gounsure x", 5.0, question="direction")
+    assert got["status"] == "unparsed" and got["direction"] is None
+    assert got["mass"] == pytest.approx(0.3)
+
+
+def test_f_direction_deadline_and_identity_unchanged_after(drv):
+    t0 = time.monotonic()
+    got = drv.ask(JPEG, "goslow x", 0.5, question="direction")
+    # Filler that never reaches a word: the deadline ends it.
+    assert got["status"] == "timeout" and time.monotonic() - t0 < 0.8
+    # Nothing at all before the deadline: timeout.
+    assert drv.lock.acquire(timeout=2.0)
+    drv.lock.release()
+    got = drv.ask(JPEG, "goslow x", 0.15, question="direction")
+    assert got["status"] == "timeout" and got["direction"] is None
+    assert drv.lock.acquire(timeout=2.0)
+    drv.lock.release()
+    # The identity question still works on the same runtime after it.
+    assert drv.ask(JPEG, "yes thing", 5.0)["score"] == pytest.approx(0.9)
+
+
+def test_f_option_prefixes():
+    from service.local_vlm.driver import _option
+    assert [_option(t) for t in ("L", " for", "Forward.", "RIGHT", "r", "", "x", "fo",
+                                 "Move", ":")] == \
+        ["left", "forward", "forward", "right", "right", None, None, "forward", None, None]
+
+
+def test_f_a_reply_that_ends_without_a_word_is_unparsed(drv):
+    # "noparse": filler, then the end id -- no token was one of the words.
+    got = drv.ask(JPEG, "noparse", 5.0, question="direction")
+    assert got["status"] == "unparsed" and got["direction"] is None
+
+
+def test_f_http_direction_route(tmp_path, monkeypatch):
+    c, _ = app_client(tmp_path, monkeypatch, secret="s3cret")
+    with c:
+        wait_ready(c)
+        body = {"image_b64": IMAGE, "target": "goright x"}
+        assert c.post("/direction", json=body).status_code == 401
+        r = c.post("/direction", json=body, headers={"x-app-secret": "s3cret"})
+        assert r.status_code == 200 and r.json()["direction"] == "right"

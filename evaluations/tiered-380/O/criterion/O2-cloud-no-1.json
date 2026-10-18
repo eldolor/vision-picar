@@ -1,0 +1,542 @@
+{
+ "args": {
+  "name": "criterion/O2-cloud-no-1",
+  "sighted": false,
+  "sync": false,
+  "jump": false,
+  "decoy": 0.0,
+  "cold_every": 1,
+  "cloud": "no",
+  "houses": "criterion",
+  "root": null
+ },
+ "missions": 21,
+ "arrivals_at_true_target": 17,
+ "arrival_m_median": 0.54,
+ "found": 0,
+ "found_far": 0,
+ "local_identity_on_guarded": 0,
+ "outcomes": {
+  "exhausted": 20,
+  "out_of_budget": 1
+ },
+ "rows": [
+  {
+   "house": "home_first_floor",
+   "outcome": "exhausted",
+   "sim_s": 735,
+   "goals": 57,
+   "arrivals": [
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 4.37,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 694,
+    "local_track": 74
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (6 on the map: 6 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:0",
+   "outcome": "exhausted",
+   "sim_s": 485,
+   "goals": 28,
+   "arrivals": [
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 6.77,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 424,
+    "local_track": 62
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:2",
+   "outcome": "exhausted",
+   "sim_s": 702,
+   "goals": 47,
+   "arrivals": [
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 3.91,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 659,
+    "local_track": 50
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (3 on the map: 2 reached twice, 1 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:3",
+   "outcome": "exhausted",
+   "sim_s": 468,
+   "goals": 30,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 7.64,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 393,
+    "local_track": 133
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:4",
+   "outcome": "exhausted",
+   "sim_s": 295,
+   "goals": 24,
+   "arrivals": [
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 6.03,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 2,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 251,
+    "local_track": 43
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:5",
+   "outcome": "exhausted",
+   "sim_s": 162,
+   "goals": 14,
+   "arrivals": [
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 1.53,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 127,
+    "local_track": 45
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:9",
+   "outcome": "exhausted",
+   "sim_s": 964,
+   "goals": 45,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 5.95,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 872,
+    "local_track": 27
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:10",
+   "outcome": "exhausted",
+   "sim_s": 398,
+   "goals": 23,
+   "arrivals": [
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 3.65,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 2,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 333,
+    "local_track": 51
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:11",
+   "outcome": "exhausted",
+   "sim_s": 648,
+   "goals": 33,
+   "arrivals": [
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 1.9,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 571,
+    "local_track": 41
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:12",
+   "outcome": "exhausted",
+   "sim_s": 611,
+   "goals": 47,
+   "arrivals": [
+    0.3
+   ],
+   "first_arrival_target_m": 0.3,
+   "end_target_m": 8.58,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 571,
+    "local_track": 48
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:13",
+   "outcome": "exhausted",
+   "sim_s": 318,
+   "goals": 17,
+   "arrivals": [
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 3.01,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 244,
+    "local_track": 48
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:15",
+   "outcome": "exhausted",
+   "sim_s": 1038,
+   "goals": 54,
+   "arrivals": [
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 14.51,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 942,
+    "local_track": 40
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:17",
+   "outcome": "exhausted",
+   "sim_s": 273,
+   "goals": 21,
+   "arrivals": [
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 0.95,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 269,
+    "local_track": 15
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:18",
+   "outcome": "exhausted",
+   "sim_s": 424,
+   "goals": 27,
+   "arrivals": [
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 0.5,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 344,
+    "local_track": 71
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:21",
+   "outcome": "exhausted",
+   "sim_s": 356,
+   "goals": 20,
+   "arrivals": [
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 7.42,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 296,
+    "local_track": 39
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:26",
+   "outcome": "exhausted",
+   "sim_s": 145,
+   "goals": 14,
+   "arrivals": [
+    0.54
+   ],
+   "first_arrival_target_m": 0.54,
+   "end_target_m": 5.11,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 115,
+    "local_track": 46
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:27",
+   "outcome": "exhausted",
+   "sim_s": 46,
+   "goals": 8,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 3.06,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 58
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:32",
+   "outcome": "out_of_budget",
+   "sim_s": 1201,
+   "goals": 56,
+   "arrivals": [
+    0.46
+   ],
+   "first_arrival_target_m": 0.46,
+   "end_target_m": 3.35,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 2,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 1079,
+    "local_track": 38
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (out_of_budget): time limit of 1200 s reached (1200.4 s)"
+   ]
+  },
+  {
+   "house": "procthor:val:34",
+   "outcome": "exhausted",
+   "sim_s": 861,
+   "goals": 38,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 7.65,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 741,
+    "local_track": 39
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:36",
+   "outcome": "exhausted",
+   "sim_s": 285,
+   "goals": 19,
+   "arrivals": [
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 9.12,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 3,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 264,
+    "local_track": 39
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:37",
+   "outcome": "exhausted",
+   "sim_s": 517,
+   "goals": 33,
+   "arrivals": [
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 11.8,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 460,
+    "local_track": 31
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
+   ]
+  }
+ ],
+ "wall_s": 260
+}

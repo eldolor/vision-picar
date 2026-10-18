@@ -1,0 +1,1780 @@
+[17:51:57.908] [INFO] [llmBuilder.cpp:170:build] Using TRT_VERSION=10.3.0
+[17:51:57.908] [INFO] [trtUtils.h:66:loadEdgellmPluginLib] EDGELLM_PLUGIN_PATH: /home/picar/bench-378/ell91/build/libNvInfer_edgellm_plugin.so
+[17:51:58.020] [INFO] [TensorRT] [MemUsageChange] Init CUDA: CPU +13, GPU +0, now: CPU 31, GPU 1006 (MiB)
+[17:52:00.433] [INFO] [TensorRT] [MemUsageChange] Init builder kernel library: CPU +927, GPU +988, now: CPU 1001, GPU 2041 (MiB)
+[17:52:00.442] [INFO] [llmBuilder.cpp:205:build] Parsing ONNX model: /home/picar/bench-380K/RT/onnx/llm/model.onnx
+[17:52:00.471] [INFO] [TensorRT] ----------------------------------------------------------------
+[17:52:00.472] [INFO] [TensorRT] Input filename:   /home/picar/bench-380K/RT/onnx/llm/model.onnx
+[17:52:00.472] [INFO] [TensorRT] ONNX IR version:  0.0.10
+[17:52:00.472] [INFO] [TensorRT] Opset version:    24
+[17:52:00.472] [INFO] [TensorRT] Producer name:    pytorch
+[17:52:00.472] [INFO] [TensorRT] Producer version: 2.12.0+cu130
+[17:52:00.472] [INFO] [TensorRT] Domain:           
+[17:52:00.472] [INFO] [TensorRT] Model version:    0
+[17:52:00.472] [INFO] [TensorRT] Doc string:       
+[17:52:00.472] [INFO] [TensorRT] ----------------------------------------------------------------
+[17:52:00.473] [WARNING] [TensorRT] ModelImporter.cpp:420: Make sure input last_token_ids has Int64 binding.
+[17:52:04.028] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.029] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.029] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.030] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.030] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.030] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.030] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.030] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.031] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.031] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.031] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.031] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.031] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.031] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.031] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.037] [WARNING] [contextFMHARunner.cpp:240:loadFMHAKernels] Skipping FMHA cubin for fmha_v2_flash_attention_fp16_fp32_64_16_S_q_k_v_256_custom_mask_sm87_kernel_nl: ELF ABI 8 is newer than this driver
+[17:52:04.037] [WARNING] [contextFMHARunner.cpp:240:loadFMHAKernels] Skipping FMHA cubin for fmha_v2_flash_attention_fp16_fp32_64_128_S_q_k_v_256_custom_mask_sm87_kernel_nl_tiled: ELF ABI 8 is newer than this driver
+[17:52:04.050] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.051] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.051] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.051] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.051] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.052] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.052] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.052] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.052] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.053] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.053] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.053] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.053] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.053] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.053] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.053] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.053] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.054] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.054] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.054] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.054] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.054] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.054] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.054] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.054] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.055] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.055] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.055] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.055] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.055] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.055] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.055] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.055] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.055] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.055] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.055] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.055] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.056] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.056] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.056] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.056] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.056] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.056] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.056] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.056] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.057] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.057] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.057] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.057] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.058] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.058] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.058] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.058] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.058] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.058] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.058] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.058] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.059] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.059] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.059] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.059] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.059] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.059] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.059] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.059] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.059] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.059] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.059] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.059] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.060] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.060] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.060] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.060] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.060] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.060] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.060] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.060] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.061] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.061] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.061] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.061] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.062] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.062] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.062] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.062] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.062] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.062] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.062] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.062] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.062] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.062] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.062] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.062] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.063] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.063] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.063] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.063] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.063] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.063] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.063] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.063] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.064] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.064] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.064] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.064] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.064] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.064] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.064] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.064] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.064] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.064] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.064] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.065] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.065] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.065] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.065] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.065] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.066] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.066] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.066] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.066] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.066] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.066] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.066] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.066] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.066] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.066] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.066] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.066] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.067] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.067] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.067] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.067] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.067] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.068] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.068] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.068] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.068] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.068] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.068] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.068] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.068] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.068] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.068] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.068] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.069] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.069] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.069] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.069] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.069] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.069] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.069] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.070] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.070] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.070] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.070] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.070] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.070] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.070] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.070] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.070] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.070] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.071] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.071] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.071] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.071] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.071] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.071] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.071] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.072] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.072] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.072] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.072] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.072] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.072] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.072] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.072] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.073] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.073] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.073] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.073] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.073] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.073] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.073] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.073] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.074] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.074] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.074] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.074] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.074] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.074] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.074] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.074] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.074] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.075] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.075] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.075] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.075] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.075] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.075] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.075] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.076] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.076] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.076] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.076] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.076] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.076] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.076] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.076] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.077] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.077] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.077] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.077] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.077] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.077] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.077] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.077] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.078] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.078] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.078] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.078] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.078] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.078] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.078] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.078] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.078] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.078] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.078] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.078] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.079] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.079] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.079] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.079] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.079] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.079] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.080] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.080] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.080] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.080] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.080] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.080] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.081] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.081] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.081] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.081] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.081] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.081] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.081] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.081] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.081] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.081] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.081] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.081] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.082] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.082] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.082] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.082] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.082] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.082] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.082] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.082] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.083] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.083] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.083] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.083] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.083] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.083] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.083] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.083] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.084] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.084] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.084] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.084] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.084] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.084] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.084] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.085] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.085] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.085] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.085] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.085] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.085] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.085] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.085] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.085] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.086] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.086] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.086] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.086] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.086] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.086] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.086] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.086] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.087] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.087] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.087] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.087] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.087] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.087] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.087] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.087] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.088] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.088] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.088] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.088] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.088] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.088] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.088] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.089] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.089] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.089] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.089] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.089] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.089] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.089] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.089] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.089] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.090] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.090] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.090] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.090] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.090] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.090] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.090] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.090] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.091] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.091] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.091] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.091] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.091] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.091] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.091] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.091] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.091] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.092] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.092] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.092] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.092] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.092] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.092] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.092] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.093] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.093] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.093] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.093] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.093] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.093] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.093] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.093] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.093] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.094] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.094] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.094] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.094] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.094] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.094] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.094] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.095] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.095] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.095] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.095] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.095] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.095] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.095] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.095] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.095] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.095] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.095] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.096] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.096] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.096] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.096] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.096] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.097] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.097] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.097] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.097] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.097] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.097] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.097] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.097] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.098] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.098] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.098] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.098] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.098] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.098] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.098] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.098] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.099] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.099] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.099] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.099] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.099] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.099] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.099] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.099] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.100] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.100] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.100] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.100] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.101] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.101] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.101] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.101] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.101] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.101] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.101] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.101] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.102] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.102] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.102] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.102] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.102] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.102] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.102] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.102] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.102] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.102] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.102] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.102] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.103] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.103] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.103] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.103] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.104] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.104] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.104] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.104] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.104] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.104] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.104] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.104] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.105] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.105] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.105] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.105] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.105] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.105] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.105] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.105] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.106] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.106] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.106] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.106] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.106] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.106] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.106] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.106] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.106] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.106] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.106] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.106] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.107] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.107] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.107] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.107] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.107] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.108] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.108] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.108] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.108] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.108] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.108] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.108] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.109] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.109] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.109] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.109] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.109] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.109] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.109] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.109] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.109] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.110] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.110] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.110] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.110] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.110] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.110] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.110] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.110] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.110] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.110] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.110] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.111] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.111] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.111] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.111] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.111] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.111] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.111] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.112] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.112] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.112] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.112] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.112] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.113] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.113] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.113] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.113] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.113] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.113] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.113] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.113] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.113] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.113] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.113] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.114] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.114] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.114] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.114] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.114] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.114] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.114] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.114] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.114] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.115] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.115] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.115] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.115] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.115] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.115] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.115] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.115] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.116] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.116] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.116] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.116] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.117] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.117] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.117] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.117] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.117] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.117] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.117] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.117] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.117] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.117] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.117] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.118] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.118] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.118] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.118] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.118] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.118] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.118] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.118] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.118] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.119] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.119] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.119] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.119] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.119] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.119] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.119] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.119] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.120] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.120] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.120] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.120] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.121] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.121] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.121] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.121] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.121] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.121] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.121] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.121] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.121] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.121] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.122] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.122] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.122] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.122] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.122] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.122] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.122] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.122] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.122] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.122] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.123] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.123] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.123] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.123] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.123] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.123] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.123] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.124] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.124] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.124] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.124] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.124] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.125] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.125] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.125] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.125] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.125] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.125] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.125] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.125] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.125] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.126] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.126] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.126] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.126] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.126] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.126] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.126] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.126] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.126] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.126] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.126] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.127] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.127] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.127] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.127] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.127] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.127] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.128] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.128] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.128] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.128] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.128] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.128] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.129] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.129] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.129] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.129] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.129] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.129] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.129] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.129] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.130] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.130] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.130] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.130] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.130] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.130] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.130] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.130] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.130] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.130] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.130] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.130] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.131] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.131] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.131] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.131] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.132] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.132] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.132] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.132] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.132] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.132] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.132] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.132] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.133] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.133] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.133] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.133] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.133] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.133] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.133] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.134] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.134] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.134] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.134] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.134] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.134] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.134] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.134] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.134] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.135] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.135] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.135] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.135] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.135] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.135] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.136] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.136] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.136] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.136] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.136] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.136] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.136] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.136] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.136] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.136] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.137] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.137] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.137] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.137] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.138] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.138] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.138] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.138] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.138] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.138] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.138] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.138] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.138] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.138] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.138] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.138] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.139] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.139] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.139] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.139] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.140] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.140] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.140] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.140] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.140] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.140] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.140] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.140] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.140] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.140] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.140] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.140] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.141] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.141] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.141] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.141] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.142] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.142] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.142] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.142] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.142] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.142] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.142] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.142] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.142] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.142] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.142] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.143] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.143] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.143] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.143] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.143] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.144] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.144] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.144] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.144] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.144] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.144] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.144] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.144] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.144] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.145] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.145] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.145] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.145] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.145] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.145] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.146] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.146] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.146] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.146] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.146] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.146] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.146] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.146] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.146] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.147] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.147] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.147] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.147] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.147] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.147] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.147] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.147] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.148] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.148] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.148] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.148] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.148] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.148] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.148] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.148] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.149] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.149] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.149] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.149] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.150] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.150] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.150] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.150] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.150] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.150] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.150] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.150] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.150] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.150] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.150] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.151] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.151] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.151] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.151] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.151] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.151] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.151] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.151] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.151] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.152] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.152] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.152] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.152] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.152] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.153] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.153] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.153] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.153] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.153] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.153] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.153] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.154] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.154] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.154] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.154] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.154] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.154] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.154] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.154] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.155] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.155] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.155] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.155] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.155] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.155] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.155] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.155] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.156] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.156] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.156] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.156] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.156] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.156] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.157] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.157] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.157] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.157] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.157] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.157] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.157] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.157] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.157] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.157] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.159] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.159] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.159] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.159] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.159] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.159] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.159] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.160] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.160] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.160] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.160] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.160] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.160] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.160] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.160] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.160] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.161] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.161] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.161] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.161] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.161] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.162] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.162] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.162] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.162] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.162] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.162] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.162] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.163] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.163] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.163] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.163] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.164] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.164] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.164] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.164] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.164] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.165] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.165] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.165] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.165] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.165] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.165] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.165] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.165] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.165] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.165] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.165] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.166] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.166] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.166] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.166] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.167] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.167] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.167] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.167] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.167] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.167] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.167] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.167] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.167] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.167] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.167] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.167] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.168] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.168] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.168] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.168] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.169] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.169] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.169] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.169] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.169] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.169] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.169] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.169] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.169] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.169] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.169] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.169] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.170] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.170] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.170] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.170] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.171] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.171] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.171] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.171] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.171] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.171] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.171] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.171] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.171] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.171] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.171] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.171] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.172] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.172] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.172] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.172] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.173] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.173] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.173] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.173] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.173] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.173] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.173] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.173] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.173] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.173] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.173] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.174] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.174] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.174] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.174] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.174] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.175] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.175] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.175] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.175] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.175] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.175] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.175] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.175] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.175] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.175] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.176] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.176] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.176] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.176] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.176] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.176] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.177] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.177] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.177] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.177] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.177] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.177] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.177] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.177] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.177] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.178] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.178] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.178] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.178] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.178] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.178] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.178] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.179] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.179] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.179] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.179] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.179] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.180] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.180] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.180] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.180] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.180] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.180] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.180] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.181] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.181] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.181] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.181] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.181] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.181] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.181] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.181] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.182] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.182] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.182] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.182] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.182] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.182] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.182] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.182] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.182] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.182] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.182] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.182] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.183] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.183] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.183] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.183] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.184] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.184] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.184] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.184] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.184] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.184] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.184] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.184] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.185] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.185] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.185] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.185] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.185] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.185] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.185] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.185] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.186] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.186] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.186] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.186] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.186] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.186] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.186] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.186] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.187] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.187] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.187] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.187] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.187] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.188] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.188] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.188] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.188] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.188] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.188] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.188] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.188] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.188] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.188] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.188] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.189] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.189] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.189] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.189] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.190] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.190] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.190] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.190] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.190] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.190] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.190] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.190] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.190] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.190] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.190] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.190] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.191] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.191] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.191] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.191] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.192] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.192] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.192] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.192] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.192] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.192] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.192] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.192] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.192] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.192] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.192] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.192] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.193] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.193] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.193] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.193] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.194] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.194] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.194] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.194] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.194] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.194] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.194] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.194] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.194] [INFO] [TensorRT] No checker registered for op: AttentionPlugin. Attempting to check as plugin.
+[17:52:04.195] [INFO] [TensorRT] No importer registered for op: AttentionPlugin. Attempting to import as plugin.
+[17:52:04.195] [INFO] [TensorRT] Searching for plugin: AttentionPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.195] [INFO] [TensorRT] Successfully created plugin: AttentionPlugin
+[17:52:04.195] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.195] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.195] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.195] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.196] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.196] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.196] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.196] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.196] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.196] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.196] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.196] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.197] [INFO] [TensorRT] No checker registered for op: Int4GroupwiseGemmPlugin. Attempting to check as plugin.
+[17:52:04.197] [INFO] [TensorRT] No importer registered for op: Int4GroupwiseGemmPlugin. Attempting to import as plugin.
+[17:52:04.197] [INFO] [TensorRT] Searching for plugin: Int4GroupwiseGemmPlugin, plugin_version: 1, plugin_namespace: 
+[17:52:04.197] [INFO] [TensorRT] Successfully created plugin: Int4GroupwiseGemmPlugin
+[17:52:04.215] [INFO] [llmBuilder.cpp:250:build] Created directory /home/picar/bench-380K/RT/engines/llm for saving LLM engine.
+[17:52:04.240] [WARNING] [TensorRT] DLA requests all profiles have same min, max, and opt value. All dla layers are falling back to GPU
+[17:52:04.635] [INFO] [TensorRT] Local timing cache in use. Profiling results in this builder pass will not be stored.
+[17:54:12.045] [INFO] [TensorRT] [GraphReduction] The approximate region cut reduction algorithm is called.
+[17:54:12.100] [INFO] [TensorRT] Detected 41 inputs and 37 output network tensors.
+[17:54:22.638] [INFO] [TensorRT] Total Host Persistent Memory: 135968
+[17:54:22.638] [INFO] [TensorRT] Total Device Persistent Memory: 0
+[17:54:22.638] [INFO] [TensorRT] Total Scratch Memory: 8396800
+[17:54:22.638] [INFO] [TensorRT] [BlockAssignment] Started assigning block shifts. This will take 795 steps to complete.
+[17:54:22.677] [INFO] [TensorRT] [BlockAssignment] Algorithm ShiftNTopDown took 38.1883ms to assign 10 blocks to 795 nodes requiring 80741888 bytes.
+[17:54:22.677] [INFO] [TensorRT] Total Activation Memory: 80741888
+[17:54:38.340] [INFO] [TensorRT] [GraphReduction] The approximate region cut reduction algorithm is called.
+[17:54:38.373] [INFO] [TensorRT] Detected 41 inputs and 37 output network tensors.
+[17:54:42.645] [INFO] [TensorRT] Total Host Persistent Memory: 135968
+[17:54:42.645] [INFO] [TensorRT] Total Device Persistent Memory: 0
+[17:54:42.645] [INFO] [TensorRT] Total Scratch Memory: 1049088
+[17:54:42.645] [INFO] [TensorRT] [BlockAssignment] Started assigning block shifts. This will take 795 steps to complete.
+[17:54:42.684] [INFO] [TensorRT] [BlockAssignment] Algorithm ShiftNTopDown took 38.7469ms to assign 10 blocks to 795 nodes requiring 1107456 bytes.
+[17:54:42.685] [INFO] [TensorRT] Total Activation Memory: 1107456
+[17:54:43.253] [INFO] [TensorRT] Total Weights Memory: 2054490112
+[17:54:43.290] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.291] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.292] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.293] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.294] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Initializing plugin at: allocateResources
+[17:54:43.295] [INFO] [TensorRT] Engine generation completed in 158.662 seconds.
+[17:54:43.306] [INFO] [TensorRT] [MemUsageStats] Peak memory usage of TRT CPU/GPU memory allocators: CPU 10 MiB, GPU 3072 MiB
+[17:54:57.756] [INFO] [TensorRT] [MemUsageStats] Peak memory usage during Engine building and serialization: CPU: 6652 MiB
+[17:55:04.487] [INFO] [builderUtils.cpp:328:buildAndSerializeEngine] Engine saved to /home/picar/bench-380K/RT/engines/llm/llm.engine
+[17:55:04.966] [INFO] [llmBuilder.cpp:1438:copyConfig] Copied config.json with builder config to /home/picar/bench-380K/RT/engines/llm/config.json
+[17:55:04.966] [INFO] [fileUtils.cpp:48:copyFile] Successfully copied /home/picar/bench-380K/RT/onnx/llm/tokenizer_config.json to /home/picar/bench-380K/RT/engines/llm/tokenizer_config.json
+[17:55:04.966] [INFO] [llmBuilder.cpp:1469:copyTokenizerFiles] Copied tokenizer file: tokenizer_config.json
+[17:55:04.988] [INFO] [fileUtils.cpp:48:copyFile] Successfully copied /home/picar/bench-380K/RT/onnx/llm/tokenizer.json to /home/picar/bench-380K/RT/engines/llm/tokenizer.json
+[17:55:04.988] [INFO] [llmBuilder.cpp:1469:copyTokenizerFiles] Copied tokenizer file: tokenizer.json
+[17:55:04.989] [INFO] [fileUtils.cpp:48:copyFile] Successfully copied /home/picar/bench-380K/RT/onnx/llm/processed_chat_template.json to /home/picar/bench-380K/RT/engines/llm/processed_chat_template.json
+[17:55:04.989] [INFO] [llmBuilder.cpp:1469:copyTokenizerFiles] Copied tokenizer file: processed_chat_template.json
+[17:55:06.108] [INFO] [fileUtils.cpp:48:copyFile] Successfully copied /home/picar/bench-380K/RT/onnx/llm/embedding.safetensors to /home/picar/bench-380K/RT/engines/llm/embedding.safetensors
+[17:55:06.108] [INFO] [llmBuilder.cpp:1632:copyEmbeddingFile] Copied embedding.safetensors to /home/picar/bench-380K/RT/engines/llm/embedding.safetensors
+[17:55:08.785] [INFO] [llm_build.cpp:247:main] LLM engine built successfully.

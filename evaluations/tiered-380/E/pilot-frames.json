@@ -1,0 +1,103 @@
+{
+ "rows": [
+  {
+   "walk": "blue-bottle-20260907-185007",
+   "frame": "frame-0003.jpg",
+   "target": "blue bottle",
+   "label": false,
+   "recorded": true,
+   "fresh": true,
+   "status": 200,
+   "model_id": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+   "usage": {
+    "input_tokens": 904,
+    "output_tokens": 87
+   },
+   "cost_usd": 0.006695000000000001,
+   "s": 6.25
+  },
+  {
+   "walk": "blue-bottle-20260907-185007",
+   "frame": "frame-0058.jpg",
+   "target": "blue bottle",
+   "label": false,
+   "recorded": true,
+   "fresh": true,
+   "status": 200,
+   "model_id": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+   "usage": {
+    "input_tokens": 904,
+    "output_tokens": 90
+   },
+   "cost_usd": 0.006770000000000001,
+   "s": 2.99
+  },
+  {
+   "walk": "blue-bottle-20260907-185007",
+   "frame": "frame-0084.jpg",
+   "target": "blue bottle",
+   "label": false,
+   "recorded": true,
+   "fresh": true,
+   "status": 200,
+   "model_id": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+   "usage": {
+    "input_tokens": 904,
+    "output_tokens": 88
+   },
+   "cost_usd": 0.00672,
+   "s": 3.87
+  },
+  {
+   "walk": "blue-bottle-20260907-142454",
+   "frame": "frame-0004.jpg",
+   "target": "blue bottle",
+   "label": true,
+   "recorded": true,
+   "fresh": true,
+   "status": 200,
+   "model_id": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+   "usage": {
+    "input_tokens": 904,
+    "output_tokens": 82
+   },
+   "cost_usd": 0.006570000000000001,
+   "s": 2.59
+  },
+  {
+   "walk": "blue-shoes-20260907-152528",
+   "frame": "frame-0013.jpg",
+   "target": "blue and yellow running shoes",
+   "label": true,
+   "recorded": true,
+   "fresh": true,
+   "status": 200,
+   "model_id": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+   "usage": {
+    "input_tokens": 919,
+    "output_tokens": 85
+   },
+   "cost_usd": 0.00672,
+   "s": 2.58
+  },
+  {
+   "walk": "grey-backpack-opus-4-5-20260921-210743",
+   "frame": "frame-0017.jpg",
+   "target": "Grey backpack",
+   "label": true,
+   "recorded": true,
+   "fresh": true,
+   "status": 200,
+   "model_id": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+   "usage": {
+    "input_tokens": 1691,
+    "output_tokens": 96
+   },
+   "cost_usd": 0.010855,
+   "s": 3.27
+  }
+ ],
+ "calls": 6,
+ "agree_with_record": 6,
+ "cost_usd": 0.0443
+}

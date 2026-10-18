@@ -83,6 +83,52 @@ class FakeNav:
         return {"canceled": True}
 
 
+
+class WalkingNav(FakeNav):
+    """FakeNav that drives: each poll moves the robot one cell (0.3 m) along
+    the shortest 4-connected floor path and passes 1 s, so the tier sees a
+    frame per cell while a goal runs, as it does behind live nav2. FakeNav
+    jumps to the goal in one poll (four frames a goal in all), which starves
+    a blind search of questions (3.80.O amendment 1; `evaluations/tiered-380/O/sweep_inprocess.py`)."""
+
+    def _path(self, a, b):
+        g, prev, q = self.grid, {a: None}, deque([a])
+        while q:
+            c = q.popleft()
+            if c == b:
+                out = []
+                while c is not None:
+                    out.append(c)
+                    c = prev[c]
+                return out[::-1]
+            for n in ((c[0] + 1, c[1]), (c[0] - 1, c[1]), (c[0], c[1] + 1), (c[0], c[1] - 1)):
+                if n not in prev and g._cell(*n) != CELL_WALL and n not in g.objects:
+                    prev[n] = c
+                    q.append(n)
+        return None
+
+    def get_goal(self):
+        self.calls.append(("get",))
+        if self.goal and self.goal["state"] == "active":
+            g = self.grid
+            to = (math.floor(self.goal["x_m"] / CELL), math.floor(self.goal["y_m"] / CELL))
+            path = None if to in g.objects else self._path((g.robot_x, g.robot_y), to)
+            self.robot.pass_time(1.0)
+            if path is None:
+                self.goal["state"] = "aborted"
+            elif len(path) <= 2:
+                tx, ty = self.goal["x_m"] / CELL, self.goal["y_m"] / CELL
+                if (tx, ty) != (g.x, g.y):
+                    g.theta = math.atan2(ty - g.y, tx - g.x)
+                g.x, g.y = tx, ty
+                self.goal["state"] = "succeeded"
+            else:
+                nx, ny = path[1][0] + 0.5, path[1][1] + 0.5
+                g.theta = math.atan2(ny - g.y, nx - g.x)
+                g.x, g.y = nx, ny
+        return {"goal": self.goal, "plan": []}
+
+
 def _mission(target="red backpack", house="scaled_house", movers=None, max_steps=80,
              refuse_first=0, **kw):
     grid = build_world(house)

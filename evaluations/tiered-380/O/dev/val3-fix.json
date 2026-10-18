@@ -1,0 +1,48 @@
+{
+ "args": {
+  "name": "dev/val3-fix",
+  "sighted": false,
+  "sync": false,
+  "jump": false,
+  "decoy": 0.0,
+  "cold_every": 6,
+  "cloud": "truth",
+  "houses": "procthor:val:3",
+  "root": null
+ },
+ "missions": 1,
+ "arrivals_at_true_target": 0,
+ "arrival_m_median": null,
+ "found": 0,
+ "found_far": 0,
+ "local_identity_on_guarded": 0,
+ "outcomes": {
+  "exhausted": 1
+ },
+ "rows": [
+  {
+   "house": "procthor:val:3",
+   "outcome": "exhausted",
+   "sim_s": 352,
+   "goals": 25,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 0.42,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 2,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 52,
+    "local_track": 69
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"
+   ]
+  }
+ ],
+ "wall_s": 9
+}

@@ -71,6 +71,7 @@ budget (B3.2), which only sees calls that return or time out.
 import asyncio
 import base64
 import binascii
+import functools
 import json
 import logging
 import os
@@ -285,6 +286,11 @@ def _frames_are_simulated(robot: RobotInterface) -> bool:
     return (frame.get("metadata") or {}).get("source") == "sim"
 
 
+# sim/renderer.py's FPV_FOV, in degrees. Copied, not imported: control/ never
+# imports the simulator (CLAUDE.md rule 5); tests/test_tiered_frames.py pins it.
+SIM_HFOV_DEG = 60.0
+
+
 def _local_vlm_secret(config: dict, secret: Optional[str]) -> Optional[str]:
     """`LOCAL_VLM_SECRET`, else the brain's own `APP_SHARED_SECRET` -- but
     that one only to a service on this machine: it gates the robot too, and
@@ -351,49 +357,90 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         "corroboration_bar": config["tier_corroboration_bar"],
         # 3.56: the arrival confirmation's own client (None: the triggers').
         "confirm_vision_fn": confirm_vision_fn,
-        # 3.80.C: the local VLM tier at arrival, when a URL is configured.
-        "local_identity_fn": _local_identity_fn(target, config, local_secret),
         "local_no_below": config["tier_local_no_below"],
         "local_max_unable": config["tier_local_max_unable"],
+        "local_band_low": config["tier_local_band_low"],
     }
-    if simulated:
-        # 1.12, built at last (PLAN-ros-alignment.md R1): the simulator
-        # reports what its geometry says is visible, and nothing loads YOLO
-        # or CLIP to look at a raycaster wall. Before this a tiered mission
-        # on the Sim tab ran both models on renders -- forbidden, and blind,
-        # so the tier could never steer there. The panel's Models line reads
-        # "sim ground truth", and every tier frame carries `synthesised`.
-        from brain.perceive import FrameReportedPipeline
-
-        return tiered_vision_fn_for(target, cloud_vision_fn,
-                                    pipeline=FrameReportedPipeline(target), **kwargs)
-    pipeline_kwargs = {}
-    if config["perception_detector"]:
-        pipeline_kwargs["weights"] = config["perception_detector"]
-    if config["perception_clip_model"]:
-        pipeline_kwargs["clip_model"] = config["perception_clip_model"]
-    if config["perception_match_probability"]:
-        pipeline_kwargs["match_probability"] = float(config["perception_match_probability"])
-    if config["perception_match_margin"]:
-        pipeline_kwargs["match_margin"] = float(config["perception_match_margin"])
-    if config["perception_crop_path"]:
-        pipeline_kwargs["crop_path"] = config["perception_crop_path"]
-    if config["perception_floor_mask"]:
-        pipeline_kwargs["floor_mask"] = True
+    # 3.80.C: the local VLM tier at arrival, when a URL is configured; 3.80.D:
+    # the same client for every frame's question, asking where as well.
+    local = _local_identity_fn(target, config, local_secret)
+    if local is not None:
+        # 3.80.P: a local tier's questions are free; the cloud-only pace stays.
+        kwargs["local_cold_search_after"] = config["tier_local_cold_search_after"]
     try:
-        from brain.perceive import pipeline_for
+        kwargs["local_identity_fn"] = local
+        kwargs["local_sighting_fn"] = (functools.partial(local.ask, box=True)
+                                       if local is not None else None)
+        # 3.80.F: the local tier's direction, and YOLOE + CLIP's candidate steer.
+        kwargs["local_direction_fn"] = (local.direction
+                                        if local is not None and config["tier_local_direction"]
+                                        else None)
+        # The candidate's steer covers the band question to the local tier; with
+        # no local tier there is no such question, and the policy stays as it was.
+        # 3.80.G: under an explore search a cloud failure ends nothing.
+        kwargs["cloud_errors_fatal"] = config["tier_search"] != "explore"
+        kwargs["steer_on_candidate"] = (local is not None
+                                        and bool(config["tier_steer_on_candidate"]))
+        if simulated:
+            # 1.12, built at last (PLAN-ros-alignment.md R1): the simulator
+            # reports what its geometry says is visible, and nothing loads YOLO
+            # or CLIP to look at a raycaster wall. Before this a tiered mission
+            # on the Sim tab ran both models on renders -- forbidden, and blind,
+            # so the tier could never steer there. The panel's Models line reads
+            # "sim ground truth", and every tier frame carries `synthesised`.
+            from brain.perceive import FrameReportedPipeline
 
-        pipeline = pipeline_for(target, **pipeline_kwargs)
-    except PerceptionUnavailable as e:
-        # Re-raised as ValueError because start_mission() maps that to a
-        # 400 with the message intact, and the message is the useful part:
-        # it names the pip command.
-        raise ValueError(f"The tiered policy cannot start: {e}") from e
-    except Exception as e:  # noqa: BLE001 -- a bad weights file, a dead download
-        raise ValueError(
-            f"The tiered policy could not load its perception models: {e}"
-        ) from e
-    return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
+            # 3.80.O's evaluation switch, off unless set: perception blind to
+            # the target, so only the local tier can find it.
+            pipeline = FrameReportedPipeline(
+                target, blind=os.environ.get("SIM_PERCEPTION_BLIND", "") == "1")
+            # 3.80.D: a local VLM's box is read in the render's field of view.
+            pipeline.hfov_deg = SIM_HFOV_DEG
+            return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
+        pipeline_kwargs = {}
+        if config["perception_detector"]:
+            pipeline_kwargs["weights"] = config["perception_detector"]
+        if config["perception_clip_model"]:
+            pipeline_kwargs["clip_model"] = config["perception_clip_model"]
+        if config["perception_match_probability"]:
+            pipeline_kwargs["match_probability"] = float(config["perception_match_probability"])
+        if config["perception_match_margin"]:
+            pipeline_kwargs["match_margin"] = float(config["perception_match_margin"])
+        if config["perception_crop_path"]:
+            pipeline_kwargs["crop_path"] = config["perception_crop_path"]
+        if config["perception_floor_mask"]:
+            pipeline_kwargs["floor_mask"] = True
+        try:
+            from brain.perceive import pipeline_for
+
+            pipeline = pipeline_for(target, **pipeline_kwargs)
+        except PerceptionUnavailable as e:
+            # Re-raised as ValueError because start_mission() maps that to a
+            # 400 with the message intact, and the message is the useful part:
+            # it names the pip command.
+            raise ValueError(f"The tiered policy cannot start: {e}") from e
+        except Exception as e:  # noqa: BLE001 -- a bad weights file, a dead download
+            raise ValueError(
+                f"The tiered policy could not load its perception models: {e}"
+            ) from e
+        return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
+    except BaseException:
+        # A refused build (perception's models failed to load) keeps no
+        # local client open (review of the 3.80 rebase, 2026-10-17).
+        if local is not None:
+            _close_quietly(local)
+        raise
+
+
+def _close_quietly(obj) -> None:
+    """Close what a refused or replaced start built; a close that fails never
+    replaces the start's own error (review of the 3.80 rebase, 2026-10-17)."""
+    close = getattr(obj, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("could not close a policy the start let go: %s", e)
 
 
 def create_app(
@@ -463,78 +510,24 @@ def create_app(
         )
 
     def default_runner_factory(robot: RobotInterface, req: MissionStartRequest) -> MissionRunner:
-        vision_fn = None
-        if req.policy in CLOUD_POLICIES:
-            # The policy exists (brain/vision_agent.py); what it needs is an
-            # endpoint to ask and a target to look for. Both are checked here
-            # rather than failing on the first tick, so a misconfigured brain
-            # says so at start time instead of after a paid call.
-            #
-            # The tiered policy needs both for the same reasons and one
-            # more of its own: the target string is what CLIP scores every
-            # crop against, so a mission with no object has nothing to
-            # perceive as well as nothing to ask about.
-            if not config["vision_url"]:
-                raise ValueError(
-                    f"The {req.policy} policy needs a vision service. Set "
-                    "brain.vision_url in config/robot.yaml (or VISION_URL in the "
-                    "environment)."
-                )
-            # 3.76 round 3 (P4): blank and over-long targets are refused HERE,
-            # for the cloud policies only, because the vision service answers
-            # both 400 -- a mission that started would fail every call.
-            # frontier/explore never ask the cloud and keep their old rules.
-            if not req.target_object or not req.target_object.strip():
-                raise ValueError(
-                    f"The {req.policy} policy searches for an object -- /navigate "
-                    "takes a target_object. A target_room-only mission needs "
-                    "policy='frontier'."
-                )
-            if len(req.target_object) > MAX_TARGET_CHARS:
-                raise ValueError(
-                    f"The {req.policy} policy's target_object is over "
-                    f"{MAX_TARGET_CHARS} characters; the vision service refuses it."
-                )
-            model_id = req.model_id or config["navigate_model_id"] or None
-            prompt_variant = (
-                req.prompt_variant or config["navigate_prompt_variant"] or None
-            )
-            _validate_navigate_choices(
-                model_id, prompt_variant, config["vision_url"], vision_secret,
-                config["request_timeout_s"],
-            )
-            vision_fn = vision_fn_for(
-                req.target_object,
-                vision_url=config["vision_url"],
-                secret=vision_secret,
-                timeout_s=config["vision_timeout_s"],
-                model_id=model_id,
-                prompt_variant=prompt_variant,
-            )
-            if req.policy == "tiered":
-                # 3.56: the arrival confirmation gets its own client, whose
-                # HTTP deadline is the confirmation's, so a hang ends in
-                # httpx (CloudUnavailable) rather than an abandoned thread.
-                confirm_fn = vision_fn_for(
-                    req.target_object,
-                    vision_url=config["vision_url"],
-                    secret=vision_secret,
-                    timeout_s=min(config["arrival_confirm_timeout_s"],
-                                  config["vision_timeout_s"]),
-                    model_id=model_id,
-                    prompt_variant=prompt_variant,
-                )
-                vision_fn = _tiered_vision_fn(
-                    req.target_object, vision_fn, config,
-                    simulated=_frames_are_simulated(robot), confirm_vision_fn=confirm_fn,
-                    local_secret=_local_vlm_secret(config, secret))
-
+        # Checked before the tiered clients are built, so a refused start
+        # leaves none open (review, 2026-10-16).
         navigator = None
-        if req.policy == "explore":
+        # 3.80.G: a tiered mission whose search is explore's needs nav2 too.
+        tier_search = config["tier_search"] if req.policy == "tiered" else "cloud"
+        if tier_search == "explore" and not config["tier_local_vlm_url"]:
+            # Explore ignores the cloud's direction: with no local tier every
+            # question would be a paid call that buys nothing (review,
+            # 2026-10-16).
+            raise ValueError("tier_search 'explore' needs the local tier "
+                             "(brain.tier_local_vlm_url / LOCAL_VLM_URL): without it "
+                             "every question is a cloud call whose direction is unused.")
+        policy_name = "explore policy" if req.policy == "explore" else "explore search"
+        if req.policy == "explore" or tier_search == "explore":
             # 3.31. Goals go to nav2 through the robot server; checked here so
             # a world with no planner refuses at start, not on the first tick.
             if not req.target_object and req.job != "survey":
-                raise ValueError("The explore policy searches for an object -- it "
+                raise ValueError(f"The {policy_name} searches for an object -- it "
                                  "needs a target_object (or job 'survey').")
             navigator = RemoteNavigator(
                 config.get("world_url") or getattr(robot, "base_url", None)
@@ -546,7 +539,7 @@ def create_app(
             except httpx.HTTPError as e:
                 # 3.76: an unreachable robot server was a bare 500.
                 navigator.close()
-                raise ValueError(f"The explore policy could not reach the robot server's "
+                raise ValueError(f"The {policy_name} could not reach the robot server's "
                                  f"goals at {navigator.base_url}: {e}") from e
             except PermissionError as e:
                 navigator.close()
@@ -554,9 +547,81 @@ def create_app(
             if not ok:
                 navigator.close()
                 raise ValueError(
-                    "The explore policy needs nav2: this robot server's world cannot "
+                    f"The {policy_name} needs nav2: this robot server's world cannot "
                     "take goals (run it with WORLD_MODE=ros and the ROS container up "
                     "-- service/slam/README.md).")
+
+        vision_fn = None
+        try:
+            if req.policy in CLOUD_POLICIES:
+                # The policy exists (brain/vision_agent.py); what it needs is an
+                # endpoint to ask and a target to look for. Both are checked here
+                # rather than failing on the first tick, so a misconfigured brain
+                # says so at start time instead of after a paid call.
+                #
+                # The tiered policy needs both for the same reasons and one
+                # more of its own: the target string is what CLIP scores every
+                # crop against, so a mission with no object has nothing to
+                # perceive as well as nothing to ask about.
+                if not config["vision_url"]:
+                    raise ValueError(
+                        f"The {req.policy} policy needs a vision service. Set "
+                        "brain.vision_url in config/robot.yaml (or VISION_URL in the "
+                        "environment)."
+                    )
+                # 3.76 round 3 (P4): blank and over-long targets are refused HERE,
+                # for the cloud policies only, because the vision service answers
+                # both 400 -- a mission that started would fail every call.
+                # frontier/explore never ask the cloud and keep their old rules.
+                if not req.target_object or not req.target_object.strip():
+                    raise ValueError(
+                        f"The {req.policy} policy searches for an object -- /navigate "
+                        "takes a target_object. A target_room-only mission needs "
+                        "policy='frontier'."
+                    )
+                if len(req.target_object) > MAX_TARGET_CHARS:
+                    raise ValueError(
+                        f"The {req.policy} policy's target_object is over "
+                        f"{MAX_TARGET_CHARS} characters; the vision service refuses it."
+                    )
+                model_id = req.model_id or config["navigate_model_id"] or None
+                prompt_variant = (
+                    req.prompt_variant or config["navigate_prompt_variant"] or None
+                )
+                _validate_navigate_choices(
+                    model_id, prompt_variant, config["vision_url"], vision_secret,
+                    config["request_timeout_s"],
+                )
+                vision_fn = vision_fn_for(
+                    req.target_object,
+                    vision_url=config["vision_url"],
+                    secret=vision_secret,
+                    timeout_s=config["vision_timeout_s"],
+                    model_id=model_id,
+                    prompt_variant=prompt_variant,
+                )
+                if req.policy == "tiered":
+                    # 3.56: the arrival confirmation gets its own client, whose
+                    # HTTP deadline is the confirmation's, so a hang ends in
+                    # httpx (CloudUnavailable) rather than an abandoned thread.
+                    confirm_fn = vision_fn_for(
+                        req.target_object,
+                        vision_url=config["vision_url"],
+                        secret=vision_secret,
+                        timeout_s=min(config["arrival_confirm_timeout_s"],
+                                      config["vision_timeout_s"]),
+                        model_id=model_id,
+                        prompt_variant=prompt_variant,
+                    )
+                    vision_fn = _tiered_vision_fn(
+                        req.target_object, vision_fn, config,
+                        simulated=_frames_are_simulated(robot), confirm_vision_fn=confirm_fn,
+                        local_secret=_local_vlm_secret(config, secret))
+
+        except BaseException:
+            if navigator is not None:
+                navigator.close()      # a refused start keeps no client open
+            raise
 
         kwargs = dict(
             target_object=req.target_object,
@@ -579,6 +644,7 @@ def create_app(
             arrival_confirm_timeout_s=config["arrival_confirm_timeout_s"],
             max_vision_failures=config["max_vision_failures"],
             explore_goal_policy=config["explore_goal_policy"],
+            tier_search=tier_search,
         )
         if navigator is not None:
             kwargs["navigator"] = navigator
@@ -590,7 +656,14 @@ def create_app(
         except BaseException:
             if navigator is not None:
                 navigator.close()      # 3.76: a refused start keeps no client open
+            # The tiered policy too: its local VLM client and perception
+            # models (review of the 3.80 rebase, 2026-10-17).
+            _close_quietly(vision_fn)
             raise
+        if kwargs.get("vision_fn") is not vision_fn:
+            # A vision drill swapped the policy for its own function: the one
+            # built above has no other owner (review of the 3.80 rebase).
+            _close_quietly(vision_fn)
         # Kept on the runner and applied once the start is committed (3.76):
         # set here, a drill whose start then failed left its deadline in
         # /health until the next start.
@@ -618,15 +691,20 @@ def create_app(
         # line without the config that produced it is a set of numbers
         # with no cause attached.
         runner.metrics_config = {
-            k: config.get(k) for k in (
-                "tier_cold_search_after", "tier_cold_search_after_cm",
+            # 3.80.P: whether a local tier was configured -- which pace held --
+            # never its URL, which leaves the machine with the row.
+            "tier_local_vlm": bool((config.get("tier_local_vlm_url") or "").strip()),
+            **{k: config.get(k) for k in (
+                "tier_cold_search_after", "tier_local_cold_search_after",
+                "tier_cold_search_after_cm",
                 "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
+                "tier_local_direction", "tier_steer_on_candidate", "tier_search",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",
                 "tier_spin_guard_after", "tier_consecutive_frames",
                 "perception_floor_mask", "perception_crop_path",
                 "navigate_model_id", "navigate_prompt_variant",
                 "explore_goal_policy",
-            ) if k in config
+            ) if k in config},
         }
         return runner
 
@@ -1054,10 +1132,17 @@ def create_app(
             "perception_floor_mask": bool(config["perception_floor_mask"]),
             "tier_consecutive_frames": config["tier_consecutive_frames"],
             "tier_cold_search_after": config["tier_cold_search_after"],
+            # 3.80.P: the pace a mission with a local tier asks it at (the
+            # cloud keeps the bar above); the live bar is the policy's own
+            # `frames_bar` in the mission's tier status.
+            "tier_local_cold_search_after": config["tier_local_cold_search_after"],
+            "tier_local_vlm": bool((config.get("tier_local_vlm_url") or "").strip()),
             "tier_cold_search_after_cm": config["tier_cold_search_after_cm"],
             "tier_async_cloud": bool(config["tier_async_cloud"]),
             "tier_hold_goal": bool(config["tier_hold_goal"]),
             "tier_steer_on_sight": bool(config["tier_steer_on_sight"]),
+            "tier_local_direction": bool(config["tier_local_direction"]),
+            "tier_steer_on_candidate": bool(config["tier_steer_on_candidate"]),
             "tier_spin_guard_after": config["tier_spin_guard_after"],
             # Published so the panel can name the bar it is reporting
             # against. A verdict shown without the number it was taken at

@@ -1,0 +1,15 @@
+== desktop: inactive; twin units: inactive inactive; runtime none
+== run L 18:22:24 rev cb9d3b0 image vision-picar-ros:plan-3.78 NV Power Mode: 15W
+== policy tiered; vlm service; cloud off; ros from tree 1; text cache empty
+== MemAvailable before anything: 5974 MB
+== local VLM ready 18:22:34; MemAvailable: 3027 MB
+OK: robot and brain both running cb9d3b0 (log: /home/picar/.vision-picar-tunnel.log)
+WARNING: ngrok is not running -- the deployed twin cannot reach this machine. Start it with: ngrok start picar
+== stack up 18:22:47; MemAvailable with the stack: 2616 MB
+== mission start 18:22:47; wheel: 0 0 0.0
+start 200 {"started":true,"status":{"running":true,"outcome":"running","end_state":null,"end_reason":null,"cancelled_by":null,"report":null,"budget":{"time_limit_s":1200,"elapsed_s":0.0,"battery_floor_v":10.5,"
+mission end {"outcome": "out_of_budget", "step": 370, "report": {"rooms_entered": ["foyer"], "goals_reached": [], "coverage": 0.992, "mapped_free_m2": 32.12, "map_id": "slam-7ac5f69b", "map_version": 1202}}
+== mission end 18:42:50; wheel: 16890 0 0.0635
+== local VLM at the end: alive {"service":"local_vlm","ready":true,"alive":true,"load_s":7.500692033034284,"served":0,"engines":"/home/picar/bench-380K/RVE/engines","pid":612076}
+== summary: {"valid": true, "mission_exit": 0, "mission_end": {"running": false, "outcome": "out_of_budget", "step": 370, "end_reason": "time limit of 1200 s reached (1200.3 s)", "arrival": {"state": "approaching", "streak": 0, "reason": "target not detected", "bearing_deg": null, "range_m": null, "radius_m": 0.4}, "tier": {"cloud_called": false, "trigger": null, "cloud_landed": false, "models": {"detector": "sim ground truth", "scorer": null, "proposer": null, "target": "red backpack", "crop_source": "frame_reported"}, "corroboration": null, "in_flight": null, "holding": null, "vocabulary": null, "pacing": {"rule": "frames", "frames_absent": 3, "frames_bar": 6, "cm_since_call": 5.1, "cm_bar": null, "odometry_usable": true, "reason": "cold_search_after_cm is not set"}, "stats": {"cloud_ms": {"n": 62, "p50": 84, "p90": 99, "p99": 108, "max": 111, "mean": 84}, "perception_ms": {"n": 432, "p50": 0, "p90": 0, "p99": 0, "max": 0, "mean": 0}, "local_ms": null, "local_calls": 0, "local": {}, "escalations": 0, "frames": 432, "cloud_calls": 62, "claims": 0, "corroborated": 0, "verdicts": {}, "frames_per_call": 6.97, "triggers": {"mission_start": 1, "cold_search": 61}, "perception": {"absent": 432}}}, "error": null}, "window_s": 1203, "mem_min_mb": 2484, "mem_median_mb": 2516, "mem_first_min_median_mb": 2566.0, "mem_last_min_median_mb": 2496.0, "drift_mb": 70.0, "oom_events": 0, "wheel_moving_ticks": 16890, "wheel_late_ticks": 0}
+== torn down; desktop: active

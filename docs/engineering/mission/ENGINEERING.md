@@ -29,7 +29,10 @@ threads; where it and this file disagree, check the code.
 
 **Agent selection.** `MissionRunner` builds `VisionAgent` for `policy` in
 `VISION_POLICIES` (`"vision"`, `"tiered"`) and `ObjectSearchAgent` for
-`"frontier"` (both in [policy](../policy/ENGINEERING.md)). With no
+`"frontier"` (both in [policy](../policy/ENGINEERING.md)); `ExploreAgent`
+for `"explore"`, and for `"tiered"` with `tier_search="explore"` (3.80.G,
+`TIER_SEARCHES`; `self.explores` then also gates the navigator wrapper, its
+end at `_finish`, and the status's `explore` block). With no
 `vision_fn`, the frontier agent's own `sensed_scene()` is used.
 
 **Threads** (`AGENT-HARNESS.md` section 7):
@@ -459,7 +462,7 @@ cancelled_by)` (`stopped` -> `cancelled`/`stop`, `preempted` ->
   its stop: it cancels the mission's OWN goal if nav2 still holds one
   within `OWN_GOAL_TOLERANCE_M` (0.05 m) of it -- the robot server spares a
   goal on the brain's stop -- then closes the client once no goal is on its
-  way. `discard()` does the same for a runner built and never started.
+  way. `discard()` does the same for a runner built and never started, and also closes its policy (perception models, the local VLM client); a start refused after the tiered policy was built, or whose vision drill replaced it, closes that policy too (3.80 rebase review, 2026-10-17).
 
 ## Parameters and configuration
 

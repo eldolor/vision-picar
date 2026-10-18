@@ -217,6 +217,14 @@ brain:
   # passed for the next frame (the user, 2026-10-13). Not consecutive: a
   # detected frame does not reset it, as when the 6 was measured.
   tier_cold_search_after: 6
+  # 3.80.P (the user, 2026-10-17): the pace instead, when a local VLM tier is
+  # configured (tier_local_vlm_url). Its questions are free, and on the
+  # Jetson one on every free frame kept perception's p90 at 171 ms (budget
+  # 250) and MemAvailable >= 823 MB; in the simulator it reached the target
+  # in 17 of 21 houses with perception blind (6: 12 of 21, 3.80.O). A
+  # cloud-only mission keeps tier_cold_search_after. Env
+  # TIER_LOCAL_COLD_SEARCH_AFTER overrides.
+  tier_local_cold_search_after: 1
 
   # Phase C. How much NEW GROUND (centimetres) may be covered before the
   # cloud is asked to look again while the local tier is seeing nothing.
@@ -319,6 +327,27 @@ brain:
   tier_local_no_below: 0.1
   tier_local_max_unable: 2
   tier_local_timeout_s: 3.0
+  # 3.80.D -- per frame, with the local tier on: a best candidate with CLIP
+  # P in [band_low, the 0.8 gate) on tier_consecutive_frames frames asks the
+  # local VLM (`uncertain_band`), as do an out-of-vocabulary target and
+  # today's four triggers; the cloud only after max_unable unable answers in
+  # a row, or when the local VLM is absent (approved by the user 2026-10-14).
+  tier_local_band_low: 0.5
+  # 3.80.F -- with the local tier on, a search trigger (mission_start,
+  # cold_search, staleness) whose sighting answer is not a yes asks the local
+  # VLM for a direction (left, right, forward), held as a cloud goal is
+  # (the user, 2026-10-16). Off: criterion F4 failed (VE said `forward` on
+  # 10 of 10 frames). TIER_LOCAL_DIRECTION overrides.
+  tier_local_direction: false
+  # 3.80.F -- YOLOE + CLIP steer toward a best crop in the uncertain band
+  # while the local VLM is asked about it. On since criterion F5 (the target
+  # in view on 26 of 27 such real frames). TIER_STEER_ON_CANDIDATE overrides.
+  tier_steer_on_candidate: true
+  # 3.80.G -- who chooses where a tiered mission searches: `cloud` (the
+  # cloud's direction, as before) or `explore` (explore's nav2 goals; needs
+  # nav2 like the explore policy; the tiers decide identity and the last
+  # approach). TIER_SEARCH overrides.
+  tier_search: cloud
 
   # 3.70 E4: a mission's budget -- a time limit (seconds) and a battery floor
   # (volts, the motor board's `v`). It ends `out_of_budget` at either. The

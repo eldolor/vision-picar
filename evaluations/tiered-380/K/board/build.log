@@ -1,0 +1,9 @@
+RT llm_build exit 0 193s
+RT visual_build exit 0 105s
+2.6G	/home/picar/bench-380K/RT/engines/llm
+1.3G	/home/picar/bench-380K/RT/engines/visual
+RVE llm_build exit 0 99s
+RVE visual_build exit 0 100s
+1.8G	/home/picar/bench-380K/RVE/engines/llm
+1.3G	/home/picar/bench-380K/RVE/engines/visual
+BUILD DONE; units active active; swap 0

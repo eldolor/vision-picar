@@ -1,0 +1,37 @@
+{
+ "outcome": "blocked",
+ "seconds": 82,
+ "steps": 79,
+ "arrival": {
+  "state": "approaching",
+  "streak": 0,
+  "reason": "target not detected",
+  "bearing_deg": null,
+  "range_m": null,
+  "radius_m": 0.4
+ },
+ "identity_tier": null,
+ "arrival_cloud_calls": 0,
+ "local_calls": 0,
+ "local": {},
+ "cloud_calls": 0,
+ "local_triggers": {
+  "mission_start": 1,
+  "cold_search": 13
+ },
+ "local_frame": {
+  "yes": 13
+ },
+ "frame_escalations": {},
+ "service_served": 14,
+ "log_tail": [
+  "step 76: FORWARD (blocked) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal FORWARD",
+  "step 77: FORWARD (blocked) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal FORWARD",
+  "step 78: FORWARD (blocked) -- target not visible -- [reactive tier, local question: cold_search] asked the local tier -- holding last cloud goal FORWARD",
+  "inventory: 1 reported, 0 candidates from 79 frames -- sofa",
+  "mission ended (blocked): FORWARD refused 5 times in a row by the safety layer, 3 times over -- the way ahead is obstructed. Going around it is route planning (nav2, PLAN-ros-alignment.md R6)"
+ ],
+ "logs": "/var/folders/4m/90g11pps7z52mxb1k0ps3pjm0000gr/T/demo_local_tier-1792011312",
+ "met": false,
+ "d11_met": false
+}

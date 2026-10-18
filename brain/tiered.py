@@ -72,6 +72,7 @@ cap, for the same reason.
 
 from __future__ import annotations
 
+import functools
 import logging
 import threading
 import math
@@ -81,8 +82,9 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-from brain.goal_pose import GoalPose, OdomTracker
-from brain.perceive import ABSENT, DETECTED, UNAVAILABLE, Perception
+from brain.goal_pose import GoalPose, OdomTracker, Pose, _wrap
+from brain.perceive import (ABSENT, DEFAULT_MATCH_PROBABILITY, DETECTED, UNAVAILABLE,
+                            Perception)
 
 logger = logging.getLogger("tiered")
 
@@ -116,10 +118,51 @@ DEFAULT_LOCAL_MAX_UNABLE = 2
 # tier's count: ArrivalCheck's own 2 frames plus one.
 LOCAL_RESET_FRAMES = 3
 
+# 3.80.D: the two questions only the local tier is asked first. A candidate
+# whose CLIP P is in [`tier_local_band_low`, the match gate) on
+# `consecutive_frames` frames in a row; and an out-of-vocabulary target
+# after `consecutive_frames` absent frames (a local question costs no money,
+# so it is asked about as often as the VLM can answer).
+TRIGGER_BAND = "uncertain_band"
+TRIGGER_OOV = "out_of_vocabulary"
+# 3.80.O: explore is closing in on a target only the local VLM has seen, so
+# the local VLM is asked on every frame it is free (its box steers the last
+# half metre and judges the arrival). Local only: never handed to the cloud.
+TRIGGER_TRACK = "local_track"
+
+
+def located_local_bearing(scene: dict):
+    """3.80.O: the body bearing of the local VLM's located yes landed on this
+    frame (`_tier.local_landed`), else None. One reader for the arrival rule
+    and explore."""
+    landed = ((scene or {}).get("_tier") or {}).get("local_landed") or {}
+    if landed.get("answer") == "yes" and landed.get("bearing_deg") is not None:
+        return float(landed["bearing_deg"])
+    return None
+
+
+def local_said_no(scene: dict) -> bool:
+    landed = ((scene or {}).get("_tier") or {}).get("local_landed") or {}
+    return landed.get("answer") == "no"
+DEFAULT_LOCAL_BAND_LOW = 0.5
+# The field of view a box's bearing is read in, when the pipeline names none
+# (perceive.py's Camera Module 3 default).
+DEFAULT_HFOV_DEG = 66.0
+
 # 2.4's other four. Named, not implemented -- each needs a tier that does
 # not exist yet, and a trigger that cannot fire is worse than one that is
 # absent, because it looks like coverage.
 TRIGGER_STALE = "staleness"
+# 3.80.F: the questions that ask WHERE TO LOOK, not whether a candidate is
+# the target. Put to the local tier, a reply that is not a yes is followed by
+# the direction question about the same frame.
+SEARCH_TRIGGERS = (TRIGGER_START, TRIGGER_COLD_SEARCH, TRIGGER_STALE)
+# The local VLM's one-word answer, as the action the policy holds.
+DIRECTION_ACTIONS = {"left": "LEFT", "right": "RIGHT", "forward": "FORWARD"}
+# A direction reply that says there is no direction to be had -- the service
+# predates 3.80.F (404), or went away between the two questions. Neither
+# answers nor fails the search question: the policy behaves as 3.80.D.
+DIRECTION_NONE = ("absent", "unsupported")
 
 UNAVAILABLE_TRIGGERS = {
     "goal_achieved": "needs C6 -- nothing holds a goal to achieve",
@@ -506,6 +549,24 @@ class TierStats:
     local: dict = field(default_factory=dict)
     local_ms: list = field(default_factory=list)
     escalations: int = 0
+    # 3.80.O: arrivals on the local VLM's box, confirmed by the cloud alone.
+    guarded: int = 0
+    # 3.80.D: the per-frame questions put to the local tier, by trigger;
+    # how they ended (`yes`, `no`, `unable_<status>`, `absent`); and the
+    # questions handed to the cloud, by why (`unable`, `absent`).
+    local_triggers: dict = field(default_factory=dict)
+    local_frame: dict = field(default_factory=dict)
+    local_frame_calls: int = 0
+    frame_escalations: dict = field(default_factory=dict)
+    local_frame_ms: list = field(default_factory=list)
+    # 3.80.F: the direction questions, by how they ended (`left`, `right`,
+    # `forward`, `unable_<status>`, `absent`), and their wall clock; and the
+    # frames YOLOE + CLIP's candidate steered.
+    local_direction: dict = field(default_factory=dict)
+    local_direction_ms: list = field(default_factory=list)
+    candidate_steers: int = 0
+    # 3.80.G: cloud failures logged rather than raised (cloud_errors_fatal off).
+    cloud_errors: int = 0
     # How many samples each bucket has been offered, and the reservoir's
     # draw (seeded, so a replay samples the same way) -- 3.76.
     _seen: dict = field(default_factory=dict, repr=False, compare=False)
@@ -551,6 +612,16 @@ class TierStats:
             "local_calls": self.local_calls,
             "local": dict(self.local),
             "escalations": self.escalations,
+            "guarded": self.guarded,
+            "local_triggers": dict(self.local_triggers),
+            "local_frame": dict(self.local_frame),
+            "local_frame_calls": self.local_frame_calls,
+            "local_frame_ms": self._percentiles("local_frame_ms"),
+            "frame_escalations": dict(self.frame_escalations),
+            "local_direction": dict(self.local_direction),
+            "local_direction_ms": self._percentiles("local_direction_ms"),
+            "candidate_steers": self.candidate_steers,
+            "cloud_errors": self.cloud_errors,
             "frames": self.frames,
             "cloud_calls": self.cloud_calls,
             "claims": self.claims,
@@ -562,6 +633,48 @@ class TierStats:
             "triggers": dict(self.triggers),
             "perception": dict(self.perception),
         }
+
+
+def _local_kind(got: dict, no_below: float) -> str:
+    """A sighting reply as `yes`, `no` or `unable_<why>` (3.80.D's rule)."""
+    status, score = got.get("status"), got.get("score")
+    numeric = isinstance(score, (int, float))
+    if status == "answered" and numeric and score >= LOCAL_YES_AT:
+        return "yes"
+    if status == "answered" and numeric and score <= no_below:
+        return "no"
+    return (f"unable_{status}" if status != "answered"
+            else "unable_band" if numeric else "unable_noscore")
+
+
+@dataclass
+class _Question:
+    """3.80.D: one frame's question, as it was asked -- for reading a box's
+    bearing when the answer lands, perhaps several frames and a turn later."""
+    trigger: str
+    epoch: int
+    pose: Optional[Pose]
+    pan_deg: float
+    hfov_deg: float
+    cloud_ok: bool = True
+    # 3.80.F: what perception saw on the asked frame -- the target (no
+    # direction is asked: it is in view), and a crop in the uncertain band
+    # (a no on this frame rejects it).
+    detected: bool = False
+    band: bool = False
+    # Set when the local tier has answered (or failed): the arrival's own
+    # local check waits for this, not for the whole question.
+    local_done: threading.Event = field(default_factory=threading.Event)
+
+
+@dataclass
+class _LocalAnswer:
+    q: _Question
+    got: dict
+    absent: bool = False   # absent, and the call cap kept the cloud out
+    # 3.80.F: the direction question's reply, when one was asked after a
+    # search question's sighting answer was not a yes.
+    direction: Optional[dict] = None
 
 
 class TieredVision:
@@ -586,6 +699,7 @@ class TieredVision:
         max_calls: Optional[int] = None,
         corroboration_bar: float = DEFAULT_CORROBORATION_P,
         oov_cold_search_after: Optional[int] = None,
+        local_cold_search_after: Optional[int] = None,
         async_cloud: bool = False,
         hold_goal: bool = DEFAULT_HOLD_GOAL,
         steer_on_sight: bool = DEFAULT_STEER_ON_SIGHT,
@@ -596,8 +710,50 @@ class TieredVision:
         local_identity_fn: Optional[Callable[[dict], dict]] = None,
         local_no_below: float = DEFAULT_LOCAL_NO_BELOW,
         local_max_unable: int = DEFAULT_LOCAL_MAX_UNABLE,
+        local_sighting_fn: Optional[Callable[..., dict]] = None,
+        local_band_low: float = DEFAULT_LOCAL_BAND_LOW,
+        local_direction_fn: Optional[Callable[[dict], dict]] = None,
+        steer_on_candidate: bool = False,
+        cloud_errors_fatal: bool = True,
     ):
         self.pipeline = pipeline
+        # 3.80.F: the local tier's search question (brain/local_vlm.py's
+        # `direction`), asked after a search trigger's sighting answer that
+        # is not a yes; its answer is held as a cloud goal is. None: the
+        # local tier gives no direction (3.80.D).
+        self.local_direction_fn = local_direction_fn
+        # 3.80.G: under an explore search the cloud only ever answers an
+        # escalated question whose direction is unused, and explore needs no
+        # cloud to search: its failures are logged and counted
+        # (`stats.cloud_errors`), not raised into B3.2's budget.
+        self.cloud_errors_fatal = bool(cloud_errors_fatal)
+        # 3.80.F: YOLOE + CLIP steer toward a best crop in the uncertain band
+        # (not a detection) -- not after a local no about a frame with such
+        # a crop, until the band run breaks (`_candidate_rejected`).
+        self.steer_on_candidate = bool(steer_on_candidate)
+        self._candidate_rejected = False
+        self._local_held_why: Optional[str] = None   # "located" or "direction"
+        # 3.80.D: the local tier for every question a FRAME raises, called
+        # with `box=True` (brain/local_vlm.py's `ask`). None: the triggers go
+        # to the cloud, as before 3.80.D, and the band and out-of-vocabulary
+        # questions do not exist.
+        self.local_sighting_fn = local_sighting_fn
+        self.local_band_low = float(local_band_low)
+        self.match_probability = float(getattr(pipeline, "match_probability", None)
+                                        or DEFAULT_MATCH_PROBABILITY)
+        self._frame_unable = 0           # unable answers in a row, any question
+        self._band_run = 0
+        self._band_asked = False
+        self._retry_start = False
+        self._local_turn: Optional[tuple] = None   # (direction, turn_deg), used once
+        self._local_held: Optional[str] = None     # FORWARD after a located yes
+        self._inflight_tier: Optional[str] = None
+        self._inflight_question: Optional["_Question"] = None
+        self._local_landed: Optional[dict] = None  # shown on the frame it landed
+        self._local_track = False   # 3.80.O: set by explore (`set_local_track`)
+        # Counts the worker thread changes too (an absent local tier's
+        # cloud call).
+        self._stats_lock = threading.Lock()
         # 3.80.C: the local VLM tier at arrival (brain/local_vlm.py's
         # client). None: the cloud alone confirms, as before 3.80.
         self.local_identity_fn = local_identity_fn
@@ -664,6 +820,15 @@ class TieredVision:
         self.oov_cold_search_after = (
             None if oov_cold_search_after is None
             else max(1, int(oov_cold_search_after)))
+        # 3.80.P (the user's option a): the cold-search pace while the
+        # question goes to the local tier, whose answers are free. A
+        # question the cloud would answer -- the local tier absent, or
+        # unable `local_max_unable` times -- still waits the cloud's bar,
+        # so a dead VLM never brings the paid pace to this one. None: one
+        # pace, as before.
+        self.local_cold_search_after = (
+            None if local_cold_search_after is None
+            else max(1, int(local_cold_search_after)))
         # -------- Phase A: the cloud call stops blocking the tick --------
         #
         # 2.5 has specified this since the tiered architecture was written
@@ -791,7 +956,9 @@ class TieredVision:
         # the budget counts the same events it always did.
         if self._pending_error is not None:
             err, self._pending_error = self._pending_error, None
-            raise err
+            if self.cloud_errors_fatal:
+                raise err
+            self._count_cloud_error(err)
 
         trigger = self._trigger_for(perception)
         if trigger is None:
@@ -804,7 +971,13 @@ class TieredVision:
             # back by the call in flight, it must fire once that lands, not
             # wait for the staleness floor.
             self._last_confirmed = None
-        if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
+        if trigger == TRIGGER_BAND and self.async_cloud and self._inflight is not None:
+            self._band_asked = False   # 3.80.D: the same, for the band
+        # 3.80.D: the local tier first, unless it has been unable
+        # `local_max_unable` times in a row (then this one is the cloud's).
+        local_fn = self._local_first()
+        if (local_fn is None and self.max_calls is not None
+                and self.stats.cloud_calls >= self.max_calls):
             logger.warning("call cap %d reached -- not firing %s",
                            self.max_calls, trigger)
             return self._local_scene(perception, note="call cap reached")
@@ -821,6 +994,10 @@ class TieredVision:
         if self._closed or self._epoch != frame_epoch:
             return self._local_scene(perception, note="mission ended")
 
+        if local_fn is not None:
+            return self._ask_local_first(frame, perception, trigger, frame_epoch, local_fn)
+        escalated = self.local_sighting_fn is not None
+
         self.stats.cloud_calls += 1
         self.stats.triggers[trigger] = self.stats.triggers.get(trigger, 0) + 1
         self._absent_streak = 0
@@ -834,18 +1011,304 @@ class TieredVision:
                 self.stats.cloud_calls -= 1
                 self.stats.triggers[trigger] -= 1
                 return self._local_scene(perception, note="mission ended")
+            if escalated:
+                # 3.80.D: handed up after `local_max_unable` unable answers.
+                self._count("frame_escalations", "unable")
             return self._local_scene(perception, note="dispatched",
                                      dispatched=trigger)
 
+        if escalated:
+            self._count("frame_escalations", "unable")
         _t0 = time.perf_counter()
-        scene = self.cloud_vision_fn(frame)
+        try:
+            scene = self.cloud_vision_fn(frame)
+        except Exception as exc:  # noqa: BLE001 -- raised for B3.2 unless 3.80.G says not
+            if self.cloud_errors_fatal:
+                raise
+            self._count_cloud_error(exc)
+            return self._local_scene(perception, note="cloud call failed")
         self.stats.record("cloud_ms", (time.perf_counter() - _t0) * 1000)
         # The goal the stand-in holds on later free frames. Set on BOTH
         # paths: it lived only in _collect_inflight() at first, so a
         # synchronous mission had nothing to hold and silently kept
         # scanning -- the exact behaviour Phase F exists to remove.
         self._last_cloud_scene = scene
+        self._local_held = None
+        self._local_held_why = None
+        self._local_turn = None     # 3.80.D: this answer is newer
+        self._frame_unable = 0
         return self._annotate(scene, perception, trigger)
+
+    # -- 3.80.D: a frame's question, to the local tier first --------------
+
+    def _local_first(self):
+        """The local tier's sighting call, or None when this question is
+        the cloud's: no local tier, or it was unable `local_max_unable`
+        times in a row."""
+        fn = self.local_sighting_fn
+        if fn is None:
+            return None
+        if self._frame_unable >= self.local_max_unable:
+            # With the call cap spent there is no cloud to hand it to: the
+            # free local tier keeps the question (review, 2026-10-14).
+            spent = self.max_calls is not None and self.stats.cloud_calls >= self.max_calls
+            return fn if spent else None
+        return fn
+
+    def _count(self, bucket: str, key: str) -> None:
+        with self._stats_lock:
+            d = getattr(self.stats, bucket)
+            d[key] = d.get(key, 0) + 1
+
+    def _ask_local_first(self, frame: dict, perception: Perception, trigger: str,
+                         epoch: int, fn) -> dict:
+        """Put this frame's question to the local tier (and, if it is
+        absent, to the cloud about the same frame). The pacing counts are
+        reset when a DECIDED answer lands (`_apply_local`), not here: an
+        unable answer leaves the question open."""
+        self._count("local_triggers", trigger)
+        q = _Question(
+            trigger=trigger, epoch=epoch,
+            pose=(Pose(self._odom.pose.x, self._odom.pose.y, self._odom.pose.heading_deg)
+                  if (self._odometry_usable and self._odom.samples) else None),
+            pan_deg=float(frame.get("pan_deg") or 0.0),
+            hfov_deg=float(getattr(self.pipeline, "hfov_deg", None) or DEFAULT_HFOV_DEG),
+            detected=perception.status == DETECTED,
+            band=self._band_run > 0,
+            # An absent local tier hands this to the cloud, which an
+            # out-of-vocabulary question earns only at cold_search's bar.
+            # 3.80.P: a cold search asked at the local pace reaches the
+            # cloud only at the cloud's own bar.
+            cloud_ok=(trigger != TRIGGER_TRACK
+                      and (trigger not in (TRIGGER_OOV, TRIGGER_COLD_SEARCH)
+                           or self._absent_streak >= self._cloud_cold_search_bar()
+                           or self._distance_bar_reached())))
+        if self.async_cloud:
+            self._inflight_question = q
+            if not self._dispatch(frame, trigger, epoch, tier="local",
+                                  job=lambda: self._ask_tiers(frame, q, fn)):
+                self._inflight_question = None
+                with self._stats_lock:   # close() won: nothing was asked
+                    self.stats.local_triggers[trigger] -= 1
+                return self._local_scene(perception, note="mission ended")
+            return self._local_scene(perception, note="asked the local tier",
+                                     local_asked=trigger)
+        try:
+            got = self._ask_tiers(frame, q, fn)
+        except Exception as exc:  # noqa: BLE001 -- the absent tier's cloud call
+            # Only the cloud's call raises out of _ask_tiers: it was made, so
+            # its pacing starts again, as the main path's does before its
+            # call -- else a failing cloud is retried on every frame (review
+            # of 3.80.P: 55 calls in 60 frames against 10).
+            self._absent_streak = 0
+            self._since_call = 0
+            self._mark_odometry_call()
+            if self.cloud_errors_fatal:
+                raise
+            self._count_cloud_error(exc)
+            return self._local_scene(perception, note="cloud call failed")
+        if isinstance(got, _LocalAnswer) or got is None:
+            if got is not None:
+                self._apply_local(got)
+            return self._local_scene(perception, note="asked the local tier",
+                                     local_asked=trigger)
+        # The local tier was absent and the cloud answered about this frame.
+        self._absent_streak = 0
+        self._since_call = 0
+        self._mark_odometry_call()
+        self._last_cloud_scene = got
+        self._local_held = None
+        self._local_held_why = None
+        self._local_turn = None
+        self._frame_unable = 0
+        return self._annotate(got, perception, trigger)
+
+    def _ask_tiers(self, frame: dict, q: "_Question", fn):
+        """Runs on the worker (or inline, synchronously). The local answer,
+        or -- the local tier absent -- the cloud's scene about the same
+        frame; None if the mission moved on. A cloud failure raises, for
+        B3.2, as a trigger's always has."""
+        if q.epoch != self._epoch:
+            q.local_done.set()
+            return None
+        started = time.perf_counter()
+        direction = None
+        try:
+            got, error = (fn(frame, box=True) or {}), None
+            with self._stats_lock:
+                self.stats.record("local_frame_ms", (time.perf_counter() - started) * 1000)
+            got = got if isinstance(got, dict) else {}
+            # 3.80.F: still the LOCAL phase -- the VLM is not free for the
+            # arrival's question until the direction is answered too.
+            direction = self._ask_direction(frame, q, got)
+        except Exception as e:  # noqa: BLE001 -- LocalVLMAbsent, or a fault in the client
+            got, error = None, e
+            with self._stats_lock:
+                self.stats.record("local_frame_ms", (time.perf_counter() - started) * 1000)
+        finally:
+            q.local_done.set()
+        if error is None:
+            return _LocalAnswer(q, got, direction=direction)
+        logger.warning("local VLM absent for %s (%s); asking the cloud", q.trigger, error)
+        with self._stats_lock:
+            if q.epoch != self._epoch or self._closed:
+                return None   # a Stop while the local tier was asked: nothing paid
+            s = self.stats
+            s.local_frame["absent"] = s.local_frame.get("absent", 0) + 1
+            if (not q.cloud_ok
+                    or (self.max_calls is not None and s.cloud_calls >= self.max_calls)):
+                return _LocalAnswer(q, {}, absent=True)
+            s.cloud_calls += 1
+            s.triggers[q.trigger] = s.triggers.get(q.trigger, 0) + 1
+            s.frame_escalations["absent"] = s.frame_escalations.get("absent", 0) + 1
+        started = time.perf_counter()
+        try:
+            return self.cloud_vision_fn(frame)
+        finally:
+            with self._stats_lock:
+                self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
+
+    def _count_cloud_error(self, exc: BaseException) -> None:
+        logger.warning("cloud call failed (not fatal under an explore search): %s", exc)
+        with self._stats_lock:
+            self.stats.cloud_errors += 1
+
+    def _ask_direction(self, frame: dict, q: "_Question", got: dict) -> Optional[dict]:
+        """3.80.F, on the worker: the direction question about the same
+        frame, when this is a search question whose sighting answer is not
+        a yes. None when not asked."""
+        # Only after a reply the VLM finished: a `timeout` or `busy` one is
+        # still draining on the driver, and the direction would wait out its
+        # own deadline behind it (review, 2026-10-16).
+        if (self.local_direction_fn is None or q.trigger not in SEARCH_TRIGGERS
+                or _local_kind(got, self.local_no_below) == "yes"
+                or got.get("status") not in ("answered", "unparsed")
+                or q.detected or q.epoch != self._epoch or self._closed):
+            return None
+        started = time.perf_counter()
+        try:
+            reply = self.local_direction_fn(frame)
+            reply = reply if isinstance(reply, dict) else {}
+        except Exception as e:  # noqa: BLE001 -- LocalVLMAbsent, or a fault in the client
+            logger.warning("local VLM absent for the direction (%s)", e)
+            reply = {"status": "absent"}
+        with self._stats_lock:
+            self.stats.record("local_direction_ms", (time.perf_counter() - started) * 1000)
+        return reply
+
+    def _apply_direction(self, reply: dict, unable_before: int) -> Optional[str]:
+        """3.80.F: a direction reply that landed. Returns the held action,
+        or None. An unable reply counts the search question once as unable
+        for the escalation rule (`unable_before` is the count before its
+        sighting answer was applied); the next search question comes at the
+        pace that answer set. A reply with no direction to give
+        (DIRECTION_NONE) changes nothing."""
+        word = reply.get("direction")
+        action = (DIRECTION_ACTIONS.get(word) if reply.get("status") == "answered"
+                  else None)
+        status = reply.get("status")
+        kind = (word if action else status if status in DIRECTION_NONE
+                else f"unable_{status}")
+        self._count("local_direction", kind)
+        if action is None and status in DIRECTION_NONE:
+            return None
+        if action is None:
+            self._frame_unable = unable_before + 1
+            return None
+        # The search question is answered: its pacing starts again, as on a
+        # decided sighting answer (bug pass, 2026-10-16: an answered direction
+        # after an unable sighting left the question open and re-asked on the
+        # next frame, and the unable count never reached the cloud).
+        self._frame_unable = 0
+        self._absent_streak = 0
+        self._since_call = 0
+        self._retry_start = False
+        self._mark_odometry_call()
+        self._local_held = action
+        self._local_held_why = "direction"
+        self._local_turn = None
+        return action
+
+    def _apply_local(self, ans: "_LocalAnswer") -> None:
+        """A local answer that landed: count it, and act on it."""
+        if ans.q.epoch != self._epoch:
+            return
+        trigger = ans.q.trigger
+        if ans.absent:
+            # Absent, and the cloud not to be asked (the call cap spent, or an
+            # out-of-vocabulary question before cold_search's bar): nothing
+            # answered, nothing paid.
+            self._local_landed = {"trigger": trigger, "answer": "absent", "score": None}
+            return
+        got = ans.got
+        unable_before = self._frame_unable
+        status, score = got.get("status"), got.get("score")
+        numeric = isinstance(score, (int, float))
+        kind = _local_kind(got, self.local_no_below)
+        with self._stats_lock:
+            self.stats.local_frame_calls += 1
+            self.stats.local_frame[kind] = self.stats.local_frame.get(kind, 0) + 1
+        bearing = None
+        if kind in ("yes", "no"):
+            self._frame_unable = 0
+            self._absent_streak = 0
+            self._since_call = 0
+            self._mark_odometry_call()
+            if kind == "yes":
+                bearing = self._bearing_of(ans)
+                if bearing is not None:
+                    self._local_turn = (
+                        ("LEFT" if bearing < 0 else "RIGHT", turn_for(bearing))
+                        if abs(bearing) > STEER_BAND_DEG else ("FORWARD", None))
+                    self._local_held = "FORWARD"
+                    self._local_held_why = "located"
+                elif self._local_held_why == "direction":
+                    # In view somewhere: an older search direction is moot.
+                    self._local_held = self._local_held_why = None
+            else:
+                self._local_turn = None
+                if self._local_held_why != "direction":
+                    # A no drops the FORWARD a located yes held; a direction
+                    # (3.80.F) is about where to look, and a no does not
+                    # answer that.
+                    self._local_held = self._local_held_why = None
+                if ans.q.band:
+                    # 3.80.F: the crop in view when it was asked is not the
+                    # target. Rejected until the band run breaks (the crop
+                    # leaves view or crosses the gate): the band question is
+                    # not asked again in that run either.
+                    self._candidate_rejected = True
+        else:
+            self._frame_unable += 1
+            # The question stays open: asked again on the next frame that
+            # raises it (pacing counts untouched, edges armed again).
+            if trigger == TRIGGER_CANDIDATE:
+                self._last_confirmed = None
+            elif trigger == TRIGGER_BAND:
+                self._band_asked = False
+            elif trigger == TRIGGER_START:
+                self._retry_start = True
+        self._local_landed = {"trigger": trigger, "answer": kind,
+                              "score": score if numeric else None,
+                              "bearing_deg": None if bearing is None else round(bearing, 1)}
+        if ans.direction is not None and kind != "yes":
+            # A search question is answered only by a direction: an unable
+            # one counts toward the cloud, whatever the sighting answer reset.
+            self._local_landed["direction"] = self._apply_direction(
+                ans.direction, unable_before if kind == "no" else self._frame_unable - 1)
+
+    def _bearing_of(self, ans: "_LocalAnswer") -> Optional[float]:
+        """Body bearing to the box's centre NOW: the bearing in the frame it
+        was asked about, less the turn odometry measured since."""
+        frac = ans.got.get("box_frac")
+        try:
+            x1, _, x2, _ = (float(v) for v in frac)
+        except (TypeError, ValueError):
+            return None
+        bearing = ((x1 + x2) / 2 - 0.5) * ans.q.hfov_deg + ans.q.pan_deg
+        if ans.q.pose is not None and self._odometry_usable and self._odom.samples:
+            bearing = _wrap(ans.q.pose.heading_deg + bearing - self._odom.pose.heading_deg)
+        return bearing
 
     def wait_inflight(self) -> None:
         """Wait for an async trigger call still out, and apply it. 3.56:
@@ -879,14 +1342,33 @@ class TieredVision:
             self._charged = self._inflight or self._last_taken
             self._pending_error = None
 
+    def cloud_only_confirmer(self):
+        """3.80.O: the confirmer for an arrival the local VLM's box led to:
+        the cloud alone, counted as guarded."""
+        return functools.partial(self.confirm_cloud, guarded=True)
+
+    def wait_local_free(self, timeout_s: float) -> bool:
+        """3.80.O: wait up to `timeout_s` for a frame's question still holding
+        the local VLM to finish its local phase. True when it is free."""
+        q = self._inflight_question
+        return q is None or q.local_done.wait(max(0.0, timeout_s))
+
+    def set_local_track(self, on: bool) -> None:
+        """3.80.O: explore says whether it is closing in on a target only the
+        local VLM has seen; while it is, every frame perception does not
+        detect the target asks the local VLM (`local_track`)."""
+        self._local_track = bool(on)
+
     # -- 1a: the cloud confirms identity at arrival -----------------------
 
-    def confirm_arrival(self, frame: dict) -> dict:
+    def confirm_arrival(self, frame: dict, local_ok: bool = True) -> dict:
         """The arrival's identity question, through the tiers (3.80.C): the
         local VLM first, the cloud only when it is absent or has been unable
         `local_max_unable` times in this arrival. `MissionRunner` calls the
         two halves itself (`confirm_local`, then `confirm_cloud`), so each
         gets its own deadline."""
+        if not local_ok:
+            return self.confirm_cloud(frame, guarded=True)
         verdict = self.confirm_local(frame)
         return verdict if verdict is not None else self.confirm_cloud(frame)
 
@@ -922,6 +1404,16 @@ class TieredVision:
         An unable answer is `undecided`: neither confirmed nor refused, and
         the agent asks again on the next arrival frame."""
         s = self.stats
+        q = self._inflight_question
+        if q is not None and self.next_confirm_is_local():
+            # 3.80.D: a frame's question still holds the local VLM, which
+            # serves one request at a time: asked now, the arrival would be
+            # `busy` (review, 2026-10-14). Only on the local tier's turn, and
+            # only for the question's LOCAL phase (bounded by the client's
+            # timeout, and by the runner's budget); a cloud call it fell
+            # through to is not waited for. The answer is left for the tick
+            # thread to apply (review round 2).
+            q.local_done.wait()
         with self._local_lock:
             # An arrival frame: the arrival is still on (arrival_ended's run
             # of frames off it starts again), whichever tier is asked.
@@ -1025,7 +1517,7 @@ class TieredVision:
                 "reason": (f"the local model could not decide ({what}); "
                            + ("asking the cloud next" if last else "asking again"))}
 
-    def confirm_cloud(self, frame: dict) -> dict:
+    def confirm_cloud(self, frame: dict, guarded: bool = False) -> dict:
         """One paid, synchronous cloud call on the ARRIVAL frame: is the
         target in it? (Handoff 2026-10-02 1a, decided by the user.)
 
@@ -1057,7 +1549,10 @@ class TieredVision:
         self.stats.triggers[TRIGGER_ARRIVAL] = self.stats.triggers.get(TRIGGER_ARRIVAL, 0) + 1
         with self._local_lock:
             self._frames_off_arrival = 0
-        if self.local_identity_fn is not None and not self.next_confirm_is_local():
+        if guarded:
+            # 3.80.O: an arrival the local VLM's box led to, never put to it.
+            self.stats.guarded += 1
+        elif self.local_identity_fn is not None and not self.next_confirm_is_local():
             # 3.80.C: an arrival the local tier could not decide, handed up.
             self.stats.escalations += 1
         started = time.perf_counter()
@@ -1077,7 +1572,8 @@ class TieredVision:
 
     # -- Phase A: dispatch, collect, and hold the goal --------------------
 
-    def _dispatch(self, frame: dict, trigger: str, epoch: Optional[int] = None) -> bool:
+    def _dispatch(self, frame: dict, trigger: str, epoch: Optional[int] = None,
+                  tier: str = "cloud", job: Optional[Callable] = None) -> bool:
         """Start the cloud call on a worker thread and return immediately.
 
         3.76: `epoch` is the frame's, taken when the frame began, so a
@@ -1095,12 +1591,13 @@ class TieredVision:
                 self._executor = ThreadPoolExecutor(
                     max_workers=1, thread_name_prefix="tiered-cloud")
             self._inflight_trigger = trigger
+            self._inflight_tier = tier
             # Corroboration (1.11a) compares the cloud's claim against the
             # LOCAL evidence from the same frame. Async breaks that pairing
             # unless the perception is carried along with the call, so it is.
             self._inflight_perception = self._perception_this_frame
-            self._inflight = self._executor.submit(
-                self._call_cloud, frame, epoch)
+            self._inflight = (self._executor.submit(job) if job is not None
+                              else self._executor.submit(self._call_cloud, frame, epoch))
         return True
 
     def _call_cloud(self, frame: dict, epoch: int) -> Optional[dict]:
@@ -1138,7 +1635,13 @@ class TieredVision:
             self._inflight = None
             self._last_taken = fut
             trigger, self._inflight_trigger = self._inflight_trigger, None
+            self._inflight_tier = None
+            self._inflight_question = None
             perception, self._inflight_perception = self._inflight_perception, None
+        if fut.exception() is None and isinstance(fut.result(), _LocalAnswer):
+            # 3.80.D: the local tier's answer; its own rules reset the pacing.
+            self._apply_local(fut.result())
+            return
         # 3.76 (the user, 2026-10-13): pacing counts from when the cloud
         # ANSWERED, not from when it was asked. Every count kept running while
         # a slow call was out -- absent frames, frames since the call, distance
@@ -1167,6 +1670,9 @@ class TieredVision:
             # orphaned-call bug.
             return
         self._last_cloud_scene = scene
+        self._local_held = None
+        self._local_held_why = None
+        self._frame_unable = 0      # 3.80.D: a cloud answer starts the count again
         # Run the annotation for its SIDE EFFECTS -- corroboration and the
         # stats 6.3 puts on the panel -- against the perception this call
         # was actually made on, not whatever is in front of the camera now.
@@ -1188,11 +1694,20 @@ class TieredVision:
         """Invalidate anything in flight. Called when a mission ends, so a
         late answer cannot be applied to a robot that has stopped."""
         self._epoch += 1
+        q = self._inflight_question
+        if q is not None:
+            # A question cancelled before it ran never sets this itself; an
+            # arrival waiting on it must not wait for ever (review round 3).
+            q.local_done.set()
         with self._collect_lock:
             self._inflight = None
             self._inflight_trigger = None
+            self._inflight_tier = None
+            self._inflight_question = None
             self._inflight_perception = None
         self._landed_corroboration = None
+        self._local_turn = None
+        self._local_landed = None
         self._pending_error = None
 
     def close(self) -> None:
@@ -1212,6 +1727,8 @@ class TieredVision:
             # 3.80.C: the local tier answers only a live arrival; the late
             # check (3.53) is the cloud's.
             local, self.local_identity_fn = self.local_identity_fn, None
+            self.local_sighting_fn = None
+            self.local_direction_fn = None
             if local is not None and hasattr(local, "close"):
                 try:
                     local.close()
@@ -1228,6 +1745,9 @@ class TieredVision:
         a call is in flight and, under `hold_goal` (shipped `true`), on
         every free frame -- see `_local_scene()`.
         """
+        if self._local_held:
+            # 3.80.D: a local yes that said where, newer than the cloud's goal.
+            return self._local_held
         if not self._last_cloud_scene:
             return None
         return self._last_cloud_scene.get("safest_direction")
@@ -1256,7 +1776,27 @@ class TieredVision:
         # cloud call every few frames and look like a search.
         if perception.status == UNAVAILABLE:
             self._run.clear()
+            self._band_run = 0          # 3.80.D: any other frame breaks a band run
+            self._band_asked = False
+            self._candidate_rejected = False
             return None
+
+        if self._retry_start:
+            # 3.80.D: the opening question went unanswered (unable).
+            self._retry_start = False
+            return TRIGGER_START
+        # 3.80.D: the uncertain band, tracked only with a local tier.
+        band = (self.local_sighting_fn is not None and perception.status == ABSENT
+                and bool(perception.candidates)
+                and self.local_band_low
+                <= max(c.probability for c in perception.candidates)
+                < self.match_probability)
+        if band:
+            self._band_run += 1
+        else:
+            self._band_run = 0
+            self._band_asked = False
+            self._candidate_rejected = False
 
         self._run.append(perception.status)
         if len(self._run) > self.consecutive_frames:
@@ -1269,6 +1809,18 @@ class TieredVision:
             else None
         )
 
+        if (self._local_track and self._local_first() is not None
+                and perception.status != DETECTED):
+            # Only while the local tier takes the question (review): after
+            # `local_max_unable` unable answers the usual triggers run, and
+            # the cloud may take one of them.
+            if confirmed == ABSENT:
+                # The absent edge still moves (review), or a later detection
+                # would never fire `candidate_sighting`.
+                self._last_confirmed = ABSENT
+            # The absent streak does not grow on tracking frames (review): a
+            # cold search must not fire, paid, the moment tracking ends.
+            return TRIGGER_TRACK
         if confirmed == DETECTED and self._last_confirmed != DETECTED:
             self._last_confirmed = DETECTED
             return TRIGGER_CANDIDATE
@@ -1277,6 +1829,15 @@ class TieredVision:
 
         if perception.status == ABSENT:
             self._absent_streak += 1
+            if band and self._band_run >= self.consecutive_frames and not self._band_asked:
+                self._band_asked = True
+                return TRIGGER_BAND
+            if (self._local_first() is not None and self.vocabulary is not None
+                    and not self.vocabulary.in_vocabulary
+                    and self._absent_streak >= self.consecutive_frames):
+                # Only while the local tier takes it: a question due for the
+                # cloud waits for cold_search's bar (review, 2026-10-14).
+                return TRIGGER_OOV
             # An OR, not a replacement. Distance is the better measure of
             # "how much new view is there to look at" while the robot is
             # driving; the frame floor is what still fires when it is
@@ -1349,6 +1910,9 @@ class TieredVision:
             "rule": "distance" if distance_armed else "frames",
             "frames_absent": self._absent_streak,
             "frames_bar": self._cold_search_bar(),
+            # 3.80.P: the bar a question handed to the cloud waits, which
+            # differs from frames_bar while the local tier takes them.
+            "cloud_frames_bar": self._cloud_cold_search_bar(),
             "cm_since_call": (None if self._distance_since_call is None
                               else round(self._distance_since_call, 1)),
             "cm_bar": self.cold_search_after_cm,
@@ -1364,6 +1928,14 @@ class TieredVision:
         }
 
     def _cold_search_bar(self) -> int:
+        """How many `absent` frames before a cold search is asked: the local
+        pace while the local tier takes the question (3.80.P), else the
+        cloud's (`_cloud_cold_search_bar`)."""
+        if self.local_cold_search_after is not None and self._local_first() is not None:
+            return self.local_cold_search_after
+        return self._cloud_cold_search_bar()
+
+    def _cloud_cold_search_bar(self) -> int:
         """How many `absent` frames before the cloud is asked to propose.
 
         One number unless the experiment above is switched on, in which
@@ -1380,7 +1952,8 @@ class TieredVision:
     # -- what comes back -------------------------------------------------
 
     def _local_scene(self, perception: Perception, note: str = "",
-                     dispatched: Optional[str] = None) -> dict:
+                     dispatched: Optional[str] = None,
+                     local_asked: Optional[str] = None) -> dict:
         """The stand-in. Same schema `brain/navigate.py` produces, so every
         consumer is unchanged -- but `_navigate.reasoning` says plainly
         that no model was asked, because a log line that reads like a
@@ -1399,6 +1972,7 @@ class TieredVision:
         # scan stays, because holding a goal with nothing confirming it is
         # a different design and an unmeasured one.
         landed, self._landed_corroboration = self._landed_corroboration, None
+        local_landed, self._local_landed = self._local_landed, None
         # Set by the two rungs that have a real bearing in hand (R1), read
         # below once the final direction is known.
         self._steer_turn_deg = self._reckoned_turn_deg = None
@@ -1406,20 +1980,40 @@ class TieredVision:
         # measured on THIS frame is better evidence about where to go than
         # a direction the cloud gave several seconds ago.
         steer = self._steer_to(perception)
+        # 3.80.D: a local VLM's located yes, used once, after perception's
+        # own bearing (measured on THIS frame) and before anything older.
+        located_turn, self._local_turn = self._local_turn, None
+        if steer:
+            located_turn = None
+        located = located_turn[0] if located_turn else None
         # P25 sits BETWEEN the two: a bearing dead-reckoned from a sighting
         # this mission actually made is worse evidence than one measured on
         # this frame, and better than a direction the cloud gave several
         # seconds and several turns ago.
-        reckoned = None if steer else self._dead_reckoned_direction()
+        reckoned = None if (steer or located) else self._dead_reckoned_direction()
+        # 3.80.F: YOLOE + CLIP's own weaker evidence -- a crop in the
+        # uncertain band, measured on this frame -- after any sighting.
+        candidate = (None if (steer or located or reckoned)
+                     else self._steer_to_candidate(perception))
         held = (self._held_direction()
                 if (self.hold_goal or self._inflight is not None) else None)
-        direction = steer or reckoned or held or SCAN_ACTION
+        direction = steer or located or reckoned or candidate or held or SCAN_ACTION
         if steer:
             why = (f"{why} -- steering on local sighting "
                    f"({_direction_for(perception)})")
+        elif located:
+            why = f"{why} -- turning to where the local VLM saw the target"
         elif reckoned:
             why = (f"{why} -- dead-reckoning to a sighting "
                    f"{self._goal.sightings} detection(s) ago")
+        elif candidate:
+            why = (f"{why} -- steering on an uncertain candidate (P "
+                   f"{max(float(c.probability) for c in perception.candidates):.2f})")
+            with self._stats_lock:
+                self.stats.candidate_steers += 1
+        elif held and self._local_held:
+            why = (f"{why} -- holding the local VLM's "
+                   f"{self._local_held_why or 'answer'} {held}")
         elif held:
             why = f"{why} -- holding last cloud goal {held}"
         # The spin floor. Counted over what the robot was actually TOLD to
@@ -1428,6 +2022,8 @@ class TieredVision:
         if (self.spin_guard_after
                 and direction in TURN_ACTIONS
                 and steer is None
+                and located is None
+                and candidate is None
                 and perception.status != DETECTED
                 and self._consecutive_turn_deg >= self.spin_guard_after * 90):
             direction = "FORWARD"
@@ -1442,8 +2038,12 @@ class TieredVision:
         if direction in TURN_ACTIONS:
             if steer == direction:
                 turn_deg = self._steer_turn_deg
+            elif located == direction:
+                turn_deg = located_turn[1]
             elif reckoned == direction:
                 turn_deg = self._reckoned_turn_deg
+            elif candidate == direction:
+                turn_deg = self._steer_turn_deg
             # R1b: a turn with no bearing behind it is a SEARCH, and a search
             # step must be smaller than the field of view or it skips part of
             # the circle -- see SCAN_TURN_DEG.
@@ -1483,6 +2083,8 @@ class TieredVision:
                 # and admits the same call in eleven words.
                 "reasoning": (f"[reactive tier, cloud call dispatched] {why}"
                               if dispatched
+                              else f"[reactive tier, local question: {local_asked}] {why}"
+                              if local_asked
                               else f"[reactive tier, no cloud call] {why}"),
             },
             "_perception": perception.as_dict(),
@@ -1514,6 +2116,12 @@ class TieredVision:
                       # What the robot is doing while it waits, named so a
                       # held goal can never be mistaken for a fresh answer.
                       "in_flight": self._inflight_trigger,
+                      # 3.80.D: which tier a question still out was put to,
+                      # the question asked on this frame, and an answer from
+                      # the local tier that landed on it.
+                      "in_flight_tier": self._inflight_tier,
+                      "local_called": local_asked,
+                      "local_landed": local_landed,
                       "holding": held,
                       "vocabulary": self._vocabulary_readout(),
                       "pacing": self._pacing_readout(),
@@ -1551,6 +2159,33 @@ class TieredVision:
         # nobody measured is exactly the fabrication `unusable_grid()` and
         # NO_SENSOR_CM refuse elsewhere.
         return None
+
+    def _steer_to_candidate(self, perception) -> Optional[str]:
+        """3.80.F: an action toward the best crop when it is in the
+        uncertain band -- P in [local_band_low, the gate) -- or None. Not
+        after a local no on this band run (`_candidate_rejected`), not for a
+        panned camera, and never an anchor for dead reckoning: the crop may
+        not be the target."""
+        if (not self.steer_on_candidate or self._candidate_rejected
+                or perception.status != ABSENT or not perception.candidates
+                or getattr(perception, "pan_deg", 0.0)):
+            return None
+        # An ABSENT perception carries its crops but no `best` (perceive.py):
+        # the strongest one, as the band trigger reads it.
+        try:
+            best = max(perception.candidates, key=lambda c: float(c.probability))
+            p = float(best.probability)
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if best.bearing_deg is None:
+            return None
+        if not (self.local_band_low <= p < self.match_probability):
+            return None
+        bearing = float(best.bearing_deg)
+        if abs(bearing) > STEER_BAND_DEG:
+            self._steer_turn_deg = turn_for(bearing)
+            return "LEFT" if bearing < 0 else "RIGHT"
+        return "FORWARD"
 
     def _dead_reckoned_direction(self) -> Optional[str]:
         """An action from an ANCHORED sighting the detector is not seeing.
@@ -1668,7 +2303,9 @@ class TieredVision:
         if self.vocabulary is None:
             return None
         out = self.vocabulary.as_dict()
-        out["cold_search_after"] = self._cold_search_bar()
+        # The cloud's bar: this readout is about the OOV experiment, which
+        # paces the cloud (3.80.P: the local pace is `pacing.frames_bar`).
+        out["cold_search_after"] = self._cloud_cold_search_bar()
         out["enforced"] = self.oov_cold_search_after is not None
         return out
 
@@ -1705,7 +2342,7 @@ __all__ = [
     "TieredVision", "TierStats", "tiered_vision_fn_for", "CENTER_BAND_DEG",
     "MAX_TURN_DEG", "MIN_TURN_DEG", "SCAN_TURN_DEG", "STEER_BAND_DEG", "turn_for",
     "TRIGGER_START", "TRIGGER_CANDIDATE", "TRIGGER_COLD_SEARCH",
-    "TRIGGER_STALE", "DEFAULT_STALE_AFTER",
+    "TRIGGER_STALE", "DEFAULT_STALE_AFTER", "TRIGGER_BAND", "TRIGGER_OOV",
     "UNAVAILABLE_TRIGGERS", "SCAN_ACTION",
     "DEFAULT_CONSECUTIVE", "DEFAULT_COLD_SEARCH_AFTER",
     "DEFAULT_CORROBORATION_P", "corroboration_for",

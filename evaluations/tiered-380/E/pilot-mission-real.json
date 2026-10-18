@@ -1,0 +1,29 @@
+{
+ "cloud": "real",
+ "house": "home_first_floor",
+ "outcome": "blocked",
+ "seconds": 167,
+ "steps": 324,
+ "cloud_calls_proxy": 22,
+ "refused_over_budget": 0,
+ "cloud_calls_brain": 23,
+ "triggers": {
+  "mission_start": 1,
+  "cold_search": 22
+ },
+ "frames": 324,
+ "tokens_in_mean": 633,
+ "tokens_out_mean": 92,
+ "cost_usd": 0.12,
+ "visible_answers": 0,
+ "model_ids": [
+  "us.anthropic.claude-opus-4-5-20251101-v1:0"
+ ],
+ "log_tail": [
+  "step 322: FORWARD (blocked) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal FORWARD",
+  "step 323: FORWARD (blocked) -- [cloud: cold_search] target not visible -- [reactive tier, cloud call dispatched] dispatched -- holding last cloud goal FORWARD",
+  "inventory: 11 reported, 6 candidates from 324 frames -- chair x3, dining table x3, armchair x2, coffee table, sectional sofa, staircase",
+  "mission ended (blocked): FORWARD refused 5 times in a row by the safety layer, 3 times over -- the way ahead is obstructed. Going around it is route planning (nav2, PLAN-ros-alignment.md R6)"
+ ],
+ "logs": "/var/folders/4m/90g11pps7z52mxb1k0ps3pjm0000gr/T/pilot-380E-real-1792025359"
+}

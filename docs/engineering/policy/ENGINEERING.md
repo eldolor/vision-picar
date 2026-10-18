@@ -29,7 +29,10 @@ file is true only until the code changes and is updated in the same commit.
 | `brain/rooms.py` | `ROOM_FEATURES`, `identify_room()`. Tested, but nothing in the mission path calls it: sim frames carry a room label and real frames take the cloud's `room_guess`. |
 
 **Which agent runs.** `control/mission_runner.py` builds `VisionAgent` for
-`vision` and `tiered` and `ObjectSearchAgent` for `frontier`. The difference
+`vision` and `tiered` and `ObjectSearchAgent` for `frontier` -- except a
+`tiered` mission with `tier_search: explore` (3.80.G), which runs
+`ExploreAgent(sight_from="perception")` (below, "Explore drives a tiered
+search"). The difference
 between `vision` and `tiered` is only which `vision_fn` is bound. How the
 tiered `vision_fn` and its perception pipeline are built at mission start is
 described once, in [mission](../mission/ENGINEERING.md) ("How a tiered
@@ -146,6 +149,103 @@ counts `local_calls`, `local` (`yes`, `no`, `absent`, `unable_<status>`,
 `unable_band`, `unable_noscore`, `unable_runner_timeout`), `local_ms` and `escalations`. `close()` closes and drops the
 client, so 3.53's late check is the cloud's.
 
+**Every frame's question through the local tier (3.80.D).** With
+`local_sighting_fn` set (the brain sets it with `local_identity_fn`, to the
+same client's `ask(frame, box=True)`), `_trigger_for()` adds two questions
+and `__call__` puts every question to the local tier first:
+* `uncertain_band` (`TRIGGER_BAND`): an absent frame whose best candidate's
+  CLIP P is in [`local_band_low` (config `tier_local_band_low`, 0.5), the
+  pipeline's `match_probability` (0.8)) on `consecutive_frames` frames in a
+  row; asked once per run (`_band_asked`), armed again by any other frame.
+* `out_of_vocabulary` (`TRIGGER_OOV`): `vocabulary.in_vocabulary` false and
+  `_absent_streak >= consecutive_frames`; checked before `cold_search`.
+* `_local_first()` is the sighting call unless `_frame_unable` has reached
+  `local_max_unable`; then the question takes today's cloud path, counted in
+  `frame_escalations["unable"]`, and the count starts again.
+* `_ask_local_first()` counts `local_triggers[trigger]` and runs
+  `_ask_tiers()` on the async worker (`_dispatch(..., tier="local", job=...)`,
+  so one question is in flight across both tiers; `_tier.in_flight_tier`
+  says which) or inline. `_ask_tiers()` returns a `_LocalAnswer`, or -- the
+  call raised (`LocalVLMAbsent` or any fault) -- counts
+  `local_frame["absent"]` and `frame_escalations["absent"]` and returns the
+  cloud's scene about the same frame (cloud counted with its trigger, under
+  `_stats_lock`, cap checked; a Stop since dispatch returns None and pays
+  nothing). A cloud scene lands as before and drops `_local_held`.
+* `_apply_local()` (on landing; a different epoch is ignored): yes (>= 0.5)
+  and no (<= `local_no_below`) reset `_frame_unable` and the pacing counts
+  as a landed cloud answer does. A yes whose reply has `box_frac` gives a
+  bearing (`_bearing_of()`: box centre over the pipeline's `hfov_deg`, 66
+  if none, plus the frame's pan, less the heading odometry measured since
+  the question's `_Question.pose`), stored as a one-shot `_local_turn`
+  (sized by `turn_for()`, or FORWARD inside `STEER_BAND_DEG`) and
+  `_local_held = "FORWARD"`, which `_held_direction()` returns before the
+  cloud's goal. A no drops both. Anything else is unable
+  (`unable_<status>`, `unable_band`, `unable_noscore`): `_frame_unable` + 1
+  and the question stays open -- the pacing counts are not reset, a
+  candidate's edge and the band are armed again, a `mission_start` is
+  asked again (`_retry_start`).
+* `_local_scene()` precedence: perception's steer, then `_local_turn`
+  (used once), then dead reckoning, then the held goal, then the scan; the
+  spin guard skips a located turn. `_tier` adds `local_called` (the
+  question asked this frame) and `local_landed` (`trigger`, `answer`,
+  `score`, `bearing_deg`), and the reasoning reads `[reactive tier, local
+  question: <trigger>]`.
+* `TierStats` adds `local_triggers`, `local_frame`, `local_frame_calls` and
+  `frame_escalations`; `cloud_calls` and `triggers` count only questions
+  that reached the cloud, and `max_calls` caps only those. A local failure
+  never reaches B3.2; a cloud failure after an escalation does.
+* The local VLM serves one request at a time, so `confirm_local()`, on the
+  local tier's turn only (`next_confirm_is_local()`), first waits for the
+  LOCAL phase of a frame's question still out (`_Question.local_done`, set
+  when the sighting call returns or fails) -- never for a cloud call it fell
+  through to, and never applying its answer, which the tick thread does.
+* A question due for the cloud is never `out_of_vocabulary` (it waits for
+  `cold_search`), and an absent local tier hands an `out_of_vocabulary`
+  question to the cloud only past cold_search's frame or distance bar
+  (`_Question.cloud_ok`). With the call cap spent, `_local_first()` keeps
+  the question local whatever the unable count. Any cloud answer resets
+  `_frame_unable`; `frame_escalations["unable"]` counts only a dispatch that
+  went out. Per-frame latency is `local_frame_ms`, apart from the arrival's
+  `local_ms`. The simulator's pipeline reads boxes in the render's 60 deg
+  (`control/brain_server.py` `SIM_HFOV_DEG`).
+
+**The local tiers steer (3.80.F).** Two additions, each off unless the
+brain has a local tier (`local_identity_fn`):
+* **The local VLM's direction** (`local_direction_fn`, the client's
+  `direction`; config `tier_local_direction`, env `TIER_LOCAL_DIRECTION`,
+  **default false**: criterion F4 failed, VE answered `forward` on every
+  frame). On the worker, after a `SEARCH_TRIGGERS` question
+  (`mission_start`, `cold_search`, `staleness`) whose sighting reply is not
+  a yes, finished (`answered` or `unparsed`, not a `timeout`/`busy` still
+  draining) and about a frame perception did not detect the target on,
+  `_ask_direction()` asks the direction question about the same frame.
+  `_Question.local_done` is set only after it, so an arrival check waits
+  for the whole local phase. `_apply_direction()` on landing: a word holds
+  `LEFT`/`RIGHT`/`FORWARD` in `_local_held` (`_local_held_why =
+  "direction"`), closes the search question (the pacing counts reset,
+  `_retry_start` cleared) and resets `_frame_unable`; an unable reply sets
+  `_frame_unable` to one more than before the sighting answer (so a no plus
+  an unable direction still escalates after `local_max_unable`); `absent`
+  or `unsupported` (a service without the route: 404) change nothing. A
+  later sighting no keeps a held direction (it drops only a located
+  FORWARD); a yes drops it; a cloud answer drops either. Counted in
+  `local_direction` (`left`, `right`, `forward`, `unable_<status>`,
+  `absent`, `unsupported`) and `local_direction_ms`.
+* **YOLOE + CLIP's uncertain candidate** (`steer_on_candidate`; config
+  `tier_steer_on_candidate`, env `TIER_STEER_ON_CANDIDATE`, default true
+  since F5). `_steer_to_candidate()`: an absent frame, camera centred, whose
+  strongest crop (by probability: an absent `Perception` has no `best`) has
+  P in [`local_band_low`, `match_probability`) and a bearing turns toward
+  it as `_steer_to()` does (FORWARD within `STEER_BAND_DEG`). A local no
+  about a frame that had such a crop (`_Question.band`) sets
+  `_candidate_rejected` until the band run breaks. It never anchors dead
+  reckoning and never feeds the arrival rule. Counted in
+  `candidate_steers`. The simulator's pipeline has no sub-gate crops, so
+  it never acts there.
+* `_local_scene()` precedence is now: perception's steer, `_local_turn`,
+  dead reckoning, the candidate, the held goal (the local VLM's, else the
+  cloud's), the scan; the spin guard skips a candidate turn.
+
 **What the hysteresis does and does not gate.** `consecutive_frames` is
 read only in `_trigger_for()`. `_steer_to()` returns a direction for any
 frame whose `status` is `detected` with a bearing, with no streak, so one
@@ -210,7 +310,8 @@ with `close()`, `reset_epoch()`, `set_searched_rooms()`, `confirm_arrival(frame)
 | Key | Shipped | Unit | Why |
 |---|---|---|---|
 | `tier_consecutive_frames` | 2 | frames | 6.1: 1 frame gives 2.8x fewer calls than frames, 2 gives 4.1x, 3 gives 4.5x for a frame of lag |
-| `tier_cold_search_after` | 6 | absent frames | measured 2026-09-12 with async on: 2, 3, 4 and 6 all covered 14 of 15 visible spans; 2 cost 41 more calls |
+| `tier_cold_search_after` | 6 | absent frames | measured 2026-09-12 with async on: 2, 3, 4 and 6 all covered 14 of 15 visible spans; 2 cost 41 more calls; env `TIER_COLD_SEARCH_AFTER` (3.80.P). A cloud-only mission's pace |
+| `tier_local_cold_search_after` | 1 | absent frames | 3.80.P: the pace while the local VLM tier takes the question (its questions are free); a question the cloud answers -- the local tier absent, or unable `tier_local_max_unable` times -- still waits `tier_cold_search_after`'s bar (`TieredVision._cloud_cold_search_bar`), so a dead VLM never brings this pace to the paid cloud; the Jetson at pace 1: perception p90 171 ms, `MemAvailable` min 823 MB, 0 OOM; env `TIER_LOCAL_COLD_SEARCH_AFTER` |
 | `tier_cold_search_after_cm` | 0 (off) | cm | needs odometry; no real-pixels backend has it yet |
 | `tier_async_cloud` | true | -- | 2026-09-12 (`evaluations/gpu/pacing/`): 14 of 15 spans looked at vs 12, 94 calls vs 100, worst latency 2 frames vs 4. The class default is False |
 | `tier_hold_goal` | true | -- | Phase F: on five rig walks the per-frame scan outvoted the cloud 5:1 |
@@ -220,6 +321,7 @@ with `close()`, `reset_epoch()`, `set_searched_rooms()`, `confirm_arrival(frame)
 | `tier_hold_bearing_max_m` | 1.0 | m | a starting value, not derived |
 | `tier_stale_after` | 8 | frames | 6.1's figure; contributed 5.7% of triggers there |
 | `tier_max_calls` | 0 (no cap) | calls | `max_steps` bounds the mission |
+| `tier_search` | `cloud` | -- | 3.80.G: `explore` = explore's nav2 goals choose where to search; env `TIER_SEARCH` |
 
 `oov_cold_search_after` exists on `TieredVision` but has no config key.
 `tier_corroboration_bar` is also passed to `TieredVision`; it changes no
@@ -271,6 +373,98 @@ the median, unless the window is an edge (`ArrivalCheck._is_edge`: two
 surfaces), when it takes the nearest return, which is short of the target,
 never past it. A view goal (`ViewGap.face`) turns toward the part of the
 patch it was chosen to see.
+
+**Explore drives a tiered search (3.80.G).** `brain.tier_search` (env
+`TIER_SEARCH`, `cloud` | `explore`, default `cloud`). Under `explore` the
+runner (`MissionRunner(tier_search=...)`, `self.explores`) builds
+`ExploreAgent(sight_from="perception")` with the tiered `vision_fn`, and
+the brain server builds the `RemoteNavigator` (refusing the start with no
+nav2, and with no local tier: every question would be a cloud call whose
+direction is unused) before any tier client exists. The tiered `vision_fn`
+runs every step as before; its `safest_direction` is never executed, and
+`cloud_errors_fatal=False` (a cloud failure on an escalated question is
+logged and counted in `stats.cloud_errors`, not raised into B3.2).
+* `_hits()` reads the step's scene (`self._scene`, set in `_choose`):
+  `_perception` detected with a bearing (less its `pan_deg`, so the in-frame
+  bearing, to which explore adds the camera's pan as for a detection), else
+  the local VLM's located yes on the frame it landed
+  (`_tier.local_landed.bearing_deg`, a body bearing, less the pan). Never
+  `frame["detections"]`. The `frame` mode (the `explore` policy) is
+  unchanged.
+* `_close_in()`: with no goal live and a sighting within `_at_target()`
+  (the 0.7 m band `_back_to_sighting` calls "here"), and the retry rule
+  allowing it, turn by perception's bearing (`tiered.turn_for`, outside
+  `STEER_BAND_DEG`) or FORWARD, through `_verb()`. Holds still while the
+  arrival readout is arrived/checking/refused. A verb that waits on the
+  mission's own goal is dropped (the next frame re-sizes it); a refused one
+  counts toward `CLOSE_IN_REFUSED` (3: the sighting fails, REVERSE), and a
+  refused turn over `FACE_MIN_TURN_DEG` queues explore's FACE.
+* `_note_refusal()`: an arrival REFUSED drops the place it was at
+  (`RetryBook` failed to its limit), once per refusal, and explore searches
+  on.
+* Found only through `MissionAgent._review_scene` (the arrival rule and
+  the identity verdict); the runner's status reports `tier_search`, the
+  `explore` block, and no `last_turn_deg` from the tiers' scene.
+
+**The local box finishes the approach (3.80.O).** Under `tier_search:
+explore` with a local tier, a target only the local VLM sees is approached,
+closed in on and arrived at on its box; such an arrival is confirmed by the
+cloud alone.
+* `brain/tiered.py`: `located_local_bearing(scene)` / `local_said_no(scene)`
+  read `_tier.local_landed` (the one reader). `set_local_track(on)` arms
+  trigger `local_track` (`TRIGGER_TRACK`): every frame perception does not
+  detect the target asks the local VLM (its frames do not grow the absent
+  streak, so no paid cold search follows tracking at once), while
+  `_local_first()` takes it
+  (after `local_max_unable` unable answers the usual triggers run); its
+  question is never handed to the cloud (`cloud_ok=False`), and the absent
+  edge (`_last_confirmed`) still moves. `confirm_arrival(frame,
+  local_ok=False)` and `confirm_cloud(frame, guarded=True)` count
+  `stats.guarded`.
+* `brain/arrival.py`: `ArrivalCheck(clock=...)` (explore with
+  `sight_from="perception"` passes its clock; without one the rule reads
+  perception alone). The bearing is perception's detection, else this
+  frame's located local yes (a body bearing); a local "no" misses; a frame
+  with neither, inside `LOCAL_FRESH_S` (3.0 s) of the streak's last counted
+  frame and with a local frame in the streak, holds the last readout after
+  re-reading the lidar at its bearing (a range past the radius or an edge
+  ends the hold; not judged when panned). A local answer more than `LOCAL_FRESH_S` after
+  the streak's last frame starts it again; the agent calls `refresh()`
+  after every identity check, so a slow or hanging cloud does not restart
+  the streak (3.47's `arrived_unconfirmed` still comes). The readout's
+  `source` is `local` if any frame of the streak was.
+* `brain/agent.py`: a `source: local` arrival calls the confirmer with
+  `local_ok=False` (a confirmer without that keyword is not called: the
+  arrival stays `checking`, unconfirmed). A local-led arrival within
+  `LOCAL_REFUSED_RADIUS_M` (0.5 m) of one the cloud refused is refused again
+  unpaid. `control/mission_runner.py`:
+  `_guarded_confirm(frame, local_ok=False)` waits for a local question still
+  in flight (`TieredVision.wait_local_free`, its local phase, within the
+  step's deadline less the cloud guard or half of it; still out: undecided,
+  asked next frame, never a cloud outage), returns unpaid and undecided if a
+  Stop landed during any of its waits, and calls `TieredVision.cloud_only_confirmer()`
+  (`confirm_cloud(guarded=True)`); 3.53's late check does the same for a
+  stored `source: local` arrival. A confirmer without `local_ok` leaves a
+  local arrival `checking` (unconfirmed), never refused.
+* `brain/explore.py`: `_update_track()` (after each `_choose`) sets the
+  tier's tracking through `local_track_fn` (the runner hands over
+  `set_local_track`: the agent's `vision_fn` is the guarded wrapper) for
+  `LOCAL_FRESH_S` after a located yes, and while standing within the
+  approach band of a sighting only the local VLM made -- never while an
+  arrival is arrived, checking or refused. A local-only yes more
+  than `LOCAL_FACE_DEG` (15 deg) off centre, or off centre with no range, is
+  faced first (`_glimpse`) and not ranged (`_sighting`); a fresh yes that is
+  a sighting pre-empts a pending look-around; `_close_in()` turns by the
+  landed yes's bearing when perception is silent; between answers, from the
+  first yes, it WAITs at most `LOCAL_WAIT_MAX_S` (6 s) a stretch, near the
+  target too (a ranged sighting restarts the stretch, so only an unranged
+  park runs out). A landed yes counts as seen on every tick, an escape's
+  included. Where a glimpse's turns were given up (refused, backed off),
+  `_glimpse_spent` stops a local yes from starting them again until the
+  robot has moved `APPROACH_MOVED_M` away (amendment 3).
+  `_sighting()` and the pan (`_pan()`) are read once a tick.
+* Evaluation only: `FrameReportedPipeline(target, blind=True)`
+  (`SIM_PERCEPTION_BLIND=1` on the brain server) never reports the target.
 
 **Explore's learned goal choice (3.65 phase 2).** `explore_goal_policy`
 (`brain:` block; `rule` | `learned` | `network`, default `rule`; the

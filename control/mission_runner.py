@@ -42,6 +42,7 @@ in the microseconds *before* the stop is still possible; that residue is
 what robot/server.py's watchdog (B3.1) exists to catch.
 """
 
+import functools
 import logging
 import math
 import re
@@ -49,7 +50,8 @@ import threading
 import time
 from typing import Callable, Optional, Tuple
 
-from brain.agent import ObjectSearchAgent
+from brain.agent import ObjectSearchAgent, _takes_local_ok
+from brain.arrival import SOURCE_LOCAL
 from brain.explore import OWN_GOAL_TOLERANCE_M, ExploreAgent  # one tolerance for both (3.76)
 from brain.goal_policy import goal_policy_for
 from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
@@ -130,6 +132,10 @@ POLICIES = ("frontier", "vision", "tiered", "explore")
 # learns that perception grew a tier (2.6's first invariant), it only
 # learns that this policy, like "vision", cannot run without one.
 VISION_POLICIES = ("vision", "tiered")
+# 3.80.G: who chooses where a `tiered` mission searches -- the cloud's
+# direction (`cloud`, as before) or explore's nav2 goals (`explore`), with
+# the tiers deciding identity and the last approach.
+TIER_SEARCHES = ("cloud", "explore")
 
 # 3.70 Part A: what a mission is for. `find` looks for a target (or goes to a
 # room); `survey` (decided by the user 2026-10-11) has no target: explore's
@@ -543,6 +549,7 @@ class MissionRunner:
         stuck_after: Optional[int] = DEFAULT_STUCK_AFTER,
         navigator=None,
         explore_goal_policy: str = "rule",
+        tier_search: str = "cloud",
         clock: Optional[Callable[[], float]] = None,
         idle: Optional[Callable[[float], None]] = None,
         retry_cooldown_s: float = RETRY_COOLDOWN_S,
@@ -559,6 +566,9 @@ class MissionRunner:
     ):
         if job not in JOBS:
             raise ValueError(f"Unknown job: {job!r}. Known: {', '.join(JOBS)}")
+        if tier_search not in TIER_SEARCHES:
+            raise ValueError(f"Unknown tier_search: {tier_search!r}. "
+                             f"Known: {', '.join(TIER_SEARCHES)}")
         if policy not in POLICIES:
             raise ValueError(f"Unknown policy: {policy!r}. Known: {', '.join(POLICIES)}")
         if policy in VISION_POLICIES and vision_fn is None:
@@ -696,18 +706,29 @@ class MissionRunner:
         # The agent drives a gated robot; self.robot stays the raw one so
         # stop() is never gated. The policy decides which agent class runs;
         # everything else about the mission is identical either way.
-        agent_class = (VisionAgent if policy in VISION_POLICIES
-                       else ExploreAgent if policy == "explore" else ObjectSearchAgent)
+        # 3.80.G: explore's goal loop also drives a tiered mission whose
+        # search is explore's; its sightings then come from the tiers'
+        # perception, never from the frame's simulator detections.
+        self.tier_search = tier_search if policy == "tiered" else None
+        self.explores = policy == "explore" or self.tier_search == "explore"
+        agent_class = (ExploreAgent if self.explores
+                       else VisionAgent if policy in VISION_POLICIES else ObjectSearchAgent)
         extra = {}
         self._navigator: Optional[_GatedNavigator] = None
-        if policy == "explore":
+        if self.explores:
             if navigator is None:
-                raise ValueError("The explore policy needs a navigator -- nav2's goals "
-                                 "(control/remote_navigator.py), PLAN-ros-alignment.md 3.31")
+                raise ValueError(f"The {policy} policy's explore search needs a navigator "
+                                 "-- nav2's goals (control/remote_navigator.py), "
+                                 "PLAN-ros-alignment.md 3.31")
             self._navigator = _GatedNavigator(navigator, self.is_running)
             extra = {"navigator": self._navigator, "clock": self.clock,
                      # 3.65 phase 2: "rule" (None) or the learned goal choice.
                      "goal_policy": goal_policy_for(explore_goal_policy)}
+            if policy == "tiered":
+                extra["sight_from"] = "perception"
+                # 3.80.O: the agent's vision_fn is the guarded wrapper below,
+                # so the tier's tracking switch is handed over by name.
+                extra["local_track_fn"] = getattr(vision_fn, "set_local_track", None)
         self._gated = _HaltGate(robot, self.is_running,
                                 on_frame=self._observe if self.inventory else None)
         self.agent = agent_class(
@@ -881,7 +902,7 @@ class MissionRunner:
             self._failed_arrival_frame = None
             self._last_action = result.action
             self._last_reasoning = self._describe(result)
-            if self.policy == "explore":
+            if self.explores:
                 # The explore policy's 'why' is its goal bookkeeping (sent,
                 # reached, aborted and set aside, waiting on a cooldown), not
                 # the scene -- 3.31's first house runs could not be read
@@ -897,7 +918,8 @@ class MissionRunner:
                 # for the executor's default quarter turn (a scan, a cloud
                 # answer with nothing local to size it by).
                 size = scene.get("turn_deg")
-                self._last_turn_deg = int(size) if size else None
+                # 3.80.G: explore's own turns are not the tiers' scene's.
+                self._last_turn_deg = int(size) if size and not self.explores else None
             # Held rather than overwritten with None: a tiered mission's
             # counters must survive a frame whose scene arrived from
             # somewhere else, or 6.3's "single number" would blink out
@@ -1200,7 +1222,8 @@ class MissionRunner:
                                                      * (self.agent.seen_res or 0) ** 2, 2),
                              # 3.77: goal-choice wall time, every choice.
                              "choice_ms": self.agent.choice_stats()}
-                            if self.policy == "explore" else None),
+                            if self.explores else None),
+                "tier_search": self.tier_search,
                 # 3.46: counts only; the list is GET /mission/inventory.
                 "inventory": (self.inventory.counts()
                               if self.inventory is not None else None),
@@ -1313,7 +1336,16 @@ class MissionRunner:
     def _set_confirm_thread(self, thread: threading.Thread) -> None:
         self._confirm_thread = thread
 
-    def _guarded_confirm(self, frame: dict) -> dict:
+    def _cloud_only_confirmer(self, confirm):
+        """3.80.O: the policy's cloud-only confirmer, else its
+        `confirm_arrival` told to skip the local tier, else None (a confirmer
+        that cannot skip it is not asked)."""
+        only = getattr(self.vision_fn, "cloud_only_confirmer", None)
+        if only is not None:
+            return only()
+        return functools.partial(confirm, local_ok=False) if _takes_local_ok(confirm) else None
+
+    def _guarded_confirm(self, frame: dict, local_ok: bool = True) -> dict:
         """The policy's `confirm_arrival` (brain/tiered.py), wrapped in
         B3.2's timeout like `_guarded_vision`. A policy without one cannot
         confirm identity, so its arrivals are never confirmed (1a)."""
@@ -1345,7 +1377,29 @@ class MissionRunner:
         # call that outlives that is an unable answer, never a cloud outage.
         local = getattr(self.vision_fn, "confirm_local", None)
         cloud = getattr(self.vision_fn, "confirm_cloud", None)
-        if (local is not None and cloud is not None
+        if not local_ok:
+            # 3.80.O: an arrival the local VLM's box led to; the cloud decides
+            # (never the local tier, which would confirm its own sighting).
+            confirm = self._cloud_only_confirmer(confirm)
+            if confirm is None:
+                return {"confirmed": False, "undecided": True, "cloud_called": False,
+                        "reason": "no cloud-only confirmer for a local-led arrival"}
+            free = getattr(self.vision_fn, "wait_local_free", None)
+            remaining = left("the local question in flight")
+            if free is not None and not free(max(remaining - self.confirm_guard_s(),
+                                                  remaining / 2)):
+                # A frame's question still holds the local VLM (review): not a
+                # cloud outage -- undecided, asked again next frame.
+                return {"confirmed": False, "undecided": True, "cloud_called": False,
+                        "reason": "a local question is still in flight; asking again"}
+            with self._lock:
+                running = self._running
+            if not running:
+                # A Stop during that wait: nothing paid for an ended mission,
+                # and nothing refused either (review).
+                return {"confirmed": False, "undecided": True, "cloud_called": False,
+                        "reason": "the mission ended during the identity check"}
+        elif (local is not None and cloud is not None
                 and getattr(self.vision_fn, "local_identity_fn", None) is not None):
             # Only with a local tier configured: without one the step is
             # exactly what it was before 3.80 (`confirm_arrival`).
@@ -1400,6 +1454,13 @@ class MissionRunner:
             if prev.is_alive():
                 msg = "the previous arrival confirmation is still in flight"
                 raise VisionUnavailable(msg) from CloudUnavailable(msg)
+        if not local_ok:
+            with self._lock:
+                running = self._running
+            if not running:
+                # 3.80.O review: a Stop during the waits above pays nothing.
+                return {"confirmed": False, "undecided": True, "cloud_called": False,
+                        "reason": "the mission ended during the identity check"}
         guard = min(self.confirm_guard_s(), left("the arrival confirmation"))
         try:
             return call_with_timeout(confirm, frame, timeout_s=guard,
@@ -1679,6 +1740,10 @@ class MissionRunner:
                 return None
             frame = self._arrival_frame
             confirm = getattr(self.vision_fn, "confirm_arrival", None)
+            if confirm is not None and (self._arrival or {}).get("source") == SOURCE_LOCAL:
+                # 3.80.O: an arrival the local VLM's box led to is confirmed by
+                # the cloud alone, late as on time -- never by the local VLM.
+                confirm = self._cloud_only_confirmer(confirm)
             if confirm is None or frame is None:
                 return {"confirmed": False, "cloud_called": False,
                         "reason": "no confirmer or no arrival frame"}
@@ -1816,6 +1881,15 @@ class MissionRunner:
         3.76 C2): let go of what it holds."""
         if self._navigator is not None:
             self._navigator.end()
+        # The policy too: its perception models and the local VLM client, so
+        # the next start's build is not beside them (review of the 3.80
+        # rebase, 2026-10-17; 3.81.E's rule).
+        close = getattr(self.vision_fn, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception as e:  # noqa: BLE001 -- a discard never raises
+                logger.warning(f"could not close a discarded runner's policy: {e}")
 
     def _safe_stop(self) -> None:
         try:

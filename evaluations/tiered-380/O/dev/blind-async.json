@@ -1,0 +1,249 @@
+{
+ "args": {
+  "name": "dev/blind-async",
+  "sighted": false,
+  "sync": false,
+  "decoy": 0.0,
+  "cloud": "truth",
+  "houses": "dev"
+ },
+ "missions": 10,
+ "arrivals_at_true_target": 0,
+ "arrival_m_median": null,
+ "found": 2,
+ "found_far": 0,
+ "local_identity_on_guarded": 0,
+ "outcomes": {
+  "exhausted": 8,
+  "found": 2
+ },
+ "rows": [
+  {
+   "house": "procthor:val:6",
+   "outcome": "exhausted",
+   "sim_s": 18,
+   "goals": 8,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 2.72,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 3
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:7",
+   "outcome": "exhausted",
+   "sim_s": 24,
+   "goals": 11,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 5.11,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 5,
+    "local_track": 6
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:8",
+   "outcome": "exhausted",
+   "sim_s": 10,
+   "goals": 4,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 1.74,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 3
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:14",
+   "outcome": "exhausted",
+   "sim_s": 36,
+   "goals": 17,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 5.16,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 8
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:16",
+   "outcome": "found",
+   "sim_s": 14,
+   "goals": 6,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 0.55,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 2,
+   "local_triggers": {
+    "mission_start": 1,
+    "local_track": 12,
+    "cold_search": 2
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (found): Kitchen, living room searched. Found."
+   ]
+  },
+  {
+   "house": "procthor:val:19",
+   "outcome": "exhausted",
+   "sim_s": 48,
+   "goals": 21,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 6.38,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 9,
+    "local_track": 17
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:20",
+   "outcome": "exhausted",
+   "sim_s": 41,
+   "goals": 19,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 1.53,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 9
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:22",
+   "outcome": "exhausted",
+   "sim_s": 16,
+   "goals": 6,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 1.5,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 2,
+    "local_track": 13
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:23",
+   "outcome": "found",
+   "sim_s": 5,
+   "goals": 2,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 0.54,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 1,
+    "local_track": 5
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (found): Bedroom searched. Found."
+   ]
+  },
+  {
+   "house": "procthor:val:24",
+   "outcome": "exhausted",
+   "sim_s": 18,
+   "goals": 6,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 4.98,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 4,
+    "local_track": 13
+   },
+   "decoy_false_yes": 0,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
+   ]
+  }
+ ],
+ "wall_s": 9
+}
