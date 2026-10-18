@@ -102,8 +102,10 @@ def test_a_refused_start_leaves_a_persons_stop_latched(plain, tmp_path, request_
 def test_a_start_stopped_during_its_build_leaves_a_persons_stop_latched(plain):  # noqa: F811
     plain.post("/stop", headers={"x-driver": "twin-dpad"})
     inner = slow_runner_factory(delay=0.1)
+    building = threading.Event()
 
     def slow(robot, req):
+        building.set()
         time.sleep(0.5)
         return inner(robot, req)
 
@@ -112,7 +114,9 @@ def test_a_start_stopped_during_its_build_leaves_a_persons_stop_latched(plain): 
         t = threading.Thread(target=lambda: reply.setdefault(
             "r", brain.post("/mission/start", json={"target_object": "red backpack"})))
         t.start()
-        time.sleep(0.2)
+        # Inside the build, not a fixed sleep: under the full suite's load a
+        # Stop at 0.2 s landed before the start reached it (the gate, M2).
+        assert building.wait(10)
         brain.post("/mission/stop")
         t.join()
     assert reply["r"].status_code == 409, reply["r"].text
@@ -138,8 +142,10 @@ def test_a_start_during_a_discard_is_refused():
     pipelines at once (3.81.E)."""
     inner = slow_runner_factory(delay=0.1)
     discarding = threading.Event()
+    building = threading.Event()
 
     def factory(robot, req):
+        building.set()
         time.sleep(0.4)
         runner = inner(robot, req)
         real = runner.discard
@@ -157,7 +163,7 @@ def test_a_start_during_a_discard_is_refused():
         first = threading.Thread(target=lambda: client.post(
             "/mission/start", json={"target_object": "red backpack"}))
         first.start()
-        time.sleep(0.1)
+        assert building.wait(10)               # inside the build (as above)
         client.post("/mission/stop")
         assert discarding.wait(3)
         second = client.post("/mission/start", json={"target_object": "red backpack"})
