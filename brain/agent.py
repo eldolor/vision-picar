@@ -181,7 +181,10 @@ class ConstrainedAgent:
             action = "STOP"
 
         recent_stops = self._consecutive_stops()
-        if action == "STOP" and recent_stops >= self.max_consecutive_stops:
+        # Not on the frame the target is reached (3.76 L2): arrived_scene's
+        # STOP became an executed turn away just before memory marked found.
+        reached = (scene.get("_navigate") or {}).get("target_reached") is True
+        if action == "STOP" and recent_stops >= self.max_consecutive_stops and not reached:
             action = "RIGHT"
             logger.info(f"Stuck for {recent_stops} steps in a row -- forcing RIGHT turn")
 
@@ -327,7 +330,8 @@ class MissionAgent(ConstrainedAgent):
         # mission's final status still says why (spec review 3, fix 9).
         self._refusal: Optional[dict] = None
         self._confirmed_this_frame = False
-        # 3.80.O: where local-led arrivals were refused, as house points.
+        # 3.80.O: where arrivals were refused, as house points -- every
+        # source with a range since 3.76 L2 (the name is 3.80.O's).
         self._refused_local: list = []
 
     def _arrival_point(self, readout: dict):
@@ -348,12 +352,13 @@ class MissionAgent(ConstrainedAgent):
             return {**readout, "state": REFUSED, "identity": self._refusal,
                     "reason": f"{who} did not confirm this arrival; not asking again "
                               "until the arrival ends"}
-        point = self._arrival_point(readout) if readout.get("source") == SOURCE_LOCAL else None
+        point = self._arrival_point(readout)
         if point is not None and any(math.dist(point, p) <= LOCAL_REFUSED_RADIUS_M
                                      for p, _ in self._refused_local):
             # 3.80.O review: a local-led hold lapses between the local VLM's
             # answers, which cleared the refusal; the same wrong object is
-            # not paid for twice.
+            # not paid for twice. Any source (3.76 L2): one detector miss
+            # ended a perception-led arrival the same way.
             verdict = next(v for p, v in self._refused_local
                            if math.dist(point, p) <= LOCAL_REFUSED_RADIUS_M)
             return {**readout, "state": REFUSED, "identity": verdict,
@@ -625,7 +630,10 @@ class MissionAgent(ConstrainedAgent):
             # policy produced the frame. Rule-based scenes have no
             # "_navigate" key, so this is a no-op for them.
             guessed = (result.scene.get("_navigate") or {}).get("room_guess")
-            if guessed and guessed != "unclear":
+            # Free text ("short room-type label"): one room named two ways
+            # was two rooms, and "Unclear" a room (3.76 L2).
+            guessed = guessed.strip().lower() if isinstance(guessed, str) else ""
+            if guessed and guessed not in ("unclear", "unknown"):
                 room = guessed
                 result.frame["room"] = room
         # A sighting is a statement about the HOUSE, so it is anchored to
