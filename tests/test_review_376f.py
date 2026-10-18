@@ -148,9 +148,11 @@ def test_f2_judged_and_metrics_only_scores_are_separate_rows(client):
 def test_f3_a_replay_stops_sending_frames_at_its_deadline(recordings, monkeypatch):
     """Red on dev: every frame waits its turn, however long the vision service
     takes, so on the Lambda the run is killed at 900 s with nothing stored.
-    Scaled down: a 0.3 s deadline, 0.2 s calls, 30 frames over 6 workers."""
+    Scaled down: a 0.3 s deadline, 0.2 s calls, 90 frames over 6 workers --
+    3 s without the deadline, ~0.5 s with it, so the 1.5 s bar holds under a
+    loaded suite (30 frames put the red 1.0 s beside a 0.9 s bar)."""
     root, config = recordings
-    make_walk(root, "walk-slow", ["FORWARD"] * 30)
+    make_walk(root, "walk-slow", ["FORWARD"] * 90)
 
     def slow(*a, **k):
         time.sleep(0.2)
@@ -162,7 +164,7 @@ def test_f3_a_replay_stops_sending_frames_at_its_deadline(recordings, monkeypatc
 
     started = time.monotonic()
     body = c.post("/recording/walks/walk-slow/replay", json={"model_id": "m"}).json()
-    assert time.monotonic() - started < 0.9
+    assert time.monotonic() - started < 1.5
     assert body["verdict"] == "unusable"
     assert any("deadline" in (d.get("error") or "") for d in body["diff"])
     stored = root / "recordings" / "walk-slow" / "replay-m.json"
