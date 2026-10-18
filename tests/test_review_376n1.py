@@ -27,6 +27,10 @@ class WallClockBody:
 
     stop_count = 0
 
+    def stop(self):
+        self.stop_count += 1
+        self.set_wheel_velocity(0.0, 0.0)
+
     def __init__(self, feedback_hz):
         self.pos, self.w, self.t = 0.0, 0.0, time.monotonic()
         self.fb_period, self.fb_at, self.fb = 1 / feedback_hz, -1.0, 0.0
@@ -86,20 +90,41 @@ def test_a_guarded_verb_on_the_wall_clock_stops_at_an_aged_line():
 
 def test_feedback_lost_on_the_last_read_keeps_the_verbs_outcome():
     """The closing `achieved()` sat outside the try: feedback lost between
-    the loop's end and that read turned a clamped or stopped verb into
+    the loop's end and that read turned a stopped verb into
     `WheelFeedbackLost` -- a mission that a Stop ended read `failed`."""
     body = WallClockBody(50)
     w = 0.6 / R
-    calls = {"n": 0}
+    n = {"reads": 0}
+    real = body.get_wheel_state
+
+    def reads():
+        n["reads"] += 1
+        if n["reads"] == 3:
+            body.stop_count += 1                         # a Stop lands mid-verb
+            body.fail_after = 1                          # and the read after this fails
+        return real()
+
+    body.get_wheel_state = reads
+    out = carry_out_verb(body, {"kind": "straight", "left_rad_s": w, "right_rad_s": w,
+                                "target": 1.0, "wall_clock": True})
+    assert out["ended"] == "stopped", out
+
+
+def test_a_short_end_with_its_last_read_lost_is_no_feedback():
+    """Fixes' round 1 (Thermos): kept for every end, a clamped verb whose last
+    read was lost came back clamped at 0 m -- `_guarded` read it as a safety
+    block, which the brain steers around, instead of a body that cannot be
+    measured."""
+    body = WallClockBody(50)
+    w = 0.6 / R
 
     def limit(amount):
-        calls["n"] += 1
         body.fail_after = 0                              # the very next read fails
         return 0.0, "line"
 
     out = carry_out_verb(body, {"kind": "straight", "left_rad_s": w, "right_rad_s": w,
                                 "target": 1.0, "wall_clock": True}, limit)
-    assert out["ended"] == "clamped", out
+    assert out["ended"] == "no_feedback", out
 
 
 # ---------- N1.3: the tick-hang drill shared the runner's tick count ----------
@@ -122,13 +147,17 @@ def test_the_tick_hang_drill_centres_the_camera_and_counts_ticks_once():
 # ---------- N1.4: deadlines of 0 ----------
 
 
-@pytest.mark.parametrize("key", ["vision_timeout_s", "tick_timeout_s", "request_timeout_s"])
-def test_a_deadline_of_zero_is_refused(tmp_path, key):
+@pytest.mark.parametrize("key, value", [
+    ("vision_timeout_s", 0), ("tick_timeout_s", 0), ("request_timeout_s", 0),
+    # Fixes' round 1 (Thermos): the drills' own, and a NaN confirmation.
+    ("drill_vision_timeout_s", 0), ("drill_tick_timeout_s", 0),
+    ("arrival_confirm_timeout_s", ".nan")])
+def test_a_deadline_of_zero_is_refused(tmp_path, key, value):
     """0 made every cloud call time out, or aborted every mission on its
     first tick as a hung loop -- and clamped the confirmation to 0 too."""
     from control.brain_config import load_brain_config
     path = tmp_path / "robot.yaml"
-    path.write_text(f"brain:\n  {key}: 0\n")
+    path.write_text(f"brain:\n  {key}: {value}\n")
     with pytest.raises(ValueError, match=key):
         load_brain_config(str(path))
 

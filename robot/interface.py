@@ -365,9 +365,13 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
         return {"done": last["done"], "ended": ended, "reason": reason}
     try:
         done = achieved()
-    except WheelFeedbackLost:
-        # The verb had ended (3.76 N1): feedback lost on this last read is not
-        # its outcome -- a Stop's verb read as a fault, and the mission failed.
+    except WheelFeedbackLost as e:
+        # 3.76 N1: a verb a Stop ended, or one that completed, keeps that end
+        # -- a Stop's verb read as a fault, and the mission failed. A short
+        # end (clamped, stalled, timeout) needs the reading to be believed:
+        # read as a block, it would be steered around rather than refused.
+        if ended not in ("stopped", "complete"):
+            return {"done": last["done"], "ended": "no_feedback", "reason": str(e)}
         done = last["done"]
     return {"done": done, "ended": ended, "reason": reason}
 

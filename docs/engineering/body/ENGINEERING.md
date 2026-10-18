@@ -93,10 +93,11 @@ This applies before the first frame too. A verb already running when
 feedback stops ends `no_feedback` in `carry_out_verb()`, and
 `SafetyController.check_and_execute()` then stops the body and raises
 `WheelFeedbackLost` (the settle pass returns `no_feedback` the same way).
-Feedback lost on the loop's own last read, after the verb ended for
-another reason (a stop, a preemption, a refusal), keeps that reason: the
-last read falls back to the last tick's `done` (3.76 N1; it raised, and a
-mission a Stop ended read `failed`).
+Feedback lost on the loop's own last read, after the verb was stopped or
+completed, keeps that end with the last tick's `done` (3.76 N1; it raised,
+and a mission a Stop ended read `failed`). A short end (`clamped`,
+`stalled`, `timeout`) with its last read lost is `no_feedback`: read as a
+block it would be steered around.
 `RosDriveRobot._encoders()` raises it when the wrapped body's wheels are
 unusable. The robot server answers `no_feedback` from `/action` and
 `/wheels` (unlogged for driver `ros`), and `/health`'s `motor_board` is
