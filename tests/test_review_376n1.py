@@ -188,3 +188,24 @@ def test_an_empty_track_scrub_is_unset(monkeypatch):
     from robot.factory import _track_scrub
     monkeypatch.setenv("TRACK_SCRUB", "")
     assert _track_scrub({}) == 1.0
+
+
+def test_a_completed_verb_with_its_last_read_lost_stays_complete():
+    """Round 2 (/code-review, low): nothing pinned `complete` among the ends
+    a lost last read keeps."""
+    body = WallClockBody(50)
+    w = 0.6 / R
+    n = {"reads": 0}
+    real = body.get_wheel_state
+
+    def reads():
+        n["reads"] += 1
+        state = real()
+        if state.get("usable") and state["left"]["position_rad"] * R >= 0.05 - 0.002:
+            body.fail_after = 0                          # the read after the target fails
+        return state
+
+    body.get_wheel_state = reads
+    out = carry_out_verb(body, {"kind": "straight", "left_rad_s": w, "right_rad_s": w,
+                                "target": 0.05, "wall_clock": True})
+    assert out["ended"] == "complete", out
