@@ -98,3 +98,26 @@ def test_a_chassis_touching_a_wall_does_not_freeze_the_movers():
     start = mover.cell
     world.advance_time(mover.hop_s + 1e-6)
     assert mover.cell != start, "a mover across the house froze"
+
+
+# ---------- M1.4: a non-finite command reached the body ----------
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("route, body", [
+    ("/wheels", '{"left_rad_s": NaN, "right_rad_s": 1.0}'),
+    ("/wheels", '{"left_rad_s": 1.0, "right_rad_s": Infinity}'),
+    ("/action", '{"action": "FORWARD", "duration": Infinity}'),
+])
+def test_a_non_finite_command_is_refused_before_it_reaches_the_body(monkeypatch, route, body):
+    """Fixes' round 1 (/code-review, on the car's path): JSON's NaN and
+    Infinity reached `set_wheel_velocity`; on the car `NaN > 2.0` is false, so
+    the board was sent NaN, drops it, and keeps its previous setpoint."""
+    from fastapi.testclient import TestClient
+    import robot.server as server
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    client = TestClient(server.create_app(), raise_server_exceptions=False)
+    r = client.post(route, content=body, headers={"content-type": "application/json"})
+    assert r.status_code == 422, (r.status_code, r.text[:200])

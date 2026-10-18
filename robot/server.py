@@ -94,12 +94,13 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, contextmanager, nullcontext
 from pathlib import Path
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from robot.factory import get_robot, load_config
 from robot.identity import configure_logging, log_identity
@@ -133,17 +134,23 @@ def require_secret(x_app_secret: str = Header(default="")):
         raise HTTPException(status_code=401, detail="Missing or invalid x-app-secret header.")
 
 
+# JSON's NaN and Infinity are refused at the door (3.76 M1): on the car
+# `NaN > 2.0` is false, so the board was sent NaN, dropped it and kept its
+# previous setpoint.
+Finite = Annotated[float, Field(allow_inf_nan=False)]
+
+
 class ActionRequest(BaseModel):
     action: str
     speed: int = 50
-    duration: float = 0.5
+    duration: Finite = 0.5
     angle: int = 90
 
 
 class WheelsRequest(BaseModel):
     """R2b: left/right wheel angular velocities, rad/s, positive forward."""
-    left_rad_s: float
-    right_rad_s: float
+    left_rad_s: Finite
+    right_rad_s: Finite
 
 
 class RelatchRequest(BaseModel):
@@ -614,6 +621,14 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             gc.unfreeze()
 
     app = FastAPI(title="vision-picar robot server", lifespan=lifespan)
+
+    @app.exception_handler(RequestValidationError)
+    async def refused_body(request, exc: RequestValidationError):
+        # FastAPI's own 422 echoes the input, and a refused NaN or Infinity
+        # (3.76 M1) cannot be written as JSON: the refusal read as a 500.
+        errors = [{k: v for k, v in e.items() if k not in ("input", "ctx")}
+                  for e in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": errors})
 
     # See module docstring. "" (the default) reproduces every route exactly
     # as before this existed -- prefix + "/frame" == "/frame".
