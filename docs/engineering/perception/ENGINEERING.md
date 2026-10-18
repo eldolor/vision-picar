@@ -45,6 +45,10 @@ every number here.
 
 **`PerceptionPipeline.perceive(frame)`, in order:**
 
+0. One frame at a time per pipeline (3.76 L1): a frame arriving while
+   another is still in the models -- one B3.2's guard gave up on, often a
+   new target's first frame encoding its text -- is `unavailable` ("the
+   previous frame is still in perception") at once, never waited on.
 1. Read `pan_deg`, `tilt_deg` from the frame; base64-decode `image_base64`
    (failure -> `unavailable`).
 2. `detector.detect(image, confidence)`; plus `proposer.propose(image)` boxes
@@ -52,7 +56,10 @@ every number here.
 3. Crop rule (`_crops`): `label_gate` keeps only boxes labelled with the
    target's COCO word; `soft_gate` keeps labels in the CLIP-text accept set;
    `low_confidence` keeps all. Sort by area, keep `max_crops`. None left ->
-   `absent`.
+   `absent`. A text-prompted detector (`OpenVocabCropSource`: YOLOE labels
+   every box with the whole target text) refuses `label_gate` and
+   `soft_gate` at construction, and `auto` takes `low_confidence` for it
+   (3.76 L1: the gate discarded every box).
 4. Score each crop with `scorer.score(image, box, (target,) + distractors)`;
    a wrong-length answer or an exception -> `unavailable`.
 5. Gate: best candidate by `probability` (softmax of scores x 100); `>=
@@ -381,6 +388,7 @@ on `--seed 3463`.
 | Test file (count 2026-10-02) | What it pins |
 |---|---|
 | `tests/test_perceive.py` (57) | tri-state (an empty good frame is `absent`; missing, undecodable, wedged detector or scorer is `unavailable`); open vocabulary is the default and `auto` still means 4.2's rule; probability over every score; margin override; crop cap and its growth with a second source; bearing from centre, pan added, width read from the image; soft gate and vocabulary verdict; real backends say what to install |
+| `tests/test_review_376l1.py` (5) | 3.76 L1: a frame still in perception keeps the next one out (`unavailable`, the detector entered once) and the pipeline opens again after it; `auto` with a text-prompted detector takes the open-vocabulary path; `label_gate` and `soft_gate` on one are refused; a closed-vocabulary detector keeps the label gate |
 | `tests/test_perceive_lab.py` (22) | lab backends and `pipeline_for_spec()` on fakes |
 | `tests/test_bench_identity_llama.py` (21) | 3.48: the localisation score through a bare `[`, merged `[{` / `[]`, a code fence, whitespace before the brace (the smoke test's real reply), a bare object, an empty list; time to decision; the A10G prompt verbatim. 3.58: stopping at the decision changes no score on six reply shapes and stops at the deciding token, a bare `[` alone has not decided, the stream parser and its error chunk, `compare_decisions` |
 | `tests/test_identity_eval.py` (4) | 3.48: the cloud scored by `score_at` with silence never a YES; today's labels win, flips and gaps counted; a YES on a confabulated frame is caught at its gate |

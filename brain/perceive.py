@@ -748,6 +748,7 @@ class PerceptionPipeline:
     ):
         if not target or not target.strip():
             raise ValueError("PerceptionPipeline needs a target string")
+        self._busy = threading.Lock()      # one frame in the models at a time
         self.detector = detector
         self.scorer = scorer
         self.target = target.strip()
@@ -794,6 +795,16 @@ class PerceptionPipeline:
                 "produces -- they have no class to gate on, which is why the "
                 "proposer exists. Use 'low_confidence' (the default) or drop "
                 "the proposer.")
+        # 3.76 L1: a text-prompted detector (YOLOE, the shipped one) labels
+        # every box with the whole target text, never its COCO word, so a
+        # label gate discards every box and the pipeline reads `absent` on
+        # every frame. `auto` takes the open-vocabulary path for it below.
+        text_prompted = isinstance(detector, OpenVocabCropSource)
+        if text_prompted and crop_path in (CROP_LABEL_GATE, CROP_SOFT_GATE):
+            raise ValueError(
+                f"crop_path={crop_path!r} gates on labels, and a text-prompted "
+                "detector labels every box with the target text itself: every "
+                "box would be discarded. Use 'low_confidence' (the default).")
         self.crop_path = crop_path
         # UNIONED with the detector's boxes, never substituted for them.
         # Measured over the three-walk corpus at P >= 0.8, against the
@@ -825,7 +836,8 @@ class PerceptionPipeline:
             self.crop_source = CROP_SOFT_GATE
         else:
             self.crop_source = (
-                CROP_LABEL_GATE if self.coco_class else CROP_LOW_CONFIDENCE)
+                CROP_LABEL_GATE if self.coco_class and not text_prompted
+                else CROP_LOW_CONFIDENCE)
 
         # The accept set, built once. `ranked` is kept whole so the sweep
         # can re-cut it at any k without re-encoding, and so a gate that
@@ -876,7 +888,26 @@ class PerceptionPipeline:
 
     def perceive(self, frame: dict) -> Perception:
         """One frame in, one `Perception` out (counted while in flight, so
-        `pipeline_for` can wait for an ended mission's last frame, 3.81.E)."""
+        `pipeline_for` can wait for an ended mission's last frame, 3.81.E).
+
+        One frame at a time (3.76 L1): a frame B3.2's guard gave up on is
+        still in the models -- a new target's first frame encodes its text
+        in a child for up to 20 s -- and the next tick's frame beside it
+        started a second child, ran a second predict on one ultralytics
+        model, and met the first frame's release. It is `unavailable` until
+        the first ends; nothing waits."""
+        if not self._busy.acquire(blocking=False):
+            return Perception(status=UNAVAILABLE,
+                              reason="the previous frame is still in perception",
+                              crop_source=self.crop_source,
+                              pan_deg=float(frame.get("pan_deg") or 0.0),
+                              tilt_deg=float(frame.get("tilt_deg") or 0.0))
+        try:
+            return self._perceive_counted(frame)
+        finally:
+            self._busy.release()
+
+    def _perceive_counted(self, frame: dict) -> Perception:
         token = object()
         with _in_flight:
             _perceiving.add(token)
