@@ -266,7 +266,7 @@ Resources:
           TargetGroupArn: !Ref AlbTargetGroup
 
   # 3.84: a new mission lifts a person's Stop's latch (the brain calls it);
-  # rule 13 is full.
+  # 3.76 K2: a refused start puts it back. Rule 13 is full.
   AlbListenerRuleAutonomy:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
     Properties:
@@ -277,6 +277,7 @@ Resources:
         - Field: path-pattern
           Values:
             - /autonomy/resume
+            - /autonomy/relatch
       Actions:
         - Type: forward
           TargetGroupArn: !Ref AlbTargetGroup
