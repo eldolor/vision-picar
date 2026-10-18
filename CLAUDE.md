@@ -515,7 +515,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   a Refresh mid-scoring lost every score, Download on S3 was a CORS request
   the bucket refuses (now `?link=1` on the walks route), and the slideshow
   and metrics loads raced. **For the user:** deploy the consoles
-  (`sync.sh`) and the walks Lambda (`?link=1`) from the laptop. Next: O-P3.
+  (`sync.sh`) and the walks Lambda (`?link=1`) from the laptop. **O (the
+  twin's page), merged 2026-10-18, NOT YET DEPLOYED:** 10 fixed -- toasts
+  sat under Guide's fullscreen (a recorded walk's "Frame not saved" was
+  never seen), the env banner scrolled every tab 2 px sideways, iOS
+  capitalised a hand-typed secret, the reduced-motion countdown, the
+  portrait action badge over the telemetry (and, in round 1, the chevron),
+  home-screen insets. Deploy with the same `sync.sh`. Next: P1-P3.
   Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
