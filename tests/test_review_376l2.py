@@ -137,3 +137,27 @@ def test_a_stop_after_the_local_check_is_undecided_not_refused():
     runner.start()
     verdict = runner._guarded_confirm({})
     assert verdict["cloud_called"] is False and verdict.get("undecided") is True, verdict
+
+
+# ---------- L2.4: the camera's seen set under a moving map origin ----------
+
+
+def test_the_same_view_on_a_shifted_origin_adds_no_cells():
+    """Seen cells were keyed by metre centres worked out from the map's
+    origin. A SLAM map's origin (the minimum of its rotated corners) moves
+    by fractions of a cell as it grows, so the same floor was added again
+    under new keys after each shift -- the set (and `camera_seen_m2`) grew
+    without bound and every goal choice rebuilt it."""
+    from tests.test_tiered_explore import _agent
+    agent, _ = _agent()
+    m = agent.world.get_map()
+    agent._pan = lambda: 0.0
+    agent.world.get_map = lambda: m
+    agent._note_seen()
+    once = len(agent.seen)
+    assert once > 0
+    for shift in (0.013, 0.031, 0.047):
+        shifted = dict(m, origin_x_m=m["origin_x_m"] + shift, origin_y_m=m["origin_y_m"] - shift)
+        agent.world.get_map = (lambda s=shifted: s)
+        agent._note_seen()
+    assert len(agent.seen) < 1.6 * once, (once, len(agent.seen))

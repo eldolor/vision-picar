@@ -1386,8 +1386,14 @@ class ExploreAgent(MissionAgent):
         res = m["resolution_m"]
         self.seen_res = res
         for c in camera_seen(m, pose["x_m"], pose["y_m"], pose["heading_deg"] + pan):
-            self.seen.add((round(m["origin_x_m"] + (c[0] + 0.5) * res, 3),
-                           round(m["origin_y_m"] + (c[1] + 0.5) * res, 3)))
+            # Snapped to a lattice fixed in the house (3.76 L2): a SLAM map's
+            # origin moves by fractions of a cell as it grows, and centres
+            # worked out from it put the same floor in the set again after
+            # every shift. On a whole-cell origin (the simulator's) this is
+            # the cell's own centre, as before.
+            x = math.floor((m["origin_x_m"] + (c[0] + 0.5) * res) / res)
+            y = math.floor((m["origin_y_m"] + (c[1] + 0.5) * res) / res)
+            self.seen.add((round((x + 0.5) * res, 3), round((y + 0.5) * res, 3)))
 
     def _verb(self, action: str, **kwargs):
         """A camera pan or an escape move, between goals. Any goal still live
