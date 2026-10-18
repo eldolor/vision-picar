@@ -327,8 +327,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   (bar 5). `nav2.yaml` now has the keepout filter: **rebuild
   `vision-picar-ros:latest` from `dev`** before trusting a live run.
 * **Review of the code written before the review rule (3.76): batches
-  A-I (the risky files) merged by 2026-10-14, J and K1-K4 on 2026-10-18;
-  K5-P3 (risky code changed since, then all non-risky code) to go.** Both reviewers on whole files, risky files only,
+  A-I (the risky files) merged by 2026-10-14, J and K on 2026-10-18;
+  L1-P3 (all non-risky code) to go.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
   `server.py`): 5 fixed -- a verb longer than the watchdog lost its
   driver's authority, the wheel loop could overwrite a stop, lost feedback
@@ -458,8 +458,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   low. **For the user (K3.4):** an approach stalled with the robot already
   near the target is a plain failure whose 30 s cooldown blocks close-in,
   so explore can drive off from a target it sees -- 3.85's recorded choice
-  (as `dev` was on the timeout); changing it needs live runs. Next: K5, then
-  L1-P3. Handoff:
+  (as `dev` was on the timeout); changing it needs live runs. **K5 (world,
+  ROS, the local VLM), merged 2026-10-18:** 1 fixed -- the keepout mask was 0
+  outside its discs, which nav2's KeepoutFilter writes over unknown cells, so
+  unmapped space read free (now -1; **rebuild `vision-picar-ros:latest` from
+  `dev`**). For the user: 3.83's dedupe (a wedge 0.15-0.30 m from a live spot
+  marks nothing) and marks cleared only by their 300 s expiry. Next: L1-P3.
+  Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
