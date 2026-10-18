@@ -56,8 +56,8 @@ def test_an_interrupted_judge_run_stops_paying_and_keeps_its_answers(tmp_path, m
 
     def judge_one(client, path, boxes, spend):
         calls.append(path)
-        if len(calls) >= 3:
-            gate.wait(2)
+        if path.name not in ("f00.jpg", "f01.jpg"):   # by frame, not by count (a race)
+            gate.wait(1)
         return {"verdicts": {"1": "correct"}, "missed": []}
 
     monkeypatch.setattr(il, "judge_one", judge_one)
@@ -68,7 +68,9 @@ def test_an_interrupted_judge_run_stops_paying_and_keeps_its_answers(tmp_path, m
         for fut in list(futures)[:2]:
             fut.result()
             yield fut
-        gate.set()
+        # Not released here (a gate flake): a worker freed before the
+        # handler's stop.set() took the next frame. The calls out time out
+        # by themselves, well after the handler has stopped the queue.
         raise KeyboardInterrupt
 
     monkeypatch.setattr(il, "as_completed", as_completed)
@@ -195,15 +197,15 @@ def test_any_error_out_of_the_loop_stops_the_queue(tmp_path, monkeypatch):
 
     def judge_one(c, p, b, s):
         calls.append(p)
-        if len(calls) > 2:
-            gate.wait(2)
+        if p.name not in ("f00.jpg", "f01.jpg"):   # by frame, not by count (a race)
+            gate.wait(1)
         return {"verdicts": {"1": "correct"}, "missed": []}
 
     def as_completed(futures):
         for fut in list(futures)[:2]:
             fut.result()
             yield fut
-        gate.set()
+        # Not released here: see the interrupt test above.
         raise OSError("disk full")
 
     monkeypatch.setattr(il, "judge_one", judge_one)
