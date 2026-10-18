@@ -303,8 +303,9 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   11/13 overall -- breakfast pinned in a pocket under the table, pantry an
   explore livelock ("already facing it", not 3.83's code). Code on branch
   `plan/3.83-dining-room-trap`; the user agreed to keep it off `dev`.
-* **Review of the code written before the review rule (3.76), all nine
-  batches merged by 2026-10-14; the review is done.** Both reviewers on whole files, risky files only,
+* **Review of the code written before the review rule (3.76): batches
+  A-I (the risky files) merged by 2026-10-14, J on 2026-10-18; K-P3 (risky
+  code changed since, then all non-risky code) to go.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
   `server.py`): 5 fixed -- a verb longer than the watchdog lost its
   driver's authority, the wheel loop could overwrite a stop, lost feedback
