@@ -472,7 +472,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   label gates saw nothing for a multi-word target. For 3.81.F: encoding the
   texts at mission start would take the first frame out of the guard. The
   Hailo path's replayed boxes were never rescaled (its P16/P19 rows).
-  Next: L2-P3. Handoff:
+  **L2 (brain decisions, whole files), merged 2026-10-18:** 5 fixed -- the
+  cloud's free-text room names (two spellings were two rooms, "Unclear" a
+  room); a room-label seed off the grid took the map's corner; the camera's
+  seen cells grew without bound on a SLAM map whose origin moves by
+  fractions of a cell; the stuck-breaker turned away on the found frame; a
+  Stop after the local check read as a refusal. **For the user (L2.1):** a
+  perception-led arrival forgets its refusal on one detector miss and pays
+  the cloud again; remembering it makes one wrong no final -- paid repeats
+  vs a second chance. Next: M1-P3. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
