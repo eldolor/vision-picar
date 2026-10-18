@@ -83,10 +83,21 @@
     return data;
   }
 
+  // A frame that never answers ends as a failure (round 2: Play waited on
+  // it for good).
+  const FRAME_TIMEOUT_MS = window.ADMIN_FRAME_TIMEOUT_MS || 30000;
+
   async function frameBlobUrl(walk, file) {
-    const res = await fetch("/recording/walks/" + encodeURIComponent(walk) + "/frames/" + encodeURIComponent(file), {
-      headers: headers(),
-    });
+    const ctl = new AbortController();
+    const timer = setTimeout(function () { ctl.abort(); }, FRAME_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch("/recording/walks/" + encodeURIComponent(walk) + "/frames/" + encodeURIComponent(file), {
+        headers: headers(), signal: ctl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) throw new Error("HTTP " + res.status);
     const blob = await res.blob();
     return URL.createObjectURL(blob);
@@ -494,6 +505,8 @@
         await api("PUT", "/recording/walks/" + encodeURIComponent(w.walk) + "/tag", { label: label });
         live(w).label = label;
         repaint(w.walk);
+        const row = walkRenderers[w.walk];
+        if (row) row.labelSelect.value = label || "";   // a rebuilt row's too (round 2)
       } catch (e) {
         labelSelect.value = live(w).label || "";   // what is stored (3.76 N2)
         showInlineError(labelSelect, "Tag failed: " + e.message);
@@ -764,7 +777,7 @@
       renderEvalDetail: renderEvalDetail,
       renderReplays: renderReplays,
       repaint: function () { renderHead(); renderEvalDetail(); renderReplays(); syncControls(); },
-      evalBtn: evalBtn, replaySelect: replaySelect, delBtn: delBtn,
+      evalBtn: evalBtn, replaySelect: replaySelect, delBtn: delBtn, labelSelect: labelSelect,
     };
 
     const framesEl = document.createElement("div");
@@ -849,10 +862,10 @@
       try {
         const gone = await api("DELETE", "/recording/walks/" + encodeURIComponent(w.walk) + "/frames/" + encodeURIComponent(f.file));
         card.remove();
-        w.frames -= 1;
+        live(w).frames -= 1;
         detail.frames = detail.frames.filter(function (x) { return x.file !== f.file; });
         const meta = walkEl.querySelector(".walk-meta");
-        if (meta) meta.textContent = w.frames + " frame" + (w.frames === 1 ? "" : "s");
+        if (meta) meta.textContent = live(w).frames + " frame" + (live(w).frames === 1 ? "" : "s");
         // 3.76 F4: the server marked every stored score of this walk; say so
         // now rather than on the next reload.
         // A score already stale keeps its reason, as the server's
@@ -930,6 +943,15 @@
     if (slideshowImg._blobUrl) URL.revokeObjectURL(slideshowImg._blobUrl);
     slideshowImg._blobUrl = url;
     slideshowImg.src = url || "";
+    slideshowImg.style.visibility = "";
+  }
+
+  // Play steps a fixed time after each picture LANDS (round 2: on a fixed
+  // grid a frame that took 1.1 s was shown for 0.1 s).
+  const SLIDE_MS = 1200;
+  function scheduleNext(s) {
+    clearTimeout(s.timer);
+    s.timer = s.playing ? setTimeout(function () { slideshowStep(1); }, SLIDE_MS) : null;
   }
 
   function renderSlide() {
@@ -941,13 +963,16 @@
     // Its own picture or none -- never the last frame's under this caption
     // -- and Play waits for it (round 1: a frame slower than the 1.2 s tick
     // was always stale by the time it landed, so Play showed nothing).
+    // Hidden, not emptied: the box keeps its size, so the controls under it
+    // stay put (round 2: on a desktop an emptied picture collapsed, Next
+    // moved up, and a second click landed on the backdrop and closed it).
     const seq = ++slideSeq;
-    showSlideImage(null);
-    s.loading = true;
+    slideshowImg.style.visibility = "hidden";
+    clearTimeout(s.timer);
     frameBlobUrl(s.walk.walk, f.file).then(function (url) {
-      if (seq === slideSeq && slideshowState === s) { showSlideImage(url); s.loading = false; }
+      if (seq === slideSeq && slideshowState === s) { showSlideImage(url); scheduleNext(s); }
       else URL.revokeObjectURL(url);
-    }).catch(function () { if (seq === slideSeq) s.loading = false; });
+    }).catch(function () { if (seq === slideSeq && slideshowState === s) scheduleNext(s); });
     slideshowAction.textContent = entry && entry.navigate ? (entry.navigate.action || "?") : "";
     if (entry && entry.navigate && entry.navigate.model_id) {
       const usage = entry.navigate.usage || {};
@@ -962,13 +987,13 @@
   }
 
   function openSlideshow(w, detail, index) {
-    slideshowState = { walk: w, detail: detail, index: index, timer: null };
+    slideshowState = { walk: w, detail: detail, index: index, timer: null, playing: false };
     slideshowEl.classList.add("show");
     renderSlide();
   }
 
   function closeSlideshow() {
-    if (slideshowState && slideshowState.timer) clearInterval(slideshowState.timer);
+    if (slideshowState) { slideshowState.playing = false; clearTimeout(slideshowState.timer); }
     slideshowState = null;
     slideSeq += 1;
     showSlideImage(null);
@@ -1012,12 +1037,16 @@
   document.getElementById("slideshow-play").onclick = function () {
     const s = slideshowState;
     if (!s) return;
-    if (s.timer) {
-      clearInterval(s.timer);
+    if (s.playing) {
+      s.playing = false;
+      clearTimeout(s.timer);
       s.timer = null;
       slideshowPlayBtn.textContent = "Play";
     } else {
-      s.timer = setInterval(function () { if (!s.loading) slideshowStep(1); }, 1200);
+      s.playing = true;
+      // The picture on screen gets its time from now, unless it is still out
+      // (its landing schedules the step).
+      if (slideshowImg.style.visibility !== "hidden") scheduleNext(s);
       slideshowPlayBtn.textContent = "Pause";
     }
   };
@@ -1044,11 +1073,13 @@
     names.forEach(function (name) { flight(name).deleting = false; });
     // Gone already is gone (a 404), not a failure.
     const failed = names.filter(function (_, i) {
-      return results[i].status === "rejected" && results[i].reason.status !== 404;
+      const why = results[i].reason;
+      return results[i].status === "rejected" && !(why && why.status === 404 && why.fromServer);
     });
     allWalks = allWalks.filter(function (w) { return !names.includes(w.walk) || failed.includes(w.walk); });
+    const skipped = Array.from(selected).filter(function (name) { return !names.includes(name); });
     selected.clear();
-    failed.forEach(function (name) { selected.add(name); });
+    failed.concat(skipped).forEach(function (name) { selected.add(name); });
     applyFilterSort();
     loadStats();
     updateBulkBar();

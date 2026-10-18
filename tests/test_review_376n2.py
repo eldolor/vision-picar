@@ -27,24 +27,26 @@ def _json(route, body, status=200):
     route.fulfill(status=status, content_type="application/json", body=json.dumps(body))
 
 
-def _png(width):
-    """A 1-pixel-high PNG `width` wide, to tell two frames apart by size."""
-    raw = b"".join(b"\x00" + b"\x80\x80\x80" * width for _ in range(1))
+def _png(width, height=1):
+    """A PNG `width` wide, to tell two frames apart by size."""
+    raw = b"".join(b"\x00" + b"\x80\x80\x80" * width for _ in range(height))
     def chunk(kind, data):
         return (struct.pack(">I", len(data)) + kind + data
                 + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, 1, 8, 2, 0, 0, 0))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
             + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
 def _console(browser, admin_server, walks=None, *, evaluation=None, viewport=DESKTOP,
-             routes=()):
+             routes=(), init=None):
     """The console with the list routes stubbed. `routes` are (pattern,
     handler) pairs added AFTER the defaults, so they win."""
     walks = walks or WALKS
     context = browser.new_context(viewport=viewport, accept_downloads=True)
     context.add_init_script(
         '(() => { try { localStorage.setItem("vp_admin_secret", "test"); } catch (e) {} })();')
+    if init:
+        context.add_init_script(init)
     page = context.new_page()
     page.route("**/recording/models", lambda r: _json(r, MODELS))
     page.route("**/recording/walks", lambda r: _json(r, walks))
@@ -494,6 +496,8 @@ def test_bulk_delete_skips_a_walk_whose_own_delete_is_out(browser, admin_server)
     page.click("#btn-bulk-delete")
     page.wait_for_timeout(300)
     assert len(deletes) == 1, deletes
+    # Round 2 (both): skipped, it stays selected.
+    sync_api.expect(page.locator("#bulk-count")).to_have_text("1 selected")
     held[0].fulfill(status=204, body="")
     sync_api.expect(page.locator(".walk")).to_have_count(1)
     page.context.close()
@@ -547,4 +551,84 @@ def test_a_tag_that_crosses_a_refresh_is_shown(browser, admin_server):
     page.wait_for_timeout(300)
     held[0].fulfill(status=200, content_type="application/json", body='{"label": "good"}')
     sync_api.expect(page.locator(".walk").first.locator(".label-badge")).to_contain_text("good")
+    # Round 2 (both): the rebuilt row's dropdown too.
+    assert page.locator(".label-select").first.input_value() == "good"
+    page.context.close()
+
+
+# ---------- the fixes' round 2 ----------
+
+
+def _slides(browser, admin_server, n=3, init=None):
+    held = []
+    page, errors = _console(browser, admin_server, init=init, routes=[
+        (f"**/recording/walks/{WALK}", lambda r: _json(r, _detail(n))),
+        ("**/frames/*", lambda r: held.append(r)),
+    ])
+    page.locator(".walk").first.locator("button", has_text="View").click()
+    sync_api.expect(page.locator(".frame")).to_have_count(n)
+    page.locator(".frame").nth(0).locator("img").click()
+    return page, held
+
+
+def _release(held, width=400):
+    for r in list(held):
+        r.fulfill(status=200, content_type="image/png", body=_png(width, 300))
+    held.clear()
+
+
+def test_a_second_next_does_not_close_the_slideshow(browser, admin_server):
+    """Round 2 (Thermos, medium): each step emptied the picture; on a desktop
+    the box collapsed, Next moved up 240 px, and a second click at the same
+    spot hit the backdrop and closed the slideshow."""
+    page, held = _slides(browser, admin_server, n=5)
+    _release(held)
+    page.wait_for_function("document.getElementById('slideshow-img').naturalWidth === 400")
+    box = page.locator("#slideshow-next").bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    page.mouse.click(x, y)                               # frame 2, held
+    page.wait_for_timeout(150)
+    page.mouse.click(x, y)
+    page.wait_for_timeout(150)
+    assert page.evaluate("document.getElementById('slideshow').classList.contains('show')")
+    sync_api.expect(page.locator("#slideshow-pos")).to_contain_text("3 / 5")
+    page.context.close()
+
+
+def test_play_gives_a_frame_its_time_from_when_it_lands(browser, admin_server):
+    """Round 2 (both): Play kept a fixed 1.2 s grid, so a frame landing just
+    before a tick was shown for a moment."""
+    page, held = _slides(browser, admin_server)
+    page.click("#slideshow-play")
+    page.wait_for_timeout(1100)
+    _release(held)                                       # lands 0.1 s before the old tick
+    page.wait_for_timeout(600)
+    assert page.locator("#slideshow-pos").inner_text().startswith("1 / 3")
+    page.context.close()
+
+
+def test_a_frame_that_never_answers_does_not_stop_play(browser, admin_server):
+    """Round 2 (both): `frameBlobUrl` had no timeout; Play waited on it for
+    good, reading Pause."""
+    page, held = _slides(browser, admin_server,
+                         init="window.ADMIN_FRAME_TIMEOUT_MS = 400;")
+    page.click("#slideshow-play")
+    sync_api.expect(page.locator("#slideshow-pos")).to_contain_text("2 / 3", timeout=4000)
+    page.context.close()
+
+
+def test_a_404_that_is_not_the_servers_is_not_a_delete(browser, admin_server):
+    """Round 2 (both): bulk delete read any 404 as gone -- a gateway's page,
+    with no detail of ours, hid a walk that was still stored."""
+    def walk(route):
+        if route.request.method != "DELETE":
+            return route.fallback()
+        route.fulfill(status=404, content_type="text/html", body="<h1>Not Found</h1>")
+
+    page, _ = _console(browser, admin_server, routes=[("**/recording/walks/*", walk)])
+    page.locator(".walk input[type=checkbox]").first.check()
+    page.click("#btn-bulk-delete")
+    page.click("#btn-bulk-delete")
+    sync_api.expect(page.locator(".inline-err")).to_contain_text("failed to delete")
+    sync_api.expect(page.locator(".walk")).to_have_count(len(WALKS["walks"]))
     page.context.close()
