@@ -69,6 +69,12 @@ DEFAULT_FEEDBACK_INTERVAL_MS = 50
 OUT_BUFFER_BYTES = 4096
 
 
+
+def _number(v) -> bool:
+    """ArduinoJson's `is<float>()`: a number, never `true` (3.76 M2:
+    `isinstance(True, int)` let a boolean speed through)."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
 class FakeEsp32:
     """One board: a pty, a firmware loop, and the body whose wheels it turns.
 
@@ -110,6 +116,7 @@ class FakeEsp32:
         self.drop_rate = drop_rate
         self._rng = random.Random(seed)
         self.lines_in = 0
+        self.lines_refused = 0          # lines whose handling raised (3.76 M2)
         self.frames_out = 0
         self.frames_dropped = 0
         self.frames_overflowed = 0
@@ -233,7 +240,12 @@ class FakeEsp32:
             self._buf += chunk
             while b"\n" in self._buf:
                 line, self._buf = self._buf.split(b"\n", 1)
-                self._handle(line.strip())
+                try:
+                    self._handle(line.strip())
+                except Exception:  # noqa: BLE001 -- the firmware never stops parsing
+                    # 3.76 M2: one bad field (int("x"), an unknown main type)
+                    # ended this thread for good; ArduinoJson reads it as 0.
+                    self.lines_refused += 1
 
     def _write(self, obj: dict) -> bool:
         """Queue one line for the wire. Lines are lost WHOLE -- to `drop_rate`,
@@ -266,13 +278,15 @@ class FakeEsp32:
             cmd = json.loads(line)
         except ValueError:
             return            # the firmware's deserializeJson() fails quietly too
+        if not isinstance(cmd, dict):
+            return            # `[1]`: no "T" to dispatch on (3.76 M2)
         self.lines_in += 1
         t = cmd.get("T")
         with self.lock:
             if t == 0:
                 # CMD_EMERGENCY_STOP: ... setGoalSpeed(0, 0);
                 self._set_goal_speed(0.0, 0.0)
-            elif t == 1 and isinstance(cmd.get("L"), (int, float)) and isinstance(cmd.get("R"), (int, float)):
+            elif t == 1 and _number(cmd.get("L")) and _number(cmd.get("R")):
                 # CMD_SPEED_CTRL: heartbeatStopFlag = false; lastCmdRecvTime = millis();
                 self._touch()
                 self._set_goal_speed(float(cmd["L"]), float(cmd["R"]))

@@ -43,6 +43,10 @@ from robot.interface import unusable_grid, unusable_scan
 SENSOR_STALE_S = 0.15
 POLL_S = 0.05                     # the robot server's wheel-loop period
 READ_TIMEOUT_S = 0.5              # a poll; staleness, not this, is the safety bound
+# The safety vet asks for under 1 m (robot/safety.py's scan hint); a longer
+# range never names the bundle (3.76 M2), so an inventory read that came first
+# cannot make the vet's own call the direct one.
+BUNDLE_MAX_HINT_M = 2.0
 FRAME_TIMEOUT_S = 3.0             # a rendered camera frame
 START_TIMEOUT_S = 30.0
 
@@ -92,12 +96,16 @@ class SimBodyClient:
 
     def _fetch_bundle(self, http: httpx.Client, hint: Optional[float]) -> None:
         params = {} if hint is None else {"max_range_m": hint}
+        # Aged from the ask (3.76 M2): the program reads the body when the
+        # request lands, and a reply that took 0.4 s read as 0 s old, so
+        # SafetyController._aged took no travel off it.
+        asked = time.monotonic()
         r = http.get("/safety", params=params)
         r.raise_for_status()
         bundle = r.json()
         with self._lock:
             if hint == self._hint:               # a bundle for a stale hint is not kept
-                self._bundle, self._bundle_at = bundle, time.monotonic()
+                self._bundle, self._bundle_at = bundle, asked
                 self._fresh.notify_all()
 
     def _poller(self) -> None:
@@ -129,15 +137,22 @@ class SimBodyClient:
     # ---------- sensing ----------
 
     def get_scan(self, max_range_m: Optional[float] = None) -> dict:
-        """With a range hint (the safety layer's call): the latest bundle's
-        scan, or `usable: false` once it is older than SENSOR_STALE_S. The
-        first hinted call names the range the poller fetches from then on;
-        until its first bundle lands the answer is the honest unusable one.
-        Without a hint (`/scan` for ROS and the twin, never under the motion
-        lock): a direct read."""
-        if max_range_m is None:
+        """With the safety layer's range hint: the latest bundle's scan, or
+        `usable: false` once it is older than SENSOR_STALE_S. The first hint
+        of at most BUNDLE_MAX_HINT_M names the range the poller fetches from
+        then on; until its first bundle lands the answer is the honest
+        unusable one. Without a hint, or with another range (`/scan` for ROS
+        and the twin; the inventory's read), a direct read -- never under the
+        motion lock."""
+        if max_range_m is None or (max_range_m > BUNDLE_MAX_HINT_M
+                                   or (self._hint is not None and max_range_m != self._hint)):
+            # A read at another range (the inventory's 4.5 m, 3.76 M2) is a
+            # direct one: it used to replace the vet's bundle, so the vet
+            # waited inside the motion lock, moves read `no_scan`, and the
+            # inventory was answered with the vet's short scan.
             try:
-                r = self._sensors.get("/scan")
+                r = self._sensors.get("/scan", params=(
+                    {} if max_range_m is None else {"max_range_m": max_range_m}))
                 r.raise_for_status()
                 return r.json()
             except (httpx.HTTPError, ValueError):

@@ -75,6 +75,7 @@ B3.2's vision failures get one -- deliberate: a missing frame has nothing
 to decide on, unlike a flaky model response that might succeed on retry.
 """
 
+import collections
 import logging
 import threading
 import time
@@ -108,7 +109,9 @@ class TeleopRobot(RobotInterface):
         self._frame: Optional[dict] = None
         self._seq = 0
         self._last_pushed_at: Optional[float] = None
-        self.log: list = []
+        # Bounded (3.76 M2, as GridWorld.log): every push and verb lands
+        # here for the robot server's life, and only tests read it.
+        self.log = collections.deque(maxlen=2000)
 
     # ---------- ingress: called only by robot/server.py's POST /teleop/frame ----------
 
@@ -121,6 +124,7 @@ class TeleopRobot(RobotInterface):
         sequence number, echoed back to the caller as confirmation."""
         with self._lock:
             self._seq += 1
+            seq = self._seq      # read under the lock (3.76 M2): a push between
             self._last_pushed_at = time.monotonic()
             self._frame = {
                 "image_base64": image_base64,
@@ -130,8 +134,8 @@ class TeleopRobot(RobotInterface):
                 "room": "unknown",
                 "metadata": {"source": "teleop", "seq": self._seq},
             }
-        self._record(f"PUSH seq={self._seq}")
-        return {"seq": self._seq}
+        self._record(f"PUSH seq={seq}")
+        return {"seq": seq}   # ...here and the return gave both pushes its number
 
     # ---------- sensing ----------
 

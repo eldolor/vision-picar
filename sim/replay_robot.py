@@ -55,6 +55,7 @@ the simulator's grid facts. `room` is present and `"unknown"` because
 
 import base64
 import logging
+import re
 from pathlib import Path
 
 from robot.interface import NO_SENSOR_CM as _NO_SENSOR_CM, RobotInterface
@@ -80,8 +81,11 @@ class ReplayRobot(RobotInterface):
 
     def __init__(self, frames_dir, loop: bool = False):
         self.dir = Path(frames_dir)
+        # By their numbers, not their names (3.76 M2): the recorder pads to
+        # four digits, so by name `frame-10000` played before `frame-1001`.
         self.frames = sorted(
-            p for p in self.dir.iterdir() if p.suffix.lower() in SUFFIXES
+            (p for p in self.dir.iterdir() if p.suffix.lower() in SUFFIXES),
+            key=lambda p: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", p.name)],
         ) if self.dir.is_dir() else []
         if not self.frames:
             raise ValueError(

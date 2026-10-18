@@ -38,7 +38,7 @@ sensor reads queued behind the board loop. See "The split simulator" below.
 | `sim/fake_lidar.py` | 3.42: the D500 on a pty. `Emitter` casts every point at its own instant (`cast_ray_exact()` from the lidar's position, 450 points a revolution, 10 Hz) and encodes LD19 packets; `world_caster()`; `LossyLine` drops and corrupts bytes; the program reads the body state from shared memory and links `--link` (`ROBOT_LIDAR`) to its pty. Shared with `tests/footprint_sweep.py`'s `_LidarTimed` |
 | `sim/body_client.py` | The robot server's side: `SimBodyClient`, handed to `HardwareRobot` as `sensors`, and `RemoteGrid` (its `world`: the house's name, its objects, moving one, the truth). Imports nothing of the simulator, so the robot server's process holds no `GridWorld` (`tests/test_sim_body_process.py`) |
 | `sim/maps/__init__.py` | `build_world(name)` and `build_movers(house, scenario)`: the only map registry. `build_world()` stamps the name it was given on the world it returns (`world.map_name`), which is how the server reports the house it built |
-| `sim/maps/starter_house.py` | 13 x 10 cells, 30 cm doors. Robot at cell (2, 2) facing east, backpack at (10, 7). The default house |
+| `sim/maps/starter_house.py` | 13 x 10 cells, 30 cm doors. Robot at cell (2, 2) facing east, backpack at (10, 7). The default house. Its rooms cover every free cell once (3.76 M2: the hallway took kitchen and wall cells, and the bottom-left was in no room) |
 | `sim/maps/scaled_house.py` | 27 x 14 cells, 90 cm doors (R6). Robot at (6, 4) facing east, backpack at (23, 5). The only house with a mover scenario (`hallway_crossing`) |
 | `sim/maps/complex_house.py` | 3.46's test house: 60 x 44 ft, a loop (living room - kitchen - hall), an L-shaped hall, three dead ends (study, closet, ensuite), an L-shaped bedroom, 33 pieces of furniture and 16 one-cell small things on the floor. Exposes `INSTANCES` (cells grouped by piece, so a table's four legs are one table) and `SMALL_NAMES` for scoring. Its variant `complex_house_hazards` (3.74) adds six hazards on the routes (`HAZARDS_FT`) and heights (`LOW_HEIGHTS_M`) that put them and ten of the small things under the lidar |
 | `sim/maps/procthor.py`, `sim/maps/procthor_data/` | 3.66: ProcTHOR-10K's 1,000 `val` houses (Apache-2.0, `LICENSE` beside the data) as `procthor:val:<index>`. `convert(index)` returns the world and what a judge needs (ProcTHOR's own room joins, source areas, object counts); `usable()` is the pinned list of houses with three or more rooms that the Rover reaches in full (`tests/chassis_fit.py`). The data is `val.json.gz`, written by `tools/procthor_import.py` from sha256-pinned sources; the suite never fetches |
@@ -119,15 +119,19 @@ detector.
   scans and camera frames. The two loads then land on different cores by
   construction: uvicorn workers sharing one socket did not share the load
   (on the Jetson one of three took 61% of a core and two sat idle).
-- **The safety layer's reads never touch the network.** `get_scan()` with a
-  range hint, `get_depth_grid()` and `get_distance()` answer from the latest
-  bundle. The first build made the vet an HTTP round trip inside
+- **The safety layer's reads never touch the network.** `get_scan()` with
+  the vet's range hint, `get_depth_grid()` and `get_distance()` answer from
+  the latest bundle. Only a hint of at most `BUNDLE_MAX_HINT_M` (2 m) names
+  the bundle's range; a read at another range (the inventory's 4.5 m) is a
+  direct one (3.76 M2: it replaced the vet's bundle, the vet waited inside
+  `motion_lock` and the inventory got the vet's short scan). The first build made the vet an HTTP round trip inside
   `motion_lock`, and the wheel loop skipped most of its ticks.
 - **A bundle older than `SENSOR_STALE_S` (0.15 s) is not a reading:** the
   scan answers `usable: false`, the zones unusable and the distance `0.0`,
   the existing fail-safe path, so a dead sensor program stops forward motion
   within the bound plus one wheel-loop period. The client never raises into
-  the wheel loop. `sensor_age_s()` reports the bundle's age, and the safety
+  the wheel loop. `sensor_age_s()` reports the bundle's age, counted from when
+  it was asked for (3.76 M2: from the reply, a slow one read as fresh), and the safety
   layer takes the way covered since off the clearance (`SafetyController._aged()`,
   safety engineering).
 - The robot server opens the board's pty (`board_path` from the body
@@ -355,6 +359,7 @@ docstring. It renders the starter house from (5.5, 7.5) facing east to
 | `tests/test_floor_hazards.py` | 3.74 A2: a 5 cm object is absent from the scan, the level row, the scalar and the map, and in the floor band at its true range +/- one cell from MinZ to 1.5 m (unusable inside MinZ); the band is body-fixed; a low object is still a contact; heights follow a moved object; the stand-in detector's rates; the hazard house's contents, and the Rover reaches every room of it |
 | `tests/test_sim_fingerprint.py` | 3.74 A1 (slow tier): over a seeded 500-step drive in each of the four houses, scans, the fake lidar, the level depth row, the scalar, detections and the map digest to what `dev` gave before 3.74. A deliberate change to how the sim senses re-pins it in the same commit |
 | `tests/test_review_376m1.py` (9) | 3.76 M1: the event log is bounded; a non-finite `/wheels`, `/action` or `/world/goal` value is a 422, and the car reads a non-finite wheel command as a stop; a mover never hops under the chassis (a pose search over the crossing person's next cell), and a chassis clipping a wall freezes no mover; a wheel command is capped as the board caps it and a non-finite one is zero |
+| `tests/test_review_376m2.py` (14) | 3.76 M2: an inventory read leaves the safety bundle and gets its own range; a slow reply is aged from its ask; every house's room cells are floor and in one room, and every free cell of the default house has one; an overlapping teleop push returns its own number, and the teleop log is bounded; a replay plays frames by number; the fake board keeps reading after a bad line and refuses a boolean speed |
 | `tests/test_movers.py` | 3.30 criteria 1 and 4: a move is seen at once by scan, collision and map; movers are deterministic and keep out; with no movers the object table is untouched by time |
 | `tests/test_mover_safety.py` | 3.30 criterion 2 on a sample (scaled house, 2 starts, 8 headings), and that the same sample FAILS with the clamp off |
 | `tests/test_footprint_safety.py`, `tests/test_pivot_safety.py` | 3.18 and 3.19 bars on ground truth, run through the sim's rectangle collision |

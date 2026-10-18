@@ -35,8 +35,11 @@ LAYOUT = [
 ]
 
 LIVING_ROOM = {(x, y) for x in range(1, 4) for y in range(1, 4)}
-HALLWAY = {(x, y) for x in range(5, 12) for y in range(1, 8)} | {
-    (x, 4) for x in range(1, 5)
+# The open area: the top-right block and the bottom-left one it opens into.
+# (3.76 M2: it was x 5-11 down to row 7 plus row 4's x 1-4 -- six kitchen
+# cells, the target's among them, wall cells, and the bottom-left in no room.)
+HALLWAY = {(x, y) for x in range(5, 12) for y in range(1, 5)} | {
+    (x, y) for x in range(1, 8) for y in range(5, 9)
 } | {(4, 2), (8, 7)}  # doorway cells count as the hallway side of the door
 KITCHEN = {(x, y) for x in range(9, 12) for y in range(6, 9)}
 
