@@ -1,0 +1,5 @@
+16:30:03 fl-large identity N:florence:phrase
+16:35:49 fl-large steering N:florence:phrase -> fl-large-phrase
+16:36:04 MemAvailable with fl-large-phrase: 4234
+16:42:22 fl-large-phrase steer exit 0
+16:42:23 fl-large DONE

@@ -1,0 +1,5 @@
+16:22:35 fl-base identity N:florence:phrase
+16:25:41 fl-base steering N:florence:phrase -> fl-base-phrase
+16:25:56 MemAvailable with fl-base-phrase: 5097
+16:29:22 fl-base-phrase steer exit 0
+16:29:23 fl-base DONE

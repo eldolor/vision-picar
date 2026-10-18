@@ -20,82 +20,123 @@ S1 blue-shoes-20260907-152528/frame-0010.jpg FORWARD LEFT FORWARD LEFT RIGHT
 S1 blue-shoes-20260908-210511/frame-0018.jpg RIGHT LEFT RIGHT LEFT LEFT
 S1 blue-shoes-20260908-210511/frame-0028.jpg RIGHT LEFT None LEFT None
 S1 blue-shoes-20260908-210511/frame-0029.jpg RIGHT LEFT FORWARD LEFT LEFT
-Traceback (most recent call last):
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
-    yield
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 250, in handle_request
-    resp = self._pool.handle_request(req)
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/connection_pool.py", line 256, in handle_request
-    raise exc from None
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/connection_pool.py", line 236, in handle_request
-    response = connection.handle_request(
-        pool_request.request
-    )
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/connection.py", line 103, in handle_request
-    return self._connection.handle_request(request)
-           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 136, in handle_request
-    raise exc
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 106, in handle_request
-    ) = self._receive_response_headers(**kwargs)
-        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 177, in _receive_response_headers
-    event = self._receive_event(timeout=timeout)
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpcore/_sync/http11.py", line 231, in _receive_event
-    raise RemoteProtocolError(msg)
-httpcore.RemoteProtocolError: Server disconnected without sending a response.
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/R/steer.py", line 35, in <module>
-    rl.main(*args)
-    ~~~~~~~^^^^^^^
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/J/run_llama.py", line 87, in main
-    **answer(c, url, jpeg, target), "mirror": answer(c, url, mirrored(jpeg), target)}
-                                              ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/M/run_steer.py", line 32, in answer
-    row = _answer(c, url, jpeg, target)
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/J/run_llama.py", line 54, in answer
-    text, content, id_ms = chat(c, url, jpeg, PROMPT.format(target=target), 64)
-                           ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/evaluations/tiered-380/J/run_llama.py", line 46, in chat
-    r = c.post(f"{url}/v1/chat/completions", json=body)
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1144, in post
-    return self.request(
-           ~~~~~~~~~~~~^
-        "POST",
-        ^^^^^^^
-    ...<11 lines>...
-        extensions=extensions,
-        ^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 825, in request
-    return self.send(request, auth=auth, follow_redirects=follow_redirects)
-           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 914, in send
-    response = self._send_handling_auth(
-        request,
-    ...<2 lines>...
-        history=[],
-    )
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 942, in _send_handling_auth
-    response = self._send_handling_redirects(
-        request,
-        follow_redirects=follow_redirects,
-        history=history,
-    )
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
-    response = self._send_single_request(request)
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1014, in _send_single_request
-    response = transport.handle_request(request)
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 249, in handle_request
-    with map_httpcore_exceptions():
-         ~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "/opt/anaconda3/lib/python3.13/contextlib.py", line 162, in __exit__
-    self.gen.throw(value)
-    ~~~~~~~~~~~~~~^^^^^^^
-  File "/Users/anshugaind/vision-picar/.claude/worktrees/plan-3.80/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
-    raise mapped_exc(message) from exc
-httpx.RemoteProtocolError: Server disconnected without sending a response.
+S1 blue-shoes-20260908-210511/frame-0039.jpg RIGHT LEFT None LEFT None
+S1 blue-shoes-20260908-210511/frame-0041.jpg LEFT LEFT None LEFT None
+S1 grey-backpack-20260921-203748/frame-0000.jpg FORWARD LEFT FORWARD None FORWARD
+S1 grey-backpack-20260921-203748/frame-0001.jpg FORWARD LEFT FORWARD LEFT FORWARD
+S1 grey-backpack-20260921-203748/frame-0007.jpg FORWARD LEFT RIGHT LEFT FORWARD
+S1 grey-backpack-20260921-203748/frame-0029.jpg FORWARD LEFT FORWARD LEFT None
+S1 grey-backpack-20260921-203748/frame-0039.jpg FORWARD LEFT FORWARD LEFT FORWARD
+S1 grey-backpack-20260921-203748/frame-0044.jpg FORWARD LEFT FORWARD LEFT None
+S1 grey-backpack-20260921-203748/frame-0045.jpg FORWARD LEFT FORWARD LEFT FORWARD
+S1 grey-backpack-20260921-203748/frame-0063.jpg FORWARD LEFT FORWARD LEFT None
+S1 grey-backpack-opus-4-5-20260921-210743/frame-0010.jpg FORWARD LEFT FORWARD LEFT FORWARD
+S1 red-backpack-20260907-144856/frame-0020.jpg FORWARD LEFT RIGHT LEFT RIGHT
+S1 red-backpack-20260907-144856/frame-0027.jpg FORWARD LEFT RIGHT LEFT RIGHT
+S1 red-backpack-20260907-144856/frame-0029.jpg RIGHT LEFT RIGHT LEFT FORWARD
+S1 red-backpack-20260907-144856/frame-0033.jpg LEFT LEFT FORWARD LEFT None
+S1 woven-laundry-basket-20260908-215252/frame-0005.jpg RIGHT LEFT RIGHT LEFT LEFT
+S1 woven-laundry-basket-20260908-215252/frame-0015.jpg FORWARD LEFT FORWARD LEFT RIGHT
+S1 woven-laundry-basket-20260908-215351/frame-0006.jpg RIGHT LEFT RIGHT LEFT LEFT
+S1 woven-laundry-basket-20260908-215351/frame-0009.jpg RIGHT LEFT RIGHT LEFT LEFT
+S1 woven-laundry-basket-20260908-215351/frame-0013.jpg FORWARD None RIGHT LEFT FORWARD
+S1 woven-laundry-basket-20260908-215351/frame-0075.jpg RIGHT LEFT RIGHT LEFT LEFT
+S1 woven-laundry-basket-20260908-215351/frame-0081.jpg FORWARD None FORWARD LEFT RIGHT
+S1 woven-laundry-basket-20260908-215351/frame-0083.jpg LEFT LEFT FORWARD None RIGHT
+S1 woven-laundry-basket-20260912-231358/frame-0016.jpg LEFT LEFT FORWARD LEFT RIGHT
+S1 woven-laundry-basket-20260912-231358/frame-0051.jpg LEFT LEFT LEFT LEFT RIGHT
+S1 woven-laundry-basket-20260912-231358/frame-0053.jpg LEFT LEFT LEFT LEFT RIGHT
+S1 woven-laundry-basket-20260912-231358/frame-0140.jpg RIGHT LEFT RIGHT LEFT LEFT
+S1 woven-laundry-basket-20260912-231358/frame-0145.jpg RIGHT LEFT RIGHT LEFT FORWARD
+S1 woven-laundry-basket-20260913-115414/frame-0222.jpg LEFT LEFT LEFT LEFT RIGHT
+S1 woven-laundry-basket-20260913-115414/frame-0225.jpg FORWARD LEFT FORWARD LEFT RIGHT
+S1 woven-laundry-basket-20260913-115703/frame-0016.jpg FORWARD LEFT FORWARD LEFT FORWARD
+S1 woven-laundry-basket-20260913-115703/frame-0020.jpg LEFT LEFT FORWARD LEFT RIGHT
+S1 woven-laundry-basket-20260913-115703/frame-0133.jpg LEFT LEFT LEFT LEFT RIGHT
+S1 woven-laundry-basket-20260913-115703/frame-0148.jpg FORWARD LEFT RIGHT LEFT None
+S1 woven-laundry-basket-20260913-115703/frame-0159.jpg FORWARD LEFT RIGHT LEFT FORWARD
+S1 woven-laundry-basket-20260913-115703/frame-0173.jpg RIGHT LEFT RIGHT LEFT LEFT
+S1 woven-laundry-basket-20260913-115703/frame-0184.jpg RIGHT LEFT None LEFT RIGHT
+S1 woven-laundry-basket-20260913-115703/frame-0190.jpg RIGHT LEFT RIGHT LEFT LEFT
+S2 a-white-phone-charger-ca-20260921-203250/frame-0006.jpg None LEFT RIGHT LEFT FORWARD
+S2 a-white-phone-charger-ca-20260921-203250/frame-0072.jpg None LEFT RIGHT LEFT LEFT
+S2 a-white-phone-charger-ca-20260921-203250/frame-0079.jpg None LEFT LEFT LEFT LEFT
+S2 blue-bottle-20260907-185007/frame-0009.jpg None LEFT None LEFT RIGHT
+S2 blue-bottle-20260907-185007/frame-0033.jpg None LEFT RIGHT LEFT FORWARD
+S2 blue-bottle-20260907-185007/frame-0081.jpg None LEFT FORWARD LEFT RIGHT
+S2 blue-bottle-20260907-185007/frame-0200.jpg None LEFT RIGHT LEFT RIGHT
+S2 grey-backpack-20260921-203627/frame-0000.jpg None LEFT LEFT LEFT None
+S2 grey-backpack-20260921-203627/frame-0041.jpg None LEFT FORWARD LEFT FORWARD
+S2 grey-backpack-20260921-203627/frame-0057.jpg None LEFT LEFT LEFT FORWARD
+S2 grey-backpack-20260921-203627/frame-0079.jpg None LEFT RIGHT LEFT FORWARD
+S2 red-backpack-20260912-224429/frame-0000.jpg None LEFT None LEFT LEFT
+S2 red-backpack-20260912-224429/frame-0045.jpg None LEFT LEFT LEFT RIGHT
+S2 red-backpack-20260912-224429/frame-0061.jpg None LEFT None LEFT None
+S2 red-backpack-20260912-224429/frame-0109.jpg None LEFT RIGHT LEFT FORWARD
+S2 red-backpack-20260912-224646/frame-0006.jpg None LEFT LEFT LEFT None
+S2 red-backpack-20260912-224646/frame-0061.jpg None LEFT LEFT LEFT None
+S2 red-backpack-20260912-224646/frame-0066.jpg None LEFT None LEFT None
+S2 red-backpack-20260912-224646/frame-0114.jpg None LEFT None LEFT None
+S2 red-backpack-20260912-224822/frame-0013.jpg None None LEFT LEFT None
+S2 red-backpack-20260912-224822/frame-0115.jpg None LEFT None LEFT None
+S2 red-backpack-20260921-203152/frame-0057.jpg None LEFT None LEFT None
+S2 red-backpack-20260921-203152/frame-0059.jpg None LEFT None LEFT None
+S2 woven-laundry-basket-20260908-215140/frame-0018.jpg None LEFT LEFT LEFT RIGHT
+S2 woven-laundry-basket-20260908-215140/frame-0085.jpg None LEFT FORWARD LEFT FORWARD
+S2 woven-laundry-basket-20260908-215140/frame-0091.jpg None LEFT LEFT LEFT RIGHT
+S2 woven-laundry-basket-20260908-215252/frame-0071.jpg None LEFT RIGHT LEFT LEFT
+S2 woven-laundry-basket-20260908-215252/frame-0073.jpg None LEFT LEFT LEFT None
+S2 woven-laundry-basket-20260912-231358/frame-0031.jpg None LEFT LEFT LEFT RIGHT
+S2 woven-laundry-basket-20260912-231358/frame-0090.jpg None LEFT FORWARD LEFT RIGHT
+S2 woven-laundry-basket-20260912-231358/frame-0110.jpg None LEFT None LEFT None
+S2 woven-laundry-basket-20260912-231358/frame-0172.jpg None LEFT RIGHT LEFT LEFT
+S2 woven-laundry-basket-20260913-115414/frame-0029.jpg None LEFT LEFT LEFT FORWARD
+S2 woven-laundry-basket-20260913-115414/frame-0044.jpg None LEFT LEFT LEFT LEFT
+S2 woven-laundry-basket-20260913-115414/frame-0048.jpg None LEFT LEFT LEFT None
+S2 woven-laundry-basket-20260913-115414/frame-0072.jpg None LEFT FORWARD LEFT FORWARD
+S2 woven-laundry-basket-20260913-115703/frame-0030.jpg None LEFT LEFT LEFT None
+S2 woven-laundry-basket-20260913-115703/frame-0074.jpg None LEFT LEFT LEFT RIGHT
+S2 woven-laundry-basket-20260913-115703/frame-0111.jpg None LEFT LEFT LEFT RIGHT
+S2 woven-laundry-basket-20260913-115703/frame-0126.jpg None LEFT FORWARD LEFT FORWARD
+S3 s3/home_first_floor-0.jpg FORWARD LEFT RIGHT LEFT RIGHT
+S3 s3/home_first_floor-1.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-0-0.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-0-1.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-2-0.jpg RIGHT LEFT RIGHT LEFT LEFT
+S3 s3/procthor-val-2-1.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-3-0.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-3-1.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-4-0.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-4-1.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-5-0.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-5-1.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-9-0.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-9-1.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-10-0.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-10-1.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-11-0.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-11-1.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-12-0.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-12-1.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-13-0.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-13-1.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-15-0.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-15-1.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-17-0.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-17-1.jpg FORWARD None RIGHT LEFT RIGHT
+S3 s3/procthor-val-18-0.jpg FORWARD LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-18-1.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-21-0.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-21-1.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-26-0.jpg FORWARD LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-26-1.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-27-0.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-27-1.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-32-0.jpg FORWARD LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-32-1.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-34-0.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-34-1.jpg FORWARD LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-36-0.jpg RIGHT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-36-1.jpg LEFT LEFT RIGHT LEFT RIGHT
+S3 s3/procthor-val-37-0.jpg FORWARD LEFT LEFT LEFT RIGHT
+S3 s3/procthor-val-37-1.jpg RIGHT LEFT RIGHT LEFT RIGHT
