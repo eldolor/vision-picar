@@ -1,0 +1,32 @@
+{
+ "labelled": 299,
+ "missing": [],
+ "opus_recorded": {
+  "frames": 299,
+  "yes": 106,
+  "tp": 72,
+  "fp": 34,
+  "visible": 74,
+  "precision": 0.679,
+  "recall": 0.973,
+  "teal_yes": 34,
+  "teal_n": 34
+ },
+ "astra.jsonl": {
+  "frames": 299,
+  "yes": 132,
+  "tp": 74,
+  "fp": 58,
+  "visible": 74,
+  "precision": 0.561,
+  "recall": 1.0,
+  "teal_yes": 29,
+  "teal_n": 34,
+  "models": [
+   "us.openai.gpt-6-astra"
+  ],
+  "p50_s": 2.33,
+  "p90_s": 3.96,
+  "cost_reported_usd": 2.231
+ }
+}
