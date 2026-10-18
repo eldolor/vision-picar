@@ -172,7 +172,7 @@ def test_the_safety_readout_is_set_like_the_other_readouts(browser, twin_server)
 import pytest  # noqa: E402
 
 
-@pytest.mark.parametrize("size", [(360, 640), (375, 553), (390, 844)])
+@pytest.mark.parametrize("size", [(320, 568), (360, 640), (375, 553), (390, 844)])
 def test_the_action_badge_stays_above_the_chevron(browser, twin_server, size):
     """Round 1 (/code-review, medium): the 260 px floor put the badge on the
     centre chevron (74 px, pulsing to ~98) on any phone under ~690 px tall."""
@@ -186,6 +186,9 @@ def test_the_action_badge_stays_above_the_chevron(browser, twin_server, size):
       const b = document.querySelector('.robot-action-badge');
       b.classList.add('visible');
       b.querySelector('.robot-action-verb').textContent = 'FORWARD';
+      // The app always fills the target line (round 2: an empty one left the
+      // test 22 px of slack).
+      b.querySelector('.robot-action-target').textContent = 'blue water bottle visible, center';
     }""")
     page.wait_for_timeout(300)
     badge = page.locator(".robot-action-badge").bounding_box()
