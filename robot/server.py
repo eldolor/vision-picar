@@ -626,22 +626,27 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def do_action(req: ActionRequest, x_driver: str = Header(default="")):
         now = time.monotonic()
         driver = (x_driver or "").strip() or DRIVER_UNKNOWN
-        if req.action == "STOP" and driver_priority(driver) == DRIVER_MANUAL:
-            # 3.76 K1: a person's STOP is one Stop, whichever route carries it
-            # (a script, curl, an older client): never arbitrated, it latches
-            # autonomy off and ends a nav2 goal, as POST /stop does. Through
-            # the verb path it only zeroed the wheels, and the brain drove on.
+        if req.action == "STOP":
+            # 3.76 K1: a STOP is one Stop, whichever route carries it (a
+            # script, curl, an older client) and from whoever: never
+            # arbitrated ("stop is everyone's right"); a person's latches
+            # autonomy off and ends a nav2 goal; the brain's spares the goal --
+            # all as POST /stop. Through the verb path a person's only zeroed
+            # the wheels, and the brain's could be refused.
             return stop(x_driver)
         # The stops as the request ARRIVED (3.84, as the goal route since
         # 3.82): a stop pressed after this verb was arbitrated keeps its hold.
         with goal_gen_lock:
             stops = goal_stop["stops"]
             latch = goal_stop["autonomy_stopped"]
+        stamp0 = state["driver_at"]
         # 3.84: after a person's Stop the brain is refused by name, before
-        # arbitration could answer it anything else.
+        # arbitration could answer it anything else -- and lets go of the
+        # robot, as one refused at execution does (3.76 K1: its claim from
+        # before the Stop held the slot for the watchdog's timeout).
         refused = person_stop_refusal(driver, latch)
         if refused:
-            return let_go_under_latch(driver, refused)
+            return lapse_refused_claim(driver, refused, stamp0)
 
         # Phase M4 -- arbitration, before anything moves. A decided order,
         # not last-writer-wins: see robot/interface.py's DRIVER_PRIORITY and
@@ -714,16 +719,6 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         command still counts as the brain at work, the safe side."""
         with verbs_lock:
             if state["driver"] == driver and state["driver_at"] == stamped:
-                state["driver_at"] = 0.0
-        return refused
-
-    def let_go_under_latch(driver: str, refused: dict) -> dict:
-        """3.76 K1: a brain command refused on arrival under a person's
-        Stop lets go of the robot at once, as one refused at execution does
-        (`lapse_refused_claim`): the brain's claim from before the Stop held
-        the slot for `watchdog_timeout_s` against a goal's ros wheel posts."""
-        with verbs_lock:
-            if state["driver"] == driver and not state["verbs_running"]:
                 state["driver_at"] = 0.0
         return refused
 
@@ -933,9 +928,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                     robot.set_wheel_velocity(0.0, 0.0)
                 return {"executed": True, "driver": driver,
                         "applied": {"left_rad_s": 0.0, "right_rad_s": 0.0}, "clamped": None}
+            stamp0 = state["driver_at"]
             refused = is_autonomy(driver) and person_stop_refusal(driver, autonomy_latch())
             if refused:
-                return let_go_under_latch(driver, refused)
+                return lapse_refused_claim(driver, refused, stamp0)   # 3.76 K1
             refused = arbitrate(driver, now)
             if refused:
                 return refused
@@ -1004,25 +1000,33 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         the very goal that won."""
         state["last_command_at"] = time.monotonic()
         driver = (x_driver or "").strip() or DRIVER_UNKNOWN
-        if driver_priority(driver) == DRIVER_MANUAL:
-            # 3.84: a PERSON's Stop (the D-pad, teleop's operator, anyone
-            # unnamed) is the last word over autonomy: latched before the
-            # wheels stop, and read again as each brain command executes, so
-            # one arbitrated before it does not move after it; lifted
-            # only when a mission starts (POST /autonomy/resume).
-            with goal_gen_lock:
+        ends_goal = hasattr(world_model, "cancel_goal") and not is_autonomy(driver)
+        gen = None
+        with goal_gen_lock:
+            if driver_priority(driver) == DRIVER_MANUAL:
+                # 3.84: a PERSON's Stop (the D-pad, teleop's operator, anyone
+                # unnamed) is the last word over autonomy: latched before the
+                # wheels stop, and read again as each brain command executes,
+                # so one arbitrated before it does not move after it; lifted
+                # only when a mission starts (POST /autonomy/resume).
                 goal_stop["autonomy_stopped"] = {"by": driver, "at": time.monotonic()}
-        result = robot.stop()
-        spares_goal = is_autonomy(driver)
-        if hasattr(world_model, "cancel_goal") and not spares_goal:
-            with goal_gen_lock:
+            if ends_goal:
+                # Counted with the latch, before the wheels stop (3.76 K1): a
+                # goal taking the lock after this is stale, whoever sent it --
+                # counted after robot.stop(), one in between was accepted (a
+                # brain goal under the latch, a tap the Stop then cancelled).
                 goal_stop["gen"] += 1
                 goal_stop["stops"] += 1
                 goal_stop["hold"] = True
                 gen = goal_stop["gen"]
                 goal_stop["ending"] = gen
-            threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
-                             name="stop-end-goal").start()
+        try:
+            result = robot.stop()
+        finally:
+            if gen is not None:
+                # Even if robot.stop() raised (3.76 K1): the goal still ends.
+                threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
+                                 name="stop-end-goal").start()
         return {"executed": True, "result": result, "driver": driver}
 
     @app.post(prefix + "/autonomy/resume", dependencies=[Depends(require_secret)])

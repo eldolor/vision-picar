@@ -193,3 +193,111 @@ def test_a_brain_refused_on_arrival_under_a_persons_stop_lets_go(plain):
                     headers={"x-driver": "ros"}).json()
     assert r.get("reason") != "preempted", r
 
+
+
+# ---------- the fixes' review, round 2 ----------
+
+
+def test_a_band_that_sees_nothing_in_range_is_clear_not_blind():
+    """Only range zones counted as seen: an open-floor band (every zone
+    no_target) read `floor_band_unusable`."""
+    safety = SafetyController(_robot(None), 20.0)
+    zones = [{"status": interface.ZONE_NO_TARGET, "distance_cm": None}] * 32
+    assert safety.floor_clearance(_band(zones=zones)) == (None, "floor_band_no_target")
+
+
+@pytest.mark.parametrize("grid", [
+    {"floor": ["not", "a", "band"]},
+    _band(origin_x_cm=float("nan")),
+    _band(cols=float("inf")),
+])
+def test_bands_the_first_fix_still_misread(grid):
+    """A non-dict band and `cols: Infinity` still raised; a NaN origin read
+    as a clear corridor."""
+    safety = SafetyController(_robot(None), 20.0)
+    assert safety.floor_clearance(grid) == (None, "floor_band_unusable")
+
+
+def test_a_persons_goal_tap_inside_a_stop_is_stale_not_accepted(monkeypatch):
+    """The Stop counted itself after robot.stop(): a tap that took the goal
+    lock in between was answered accepted, then cancelled by the Stop's loop
+    -- the twin showed a goal that silently died."""
+    built = _keep_robot(monkeypatch)
+    client, bridge = _server_over(monkeypatch, None)
+    robot = built["robot"]
+    bridge.post_gate = threading.Event()
+    answers = {}
+    script = threading.Thread(target=lambda: answers.setdefault("script", client.post(
+        "/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()))
+    script.start()
+    assert bridge.post_entered.wait(5)
+    tap = threading.Thread(target=lambda: answers.setdefault("tap", client.post(
+        "/world/goal", json={"x_m": 2.5, "y_m": 1.0}, headers={"x-driver": "twin-dpad"}).json()))
+    tap.start()
+    time.sleep(0.3)
+    real = robot.stop
+
+    def slow_stop():
+        bridge.post_gate.set()
+        script.join(5)
+        tap.join(5)
+        return real()
+
+    monkeypatch.setattr(robot, "stop", slow_stop)
+    client.post("/stop", headers={"x-driver": "twin-dpad"})
+    assert answers["tap"]["accepted"] is False and answers["tap"]["reason"] == "stopped", answers
+    assert len(bridge.posted) == 1, bridge.posted
+
+
+def test_a_stop_whose_robot_stop_raises_still_ends_the_goal(monkeypatch):
+    """The goal-ending loop started only after robot.stop() returned: a
+    serial error there left nav2 driving under a latched Stop."""
+    built = _keep_robot(monkeypatch)
+    client, bridge = _server_over(monkeypatch, None)
+    assert client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()["accepted"]
+
+    def broken():
+        raise OSError("serial write failed")
+
+    monkeypatch.setattr(built["robot"], "stop", broken)
+    with pytest.raises(OSError):
+        client.post("/stop", headers={"x-driver": "twin-dpad"})
+    deadline = time.monotonic() + 5.0
+    while bridge.goal and bridge.goal.get("state") == "active" and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not (bridge.goal and bridge.goal.get("state") == "active"), "nav2 drove on"
+
+
+def test_the_brains_stop_through_action_is_never_refused(monkeypatch):
+    """"Stop is everyone's right": the brain's /action STOP was arbitrated,
+    so refused while a nav2 goal was in progress."""
+    client, bridge = _server_over(monkeypatch, None)
+    assert client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()["accepted"]
+    r = client.post("/action", json={"action": "STOP"}, headers={"x-driver": "brain"}).json()
+    assert r["executed"] is True, r
+
+
+def test_one_glitch_frame_keeps_the_last_pack_reading():
+    """Every implausible frame wiped the reading: alternate 0 V frames hid a
+    low pack from the floor's two-readings rule."""
+    from robot.hardware_robot import HardwareRobot
+    from sim.fake_esp32 import FakeEsp32
+    from sim.maps import build_world
+    from sim.mock_robot import MockRobot
+    body = MockRobot(build_world("scaled_house"), render=False)
+    board = FakeEsp32(body, battery_v=11.0)
+    robot = HardwareRobot(board.path)
+    try:
+        deadline = time.time() + 2.0
+        while not robot.get_battery().get("usable") and time.time() < deadline:
+            time.sleep(0.02)
+        assert robot.get_battery()["usable"], "no reading -- the test proves nothing"
+        board.battery_v = lambda: 0.0               # the INA219 fails for a moment
+        seen = robot.frames
+        while robot.frames < seen + 5 and time.time() < deadline + 2:
+            time.sleep(0.02)
+        b = robot.get_battery()
+        assert b["usable"] and abs(b["v"] - 11.0) < 0.1, b
+    finally:
+        robot.close()
+        board.close()

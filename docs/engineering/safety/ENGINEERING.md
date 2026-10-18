@@ -221,8 +221,16 @@ world. While it is set, `person_stop_refusal()` refuses every command from
 an autonomous driver other than `ros` (`is_autonomy()`: `brain`, `teleop`)
 with `reason: "person_stop"`, before arbitration: `/action`, a non-zero
 direct `/wheels`, and a `POST /world/goal` naming `brain` (explore names
-itself since 3.84; the latch is re-read where 3.82 answers `stopped`, so a
-brain goal a person's Stop overtook answers `person_stop`). It is read again
+itself since 3.84; the latch is re-read under the goal lock, and a brain
+goal under it answers `person_stop` whether or not it is stale, 3.76 K1).
+A brain command refused on arrival lets go of the robot too
+(`lapse_refused_claim()` with the claim's stamp read on arrival, 3.76 K1).
+`/stop` counts its stop (`stops`, `gen`, the hold) in the same
+`goal_gen_lock` step as the latch, before `robot.stop()`, and starts the
+goal-ending loop even if `robot.stop()` raises (3.76 K1: counted after it,
+a goal landing in between was accepted -- a brain goal under the latch, or
+a person's tap the Stop then cancelled). Every `/action STOP`, from anyone,
+is answered by `/stop` (never arbitrated). It is read again
 at execution, because an autonomous verb's arbitration can wait on the
 bridge: a direct verb under `motion_lock`, a ROS verb in
 `lift_hold_for_verb()` under `goal_gen_lock`. Just before that read the
@@ -401,6 +409,7 @@ recorded as such (3.27 did this for `PIVOT_MARGIN_CM`).
 | `tests/test_blind_reverse.py` (5) | 2026-10-02: `HardwareRobot` over the fake board with no sensors refuses a REVERSE verb without moving and clamps a standing reverse to zero; a standing turn (`vet_wheel_velocity()`) passes; a teleop body still reverses; a body with a scan is judged by it. Not pinned: a turn VERB, and a settle pass astern (Known gaps) |
 | `tests/test_authority.py` (13) | M4: ranks, lapse, stop claims nothing, reasons on the wire, preemption ends a mission |
 | `tests/test_review_376a.py` (5) | 3.76 batch A: a verb longer than the watchdog keeps its driver's authority; the wheel loop never writes over a stop; lost feedback under ROS drive is `no_feedback` and stops the robot; a second stop answers while the bridge hangs; a person taking over a ROS verb is not stopped by it, and the cut-off verb reads `preempted` |
+| `tests/test_review_376k1.py` | 3.76 K1: a person's `/action STOP` latches and ends the goal, the brain's is never refused; a brain goal or a person's tap landing inside a Stop is not accepted; a Stop whose `robot.stop()` raises still ends the goal; a brain refused on arrival lets go; the floor band never raises (bad fields, non-dict, NaN, `cols` mismatch or Infinity are `floor_band_unusable`), a blind band says so, an open-floor band reads clear; battery outside 6-30 V is no reading and one glitch frame keeps the last pack reading |
 | `tests/test_person_stop.py` | 3.84: a person's Stop (`twin-dpad`, unnamed, `teleop-operator`) during explore: nav2 at 0.0 rad/s for 3 s, explore's next goal never reaches the bridge, the mission ends `cancelled`/`stop`; under `drive: ros` a verb arbitrated before a Stop (held between arbitration and the hold lift) leaves its hold set, and a person's verb during the Stop's loop turns > 30 deg, then nav2 is held at 0.0 until the loop ends the goal and lifts it; a brain verb or `brain`-named goal after it is refused `person_stop`; a mission over `RemoteRobot` ends `cancelled`/`stop`; a `brain` or `ros` stop latches nothing; a person's verb and goal, and an unnamed goal, still drive; `/autonomy/resume` and a new mission lift it |
 | `tests/test_goal_arbitration.py` (9) | 3.23: a goal is an autonomous driver |
 | `tests/test_stop_cancels_goal.py` (13) | Handoff 2026-10-02 1b: with an active goal and a fake nav2 that drives while it holds one, the wheels are still at zero `STOP_HOLD_S` + 0.1 s after `/stop`; a new goal can be set afterwards; a hung cancel costs the stop nothing. Spec review 3 V1: the brain's `/stop` spares the goal, and a mission preempted by a goal (`MissionRunner` over `RemoteRobot`) ends `preempted` with the goal still active; a person's stop still ends it. V2, nav2 ticking at 20 Hz from the moment of the stop: zero wheels while a 0.3 s cancel is in flight, through a failing cancel (retried once the bridge returns), and for a goal accepted after the stop; a new goal drives again |

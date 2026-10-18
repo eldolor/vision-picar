@@ -40,6 +40,7 @@ from robot.interface import (
     WheelFeedbackLost,
     carry_out_verb,
     verb_stop_baseline,
+    ZONE_NO_TARGET,
     ZONE_RANGE,
     ZONE_UNUSABLE,
 )
@@ -773,11 +774,13 @@ class SafetyController:
             get_grid = getattr(self.robot, "get_depth_grid", None)
             grid = get_grid() if get_grid is not None else None
         band = (grid or {}).get("floor")
+        if band is not None and not isinstance(band, dict):
+            return None, "floor_band_unusable"      # 3.76 K1: never an exception
         try:
             fov = float(band["fov_deg"]) if band else 0.0
         except (TypeError, ValueError, KeyError):
             fov = 0.0
-        if not band or not band.get("zones") or fov <= 0:
+        if not band or not band.get("zones") or not fov > 0:
             return None, "no_floor_band"
         # 3.76 K1: a band this cannot read is unusable, never an exception --
         # one raised out of forward_clearance() made every FORWARD a 400 and
@@ -790,12 +793,17 @@ class SafetyController:
             pan = float(band.get("pan_deg") or 0.0)
             origin = float(band.get("origin_x_cm") or 0.0)
             cols = band.get("cols")
-            if not isinstance(zones, list) or (cols is not None and int(cols) != len(zones)):
+            if not (math.isfinite(pan) and math.isfinite(origin) and isinstance(zones, list)):
+                return None, "floor_band_unusable"      # a NaN origin read as clear
+            if cols is not None and int(cols) != len(zones):
                 return None, "floor_band_unusable"
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return None, "floor_band_unusable"
         best, seen = None, False
         for zone, centre in zip(zones, _zone_bearings_deg(len(zones), fov)):
+            if isinstance(zone, dict) and zone.get("status") == ZONE_NO_TARGET:
+                seen = True                  # nothing in range: seen, and clear
+                continue
             if (not isinstance(zone, dict) or zone.get("status") != ZONE_RANGE
                     or zone.get("distance_cm") is None):
                 continue
