@@ -83,24 +83,25 @@
     return data;
   }
 
-  // A frame that never answers ends as a failure (round 2: Play waited on
-  // it for good).
+  // The slideshow's frame ends as a failure if it never answers (round 2:
+  // Play waited on it for good). Body included (round 3: headers then a
+  // stalled body still hung). Not the grid's cards: they queue behind each
+  // other on one host's few connections, and a deadline would blank the last.
   const FRAME_TIMEOUT_MS = window.ADMIN_FRAME_TIMEOUT_MS || 30000;
 
-  async function frameBlobUrl(walk, file) {
+  async function frameBlobUrl(walk, file, timeoutMs) {
     const ctl = new AbortController();
-    const timer = setTimeout(function () { ctl.abort(); }, FRAME_TIMEOUT_MS);
-    let res;
+    const timer = timeoutMs ? setTimeout(function () { ctl.abort(); }, timeoutMs) : null;
     try {
-      res = await fetch("/recording/walks/" + encodeURIComponent(walk) + "/frames/" + encodeURIComponent(file), {
+      const res = await fetch("/recording/walks/" + encodeURIComponent(walk) + "/frames/" + encodeURIComponent(file), {
         headers: headers(), signal: ctl.signal,
       });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const blob = await res.blob();
+      return URL.createObjectURL(blob);
     } finally {
       clearTimeout(timer);
     }
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const blob = await res.blob();
-    return URL.createObjectURL(blob);
   }
 
   function setStatus(el, text, cls) {
@@ -969,10 +970,13 @@
     const seq = ++slideSeq;
     slideshowImg.style.visibility = "hidden";
     clearTimeout(s.timer);
-    frameBlobUrl(s.walk.walk, f.file).then(function (url) {
-      if (seq === slideSeq && slideshowState === s) { showSlideImage(url); scheduleNext(s); }
+    s.loading = true;                     // said, not read off the picture (round 3)
+    frameBlobUrl(s.walk.walk, f.file, FRAME_TIMEOUT_MS).then(function (url) {
+      if (seq === slideSeq && slideshowState === s) { s.loading = false; showSlideImage(url); scheduleNext(s); }
       else URL.revokeObjectURL(url);
-    }).catch(function () { if (seq === slideSeq && slideshowState === s) scheduleNext(s); });
+    }).catch(function () {
+      if (seq === slideSeq && slideshowState === s) { s.loading = false; scheduleNext(s); }
+    });
     slideshowAction.textContent = entry && entry.navigate ? (entry.navigate.action || "?") : "";
     if (entry && entry.navigate && entry.navigate.model_id) {
       const usage = entry.navigate.usage || {};
@@ -1044,9 +1048,11 @@
       slideshowPlayBtn.textContent = "Play";
     } else {
       s.playing = true;
-      // The picture on screen gets its time from now, unless it is still out
-      // (its landing schedules the step).
-      if (slideshowImg.style.visibility !== "hidden") scheduleNext(s);
+      // The frame on screen gets its time from now, unless it is still out
+      // (its landing or failure schedules the step). Round 3: read off the
+      // picture's visibility, a frame that had FAILED while paused looked
+      // still out, and Play never moved.
+      if (!s.loading) scheduleNext(s);
       slideshowPlayBtn.textContent = "Pause";
     }
   };

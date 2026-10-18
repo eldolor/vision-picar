@@ -632,3 +632,47 @@ def test_a_404_that_is_not_the_servers_is_not_a_delete(browser, admin_server):
     sync_api.expect(page.locator(".inline-err")).to_contain_text("failed to delete")
     sync_api.expect(page.locator(".walk")).to_have_count(len(WALKS["walks"]))
     page.context.close()
+
+
+# ---------- the fixes' round 3 ----------
+
+
+def test_play_moves_on_from_a_frame_that_failed_while_paused(browser, admin_server):
+    """Round 3 (/code-review, medium): Play read "still loading" off the
+    hidden picture, so after a frame had failed with Play off, pressing Play
+    scheduled nothing and the slideshow never moved."""
+    page, held = _slides(browser, admin_server)
+    for r in list(held):
+        r.fulfill(status=500, body="")
+    held.clear()
+    page.wait_for_timeout(300)                           # frame 0 has failed
+    page.click("#slideshow-play")
+    sync_api.expect(page.locator("#slideshow-pos")).to_contain_text("2 / 3", timeout=3000)
+    page.context.close()
+
+
+STALLED_BODY = """
+(() => {
+  const real = window.fetch;
+  window.fetch = function (url, opts) {
+    if (!String(url).includes("/frames/frame-0000")) return real.apply(this, arguments);
+    const signal = opts && opts.signal;
+    // Headers now, a body that ends only if the request is aborted.
+    const body = new ReadableStream({ start(c) {
+      if (signal) signal.addEventListener("abort", () => c.error(new DOMException("aborted", "AbortError")));
+    } });
+    return Promise.resolve(new Response(body, { status: 200, headers: { "content-type": "image/png" } }));
+  };
+  window.ADMIN_FRAME_TIMEOUT_MS = 400;
+})();
+"""
+
+
+def test_a_frame_whose_body_stalls_does_not_stop_play(browser, admin_server):
+    """Round 3 (/code-review, medium): the deadline was cleared once the
+    headers came, so a body that stalled still held Play for good."""
+    page, held = _slides(browser, admin_server, init=STALLED_BODY)
+    _release(held)
+    page.click("#slideshow-play")
+    sync_api.expect(page.locator("#slideshow-pos")).to_contain_text("2 / 3", timeout=4000)
+    page.context.close()
