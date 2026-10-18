@@ -331,3 +331,51 @@ def test_review_a_refused_explore_search_start_builds_no_tier_clients(tmp_path, 
                                               "policy": "tiered"})
     assert resp.status_code == 400 and "explore search" in resp.json()["detail"], resp.text
     assert "target" not in seen
+
+
+# --- 3.85 at merge: its explore fixes beside 3.80.G's close-in ---------------
+
+def _ahead(agent, d):
+    pose = agent._pose()
+    a = math.radians(pose["heading_deg"])
+    return pose, (pose["x_m"] + d * math.sin(a), pose["y_m"] - d * math.cos(a))
+
+
+def test_385_a_stalled_approach_in_the_band_is_not_backed_away_from():
+    """3.85's stall cut (20 s) backs a wedged goal out; an approach that
+    stalls with the robot already in the band would reverse and turn away
+    from a target close-in could finish. It is set aside instead, as a
+    timed-out one was before, and no escape is queued."""
+    agent, _ = _agent()
+    pose, (tx, ty) = _ahead(agent, 0.62)
+    agent._goal = {"x_m": tx, "y_m": ty, "kind": "approach", "target": (tx, ty),
+                   "sent_at": 0.0, "from": (pose["x_m"] - 0.5, pose["y_m"])}
+    agent._approach = (tx, ty)
+    agent._goal_ended("stalled", 30.0)
+    assert "REVERSE" not in agent._pending, agent._pending
+    assert agent._approach is None
+
+
+def test_385_a_stalled_approach_out_of_the_band_still_backs_out():
+    agent, _ = _agent()
+    pose, (tx, ty) = _ahead(agent, 2.0)
+    agent._goal = {"x_m": tx, "y_m": ty, "kind": "approach", "target": (tx, ty),
+                   "sent_at": 0.0, "from": (pose["x_m"] - 0.5, pose["y_m"])}
+    agent._goal_ended("stalled", 30.0)
+    assert agent._pending[:1] == ["REVERSE"]
+
+
+def test_385_a_refused_approach_in_the_band_closes_in():
+    """3.85 clears `_approach` on a refused send; in the band that must not
+    stop close-in (dev's 3.80.G path) -- every frame would re-send instead."""
+    from tests.test_explore import FirstRefusedNav
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object=TARGET),
+                         navigator=FirstRefusedNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid), sight_from="perception")
+    agent.safety.check_and_execute = lambda action, **kw: {"executed": action}
+    _, (tx, ty) = _ahead(agent, 0.62)
+    out = agent._send_approach(tx, ty, grid.sim_time,
+                               {"_perception": {"status": "detected", "bearing_deg": 0.0}})
+    assert out[0] == "FORWARD" and agent.close_ins == 1, out

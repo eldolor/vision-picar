@@ -706,6 +706,12 @@ class ExploreAgent(MissionAgent):
             # Nor does an older one stay on record: _cancel() above ended
             # its goal, so a sighting back near it must be approached again.
             self._approach = None
+            if self._at_target(tx, ty):
+                # In the band, close-in (3.80.G) goes on meanwhile, as it did
+                # before 3.85, rather than a re-send on every frame.
+                closed = self._close_in(scene or {}, (tx, ty))
+                if closed is not None:
+                    return closed
         return out
 
     def _back_to_sighting(self, now: float):
@@ -1064,8 +1070,13 @@ class ExploreAgent(MissionAgent):
             return
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
-        if state == "stalled" or (g.get("from") and pose.get("usable") and math.hypot(
-                pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M):
+        # 3.85 at merge: an approach that stalls with the robot already in
+        # the band is set aside, not backed out of -- close-in (3.80.G)
+        # finishes from here, where the escape would turn it away.
+        closing = (state == "stalled" and g["kind"] == "approach"
+                   and self.sight_from == "perception" and self._at_target(*target))
+        if not closing and (state == "stalled" or (g.get("from") and pose.get("usable") and math.hypot(
+                pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M)):
             # It never left (or, 3.83, stopped making progress on the way):
             # the robot is wedged, not the place unreachable.
             # Do not hold it against the place -- once. A place that wedges
