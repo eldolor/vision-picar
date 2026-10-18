@@ -327,8 +327,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   (bar 5). `nav2.yaml` now has the keepout filter: **rebuild
   `vision-picar-ros:latest` from `dev`** before trusting a live run.
 * **Review of the code written before the review rule (3.76): batches
-  A-I (the risky files) merged by 2026-10-14, J and K1 on 2026-10-18;
-  K2-P3 (risky code changed since, then all non-risky code) to go.** Both reviewers on whole files, risky files only,
+  A-I (the risky files) merged by 2026-10-14, J and K1-K4 on 2026-10-18;
+  K5-P3 (risky code changed since, then all non-risky code) to go.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
   `server.py`): 5 fixed -- a verb longer than the watchdog lost its
   driver's authority, the wheel loop could overwrite a stop, lost feedback
@@ -446,7 +446,20 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   `floor_band_unusable`; a band seeing nothing ahead too); a battery
   reading no pack gives (USB 5 V, a failed read of 0) ended every mission
   on the floor (6-30 V or no reading); a brain refused under the latch
-  kept its claim. Four review rounds. Next: K2, then L1-P3. Handoff:
+  kept its claim. Four review rounds. **K2 (the mission loop), K3 (tiered,
+  explore, arrival) and K4 (the twin), merged 2026-10-18:** K2 3 fixed -- a
+  Stop during the arrival's waits still bought a paid confirmation; a start
+  refused after lifting a person's Stop left it lifted (now put back,
+  `POST /autonomy/relatch`, which only latches); a start during a stopped
+  build's discard skipped 3.81.E's wait. K3 3 fixed -- offline, a frame's
+  question handed to a failing cloud never came back to the local VLM; an
+  abandoned arrival check made frame questions read `busy` and buy a paid
+  call; close-in's refusals carried to the next target. K4: nothing above
+  low. **For the user (K3.4):** an approach stalled with the robot already
+  near the target is a plain failure whose 30 s cooldown blocks close-in,
+  so explore can drive off from a target it sees -- 3.85's recorded choice
+  (as `dev` was on the timeout); changing it needs live runs. Next: K5, then
+  L1-P3. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
