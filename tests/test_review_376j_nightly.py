@@ -548,10 +548,10 @@ def test_r16_a_sh_killed_before_its_trap_still_leaves_a_report(nightly, tmp_path
     run, push, p = nightly
     run()                                           # yesterday's PASS
     killer = tmp_path / "sh-dies"
-    killer.write_text('#!/bin/sh\nkill -TERM $$\n')        # dies of TERM before any trap
+    killer.write_text('#!/bin/sh\nkill -TERM $PPID\nsleep 5\n')   # a stop, forwarded before any trap
     killer.chmod(0o755)
     r, latest, ran = run(NIGHTLY_SH=str(killer))
-    assert "STOPPED" in latest and "died of signal 15" in latest, latest
+    assert "STOPPED" in latest and "stopped by signal 15" in latest, latest
 
 
 
@@ -624,7 +624,7 @@ def test_r18_the_wrappers_stopped_line_keeps_tonights_skipped(nightly, tmp_path)
     """The wrapper's STOPPED fallback rewrote the file without them."""
     run, push, p = nightly
     sh = _shell(tmp_path, "skip-then-die",
-                f'echo "$(date +%Y-%m-%d) - SKIPPED  refused" >> "{p["latest"]}"\nkill -TERM $$\n')
+                f'echo "$(date +%Y-%m-%d) - SKIPPED  refused" >> "{p["latest"]}"\nkill -TERM $PPID\nsleep 5\n')
     r, latest, ran = run(NIGHTLY_SH=sh)
     lines = latest.splitlines()
     assert "STOPPED" in lines[0] and any(" SKIPPED " in l for l in lines[1:]), lines
@@ -766,10 +766,11 @@ def _running_then(p, tmp_path, name, end):
 
 
 def test_r22_a_stop_whose_report_failed_is_stopped_and_not_mailed(nightly, tmp_path):
-    """A stop's exit (124) with no verdict landed read as a FAIL, and was mailed."""
+    """A stop's exit (124) with no verdict landed read as a FAIL, and was
+    mailed. Round 23: the wrapper decides by the stop it saw."""
     run, push, p = nightly
-    r, latest, ran = run(NIGHTLY_SH=_running_then(p, tmp_path, "stop", "exit 3"),
-                         NIGHTLY_EMAIL="me@example.com")
+    sh = _running_then(p, tmp_path, "stop", "trap '' TERM\nkill -TERM $PPID\nsleep 1\nexit 124")
+    r, latest, ran = run(NIGHTLY_SH=sh, NIGHTLY_EMAIL="me@example.com")
     assert latest.split()[2] == "STOPPED", latest
     assert not p["mails"].exists() or "send-email" not in p["mails"].read_text()
 
@@ -789,14 +790,14 @@ def test_r22_a_pass_whose_report_failed_is_a_pass(nightly, tmp_path):
     assert latest.split()[2] == "PASS", latest
 
 
-def test_r22_the_real_script_exits_3_when_stopped(nightly):
-    """The code the wrapper reads: a stopped run's sh exits 3."""
-    run, push, p = nightly
-    p["hang"].write_text("")
-    proc = p["start"]()
-    _until_running(p)
-    os.killpg(proc.pid, 15)
-    proc.communicate(timeout=30)
-    assert "STOPPED" in p["latest"].read_text()
-    assert proc.returncode == 3, proc.returncode
+# ---------- round 23 ----------
 
+
+def test_r23_pytests_internal_error_is_a_fail_not_a_stop(nightly, tmp_path):
+    """Exit 3 meant STOPPED to the wrapper; pytest exits 3 on an internal
+    error, which then read STOPPED, unmailed."""
+    run, push, p = nightly
+    r, latest, ran = run(NIGHTLY_SH=_running_then(p, tmp_path, "internal", "exit 3"),
+                         NIGHTLY_EMAIL="me@example.com")
+    assert latest.split()[2] == "FAIL", latest
+    assert "send-email" in p["mails"].read_text()

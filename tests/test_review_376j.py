@@ -337,3 +337,10 @@ def test_r22_no_is_no_entry_alone_but_text_beside_paths():
     assert pc._waits("no") == "" and pc._items("no") == ([], "")
     assert pc._items("`a.py` none `b.py`")[1] and pc._items("`a.py` no `b.py`")[1]
 
+
+def test_r23_a_ticked_word_beside_paths_is_text_a_whole_cell_is_nothing():
+    import plan_claims as pc
+    assert pc._items("`a.py` `no` `b.py`") == (["a.py", "b.py"], "no")
+    assert pc._items("`none`") == ([], "") and pc._items("`--`") == ([], "")
+    assert pc._items("`a.py`, --") == (["a.py"], "")
+

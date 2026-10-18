@@ -170,18 +170,23 @@ def _items(cell: str) -> tuple:
     or `;` in it is stray), or, once any entry is ticked, the ticked ones only
     -- and the text beside them, which
     `assess` shows rather than guess at (3.76 J8: a plain entry beside ticked
-    ones was dropped without a word). Beside ticked entries, `,` and `;`
-    separate, and a dash or "none" (`_no_entry`) is no text; in a plain cell
-    only `,` separates. Either way a no-entry item is dropped, never a path."""
+    ones was dropped without a word). Beside ticked entries `,` and `;`
+    separate, a dash is no text, and a word ("no", "none", "n/a") is text;
+    in a plain cell only `,` separates. A cell that says only "nothing" is
+    no entries either way, never a path."""
     found = re.findall(r"`([^`]+)`", cell)
     if found:                            # ticked: decided before the no-entry filter (round 18)
-        ticked = [x for x in found if not _no_entry(x)]
         stray = re.sub(r"`[^`]+`", "", cell)
+        tokens = re.split(r"[,;]", stray)
+        if all(_no_entry(x) for x in found + tokens):
+            return [], ""                # the whole cell says "nothing"
+        # Beside paths only a dash is nothing; a word -- "no", "none", ticked
+        # or not -- says something about them, and is shown (rounds 19-23).
+        ticked = [x for x in found if not _no_entry(x)]
+        words = [x for x in found if _no_entry(x) and not _no_entry(x, words=False)]
         loose = [x for x in ticked if re.search(r"[\s,;]", x)]   # "`a.py, sim/`": a list
-        # Separators and dashes only (rounds 19-22): beside paths, a word --
-        # "no", "none" -- says something about them, and is shown.
-        rest = all(_no_entry(t) and not re.search(r"[a-z]", t, re.I) for t in re.split(r"[,;]", stray))
-        stray = ", ".join(([] if rest else [stray.strip(" ,;")]) + loose)
+        rest = all(_no_entry(t, words=False) for t in tokens)
+        stray = ", ".join(([] if rest else [stray.strip(" ,;")]) + words + loose)
         return [x for x in ticked if x not in loose], stray
     parts = [x.strip() for x in cell.split(",") if not _no_entry(x)]
     loose = [x for x in parts if re.search(r"\s|;", x)]   # "a.py and sim/": not one path
@@ -214,12 +219,12 @@ def _waits(cell: str) -> str:
     return _word(cell, WAITS) or "?" + cell
 
 
-def _no_entry(cell: str) -> bool:
+def _no_entry(cell: str, words: bool = True) -> bool:
     """Empty, or a dash or "none" however marked up (round 14: a ticked
     `--` or an em dash read as unknown text, and the step was never free)."""
     # Bold or italic around the word only: a bare `*` or `**` is a glob (the
     # step touches everything), never "no entry" (round 19).
-    word = r"(?:-|--|\u2013|\u2014|none|no|n/a)"
+    word = r"(?:-|--|\u2013|\u2014|none|no|n/a)" if words else r"(?:-|--|\u2013|\u2014)"
     return re.fullmatch(rf"[`\s]*(?:(\*\*|\*|__|_){word}\1|{word})?[`\s]*",   # balanced (round 20)
                         cell, re.IGNORECASE) is not None
 

@@ -6,7 +6,8 @@
 # Runs in its own worktree so it never touches a session's checkout, and
 # writes to ~/Library/Logs/vision-picar/:
 #   nightly-<date>.log   the refresh's and the whole pytest output
-#   nightly-latest.txt   the night's line: date, commit tested ("-" if none),
+#   nightly-latest.txt   the night's line: date, commit tested ("-" if none,
+#                        "?" if the run's own report never landed),
 #                        RUNNING (written at the start, so a run that dies
 #                        leaves that, never yesterday's verdict), then PASS,
 #                        FAIL or STOPPED, and pytest's summary or the
@@ -18,7 +19,8 @@
 #                        -- or, when no run got the lock tonight (a holder
 #                        that is not a nightly run), tonight's "- SKIPPED".
 # and, on a FAIL only, emails the failing tests (see the end). STOPPED (the
-# job was stopped mid-run) is not emailed.
+# job was stopped mid-run: TERM, HUP, Ctrl-C) is not emailed; any other
+# signal -- an OOM kill, and so also a person's kill -9 or Ctrl-\\ -- is a FAIL.
 #
 # Install the schedule (03:00 daily, macOS) with:
 #   sh tools/nightly_suite.sh --install
@@ -107,8 +109,10 @@ def mail(line):
            "--from-email-address", to, "--destination", f"ToAddresses={to}",
            "--content", json.dumps(content)]
     try:
-        # 15 s: the lock is held meanwhile, and launchd allows a stop 20 s (round 22).
-        ok = subprocess.run(cmd, stdout=subprocess.DEVNULL, timeout=15).returncode == 0
+        # The lock is held meanwhile: 60 s, or 10 s once a stop has come
+        # (launchd allows a stop 20 s; rounds 22-23).
+        ok = subprocess.run(cmd, stdout=subprocess.DEVNULL,
+                            timeout=10 if stop_seen else 60).returncode == 0
     except (OSError, subprocess.SubprocessError):
         ok = False
     if not ok:
@@ -165,9 +169,10 @@ except OSError as exc:
             print(f"nightly: could not write {latest}: {werr}", file=sys.stderr)
         sys.exit(1)
 os.environ["NIGHTLY_LOCKED"] = f"wrapper:{os.getpid()}"
-child, pending = None, []
+child, pending, stop_seen = None, [], []
 
 def forward(sig, frame):
+    stop_seen.append(sig)                # what ended the night, if the sh cannot say
     if child is None:                    # before Popen returned: passed on after it
         pending.append(sig)
         return
@@ -196,29 +201,28 @@ rc = child.wait()                        # PEP 475: retried after a handler
 # One rule (round 21): if the sh ended with tonight's line still RUNNING (its
 # own or this wrapper's) or not tonight's, its verdict never landed (it
 # ended before writing one, or the write failed), and this writes one from
-# how it ended -- never a run that looks hung, never yesterday's:
-#   * a stop signal (TERM, HUP, INT; before its trap) -> STOPPED;
-#   * any other signal (an OOM kill, SIGQUIT) -> FAIL, mailed (round 22);
-#   * exit 3, the sh's own STOPPED whose write failed -> STOPPED (round 22);
+# what it knows -- never a run that looks hung, never yesterday's:
+#   * a stop came through this wrapper (TERM, HUP, INT) -> STOPPED;
+#   * otherwise a signal (an OOM kill, SIGQUIT) -> FAIL, mailed (round 22);
 #   * exit 0, a PASS whose write failed -> PASS;
 #   * any other exit (a set -u error, a check that failed, a FAIL whose
-#     write failed) -> FAIL, mailed. Known limit: that last FAIL may be
-#     mailed twice (the sh mails before it writes; two beat none).
-# Known limit: what a dead sh left running (the driver, and through it
-# pytest) runs on unlocked -- under launchd the job's group is killed with
-# it; a killpg here would hit a caller's own group.
-STOPS = (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
+#     write failed) -> FAIL, mailed.
+# Round 23: decided by the stop this wrapper saw, never by an exit code
+# (pytest's own 3 is an internal error). Known limits: a FAIL whose write
+# failed may be mailed twice (the sh mails first; two beat none); what a
+# dead sh left running (the driver, and through it pytest) runs on unlocked
+# -- under launchd the job's group is killed with it; a killpg here would
+# hit a caller's own group.
 first = (lines() or [""])[0]
 if not first.startswith(day + " ") or first.startswith(f"{day} - RUNNING"):
-    if rc < 0 and -rc in STOPS:
-        report(f"{day} - STOPPED  nightly: the script died of signal {-rc}")
-    elif rc == 3:
-        report(f"{day} ? STOPPED  nightly: the script's own report could not be written")
-    elif rc == 0:                        # "?": a commit was tested, its name is the sh's
+    if stop_seen:
+        report(f"{day} ? STOPPED  nightly: stopped by signal {stop_seen[0]}; "
+               f"the script's own report never landed")
+    elif rc == 0:
         report(f"{day} ? PASS  nightly: the script's own report could not be written")
     else:
         why = f"died of signal {-rc}" if rc < 0 else f"exited {rc} without a report"
-        report(f"{day} - FAIL  nightly: the script {why}")
+        report(f"{day} ? FAIL  nightly: the script {why}")
         mail(f"nightly: the script {why}")
 sys.exit(128 - rc if rc < 0 else rc)
 PY
@@ -421,7 +425,4 @@ Full log: $log"
       "vision-picar nightly suite FAILED ($sha)" "$body")" \
     >/dev/null 2>>"$logs/launchd.log" || echo "$day email failed (see launchd.log)" >> "$logs/nightly-latest.txt"
 fi
-# STOPPED exits 3, so the wrapper tells it from a FAIL if this report never
-# landed (round 22: a stop's 124 read as a FAIL and was mailed).
-[ "$verdict" = STOPPED ] && exit 3
 exit $rc
