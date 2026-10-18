@@ -60,6 +60,9 @@ def test_the_banner_does_not_make_the_page_scroll_sideways(browser, twin_server)
         page.wait_for_timeout(100)
         width = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
         assert width[0] <= width[1], (tab, width)
+    # Its /health route fetches live, twice a second: closed with a fetch out,
+    # the next test's new_context failed "Response has been disposed".
+    page.unroute_all(behavior="ignoreErrors")
     page.context.close()
 
 
