@@ -264,7 +264,10 @@ governs those). `brain`, `teleop` and `ros` stops set nothing. Only
 `POST /autonomy/resume` clears it, which the brain sends when a mission
 starts (`RemoteRobot.resume_autonomy()`, first in `start_mission`): a
 person's next verb or goal does not, so a mission the person stopped can
-never drive again.
+never drive again. A start refused after the lift (400, 403, 409, any
+error) began no mission, so the brain puts the latch back with
+`POST /autonomy/relatch` (3.76 K2), which only latches and keeps a latch
+a Stop during the build set since.
 
 **ROS liveness** (handoff 1d; refined by `docs-review/SPEC-REVIEW-3.md`
 V7-V9). Under ROS drive, `ros_up(now)` is true when the actuator's last

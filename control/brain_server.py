@@ -854,6 +854,18 @@ def create_app(
             runner.stop("mission loop cancelled")
             raise
 
+    async def put_back(lifted: Optional[str]) -> None:
+        """3.76 K2: a start refused after `resume_autonomy()` began no
+        mission, so the person's Stop it lifted still stands. Only ever
+        re-latches (a Stop during the build already did)."""
+        relatch = getattr(robot(), "relatch_autonomy", None)
+        if not lifted or relatch is None:
+            return
+        try:
+            await asyncio.to_thread(relatch, lifted)
+        except Exception as e:  # noqa: BLE001 -- the refusal stands either way
+            logger.warning("could not put back a person's Stop after a refused start: %s", e)
+
     @app.post(prefix + "/mission/start", dependencies=[Depends(require_secret)])
     async def start_mission(req: MissionStartRequest):
         runner = state["runner"]
@@ -864,15 +876,17 @@ def create_app(
             # a second start in that window used to pass this check too.
             raise HTTPException(status_code=409, detail="A mission is already running.")
         build = state["building"] = {"stopped": False}
+        lifted = None
         try:
             # 3.84: a person pressed Start, so a person's earlier Stop no
             # longer latches the brain out. Lifted FIRST, before the build: a
             # D-pad Stop pressed while the mission is set up latches it again,
             # and the mission's first command ends it `cancelled` by that Stop.
+            # A start refused after this puts it back (3.76 K2, below).
             resume = getattr(robot(), "resume_autonomy", None)
             if resume is not None:
                 try:
-                    await asyncio.to_thread(resume)
+                    lifted = await asyncio.to_thread(resume)
                 except Exception as e:  # noqa: BLE001 -- never unsafe: the latch stays
                     # Not a refusal to start: an unreachable robot server fails
                     # the mission on its own, and a latch left set only ends
@@ -900,20 +914,29 @@ def create_app(
             # for the twin that is polling them. Construction is pure
             # otherwise, so a thread is safe.
             runner = await asyncio.to_thread(make_runner, robot(), req)
+            if build["stopped"]:
+                # 3.76 C2: Stop was pressed while this mission was being set
+                # up. It never starts, so nothing it would do ever moves the
+                # car. Discarded while `building` still holds the slot (3.76
+                # K2): a start in this await passed the 409 check, and its
+                # wait for the last close read the OLD runner -- two
+                # perception pipelines at once (3.81.E).
+                discard = getattr(runner, "discard", None)
+                if discard is not None:
+                    await asyncio.to_thread(discard)
+                raise HTTPException(status_code=409,
+                                    detail="Stopped while the mission was being set up.")
         except drills.DrillNotAllowed as e:
+            await put_back(lifted)
             raise HTTPException(status_code=403, detail=str(e))
         except ValueError as e:
+            await put_back(lifted)
             raise HTTPException(status_code=400, detail=str(e))
+        except Exception:
+            await put_back(lifted)
+            raise
         finally:
             state["building"] = None
-        if build["stopped"]:
-            # 3.76 C2: Stop was pressed while this mission was being set up.
-            # It never starts, so nothing it would do ever moves the car.
-            discard = getattr(runner, "discard", None)
-            if discard is not None:
-                await asyncio.to_thread(discard)
-            raise HTTPException(status_code=409,
-                                detail="Stopped while the mission was being set up.")
 
         # 3.53: a new mission drops the last one's late confirmation -- only
         # once it really exists (a refused start leaves the check alone) and

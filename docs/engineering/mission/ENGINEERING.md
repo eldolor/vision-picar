@@ -74,7 +74,10 @@ end at `_finish`, and the status's `explore` block). With no
    returns at once and `confirm_arrival()` refuses locally); then, if the
    last confirmation's thread is still alive, the next waits for it up to
    one guard, and still out starts no call and fails from
-   `CloudUnavailable`; then the call, its guard cut to what is left. Each
+   `CloudUnavailable`; then, if the runner has stopped during those waits,
+   a refusal with no call (on every path since 3.76 K2: only a local-led
+   arrival re-read it, so a Stop during them bought one); then the call,
+   its guard cut to what is left. Each
    wait draws on what is left, and none is ever passed a zero timeout
    (which `call_with_timeout` would run unbounded). `late_ask()` (3.53)
    honours the same thread: it waits up to `vision_timeout_s`, then raises
@@ -388,7 +391,7 @@ otherwise). CORS allows any origin.
 
 | Method, path | Body | Success | Errors |
 |---|---|---|---|
-| `POST /mission/start` | `MissionStartRequest` (below); first, after the 409 check and before the build, `robot().resume_autonomy()` (`POST /autonomy/resume` on the robot server) lifts a person's Stop's latch (3.84) -- a failure is logged, never a refusal | `{"started": true, "status": {...}}` | 409 `"A mission is already running."` (also while another start is still building its runner, 3.76 C2); 409 `"Stopped while the mission was being set up."` when a Stop landed during the build (the runner is discarded, never started); 400 config or validation error with its message (explore: an unreachable robot server or a refused secret is named as such, 3.76); 403 drill on a brain with drills off; 422 an unknown field or a bad type |
+| `POST /mission/start` | `MissionStartRequest` (below); first, after the 409 check and before the build, `robot().resume_autonomy()` (`POST /autonomy/resume` on the robot server) lifts a person's Stop's latch (3.84) -- a failure is logged, never a refusal; a start refused after it puts the latch back (`relatch_autonomy()`, 3.76 K2). The build slot is held until a stopped build's runner is discarded, so a start meanwhile gets the 409 and 3.81.E's wait never reads an older runner | `{"started": true, "status": {...}}` | 409 `"A mission is already running."` (also while another start is still building its runner, 3.76 C2); 409 `"Stopped while the mission was being set up."` when a Stop landed during the build (the runner is discarded, never started); 400 config or validation error with its message (explore: an unreachable robot server or a refused secret is named as such, 3.76); 403 drill on a brain with drills off; 422 an unknown field or a bad type |
 | `POST /mission/stop` | none | `{"stopped": true, "status": {...}}` -- cancels the loop task, then `runner.stop()`; with no mission ever run, stops the robot anyway and returns the idle status | -- |
 | `GET /mission/status` | none | `MissionRunner.status()` plus `fault`; before any mission `{"running": false, "outcome": "idle", "step": 0, "log_tail": [], "fault": "none"}` | -- |
 | `GET /mission/inventory` | none | `{"inventory": null}` before any mission; else the current or last mission's object inventory (3.46; shape in the [perception engineering spec](../perception/ENGINEERING.md), "Inventory"). On mission end the report is also saved by `control/inventory_store.py` on a daemon thread | -- |
@@ -607,6 +610,7 @@ tests/test_mission_guarded_verbs.py -q`.
 | `tests/test_review_376g.py` (14) | 3.76 G1, G4: a late answer that outlived its guard is used once it lands (not paid twice, not held to the retry), also on the last attempt, in the window's last interval, and when it lands at the guard itself; its error landing during a probe is not counted twice, and the attempt then due is sent at once; a last call ending in an error ends the check with that error; a call ending after a cancel ships its cost; a call out all window with the cloud never up is `expired`; a confirmation still out delays the ask without ending the window or blocking a probe; a window that ends with nothing out is not "still in flight"; the cloud watch's `age_s` survives a wall-clock step |
 | `tests/test_robot_contract.py` | `_HaltGate` passes the body conformance suite as a backend |
 | `tests/test_review_376c.py` (13) | 3.76 batch C: Stop ends explore's own nav2 goal (not a person's), also one accepted as Stop lands on another thread; no goal after the end; a person at the D-pad ends explore; explore waits on `ros` just after its goal; "took over" parsed; one start at a time while building, and a Stop during the build means no start; unreachable or 401 robot named at start |
+| `tests/test_review_376k2.py` (8) | 3.76 K2: a Stop during the arrival's waits (a trigger call still out, the last confirmation) sends no cloud confirmation; a start refused (400, 403) or stopped during its build leaves a person's Stop latched, a started one lifts it; a start during a stopped build's discard gets the 409; a late call ending at its guard after a cancel still ships its cost (a guard) |
 | `tests/test_remote_robot.py` | an identical action sequence and step count in-process, over ASGI and over a live socket |
 | `tests/test_offline_mode.py` (11) | 3.49, with every socket connect refused and the real HTTP cloud client: the robot server loads no cloud client (a subprocess's `sys.modules`, and every file under `robot/`); `frontier`/`explore` still `found`; tiered (sync, async) searches from out of sight and ends `arrived_unconfirmed` at the target; `vision` fails without moving; no offline tiered run `failed`; a hanging cloud parks for at most budget x timeout + 1 s; the twin references no external host |
 

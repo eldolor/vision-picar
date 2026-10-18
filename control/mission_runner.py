@@ -1454,13 +1454,13 @@ class MissionRunner:
             if prev.is_alive():
                 msg = "the previous arrival confirmation is still in flight"
                 raise VisionUnavailable(msg) from CloudUnavailable(msg)
-        if not local_ok:
-            with self._lock:
-                running = self._running
-            if not running:
-                # 3.80.O review: a Stop during the waits above pays nothing.
-                return {"confirmed": False, "undecided": True, "cloud_called": False,
-                        "reason": "the mission ended during the identity check"}
+        with self._lock:
+            running = self._running
+        if not running:
+            # A Stop during the waits above pays nothing (3.80.O review; on
+            # every path since 3.76 K2 -- the plain one bought a call).
+            return {"confirmed": False, "undecided": True, "cloud_called": False,
+                    "reason": "the mission ended during the identity check"}
         guard = min(self.confirm_guard_s(), left("the arrival confirmation"))
         try:
             return call_with_timeout(confirm, frame, timeout_s=guard,

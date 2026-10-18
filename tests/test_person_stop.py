@@ -229,7 +229,7 @@ def test_a_new_mission_lifts_a_persons_stop(plain, unpaced_config):
     assert status["outcome"] != CANCELLED and status["step"] > 10, status
 
 
-def test_resume_on_a_robot_server_older_than_3_84_answers_false():
+def test_resume_on_a_robot_server_older_than_3_84_lifts_nothing():
     import httpx
 
     calls = []
@@ -239,7 +239,7 @@ def test_resume_on_a_robot_server_older_than_3_84_answers_false():
         return httpx.Response(404, json={"detail": "Not Found"})
 
     robot = RemoteRobot("http://old", client=httpx.Client(transport=httpx.MockTransport(handler)))
-    assert robot.resume_autonomy() is False
+    assert robot.resume_autonomy() is None
     assert calls == ["/autonomy/resume"]
 
 

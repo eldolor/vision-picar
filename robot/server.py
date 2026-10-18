@@ -146,6 +146,11 @@ class WheelsRequest(BaseModel):
     right_rad_s: float
 
 
+class RelatchRequest(BaseModel):
+    """3.76 K2: who set the latch `/autonomy/resume` lifted."""
+    by: str
+
+
 class TeleopFrameRequest(BaseModel):
     image_base64: str
     media_type: str = "image/jpeg"
@@ -1105,7 +1110,24 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             goal_stop["autonomy_stopped"] = None
         if was is not None:
             logger.info(f"autonomy resumed by {driver} (stopped by {was['by']})")
-        return {"resumed": was is not None, "driver": driver}
+        return {"resumed": was is not None, "driver": driver,
+                "stopped_by": was["by"] if was is not None else None}
+
+    @app.post(prefix + "/autonomy/relatch", dependencies=[Depends(require_secret)])
+    def autonomy_relatch(req: RelatchRequest, x_driver: str = Header(default="")):
+        """Put back a latch `/autonomy/resume` lifted for a mission that then
+        never started (3.76 K2: a refused or stopped start). Only ever
+        latches -- it can refuse autonomy, never let it drive -- and a latch
+        set since (a Stop during the build) is kept as it is."""
+        driver = (x_driver or "").strip() or DRIVER_UNKNOWN
+        with goal_gen_lock:
+            latched = goal_stop["autonomy_stopped"] is None
+            if latched:
+                goal_stop["autonomy_stopped"] = {"by": req.by, "at": time.monotonic()}
+        if latched:
+            logger.info(f"autonomy latched again by {driver} (stopped by {req.by}): "
+                        f"the mission that lifted it never started")
+        return {"latched": latched, "driver": driver}
 
     def _end_goal_after_stop(gen: int):
         """Make the stop's "the goal is ended" true, not merely attempted

@@ -384,6 +384,7 @@ def test_9_a_confirmation_still_in_flight_is_not_doubled():
                            arrival_confirm_timeout_s=0.1, vision_timeout_s=1.0)
     runner.vision_fn = Policy()
     from control.mission_runner import VisionUnavailable, _caused_by
+    runner.start()                  # it confirms only inside a running mission
     try:
         with pytest.raises(VisionUnavailable) as first:
             runner._guarded_confirm({})
@@ -515,6 +516,7 @@ def test_9_the_backstop_waits_for_the_call_in_flight_before_giving_up():
                            arrival_confirm_timeout_s=0.2, vision_timeout_s=1.0)
     runner.vision_fn = Policy()
     from control.mission_runner import VisionUnavailable
+    runner.start()                  # it confirms only inside a running mission
     with pytest.raises(VisionUnavailable):
         runner._guarded_confirm({})                 # the guard (0.25 s) fires
     threading.Timer(0.1, release.set).start()       # the call ends while we wait
@@ -620,6 +622,7 @@ def test_13_the_arrival_tick_stays_within_b32s_deadline(prev_out):
         runner._confirm_thread = out
     from control.mission_runner import VisionUnavailable, _caused_by
     began = time.monotonic()
+    runner.start()                  # it confirms only inside a running mission
     try:
         with pytest.raises(VisionUnavailable) as err:
             runner._guarded_confirm({})
@@ -642,6 +645,7 @@ def test_review_a_spent_cap_refuses_without_waiting_for_a_call_still_out():
                            policy="tiered", vision_fn=tier,
                            vision_timeout_s=1.0, arrival_confirm_timeout_s=0.8)
     began = time.monotonic()
+    runner.start()                  # it confirms only inside a running mission
     verdict = runner._guarded_confirm({})
     assert time.monotonic() - began < 0.5
     assert verdict["cloud_called"] is False and "cap" in verdict["reason"], verdict

@@ -110,16 +110,25 @@ class RemoteRobot(RobotInterface):
         body = self._request("POST", "/stop")
         return body.get("result", {})
 
-    def resume_autonomy(self) -> bool:
+    def resume_autonomy(self) -> Optional[str]:
         """3.84: lift a person's Stop's latch. The brain calls it when a
-        mission STARTS, never otherwise. True if a latch was lifted; a robot
-        server older than 3.84 has no such route and nothing to lift."""
+        mission STARTS, never otherwise. Who set the latch it lifted, else
+        None; a robot server older than 3.84 has no such route and nothing
+        to lift."""
         try:
-            return bool(self._request("POST", "/autonomy/resume").get("resumed"))
+            reply = self._request("POST", "/autonomy/resume")
         except RobotTransportError as e:
             if "HTTP 404" in str(e):
-                return False
+                return None
             raise
+        if not reply.get("resumed"):
+            return None
+        return reply.get("stopped_by") or "unknown"
+
+    def relatch_autonomy(self, by: str) -> bool:
+        """3.76 K2: put back a latch `resume_autonomy()` lifted for a mission
+        that never started. True if it latched (False: one was set since)."""
+        return bool(self._request("POST", "/autonomy/relatch", json={"by": by}).get("latched"))
 
     # ---------- camera pan ----------
 
