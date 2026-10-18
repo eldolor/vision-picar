@@ -45,7 +45,7 @@ def test_the_local_vlm_bench_stops_and_restores_the_production_service():
     code = _code("bench_local_vlm.sh")
     assert re.search(r"systemctl stop [^\n]*picar-local-vlm\b(?!-)", code)
     assert '[ "$PROD_WAS" = active ] && sudo systemctl start picar-local-vlm' in code
-    assert "':8005 '" in code                                # refuses another VLM
+    assert '"sport = :8005"' in code                         # refuses another VLM
 
 
 def test_the_driver_death_wait_is_bounded():
@@ -53,6 +53,8 @@ def test_the_driver_death_wait_is_bounded():
     code = _code("bench_local_vlm.sh")
     loop = re.search(r"until ! health[^\n]*", code).group(0)
     assert "break" in loop, loop
+    # Round 1 (/code-review): a wait that timed out logged "health gone".
+    assert "health STILL answering" in code
 
 
 # ---------- P1.2: a stale G4 container measured in place of the run's ----------
@@ -63,7 +65,9 @@ def test_the_headroom_runs_refuse_a_busy_bridge_port():
     bridge answered "bridge up" for the run's own (/code-review)."""
     for name in ("headroom_identity.sh", "headroom_mission.sh"):
         code = _code(name)
-        check = code.index("':8090 '")
+        # Round 1 (/code-review): `ss -ltn | grep -q` could pass a busy port
+        # under pipefail (grep exits, ss dies on SIGPIPE); a filter instead.
+        check = code.index('ss -ltnH "sport = :8090" | grep -q .')
         assert check < code.index('docker run -d --name "$NAME"'), name
     readme = _text("README.md")
     g4 = readme[readme.index("tests/test_ros_chain_live.py"):]
@@ -99,6 +103,8 @@ def test_a_list_reply_is_not_a_bare_object():
     assert bare_object([tok("{")], 0)
     assert bare_object([tok(" "), tok('{"')], 1)
     assert not bare_object([tok("["), tok('{"')], None)
+    # Round 1 (/code-review): a code fence before it, as `p_localised` reads it.
+    assert bare_object([tok("```json"), tok("\n"), tok("{")], 2)
 
 
 def test_one_refused_call_is_one_failed_frame():

@@ -1,1 +1,0 @@
-.venv/bin/pip install "onnx>=1.12,<1.18" "onnxslim>=0.1.71" -c /tmp/jetson-constraints.txt   

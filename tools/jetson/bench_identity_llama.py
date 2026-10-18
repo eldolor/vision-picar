@@ -194,7 +194,8 @@ def compare_decisions(new: Sequence[dict], old: Sequence[dict],
 
 def bare_object(content: Sequence[dict], decided) -> bool:
     """A reply that is a bare `{"bbox_2d": ...}` object, not a list: its
-    deciding token is the reply's first that is not whitespace. 3.76 P1:
+    deciding token is a `{` with no `[` before it -- `p_localised`'s own
+    bare-object branch, so a code fence before it still counts. 3.76 P1:
     tested on the deciding token alone, every `[` + `{...}` list counted
     (after a bare `[`, the deciding token IS the `{`), so `object_replies`
     read 68-70 of 299 where every stored reply opened with `[`."""
@@ -202,7 +203,7 @@ def bare_object(content: Sequence[dict], decided) -> bool:
         return False
     if not content[decided]["token"].strip().startswith("{"):
         return False
-    return all(not e["token"].strip() for e in content[:decided])
+    return not any(e["token"].strip().startswith("[") for e in content[:decided])
 
 
 def decision_ms(timings: dict, decided_at) -> Optional[float]:

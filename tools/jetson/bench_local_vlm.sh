@@ -52,7 +52,7 @@ trap teardown EXIT
 sudo systemctl isolate multi-user.target; sleep 5
 sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3
 # :8005 must be free, or the ready checks below would pass on another VLM.
-ss -ltn | grep -q ':8005 ' && { log "STOP: :8005 is already in use"; exit 2; }
+ss -ltnH "sport = :8005" | grep -q . && { log "STOP: :8005 is already in use"; exit 2; }
 log "rev $(git rev-parse --short HEAD) $(sudo nvpmodel -q | head -1); desktop $(systemctl is-active gdm); twin $(systemctl is-active picar-stack)"
 
 ( umask 077; printf 'LOCAL_VLM_ENGINES=%s\nLOCAL_VLM_EDGELLM=%s\nAPP_SHARED_SECRET=%s\nLOCAL_VLM_DRIVER_LOG=%s\n' \
@@ -101,7 +101,9 @@ for n in 1 2 3 4; do
   # Bounded (3.76 P1): `curl -s` succeeds on a 503, so a service that kept
   # answering without exiting spun here for good, the board left stripped.
   end=$(( $(date +%s) + 20 ))
-  until ! health >/dev/null; do [ "$(date +%s)" -ge "$end" ] && break; sleep 0.1; done
+  stuck=0
+  until ! health >/dev/null; do [ "$(date +%s)" -ge "$end" ] && { stuck=1; break; }; sleep 0.1; done
+  if [ "$stuck" = 1 ]; then log "B5 death $n: health STILL answering after 20s"; continue; fi
   gone=$(python3 -c "import time; print(round(time.time()-$t0,2))")
   log "B5 death $n: health gone after ${gone}s"
   sleep 35

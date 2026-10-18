@@ -98,7 +98,7 @@ LAUNCH_MOUNT=()
 # :8090 must be free (3.76 P1): a container left from README's G4 steps
 # (`--restart unless-stopped`) answered "bridge up" for this run's, so the
 # run measured the wrong stack -- and its memory.
-ss -ltn | grep -q ':8090 ' && { echo "STOP: :8090 is already in use ($(docker ps --format '{{.Names}}' | tr '\n' ' '))" | tee -a "$OUT/run.log"; exit 2; }
+ss -ltnH "sport = :8090" | grep -q . && { echo "STOP: :8090 is already in use ($(docker ps --format '{{.Names}}' | tr '\n' ' '))" | tee -a "$OUT/run.log"; exit 2; }
 docker run -d --name "$NAME" --network host "${LAUNCH_MOUNT[@]}" \
   -e APP_SHARED_SECRET -e ROBOT_URL=http://127.0.0.1:8000 -e BRAIN_URL=http://127.0.0.1:8001/brain \
   "$IMAGE" ros2 launch picar_bringup picar.launch.py >/dev/null

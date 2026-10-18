@@ -105,7 +105,7 @@ fi
 if [ "$VLM" = service ]; then
   # :8005 must be free, or the ready check below would pass on someone
   # else's VLM (another session's hand-started one).
-  ss -ltn | grep -q ':8005 ' && { echo "STOP: :8005 is already in use" | tee -a "$OUT/run.log"; exit 2; }
+  ss -ltnH "sport = :8005" | grep -q . && { echo "STOP: :8005 is already in use" | tee -a "$OUT/run.log"; exit 2; }
   # The unit's own settings, by hand: same engines, same secret, OOM first.
   LOCAL_VLM_ENGINES="$ENGINES" LOCAL_VLM_EDGELLM="$EDGELLM" \
     python -m service.local_vlm.server > "$OUT/local_vlm.log" 2>&1 &
@@ -128,7 +128,7 @@ fi
 # :8090 must be free (3.76 P1): a container left from README's G4 steps
 # (`--restart unless-stopped`) answered "bridge up" for this run's, so the
 # run measured the wrong stack -- and its memory.
-ss -ltn | grep -q ':8090 ' && { echo "STOP: :8090 is already in use ($(docker ps --format '{{.Names}}' | tr '\n' ' '))" | tee -a "$OUT/run.log"; exit 2; }
+ss -ltnH "sport = :8090" | grep -q . && { echo "STOP: :8090 is already in use ($(docker ps --format '{{.Names}}' | tr '\n' ' '))" | tee -a "$OUT/run.log"; exit 2; }
 docker run -d --name "$NAME" --network host "${ROS_MOUNT[@]}" \
   -e APP_SHARED_SECRET -e ROBOT_URL=http://127.0.0.1:8000 -e BRAIN_URL=http://127.0.0.1:8001/brain \
   "$IMAGE" ros2 launch picar_bringup picar.launch.py >/dev/null
