@@ -463,8 +463,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   outside its discs, which nav2's KeepoutFilter writes over unknown cells, so
   unmapped space read free (now -1; **rebuild `vision-picar-ros:latest` from
   `dev`**). For the user: 3.83's dedupe (a wedge 0.15-0.30 m from a live spot
-  marks nothing) and marks cleared only by their 300 s expiry. Next: L1-P3.
-  Handoff:
+  marks nothing) and marks cleared only by their 300 s expiry. **L1 (brain
+  perception, whole files), merged 2026-10-18:** 2 fixed -- no lock on a
+  pipeline, so a new target's first frame (its text encoded in 20 s
+  children, past B3.2's guard) shared the models with the next frame (now
+  one frame at a time; past 60 s in the models `PerceptionWedged` reaches
+  B3.2); YOLOE labels every box with the target text, so `auto` and the
+  label gates saw nothing for a multi-word target. For 3.81.F: encoding the
+  texts at mission start would take the first frame out of the guard. The
+  Hailo path's replayed boxes were never rescaled (its P16/P19 rows).
+  Next: L2-P3. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
