@@ -27,10 +27,6 @@ class WallClockBody:
 
     stop_count = 0
 
-    def stop(self):
-        self.stop_count += 1
-        self.set_wheel_velocity(0.0, 0.0)
-
     def __init__(self, feedback_hz):
         self.pos, self.w, self.t = 0.0, 0.0, time.monotonic()
         self.fb_period, self.fb_at, self.fb = 1 / feedback_hz, -1.0, 0.0
