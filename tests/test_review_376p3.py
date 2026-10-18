@@ -88,12 +88,25 @@ def test_down_with_an_expired_session_does_not_claim_no_instance(tmp_path, scrip
     assert "could not list instances" in r.stderr
 
 
-def test_a_failed_launch_names_the_instance_left_running():
-    """`up` died after `run-instances` with "check the console" (/code-review)."""
-    src = (ROOT / "tools" / "gpu" / "ec2.sh").read_text()
-    up = src[src.index("cmd_up() {"):src.index("# ------------------------------------------------------------- status")]
-    assert up.index("trap '") < up.index("aws_ ec2 wait instance-running")
-    assert "STILL RUNNING" in up and "trap - EXIT" in up
+def test_a_failed_launch_names_the_instance_left_running(tmp_path):
+    """`up` died after `run-instances` with "check the console" (/code-review);
+    round 1 (/code-review, medium): the trap then read a `local id` gone by
+    exit time and, under `set -u`, died without its warning."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    _stub(bindir, "aws", """
+case "$*" in
+  *"ec2 describe-instances"*) echo None ;;
+  *"run-instances"*) echo i-0abc123 ;;
+  *"ec2 wait"*) echo "Waiter InstanceRunning failed" >&2; exit 255 ;;
+  *) echo stub ;;
+esac""")
+    r = subprocess.run(["bash", str(ROOT / "tools/gpu/ec2.sh"), "up"], capture_output=True, text=True,
+                       cwd=ROOT, env={**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}",
+                                      "GPU_AMI": "ami-1"})
+    assert r.returncode != 0
+    assert "i-0abc123 STILL RUNNING" in r.stderr, r.stderr[-400:]
+    assert "unbound variable" not in r.stderr
 
 
 def test_the_dead_man_switch_is_armed_before_the_corpus_step_and_said_only_if_armed():

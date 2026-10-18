@@ -154,8 +154,10 @@ cmd_up() {
     --query 'Instances[0].InstanceId' --output text)"
   say "instance $id -- waiting for SSM to come online (about two minutes)"
   # From here a failure leaves a paid instance up: say which, and how to stop
-  # it (3.76 P3: `die` said "check the console").
-  trap 'printf "\033[31m[gpu] up failed with %s STILL RUNNING -- bash tools/gpu/ec2.sh down\033[0m\n" "$id" >&2' EXIT
+  # it (3.76 P3: `die` said "check the console"). The id is expanded NOW
+  # (round 1): read at exit, `id` -- a local -- was gone after a `set -e`
+  # exit, and under `set -u` the trap died instead of warning.
+  trap "printf '\033[31m[gpu] up failed with %s STILL RUNNING -- bash tools/gpu/ec2.sh down\033[0m\n' '$id' >&2" EXIT
   aws_ ec2 wait instance-running --instance-ids "$id"
   for _ in $(seq 60); do
     if aws_ ssm describe-instance-information \
