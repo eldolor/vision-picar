@@ -155,22 +155,42 @@ def test_a_link_with_a_title_is_still_checked(repo):  # noqa: F811
     assert "E6" in codes(spec_lint.lint(repo, today=TODAY))
 
 
+def _good_aws(bindir: Path, tmp: Path, send_fails: bool = False) -> None:
+    """An AWS that launches, then knows the instance, and runs SSM commands."""
+    up = tmp / "launched"
+    _stub(bindir, "aws", f"""
+case "$*" in
+  *"ec2 describe-instances"*) [ -f {up} ] && echo i-0abc123 || echo None ;;
+  *"run-instances"*) touch {up}; echo i-0abc123 ;;
+  *"describe-instance-information"*) echo Online ;;
+  *"ssm send-command"*) {"exit 255" if send_fails else "echo cmd-1"} ;;
+  *"--query Status"*) echo Success ;;
+  *) echo stub ;;
+esac""")
+    _stub(bindir, "session-manager-plugin", "exit 0")
+
+
 @pytest.mark.parametrize("script", ["tools/gpu/ec2.sh", "tools/hailo/ec2.sh"])
 def test_a_good_launch_says_nothing_about_a_running_instance(tmp_path, script):
     """Round 2 (/code-review): nothing pinned the trap's clearing -- without
     `trap - EXIT`, a healthy `up` would warn "STILL RUNNING"."""
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    _stub(bindir, "aws", """
-case "$*" in
-  *"ec2 describe-instances"*) echo None ;;
-  *"run-instances"*) echo i-0abc123 ;;
-  *"describe-instance-information"*) echo Online ;;
-  *) echo stub ;;
-esac""")
-    _stub(bindir, "session-manager-plugin", "exit 0")
+    _good_aws(bindir, tmp_path)
     r = subprocess.run(["bash", str(ROOT / script), "up"], capture_output=True, text=True,
                        cwd=ROOT, env={**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}",
                                       "GPU_AMI": "ami-1", "HAILO_AMI": "ami-1"})
     assert "STILL RUNNING" not in r.stderr, r.stderr[-400:]
     assert "SSM online" in r.stdout, (r.returncode, r.stdout[-300:], r.stderr[-300:])
+
+
+def test_a_failed_host_setup_after_launch_still_warns(tmp_path):
+    """Round 2 (Thermos): hailo cleared its trap before `ensure_cli`, so a
+    failed send-command left an r6i.4xlarge up with no warning."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    _good_aws(bindir, tmp_path, send_fails=True)
+    r = subprocess.run(["bash", str(ROOT / "tools/hailo/ec2.sh"), "up"], capture_output=True, text=True,
+                       cwd=ROOT, env={**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}",
+                                      "HAILO_AMI": "ami-1"})
+    assert r.returncode != 0 and "i-0abc123 STILL RUNNING" in r.stderr, r.stderr[-400:]
