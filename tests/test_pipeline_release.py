@@ -182,22 +182,37 @@ def test_a_start_waits_for_the_ended_mission_to_finish_closing(tmp_path):
         client.post("/mission/stop")
 
 
+def _waited(call):
+    """Did `call` wait out PERCEIVE_WAIT_S on a frame? A wait that times out
+    gives the frames up (`_abandoned` grows) and takes the whole bound; one
+    that needs no wait does neither. Judged by that state and, for a wait,
+    a floor -- never a ceiling, which timed gc.collect() and CUDA's
+    empty_cache() too (0.35-0.5 s in the whole suite's process: every
+    fast-tier run failed on dev, 3.76, 2026-10-18)."""
+    before, t0 = len(perceive._abandoned), time.monotonic()
+    call()
+    gave_up = len(perceive._abandoned) > before
+    if gave_up:
+        assert time.monotonic() - t0 >= 0.25, "gave up before the bound"
+    return gave_up
+
+
 def test_a_hung_frame_costs_one_wait_not_one_per_start(monkeypatch):
     monkeypatch.setattr(perceive, "PERCEIVE_WAIT_S", 0.3)
     det = BlockingDetector()
     old = perceive.PerceptionPipeline(det, NoScorer(), "red backpack")
     t = threading.Thread(target=old.perceive, args=({"image_base64": "eA=="},))
     t.start()
-    assert det.entered.wait(5)
-    monkeypatch.setattr(perceive, "detector_for", lambda *a, **k: object())
-    monkeypatch.setattr(perceive, "ClipScorer", lambda *a, **k: object())
-    monkeypatch.setattr(perceive, "PerceptionPipeline", lambda **k: "new")
-    perceive.pipeline_for("a")                  # waits once, gives up
-    t0 = time.monotonic()
-    perceive.pipeline_for("b")
-    assert time.monotonic() - t0 < 0.2, "waited again on the same hung frame"
-    det.go.set()
-    t.join(5)
+    try:
+        assert det.entered.wait(5)
+        monkeypatch.setattr(perceive, "detector_for", lambda *a, **k: object())
+        monkeypatch.setattr(perceive, "ClipScorer", lambda *a, **k: object())
+        monkeypatch.setattr(perceive, "PerceptionPipeline", lambda **k: "new")
+        assert _waited(lambda: perceive.pipeline_for("a"))      # waits once, gives up
+        assert not _waited(lambda: perceive.pipeline_for("b")), "waited again on the same hung frame"
+    finally:
+        det.go.set()
+        t.join(5)
 
 
 def test_a_stop_during_the_wait_for_the_close_never_builds(tmp_path):
@@ -238,16 +253,19 @@ def test_a_hung_frame_that_returns_does_not_excuse_the_next_one(monkeypatch):
     monkeypatch.setattr(perceive, "PerceptionPipeline", lambda **k: "new")
     hung, later = BlockingDetector(), BlockingDetector()
     a = threading.Thread(target=real(hung, NoScorer(), "x").perceive, args=({"image_base64": "eA=="},))
-    a.start()
-    assert hung.entered.wait(5)
-    perceive.pipeline_for("a")                  # gives up on the hung frame
-    hung.go.set()
-    a.join(5)                                   # ... which then returns
     b = threading.Thread(target=real(later, NoScorer(), "x").perceive, args=({"image_base64": "eA=="},))
-    b.start()
-    assert later.entered.wait(5)
-    t0 = time.monotonic()
-    perceive.pipeline_for("b")
-    assert time.monotonic() - t0 >= 0.25, "skipped the wait for a live frame"
-    later.go.set()
-    b.join(5)
+    a.start()
+    try:
+        assert hung.entered.wait(5)
+        perceive.pipeline_for("a")              # gives up on the hung frame
+        hung.go.set()
+        a.join(5)                               # ... which then returns
+        b.start()
+        assert later.entered.wait(5)
+        assert _waited(lambda: perceive.pipeline_for("b")), "skipped the wait for a live frame"
+    finally:
+        hung.go.set()
+        later.go.set()
+        a.join(5)
+        if b.is_alive():
+            b.join(5)
