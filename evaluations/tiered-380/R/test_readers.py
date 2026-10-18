@@ -48,3 +48,9 @@ def test_locateanything_decides_after_box():
     assert abs(p_native(absent)[0] - 0.1) < 1e-9
     assert not decided_native(present[:3]) and decided_native(present)
     assert parse_any_box("<ref>cup</ref><box>None</box>") is None
+
+
+def test_paligemma_loc_tokens():
+    assert parse_any_box("<loc0256><loc0512><loc0768><loc1023> blue bottle") == [500.0, 250.0, 999.0234375, 750.0]
+    s, parsed, _ = p_native([step("<loc0256>", {"<loc0256>": 0.7, "<eos>": 0.3})])
+    assert parsed and abs(s - 0.7) < 1e-9

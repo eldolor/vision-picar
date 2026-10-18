@@ -10,7 +10,8 @@ formats the R models answer in, each pinned in `test_readers.py`:
   (`opens_native`), over all of them.
   LocateAnything is read at the token after `<box>` instead: coordinate
   tokens over coordinates + `None` / `<null>`.
-* `parse_any_box`: M's reader, then a point -- `<box><x><y></box>`
+* `parse_any_box`: PaliGemma's `<locY1><locX1><locY2><locX2>` (0-1023, read
+  as x1, y1, x2, y2 on 0-1000) first, then M's reader, then a point -- `<box><x><y></box>`
   (LocateAnything, 0-1000) or Molmo2's `coords="i x y"` (0-1000) -- as a
   1-unit box at the point, so the box centre is the point.
 """
@@ -36,13 +37,14 @@ decided = mr.decided
 
 _NUM = r"(-?\d+(?:\.\d+)?)"
 _LA_POINT = re.compile(r"<box>\s*<(\d+)>\s*<(\d+)>\s*</box>")
+_LOC = re.compile(r"<loc(\d{4})><loc(\d{4})><loc(\d{4})><loc(\d{4})>")
 _MOLMO = re.compile(r"coords=\"\s*\d+\s+(\d{1,4})\s+(\d{1,4})")
 
 
 def opens_native(tok: str) -> bool:
     t = tok.strip()
     return ((t.startswith("[") and not t.startswith("[]")) or t.startswith("<box")
-            or t.startswith("<|box_start") or t.startswith("<point"))
+            or t.startswith("<|box_start") or t.startswith("<point") or t.startswith("<loc"))
 
 
 def _first(content: Sequence[dict]):
@@ -95,6 +97,11 @@ def decided_native(content: Sequence[dict]) -> bool:
 
 
 def parse_any_box(text: str) -> Optional[list]:
+    m = _LOC.search(text)
+    if m:
+        # PaliGemma: y1, x1, y2, x2 on 0-1023, returned on 0-1000.
+        y1, x1, y2, x2 = (int(v) * 1000 / 1024 for v in m.groups())
+        return [x1, y1, x2, y2] if x2 > x1 and y2 > y1 else None
     box = mr.parse_any_box(text)
     if box is not None:
         return box

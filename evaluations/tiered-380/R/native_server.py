@@ -212,6 +212,35 @@ class FastVLM(HFGenerate):
         return self.steps(self.tok, out, 0)
 
 
+class PaliGemma(HFGenerate):
+    """google/paligemma2 (mix): only its native `detect <name>` prompt. The
+    reply keeps its `<locNNNN>` tokens (y1, x1, y2, x2 on 0-1023); the
+    logprobs are generate's own, so the first token decides as for any
+    native reply (a `<loc` token opens a box)."""
+
+    def __init__(self, model_id, device):
+        import torch
+        from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
+        self.device = device
+        self.proc = AutoProcessor.from_pretrained(model_id)
+        self.model = PaliGemmaForConditionalGeneration.from_pretrained(
+            model_id, torch_dtype=torch.float16).to(device).eval()
+        self.tok = self.proc.tokenizer
+
+    def answer(self, image, text, max_tokens):
+        import torch
+        if native_target("paligemma", text) is None:
+            return "", []
+        inputs = self.proc(text="<image>" + text.strip(), images=image, return_tensors="pt").to(self.device)
+        inputs["pixel_values"] = inputs["pixel_values"].to(self.model.dtype)
+        with torch.inference_mode():
+            out = self.model.generate(**inputs, max_new_tokens=max(max_tokens, 32), do_sample=False,
+                                      output_scores=True, return_dict_in_generate=True)
+        _t, content = self.steps(self.tok, out, 0)
+        seq = out.sequences[0][-len(out.scores):]
+        return self.tok.decode(seq, skip_special_tokens=False), content
+
+
 class Photon:
     """Moondream through its Photon local engine: `detect` and `point` for the
     native prompts, `query` for any other text (no scores: binary / words)."""
@@ -244,6 +273,8 @@ def build(spec: str, device: str):
         return Photon(model_id, device)
     if backend == "chat":
         return ChatHF(model_id, device, model_id)
+    if backend == "paligemma":
+        return PaliGemma(model_id, device)
     if backend == "eagle":
         return Eagle(model_id, device, model_id)
     raise SystemExit(f"unknown backend {backend}")
