@@ -1071,7 +1071,8 @@ class ExploreAgent(MissionAgent):
         self.goals_failed += 1
         # 3.85 at merge: with 3.80.G's close-in (perception sightings), an
         # approach stalled with the robot already in the band is a plain
-        # failure, as its timeout was before the stall cut -- never the
+        # failure (one retry failure, as an under-way timeout was before the
+        # stall cut; also when it never left, on purpose) -- never the
         # escape, which backs and turns it away from the target.
         in_band = (state == "stalled" and g["kind"] == "approach"
                    and self.sight_from == "perception" and self._at_target(*target))
