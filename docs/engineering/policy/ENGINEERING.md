@@ -162,7 +162,10 @@ and `__call__` puts every question to the local tier first:
 * `_local_first()` is the sighting call unless `_frame_unable` has reached
   `local_max_unable`; then the question takes today's cloud path, counted in
   `frame_escalations["unable"]`, and the count starts again.
-* `_ask_local_first()` counts `local_triggers[trigger]` and runs
+* `_ask_local_first()` asks nothing while the arrival's identity call is
+  still out (`_local_inflight`, one the runner gave up on): the VLM would
+  answer `busy`, counted unable, and two bought a paid call (3.76 K3); the
+  question stays open. Otherwise it counts `local_triggers[trigger]` and runs
   `_ask_tiers()` on the async worker (`_dispatch(..., tier="local", job=...)`,
   so one question is in flight across both tiers; `_tier.in_flight_tier`
   says which) or inline. `_ask_tiers()` returns a `_LocalAnswer`, or -- the
@@ -204,7 +207,9 @@ and `__call__` puts every question to the local tier first:
   question to the cloud only past cold_search's frame or distance bar
   (`_Question.cloud_ok`). With the call cap spent, `_local_first()` keeps
   the question local whatever the unable count. Any cloud answer resets
-  `_frame_unable`; `frame_escalations["unable"]` counts only a dispatch that
+  `_frame_unable`, and so does a cloud failure that is not fatal (an
+  explore search, `_count_cloud_error`): a cloud that gave no answer is no
+  better than a spent cap (3.76 K3); `frame_escalations["unable"]` counts only a dispatch that
   went out. Per-frame latency is `local_frame_ms`, apart from the arrival's
   `local_ms`. The simulator's pipeline reads boxes in the render's 60 deg
   (`control/brain_server.py` `SIM_HFOV_DEG`).
@@ -398,7 +403,9 @@ logged and counted in `stats.cloud_errors`, not raised into B3.2).
   `STEER_BAND_DEG`) or FORWARD, through `_verb()`. Holds still while the
   arrival readout is arrived/checking/refused. A verb that waits on the
   mission's own goal is dropped (the next frame re-sizes it); a refused one
-  counts toward `CLOSE_IN_REFUSED` (3: the sighting fails, REVERSE), and a
+  counts toward `CLOSE_IN_REFUSED` (3 in a row at one target, within
+  `APPROACH_MOVED_M`; another target's start at 0, 3.76 K3: the sighting
+  fails, REVERSE), and a
   refused turn over `FACE_MIN_TURN_DEG` queues explore's FACE.
 * `_note_refusal()`: an arrival REFUSED drops the place it was at
   (`RetryBook` failed to its limit), once per refusal, and explore searches
@@ -573,6 +580,7 @@ alert colour.
 | `tests/test_arrival_confirmation.py` (9) | Handoff 2026-10-02 1a, scaled house, cloud faked: the right object ends `found` after one `arrival_confirmation` call; a cloud that disagrees refuses the arrival (ends `blocked`, at most 2 confirmation calls); a false-positive run (absent, absent, detected...) cannot end `found` and the same run with an agreeing cloud does; the call is counted; at the call cap it refuses without calling. Spec review 3: under `async_cloud` the confirmation never overlaps a trigger call (peak concurrency 1 with a 0.2 s cloud); a `found` mission's `status.tier.stats` counts it; the paid step is logged `[cloud: arrival_confirmation]`; a refused mission's final `status.arrival` keeps `identity` and its end line does not say "obstructed" |
 | `tests/test_refused_turn_loop.py` (3) | Handoff 5a, starter house: a refused turn is never chosen again from the same spot (was 130 times); with the world the active-search demo finds the backpack in 61 steps (the reference trace); with no world the boxed-in fallback runs instead of a refused LEFT alternating with STOP |
 | `tests/test_tiered.py` (92) | triggers and hysteresis, call cap, staleness floor, async dispatch and epoch drop, an async failure reaching B3.2, landed verdicts shown once, local bearing beats a stale cloud goal, spin guard never overrides a sighting, timing on the worker |
+| `tests/test_review_376k3.py` (3) | 3.76 K3: a failing cloud (not fatal, explore) hands a frame's question back to the local tier; no frame question goes out beside an arrival identity call still running, and it is asked once that ends; close-in's refusals at one target do not count at the next |
 | `tests/test_vision_policy.py` (39) | visible is not found; absent `obstacle_ahead` is `unknown`; room guess backfill and `searched_rooms`; the policy does not peek; replay missions |
 | `tests/test_agent.py`, `tests/test_mission_agent.py`, `tests/test_object_search.py` | constrained loop, frontier preference, look-around scan |
 | `tests/test_goal_pose.py` (12), `tests/test_memory.py` (9), `tests/test_rooms.py` (7) | anchoring under rotation, honesty without range; memory completion; room matching |
