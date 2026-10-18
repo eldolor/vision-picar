@@ -192,7 +192,7 @@ cmd_up() {
         --filters "Key=InstanceIds,Values=$id" \
         --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null \
         | grep -q Online; then
-      trap - EXIT; say "SSM online"; ensure_cli; cmd_status; return
+      say "SSM online"; ensure_cli; trap - EXIT; cmd_status; return   # cleared after ensure_cli (round 2)
     fi
     sleep 10
   done
