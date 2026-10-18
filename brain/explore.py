@@ -54,7 +54,7 @@ from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
 from robot.interface import ZONE_UNUSABLE, Preempted, RobotInterface
-from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation
+from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation, verb_speed_m_s
 from world.bridge_faults import fault_from_headers, response_detail, setup_fault_message
 
 logger = logging.getLogger("explore")
@@ -84,6 +84,15 @@ LOOK_AROUND = ("LOOK_LEFT", "LOOK_RIGHT", "LOOK_CENTER")
 # A goal that fails with the robot no further than this from where it was
 # sent is the ROBOT's problem (wedged in furniture), not the place's.
 STUCK_MOVED_M = 0.15
+# 3.83: a goal during which the robot has moved less than STALL_M over the
+# last STALL_S is ended as `stalled` and backed out of. Wedged under the
+# dining table, every goal ran its full GOAL_TIMEOUT_S: 14 in a row, 28 min.
+# A keepout spot reroutes the planner but cannot free a robot the
+# controller keeps pushing forward; backing out can (3.68's record).
+STALL_S = 20.0
+STALL_M = 0.15
+# 3.85: the escape's FORWARD is queued only with this much to gain.
+FORWARD_GAIN_CM = 5.0
 # Escapes tried before a search may conclude, while boxed in.
 MAX_ESCAPES = 3
 # An escape's turn sizes, each tried on the roomier side and then the other,
@@ -261,6 +270,10 @@ class ExploreAgent(MissionAgent):
         # and the search ended (`searched`, now `exhausted`) with the robot
         # simply stuck.
         self.escapes = 0
+        # Escapes charged to the boxed-in budget (MAX_ESCAPES). A back-out
+        # after a stall cut is not (3.83 review): under the dining table
+        # three of them would have ended the search `exhausted` while boxed in.
+        self.escapes_charged = 0
         self._wedged: list = []        # goals that failed without the robot moving
         self.seen_res: Optional[float] = None
         self.goals_sent = 0
@@ -346,10 +359,18 @@ class ExploreAgent(MissionAgent):
 
         state = self._goal_state()
         ended = None
+        if self._goal is not None and state == "unreadable":
+            self._goal["gap"] = True        # 3.83: an outage is not a stall
         if self._goal is not None:
             if state in TERMINAL_STATES or state is None:
                 self._goal_ended(state or "lost", now)
                 ended = self.last_event
+            elif state != "unreadable" and self._stalled(pose, now):
+                self._goal_ended("stalled", now)
+                try:
+                    self.navigator.cancel_goal()
+                except Exception:  # noqa: BLE001 -- best effort, as for a timeout
+                    logger.warning("goal cancel failed", exc_info=True)
             elif state != "unreadable" and now - self._goal["sent_at"] > self.goal_timeout_s:
                 # (3.76: not while the bridge is unreadable -- an outage is
                 # not the place's failure.)
@@ -672,11 +693,24 @@ class ExploreAgent(MissionAgent):
             return "WAIT", True, "at the target; looking"
         gx, gy = self._approach_point(pose, tx, ty, d)
         self._cancel()
-        self._approach = (tx, ty)
         out = self._send(gx, gy, "approach", now)
         if out[0] == "GOAL":
+            # Only an approach nav2 took counts as made (3.85): one refused
+            # `preempted` and recorded anyway kept every later sighting of
+            # the spot from re-sending it -- 3.83's pantry run faced the
+            # target from outside the door for 1,145 s.
+            self._approach = (tx, ty)
             self._goal["target"] = (tx, ty)
             self._close_in_refused = 0
+        elif self.sight_from == "perception" and self._at_target(tx, ty):
+            # 3.85 at merge: in the band, 3.80.G's close-in takes over on the
+            # next frame, as on dev before 3.85 -- on record, the sighting
+            # is not re-sent every frame. (Its CLOSE_IN_REFUSED bounds it.)
+            self._approach = (tx, ty)
+        else:
+            # Nor does an older one stay on record: _cancel() above ended
+            # its goal, so a sighting back near it must be approached again.
+            self._approach = None
         return out
 
     def _back_to_sighting(self, now: float):
@@ -834,7 +868,7 @@ class ExploreAgent(MissionAgent):
         room_goal = self._room_goal(m, rch, now, known)
         if room_goal is not None:
             return room_goal
-        if len(rch) < BOXED_CELLS and self.escapes < MAX_ESCAPES:
+        if len(rch) < BOXED_CELLS and self.escapes_charged < MAX_ESCAPES:
             # Nowhere reachable to stop -- from HERE. Boxed in, not done.
             self._decided()             # the escape move is not choice time
             self._queue_escape("boxed", reachable_cells=len(rch))
@@ -976,6 +1010,30 @@ class ExploreAgent(MissionAgent):
             self._goal["room"] = name
         return out
 
+    def _stalled(self, pose: dict, now: float) -> bool:
+        """3.83: no STALL_M of progress over the last STALL_S of this goal.
+        The anchor moves on whenever the robot gets STALL_M from it, so a
+        slow goal that keeps moving is never cut; an unusable pose decides
+        nothing."""
+        g = self._goal
+        if not pose.get("usable"):
+            g["gap"] = True
+            return False
+        if g.pop("gap", False):
+            # Back from a bridge or pose outage (3.83 review): the window
+            # starts again here, or a gap over STALL_S would read as a wedge.
+            g["anchor"] = (pose["x_m"], pose["y_m"], now)
+            return False
+        anchor = g.get("anchor")
+        if anchor is None:
+            # From where and when the goal began; without a start pose, now.
+            anchor = g["anchor"] = ((*g["from"], g["sent_at"]) if g.get("from")
+                                    else (pose["x_m"], pose["y_m"], now))
+        if math.hypot(pose["x_m"] - anchor[0], pose["y_m"] - anchor[1]) >= STALL_M:
+            g["anchor"] = (pose["x_m"], pose["y_m"], now)
+            return False
+        return now - anchor[2] >= STALL_S
+
     def _goal_ended(self, state: str, now: float) -> None:
         g, self._goal = self._goal, None
         pose = self._pose()
@@ -1011,15 +1069,33 @@ class ExploreAgent(MissionAgent):
             return
         target = g.get("target") or (g["x_m"], g["y_m"])
         self.goals_failed += 1
-        if g.get("from") and pose.get("usable") and math.hypot(
-                pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M:
-            # It never left: the robot is wedged, not the place unreachable.
+        # 3.85 at merge: with 3.80.G's close-in (perception sightings), an
+        # approach stalled with the robot already in the band is a plain
+        # failure (one retry failure), as its timeout was before the stall
+        # cut -- not the escape, which backs and turns it away from the
+        # target. Unless known never to have left: one wedged at its start
+        # still backs out (dev's never-left rule, below; an unknown start is
+        # not read as never-left, as there).
+        never_left = bool(g.get("from") and pose.get("usable") and math.hypot(
+            pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M)
+        in_band = (state == "stalled" and g["kind"] == "approach" and not never_left
+                   and self.sight_from == "perception" and self._at_target(*target))
+        if not in_band and (state == "stalled" or (g.get("from") and pose.get("usable") and math.hypot(
+                pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) < STUCK_MOVED_M)):
+            # It never left (or, 3.83, stopped making progress on the way):
+            # the robot is wedged, not the place unreachable.
             # Do not hold it against the place -- once. A place that wedges
             # it AGAIN is one the robot cannot leave for: 3.38's acceptance
             # run sent one living-room goal eleven times, each wedged against
             # an armchair, until the mission's time ran out.
             again = any(math.hypot(target[0] - wx, target[1] - wy) < self.retry.radius_m
                         for wx, wy in self._wedged)
+            # 3.85: a stall after the robot got under way is the place's
+            # failure at once -- the breakfast trap frontier was sent three
+            # times under the first-wedge forgiveness. Never-left keeps it.
+            left = (g.get("from") is not None and pose.get("usable") and math.hypot(
+                pose["x_m"] - g["from"][0], pose["y_m"] - g["from"][1]) >= STUCK_MOVED_M)
+            again = again or (state == "stalled" and left)
             self._wedged.append(target)
             if g["kind"] == "approach":
                 self._approach = None
@@ -1028,9 +1104,12 @@ class ExploreAgent(MissionAgent):
                 # the robot every time must still run out of tries.)
                 self.retry.fail(target[0], target[1], now, known=self._known_at)
                 self._room_failed(g)
-            self._queue_escape("wedged", goal=[round(g["x_m"], 2), round(g["y_m"], 2)],
-                               again=again)
-            self.last_event = f"{g['kind']} goal {state} without moving; backing out"
+            self._queue_escape("wedged", charged=state != "stalled",
+                               goal=[round(g["x_m"], 2), round(g["y_m"], 2)], again=again)
+            self.last_event = ((f"{g['kind']} goal stalled ({moved} m from its start); backing out"
+                                if moved is not None else f"{g['kind']} goal stalled; backing out")
+                               if state == "stalled" else
+                               f"{g['kind']} goal {state} without moving; backing out")
             logger.info(self.last_event)
             return
         n = self.retry.fail(target[0], target[1], now, known=self._known_at)
@@ -1064,8 +1143,10 @@ class ExploreAgent(MissionAgent):
                 logger.warning("goal cancel failed", exc_info=True)
             self._goal = None
 
-    def _queue_escape(self, why: str, **info) -> None:
+    def _queue_escape(self, why: str, charged: bool = True, **info) -> None:
         self.escapes += 1
+        if charged:
+            self.escapes_charged += 1
         self._event("escape", why=why, n=self.escapes, **info)
         self._pending = ["REVERSE", ("CREEP",), ("OPEN",)]
 
@@ -1206,7 +1287,26 @@ class ExploreAgent(MissionAgent):
                     # step budget ran out (house 36).
                     self._last_seen = None
             return out
-        return self._verb(item)
+        out = self._verb(item)
+        if (item == "REVERSE" and out[0] != "WAIT" and not out[1]
+                and self._pending and self._pending[0] == ("CREEP",) and self._front_open()):
+            # 3.85: the escape's REVERSE refused with the front open -- drive
+            # out ahead first. 3.83's breakfast pocket left 1.3 cm behind and
+            # about 30 cm ahead, and REVERSE, CREEP, OPEN never tried ahead.
+            self._pending.insert(0, "FORWARD")
+        return out
+
+    def _front_open(self) -> bool:
+        """Room ahead for the escape's FORWARD to gain at least
+        FORWARD_GAIN_CM over the bar the safety layer vets it against at its
+        own speed (3.44's speed-dependent stop) -- not merely past it, where
+        it moves half a centimetre (3.85 review)."""
+        try:
+            f, _ = self.safety.forward_clearance()
+            bar = self.safety.required_clearance_cm(verb_speed_m_s(50))
+        except Exception:  # noqa: BLE001 -- unknown: not open
+            return False
+        return f is not None and f >= bar + FORWARD_GAIN_CM
 
     def _creep_readings(self) -> dict:
         """What the safety layer read just before a creep (3.74), off ONE

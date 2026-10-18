@@ -68,7 +68,9 @@ CONSUMER_DIRS = PROJECT_DIRS + ("tests", "web-twin")
 # both read one env var at start-up, and this pins their defaults.
 MAX_DUPLICATES = 12
 # 2026-09-27: thirteen method+path pairs (R4-R6). A fourteenth is a decision.
-MAX_BRIDGE_ROUTES = 13
+# 14 since 3.68: POST /nav/keepout, the one way the robot server's refusals
+# reach nav2's planner (a wedge it cannot otherwise hear of).
+MAX_BRIDGE_ROUTES = 14
 
 
 # ---------- reading both sides ----------

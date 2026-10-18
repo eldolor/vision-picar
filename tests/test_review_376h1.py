@@ -121,6 +121,7 @@ def bridge_mod(monkeypatch):
     mod("geometry_msgs.msg", Point=_Msg, PoseStamped=_Msg, Twist=_Msg)
     mod("nav2_msgs")
     mod("nav2_msgs.action", NavigateToPose=types.SimpleNamespace(Goal=_Msg))
+    mod("nav2_msgs.msg", CostmapFilterInfo=_Msg)          # 3.83: the keepout filter
     mod("nav_msgs")
     mod("nav_msgs.msg", OccupancyGrid=_Msg, Odometry=_Msg, Path=_Msg)
     mod("sensor_msgs")

@@ -88,8 +88,9 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.80](3.80-tiered-identity.md) | Tiered identity: perception, then local Qwen, then the cloud |
 | [3.81](3.81-rover-memory-budget.md) | Rover memory budget: measure where memory goes, then trim |
 | [3.82](3.82-refused-goal-hold.md) | A refused goal must not lift a Stop's hold |
-| [3.83](3.83-dining-room-trap.md) | Explore wedged under the dining table (2026-10-15): built; FAILED, not adopted |
+| [3.83](3.83-dining-room-trap.md) | Explore wedged under the dining table (2026-10-15): built; FAILED, adopted with 3.85 |
 | [3.84](3.84-person-stop-last-word.md) | A person's Stop is the last word over autonomy |
+| [3.85](3.85-unsurveyed-13-of-13.md) | All 13 rooms from an empty map (2026-10-16): 26/26 found; FAILED 2-4 narrowly, adopted with 3.83 |
 | [3.86](3.86-twin-stop-labels.md) | The twin names a Stop's refusals |
 | [3.87](3.87-map-reply-off-loop.md) | The robot server's map reply, encoded off the event loop the wheel loop runs on |
 <!-- /sections -->

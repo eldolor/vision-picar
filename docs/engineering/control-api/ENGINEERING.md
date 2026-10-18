@@ -132,6 +132,39 @@ a direct verb), `/stop`, and `/wheels` (an actuator post under ROS drive, or
 an accepted non-zero direct command; a zero direct command never feeds it).
 Sensing reads never feed it.
 
+### Wedge watch (3.68)
+
+nav2 never sees a refusal, so a plan the safety layer will not drive is
+kept until the goal times out. `robot/wedge_watch.py`'s `WedgeWatch` is fed
+every `/wheels` post from driver `ros`, under `motion_lock`, with the
+command and `vet_wheel_velocity()`'s reason. `HOLD_S` (3.0 s) of forward
+commands clamped by the safety layer, with no forward command executed
+between and no silence over `GAP_S` (1.0 s), is a wedge; it re-arms for
+another `HOLD_S`. On a wedge the server starts a thread (`mark_wedge`, so
+the 20 Hz post never waits) that, only while `goal_in_progress()` and on a
+world with `set_keepout`, reads the pose and adds a disc of `SPOT_R_M`
+(0.15 m) centred `SPOT_AHEAD_M` (0.30 m) ahead -- clear of the chassis' own nose and corners -- to `SpotBook` (`SPOT_TTL_S`
+300 s, at most `MAX_SPOTS` 8), then sends the whole live set through
+`RosWorld.set_keepout` to the bridge's `POST /nav/keepout`. Since 3.83 a
+spot within `SPOT_DEDUPE_M` (0.30 m) of a live one sends nothing (3.68 had
+re-marked one spot up to 30 times), a spot the bridge did not take
+(an error, or `accepted: false`) is undone (`drop_last` restores the book
+as it was, including a spot the add trimmed), so the next wedge there can
+still mark it, and a new SLAM session (`map_id`, read with the pose the spot
+is placed on; a restarted bridge has no spots) starts the book empty.
+`set_keepout(spots, map_id=...)` sends nothing when the bridge is already
+on another session (the spots would be converted on the wrong anchor). `RosWorld.set_keepout` converts on the
+bridge's current session's anchor and names that session; a bridge on
+another one answers 409, read as `accepted: false` (as `set_goal`, 3.76
+H1-12). It logs one
+`keepout: marked ...` warning a mark, or `keepout: not marked (...)` on a
+failure, including a reply with `accepted: false`. Marks from one server
+are sent one at a time (`spot_lock` is held across the post), so a slow
+bridge cannot receive an older set after a newer one. It moves nothing and
+changes no vetting. nav2's global costmap lists the `KeepoutFilter` since
+3.83 (`nav2.yaml`); backing out of a wedge is the brain's (explore's
+`STALL_S` cut).
+
 ## Parameters and configuration
 
 | Key / variable | Default | Read | Why / effect |

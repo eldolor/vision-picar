@@ -762,3 +762,270 @@ def test_a_failing_reading_never_stops_the_creep():
     agent._pending = [("CREEP", ["FORWARD"])]
     agent._do_pending()
     assert asked == ["FORWARD"]
+
+
+class FirstRefusedNav(FakeNav):
+    """Refuses each new approach goal once with `preempted`, then takes it --
+    live, the brain's own FACE turn still held driving authority when the
+    approach after it was sent (3.83's pantry run)."""
+
+    def __init__(self, robot):
+        super().__init__(robot)
+        self.refused = set()
+
+    def set_goal(self, x_m, y_m):
+        key = (round(x_m, 1), round(y_m, 1))
+        if key not in self.refused:
+            self.refused.add(key)
+            self.calls.append(("set", round(x_m, 2), round(y_m, 2)))
+            return {"accepted": False, "reason": "preempted"}
+        return super().set_goal(x_m, y_m)
+
+
+def test_a_refused_approach_is_tried_again_not_given_up_for_a_look():
+    """3.85: in 3.83's pantry run an approach refused `preempted` (the
+    brain's own FACE turn still held authority) was still recorded as made,
+    so the next frames' sightings of the same spot never re-sent it, and
+    `_back_to_sighting` only faced the target from outside the door --
+    "already facing it" for 1,145 s, the backpack half behind the jamb."""
+    grid = build_world("home_first_floor")
+    grid.move_object((46, 19), (40, 23))                 # 3.83's pantry spot
+    grid.x, grid.y = 12.928 / CELL, 7.321 / CELL
+    grid.theta = math.radians(299.47) - math.pi / 2
+    robot = MockRobot(grid, render=False)
+    nav = FirstRefusedNav(robot)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="red backpack"),
+                         navigator=nav, clock=lambda: grid.sim_time, world=MockWorld(grid))
+    target = (12.15, 7.05)
+    first = agent._send_approach(*target, grid.sim_time)
+    assert first[0] == "WAIT" and "preempted" in first[2]
+    # The same sighting on the next frame: the approach goes out again.
+    again = agent._send_approach(*target, grid.sim_time) if agent._approach is None else None
+    assert again is not None and again[0] == "GOAL"
+
+
+class SwitchNav(FakeNav):
+    """Takes goals until `refuse` is set, then refuses them `preempted`."""
+
+    refuse = False
+
+    def set_goal(self, x_m, y_m):
+        if self.refuse:
+            self.calls.append(("set", round(x_m, 2), round(y_m, 2)))
+            return {"accepted": False, "reason": "preempted"}
+        return super().set_goal(x_m, y_m)
+
+
+def test_a_refused_approach_leaves_no_older_approach_on_record():
+    """3.85 review: approach A taken, then B (> APPROACH_MOVED_M away)
+    refused -- the record must not still say A, or a sighting back near A
+    is never approached again (the pantry livelock by another road)."""
+    grid = build_world("home_first_floor")
+    grid.move_object((46, 19), (40, 23))
+    grid.x, grid.y = 12.928 / CELL, 7.321 / CELL
+    robot = MockRobot(grid, render=False)
+    nav = SwitchNav(robot)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="red backpack"),
+                         navigator=nav, clock=lambda: grid.sim_time, world=MockWorld(grid))
+    a, b = (12.15, 7.05), (12.15, 5.9)
+    assert agent._send_approach(*a, grid.sim_time)[0] == "GOAL"
+    nav.refuse = True
+    agent._send_approach(*b, grid.sim_time)
+    nav.refuse = False
+    agent._goal = None
+    agent._pending = []
+    agent._sighting = lambda frame: a                     # seen near A again
+    sent_before = len([c for c in nav.calls if c[0] == "set"])
+    agent.step()
+    assert len([c for c in nav.calls if c[0] == "set"]) > sent_before
+
+
+class SlowNav(FakeNav):
+    """nav2 that keeps a goal active; each poll is 2 s, and the robot moves
+    `step_m` (east) per poll -- 0 is 3.83's wedge under the dining table."""
+
+    def __init__(self, robot, step_m=0.0):
+        super().__init__(robot)
+        self.step_m = step_m
+
+    def get_goal(self):
+        self.calls.append(("get",))
+        self.robot.pass_time(2.0)
+        self.grid.x += self.step_m / CELL
+        return {"goal": self.goal, "plan": []}
+
+
+def _slow_agent(step_m):
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    nav = SlowNav(robot, step_m)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="purple elephant"),
+                         navigator=nav, clock=lambda: grid.sim_time, world=MockWorld(grid))
+    return grid, nav, agent
+
+
+def test_a_goal_that_makes_no_progress_is_cut_as_stalled_and_backed_out_of():
+    """3.83: wedged under the dining table, every goal ran its full 120 s.
+    No STALL_M of progress over STALL_S ends it early, and the wedge
+    handling backs out -- a keepout spot cannot free a robot the
+    controller keeps pushing forward (3.68)."""
+    from brain.explore import STALL_S
+    grid, nav, agent = _slow_agent(0.0)
+    assert agent.step().action == "GOAL"
+    t0 = grid.sim_time
+    while agent._goal is not None and grid.sim_time - t0 < 60:
+        agent.step()
+    ended = [e for e in agent.events if e["event"] == "goal_ended"][0]
+    assert ended["state"] == "stalled"
+    assert STALL_S <= ended["seconds"] <= STALL_S + 4.0
+    assert ("cancel",) in nav.calls
+    assert [e for e in agent.events if e["event"] == "escape"][0]["why"] == "wedged"
+
+
+def test_a_goal_still_moving_is_not_cut():
+    from brain.explore import GOAL_TIMEOUT_S
+    grid, nav, agent = _slow_agent(0.1)          # 0.1 m a 2 s poll: slow, but moving
+    agent.goal_timeout_s = GOAL_TIMEOUT_S
+    assert agent.step().action == "GOAL"
+    t0 = grid.sim_time
+    while agent._goal is not None and grid.sim_time - t0 < 60:
+        agent.step()
+    assert not [e for e in agent.events if e["event"] == "goal_ended"]
+
+
+def test_a_goal_is_not_cut_before_stall_s():
+    from brain.explore import STALL_S
+    grid, nav, agent = _slow_agent(0.0)
+    assert agent.step().action == "GOAL"
+    t0 = grid.sim_time
+    while grid.sim_time - t0 < STALL_S - 4.0:
+        agent.step()
+    assert agent._goal is not None
+
+
+def test_an_outage_longer_than_stall_s_is_not_read_as_a_stall():
+    """3.83 review: with the pose unusable for longer than STALL_S, the
+    first tick back must not cut the goal -- an outage is not a wedge
+    (3.76: not the place's failure either). The window starts again."""
+    from brain.explore import STALL_S
+    grid, nav, agent = _slow_agent(0.0)
+    assert agent.step().action == "GOAL"
+    real = agent.world.get_pose
+    t0 = grid.sim_time
+    agent.world.get_pose = lambda: {"usable": False}
+    while grid.sim_time - t0 < STALL_S + 10:
+        agent.step()
+    agent.world.get_pose = real
+    agent.step()
+    assert agent._goal is not None, [e for e in agent.events if e["event"] == "goal_ended"]
+
+
+def test_a_stall_back_out_does_not_spend_the_boxed_in_budget():
+    """3.83 review: escapes after a stall cut must not use up MAX_ESCAPES,
+    or a robot still boxed in under the table ends the search `exhausted`
+    instead of backing out again."""
+    from brain.explore import MAX_ESCAPES
+    grid, nav, agent = _slow_agent(0.0)
+    for _ in range(MAX_ESCAPES + 1):
+        assert agent.step().action == "GOAL" or agent._goal is not None
+        t0 = grid.sim_time
+        while agent._goal is not None and grid.sim_time - t0 < 60:
+            agent.step()
+        while agent._pending:
+            agent.step()
+    assert agent.escapes >= MAX_ESCAPES
+    assert agent.escapes_charged == 0
+
+
+def test_a_stall_after_moving_says_so():
+    grid, nav, agent = _slow_agent(0.0)
+    assert agent.step().action == "GOAL"
+    agent._goal["from"] = (agent._goal["from"][0] - 2.0, agent._goal["from"][1])
+    t0 = grid.sim_time
+    while agent._goal is not None and grid.sim_time - t0 < 60:
+        agent.step()
+    assert "without moving" not in agent.last_event and "stalled" in agent.last_event
+
+
+def test_a_stall_with_no_pose_at_its_end_still_reads_cleanly():
+    grid, nav, agent = _slow_agent(0.0)
+    assert agent.step().action == "GOAL"
+    agent._goal["from"] = None
+    t0 = grid.sim_time
+    while agent._goal is not None and grid.sim_time - t0 < 60:
+        agent.step()
+    assert "None" not in agent.last_event and "stalled" in agent.last_event
+
+
+def _escape_agent(front_cm, rear_cm=1.3):
+    from robot.safety import SafetyViolation
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="x"),
+                         navigator=FakeNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+
+    def guard(action, **kw):
+        if action == "REVERSE":
+            raise SafetyViolation(f"Blocked REVERSE: rear clearance={rear_cm}cm < min=20cm")
+        return {"executed": action}
+    agent.safety.check_and_execute = guard
+    agent.safety.forward_clearance = lambda: (front_cm, "scan_footprint")
+    agent.safety.reverse_clearance = lambda: (rear_cm, "scan_footprint")
+    agent._pending = ["REVERSE", ("CREEP",), ("OPEN",)]
+    return agent
+
+
+def test_an_escape_with_the_rear_shut_tries_the_open_front():
+    """3.85: in 3.83's breakfast pocket the rear was 1.3 cm and the front
+    about 30 cm, and the escape (REVERSE, CREEP, OPEN) never tried ahead."""
+    agent = _escape_agent(front_cm=30.0)
+    agent._do_pending()
+    assert agent._pending[0] == "FORWARD"
+
+
+def test_an_escape_with_both_ends_shut_creeps_and_turns_as_before():
+    agent = _escape_agent(front_cm=15.0)
+    agent._do_pending()
+    assert agent._pending[0] == ("CREEP",)
+
+
+def _ended_as(state, moved_m):
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    agent = ExploreAgent(robot, MissionMemory(mission="m", target_object="x"),
+                         navigator=FakeNav(robot), clock=lambda: grid.sim_time,
+                         world=MockWorld(grid))
+    pose = agent._pose()
+    goal = (pose["x_m"] + 2.0, pose["y_m"])
+    agent._goal = {"x_m": goal[0], "y_m": goal[1], "kind": "frontier", "sent_at": 0.0,
+                   "from": (pose["x_m"] - moved_m, pose["y_m"])}
+    agent._goal_ended(state, grid.sim_time)
+    return agent.retry.failures_near(*goal)
+
+
+def test_a_stall_after_moving_counts_against_the_place_at_once():
+    """3.85: 3.83's breakfast trap frontier (8.63, 10.23) was sent three
+    times -- a stall was forgiven as a first wedge."""
+    assert _ended_as("stalled", moved_m=1.39) == 1
+
+
+def test_a_goal_that_never_left_keeps_the_first_wedge_forgiven():
+    assert _ended_as("stalled", moved_m=0.0) == 0
+
+
+def test_a_front_just_past_the_stop_is_not_worth_a_forward():
+    """3.85 review (both reviewers): FORWARD is queued only with room to
+    gain over the bar it is vetted against -- at 20.5 cm it moves 0.5 cm."""
+    agent = _escape_agent(front_cm=20.5)
+    agent._do_pending()
+    assert agent._pending[0] == ("CREEP",)
+
+
+def test_the_forward_bar_is_the_speed_dependent_one(monkeypatch):
+    """The FORWARD is vetted at its own speed (3.44's stop distance), so
+    a faster default speed raises the front it needs."""
+    agent = _escape_agent(front_cm=30.0)
+    monkeypatch.setattr(agent.safety, "required_clearance_cm", lambda v, creep=False: 40.0)
+    agent._do_pending()
+    assert agent._pending[0] == ("CREEP",)

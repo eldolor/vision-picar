@@ -435,6 +435,37 @@ class RosWorld(WorldInterface):
         # and a 200 that is not a JSON object is never a goal nav2 took.
         return {"accepted": True, **_json_object(r)}
 
+    def set_keepout(self, spots: list, map_id: Optional[str] = None) -> dict:
+        """3.68: the whole set of keepout spots nav2 must plan around
+        ({x_m, y_m, r_m, ttl_s}, house frame), replacing the last. The
+        robot server decides them (robot/wedge_watch.py); the bridge only
+        publishes them as a mask for nav2's KeepoutFilter."""
+        # The bridge's CURRENT session and its anchor, as set_goal (3.76
+        # H1-12, 3.83 review): discs converted on an old session's anchor
+        # would be drawn into a new map wherever that began.
+        reply = self._fetch_pose()
+        anchor = self._ensure_session(reply)
+        if anchor is None:
+            return {"accepted": False, "reason": "no SLAM session yet"}
+        if map_id is not None and map_id != f"slam-{anchor.session}":
+            # The spots were placed on another session's pose (3.83 review
+            # round 2): on this anchor they would land in the wrong place.
+            return {"accepted": False, "reason": "the SLAM session changed",
+                    "detail": f"the spots are for {map_id}, the bridge is on slam-{anchor.session}"}
+        out = []
+        for s in spots:
+            rx, ry = _ours_to_ros(*self._unapply(s["x_m"], s["y_m"], anchor))
+            out.append({"x_m": rx, "y_m": ry, "r_m": s["r_m"], "ttl_s": s["ttl_s"]})
+        r = self._http.post("/nav/keepout", json={"spots": out, "session": anchor.session})
+        if r.status_code == 409:
+            body = _body(r)
+            return {"accepted": False, "reason": "the SLAM session changed",
+                    "detail": (f"the SLAM session changed between the pose read and the mark "
+                               f"(converted for {anchor.session}, the bridge is on "
+                               f"{body.get('session') if body else None})")}
+        r.raise_for_status()
+        return {"accepted": True, **r.json()}
+
     def cancel_goal(self) -> dict:
         # Raises on an error status (a 401, a 5xx) rather than returning its
         # body as an answer: the stop's goal-ending loop retries on a raise,
