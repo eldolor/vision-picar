@@ -71,10 +71,10 @@ def test_frame_questions_wait_out_an_arrival_check_still_running():
 # ---------- K3.3: close-in's refused count carried from one target to the next ----------
 
 
-def test_close_in_refusals_at_one_target_do_not_count_at_the_next():
+def test_close_in_refusals_before_a_goal_do_not_count_after_it():
     """`_close_in_refused` reset only on an executed verb, an accepted
     approach goal or a refusal noted. Two refused verbs at one sighting,
-    then a target reached by a frontier goal (no approach sent): its first
+    then a frontier goal to the next target (no approach sent): its first
     refused verb was the third, and the new target was failed and backed
     away from at once."""
     from tests.test_tiered_explore import _agent
@@ -84,6 +84,58 @@ def test_close_in_refusals_at_one_target_do_not_count_at_the_next():
     first, second = (3.0, 3.0), (6.0, 1.0)
     agent._close_in(scene, first)
     agent._close_in(scene, first)
+    pose = agent._pose()
+    out = agent._send(pose["x_m"] + 1.0, pose["y_m"], "frontier", 10.0)
+    assert out[0] == "GOAL", out
+    agent._goal = None                    # reached
     agent._close_in(scene, second)
     assert agent.retry.failures_near(*second) == 0, "a new target failed on its first refusal"
     assert "REVERSE" not in agent._pending, agent._pending
+
+
+def test_close_in_refusals_still_bound_a_flipping_estimate():
+    """Fixes' round 1 (both reviewers): reset by the target's estimate, an
+    estimate flipping by more than 0.5 m reset the count every refusal and
+    CLOSE_IN_REFUSED never tripped -- the refused-turn loop it bounds."""
+    from tests.test_tiered_explore import _agent
+    agent, _ = _agent()
+    agent._verb = lambda action, **kw: ("FORWARD", False, "refused: too close")
+    scene = {"_perception": {"status": "detected", "bearing_deg": 0.0, "pan_deg": 0.0}}
+    for target in [(3.0, 3.0), (3.8, 3.0), (3.0, 3.0)]:
+        agent._close_in(scene, target)
+    assert agent._pending[:1] == ["REVERSE"], agent._pending
+
+def test_a_candidate_held_back_by_the_arrival_check_is_asked_once_it_ends():
+    """Fixes' round 1 (Thermos): the guard returned after `_trigger_for` had
+    spent the candidate's edge, and a one-shot question (candidate, band,
+    start) did not come back until the target was lost and found again."""
+    import threading
+    from brain.perceive import DETECTED
+    from brain.tiered import TRIGGER_CANDIDATE
+    from tests.test_tiered_frames import asked, no
+    release = threading.Event()
+
+    def identity(f):
+        release.wait(5)
+        return {"status": "answered", "score": 0.9}
+
+    local = Local(no())
+    tier, _ = tier_for([P(ABSENT)] + [P(DETECTED, bearing=0.0)] * 10, local,
+                       local_identity_fn=identity)
+    tier(frame())                                  # the opening question
+    t = threading.Thread(target=tier.confirm_local, args=(frame(),), daemon=True)
+    t.start()
+    for _ in range(50):
+        if tier._local_inflight is not None:
+            break
+        threading.Event().wait(0.01)
+    tier.abandon_local()
+    try:
+        for _ in range(3):
+            tier(frame())                          # detected: the candidate's edge
+        assert TRIGGER_CANDIDATE not in asked(tier)
+    finally:
+        release.set()
+        t.join(5)
+    tier(frame())
+    assert asked(tier).get(TRIGGER_CANDIDATE) == 1, asked(tier)

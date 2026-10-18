@@ -218,7 +218,6 @@ class ExploreAgent(MissionAgent):
         self._local_track_fn = local_track_fn   # the tier's `set_local_track`
         self.close_ins = 0             # 3.80.G: last-approach verbs executed
         self._close_in_refused = 0
-        self._close_in_target: Optional[tuple] = None   # whose refusals those are
         self._refusal_noted = False
         self._scene: dict = {}         # 3.80.G: this step's scene (sight_from perception)
         self.navigator = navigator
@@ -543,6 +542,10 @@ class ExploreAgent(MissionAgent):
         self._last_sent = (x_m, y_m)
         self._goal = {"x_m": x_m, "y_m": y_m, "kind": kind, "sent_at": now,
                       "from": (pose["x_m"], pose["y_m"]) if pose.get("usable") else None}
+        # The robot drives off: refusals counted before belong to where it
+        # was (3.76 K3: a target reached by a frontier goal began at the
+        # last one's count). Not by the target's estimate, which can flip.
+        self._close_in_refused = 0
         self.goals_sent += 1
         self.last_event = f"goal sent ({kind}) to ({x_m:.2f}, {y_m:.2f})"
         self._event("goal_sent", kind=kind, goal=[round(x_m, 2), round(y_m, 2)], **info)
@@ -665,12 +668,6 @@ class ExploreAgent(MissionAgent):
         if out[1]:
             self._close_in_refused = 0
             return out[0], out[1], f"closing in: {out[2]}"
-        last = self._close_in_target
-        if last is None or math.hypot(target[0] - last[0], target[1] - last[1]) > APPROACH_MOVED_M:
-            # Another target's refusals are not this one's (3.76 K3): one
-            # reached by a frontier goal began at the last one's count.
-            self._close_in_refused = 0
-        self._close_in_target = target
         self._close_in_refused += 1
         if self._close_in_refused >= CLOSE_IN_REFUSED:
             self._close_in_refused = 0

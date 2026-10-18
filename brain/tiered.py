@@ -1055,6 +1055,16 @@ class TieredVision:
             return fn if spent else None
         return fn
 
+    def _rearm(self, trigger: str) -> None:
+        """A one-shot trigger (candidate, band, start) whose question was
+        not answered fires again on the next frame that raises it."""
+        if trigger == TRIGGER_CANDIDATE:
+            self._last_confirmed = None
+        elif trigger == TRIGGER_BAND:
+            self._band_asked = False
+        elif trigger == TRIGGER_START:
+            self._retry_start = True
+
     def _count(self, bucket: str, key: str) -> None:
         with self._stats_lock:
             d = getattr(self.stats, bucket)
@@ -1072,7 +1082,9 @@ class TieredVision:
             # The arrival's identity call (one the runner gave up on, still
             # out) holds the VLM: a question now comes back `busy` and is
             # counted unable, and two of those bought a paid cloud call
-            # (3.76 K3). Not asked; still open, so asked once it ends.
+            # (3.76 K3). Not asked; still open, so asked once it ends -- a
+            # one-shot trigger's edge, spent in _trigger_for, armed again.
+            self._rearm(trigger)
             return self._local_scene(perception, note="local VLM busy with the arrival check")
         self._count("local_triggers", trigger)
         q = _Question(
@@ -1294,12 +1306,7 @@ class TieredVision:
             self._frame_unable += 1
             # The question stays open: asked again on the next frame that
             # raises it (pacing counts untouched, edges armed again).
-            if trigger == TRIGGER_CANDIDATE:
-                self._last_confirmed = None
-            elif trigger == TRIGGER_BAND:
-                self._band_asked = False
-            elif trigger == TRIGGER_START:
-                self._retry_start = True
+            self._rearm(trigger)
         self._local_landed = {"trigger": trigger, "answer": kind,
                               "score": score if numeric else None,
                               "bearing_deg": None if bearing is None else round(bearing, 1)}
