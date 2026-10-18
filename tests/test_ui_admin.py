@@ -66,15 +66,15 @@ WALKS = {
 @pytest.fixture(scope="module")
 def admin_server(tmp_path_factory):
     root = tmp_path_factory.mktemp("recordings")
-    config = root / "robot.yaml"
-    config.write_text(f"brain:\n  recording_dir: {root / 'walks'}\n")
-    (root / "walks").mkdir()
     port = free_port()
     url = f"http://127.0.0.1:{port}"
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "control.admin_server:app",
          "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
-        cwd=REPO_ROOT, env={**os.environ, "BRAIN_CONFIG_PATH": str(config)},
+        # From the temp dir, so the shipped config's relative `recording_dir`
+        # lands there and not in the checkout (3.76 N2: nothing reads the
+        # BRAIN_CONFIG_PATH this used to set).
+        cwd=root, env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
     )
     try:
         deadline = time.monotonic() + SERVER_START_TIMEOUT_S

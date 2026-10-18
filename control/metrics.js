@@ -231,7 +231,17 @@
     return v.trim();
   }
 
+  // Only the newest load paints (3.76 N2): switching 7 -> 90 -> 7 days drew
+  // the slow 90-day answer under a "7" selector.
+  var loadSeq = 0;
+
+  function clearView() {
+    ["kpis", "chart-cloud", "chart-local", "runs"].forEach(function (id) { $(id).innerHTML = ""; });
+    $("footnote").textContent = "";
+  }
+
   function load() {
+    var seq = ++loadSeq;
     var secret = cleanSecret($("secret").value);
     if (secret !== $("secret").value) $("secret").value = secret;
     $("error").hidden = true;
@@ -251,6 +261,7 @@
         return r.json();
       })
       .then(function (d) {
+        if (seq !== loadSeq) return;
         // Remembered only once it has WORKED. Saving on every attempt
         // means a wrong secret is what comes back next time, which is how
         // a one-off paste error becomes a permanent one.
@@ -265,6 +276,9 @@
           + " percentile over a handful of samples reads as what it is.";
       })
       .catch(function (e) {
+        if (seq !== loadSeq) return;
+        // Not the last window's numbers under this window's error (3.76 N2).
+        clearView();
         $("error").hidden = false;
         $("error").textContent = "Could not load metrics: " + e.message;
       });

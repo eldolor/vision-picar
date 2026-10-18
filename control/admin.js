@@ -34,6 +34,26 @@
   let walkRenderers = {};
   const selected = new Set();
   const detailCache = new Map(); // walk name -> {frames, entries, label}
+  // walk name -> what is still out for it (3.76 N2). A row is rebuilt on
+  // every search keystroke, sort and Refresh, and a rebuilt row started with
+  // every control enabled -- a second paid replay or judge run, or a second
+  // DELETE, one click away while the first was out.
+  const inFlight = new Map();
+  function flight(name) {
+    let f = inFlight.get(name);
+    if (!f) { f = { replays: 0, scoring: false, queued: false, deleting: false }; inFlight.set(name, f); }
+    return f;
+  }
+  // The walk as the page knows it NOW: a request started before a Refresh
+  // writes its answer onto the object the list holds today, not the one it
+  // started from (3.76 N2: Refresh during auto-scoring lost every score).
+  function live(w) {
+    return allWalks.find(function (x) { return x.walk === w.walk; }) || w;
+  }
+  function repaint(name) {
+    const r = walkRenderers[name];
+    if (r) r.repaint();
+  }
 
   function headers(extra) {
     const h = Object.assign({}, extra);
@@ -109,6 +129,11 @@
         return;
       }
       clearTimeout(timer);
+      // Disarmed before the action (3.76 N2): left armed, bulk delete's next
+      // selection went with ONE click.
+      armed = false;
+      btn.classList.remove("confirming");
+      btn.textContent = label;
       onConfirm();
     };
   }
@@ -127,11 +152,14 @@
 
   // The per-model table that was being assembled by hand after every batch
   // of walks -- differently each time, and wrong twice.
+  let summarySeq = 0;
   async function loadSummary() {
     const panel = document.getElementById("summary-panel");
     const el = document.getElementById("summary");
+    const seq = ++summarySeq;               // only the newest ask paints (3.76 N2)
     try {
       const data = await api("GET", "/recording/summary");
+      if (seq !== summarySeq) return;
       const rows = data.rows || [];
       if (!rows.length) { panel.style.display = "none"; return; }
       el.innerHTML = rows.map(function (r) {
@@ -159,7 +187,7 @@
       }).join("");
       panel.style.display = "";
     } catch (e) {
-      panel.style.display = "none";
+      if (seq === summarySeq) panel.style.display = "none";
     }
   }
 
@@ -229,13 +257,16 @@
       try {
         const hit = await storedReplay(w, modelId, promptVariant);
         if (hit && replayStamp(hit) !== before) {
-          w.replays = (w.replays || []).filter(function (x) {
+          const cur = live(w);
+          cur.replays = (cur.replays || []).filter(function (x) {
             return !sameReplay(x, modelId, promptVariant);
           });
-          w.replays.push(hit);
+          cur.replays.push(hit);
           return hit;
         }
-      } catch (err) { /* keep waiting */ }
+      } catch (err) {
+        if (err.status === 404) return null;   // the walk is gone: stop asking
+      }
     }
     return null;
   }
@@ -248,6 +279,10 @@
       let cmp;
       if (key === "frames") {
         cmp = a.frames - b.frames;
+      } else if ((a.recorded_at == null) !== (b.recorded_at == null)) {
+        // One order for a mixed list (3.76 N2): a walk with no time falls
+        // to the bottom whichever way the list runs.
+        return a.recorded_at == null ? 1 : -1;
       } else if (a.recorded_at != null && b.recorded_at != null) {
         // By recording time, NOT by name. The name carries the model now
         // ("red-backpack-opus-4-5-<timestamp>"), so sorting on it groups by
@@ -284,6 +319,7 @@
   // that survives being "fixed".
   function onWalksLoaded(data) {
     allWalks = data.walks;
+    detailCache.clear();                  // a walk still recording has grown (3.76 N2)
     applyFilterSort();
     loadStats();
     loadSummary();
@@ -325,31 +361,50 @@
   // Bedrock requests, and a page load that kicked off eight walks at once
   // would throttle itself and land the user in retry storms.
   let scoringPending = false;
+  let scoreAgain = false;
 
   async function scorePendingWalks() {
-    if (scoringPending) return;
-    const pending = allWalks.filter(function (w) { return w.finished && !w.eval; });
+    // A list that arrives while the queue runs is looked at once it ends
+    // (3.76 N2: a Refresh mid-queue left its new walks unscored).
+    if (scoringPending) { scoreAgain = true; return; }
+    const pending = allWalks.filter(function (w) {
+      const f = flight(w.walk);
+      return w.finished && !w.eval && !w.evalFailed && !f.scoring && !f.queued;
+    });
     if (!pending.length) return;
     scoringPending = true;
+    pending.forEach(function (w) { flight(w.walk).queued = true; repaint(w.walk); });
     try {
       for (const w of pending) {
+        const f = flight(w.walk);
+        f.queued = false;
+        const cur = live(w);
+        // Scored meanwhile (by hand, or a Refresh brought one), or deleted.
+        if (cur.eval || !allWalks.includes(cur) || f.scoring) { repaint(w.walk); continue; }
+        f.scoring = true;
+        repaint(w.walk);
         try {
-          w.eval = await api("GET", "/recording/walks/" + encodeURIComponent(w.walk) + "/evaluation");
-          // Repaint just this row, so scores appear as they land -- and,
-          // more importantly, so a walk the user has expanded to look at
+          const ev = await api("GET", "/recording/walks/" + encodeURIComponent(w.walk) + "/evaluation");
+          // Onto the walk the list holds now, then just this row -- so scores
+          // appear as they land, and a walk the user has expanded to look at
           // frames doesn't collapse under them every time another walk in
           // the queue finishes scoring.
-          const r = walkRenderers[w.walk];
-          if (r) { r.renderHead(); r.renderEvalDetail(); r.markScored(); }
+          live(w).eval = ev;
           loadSummary();
         } catch (e) {
           // A walk that won't score (Bedrock down, malformed log) must not
-          // stop the queue -- its Evaluate button still works by hand.
-          w.evalFailed = true;
+          // stop the queue -- its Evaluate button still works by hand, and
+          // now says so (3.76 N2: it read "Scoring…" until a reload).
+          live(w).evalFailed = true;
+        } finally {
+          f.scoring = false;
+          repaint(w.walk);
         }
       }
     } finally {
       scoringPending = false;
+      pending.forEach(function (w) { flight(w.walk).queued = false; });
+      if (scoreAgain) { scoreAgain = false; scorePendingWalks(); }
     }
   }
 
@@ -437,6 +492,7 @@
         w.label = labelSelect.value || null;
         renderHead();
       } catch (e) {
+        labelSelect.value = w.label || "";   // what is stored (3.76 N2)
         showInlineError(labelSelect, "Tag failed: " + e.message);
       }
     };
@@ -452,12 +508,15 @@
     dlLink.href = "#";
     dlLink.onclick = function (e) {
       e.preventDefault();
-      downloadWalk(w.walk);
+      downloadWalk(w.walk, dlLink);
     };
     const delBtn = document.createElement("button");
     delBtn.className = "danger";
     armConfirm(delBtn, "Delete walk", async function () {
-      delBtn.disabled = true;
+      const f = flight(w.walk);
+      if (f.deleting) return;
+      f.deleting = true;
+      syncControls();
       try {
         await api("DELETE", "/recording/walks/" + encodeURIComponent(w.walk));
         selected.delete(w.walk);
@@ -466,30 +525,35 @@
         loadStats();
         updateBulkBar();
       } catch (e) {
-        showInlineError(delBtn, "Delete failed: " + e.message);
-        delBtn.disabled = false;
+        const r = walkRenderers[w.walk];
+        showInlineError(r ? r.delBtn : delBtn, "Delete failed: " + e.message);
+      } finally {
+        f.deleting = false;
+        repaint(w.walk);
       }
     });
     const evalBtn = document.createElement("button");
     // A finished walk with no score yet is already queued by
     // scorePendingWalks() -- say so, rather than inviting a click that would
     // duplicate the work already in flight.
-    evalBtn.textContent = w.eval ? "Re-score"
-      : (w.finished && !w.evalFailed ? "Scoring…" : "Evaluate");
+    // Its label and state come from syncControls() below: "Scoring…" and
+    // disabled while the queue or a click has a score out for this walk
+    // (3.76 N2: it looked busy and was not, so a click paid a second judge
+    // run), "Re-score" once there is one, else "Evaluate".
     evalBtn.onclick = async function () {
-      const was = evalBtn.textContent;
-      evalBtn.disabled = true;
-      evalBtn.textContent = "Scoring…";  // the judge tier is several Bedrock calls
+      const f = flight(w.walk);
+      if (f.scoring || f.queued) return;
+      f.scoring = true;                    // the judge tier is several Bedrock calls
+      syncControls();
       try {
-        w.eval = await api("POST", "/recording/walks/" + encodeURIComponent(w.walk) + "/evaluate");
-        renderHead();
-        renderEvalDetail();
-        evalBtn.textContent = "Re-score";
+        live(w).eval = await api("POST", "/recording/walks/" + encodeURIComponent(w.walk) + "/evaluate");
+        loadSummary();
       } catch (e) {
-        showInlineError(evalBtn, "Evaluate failed: " + e.message);
-        evalBtn.textContent = was;
+        const r = walkRenderers[w.walk];
+        showInlineError(r ? r.evalBtn : evalBtn, "Evaluate failed: " + e.message);
       } finally {
-        evalBtn.disabled = false;
+        f.scoring = false;
+        repaint(w.walk);
       }
     };
 
@@ -515,7 +579,9 @@
     function noteKept(r) {
       if (r && r.score != null && r.last_unusable) {
         const pct = Math.round((r.last_unusable.coverage || 0) * 100);
-        showInlineError(replaySelect, "Only " + pct + "% of frames came back -- kept the earlier "
+        const row = walkRenderers[w.walk];
+        showInlineError(row ? row.replaySelect : replaySelect,
+          "Only " + pct + "% of frames came back -- kept the earlier "
           + (r.stale ? "(no longer current) result" : "score"));
       }
     }
@@ -524,9 +590,16 @@
       const parts = replaySelect.value.split("|");
       const modelId = parts[0];
       const promptVariant = parts[1] || "default";
-      replaySelect.disabled = true;
-      const was = replaySelect.options[replaySelect.selectedIndex].textContent;
-      replaySelect.options[replaySelect.selectedIndex].textContent = "Replaying…";
+      const f = flight(w.walk);
+      replaySelect.selectedIndex = 0;
+      if (f.replays) return;               // one out already (a rebuilt row)
+      f.replays += 1;
+      syncControls();
+      // The row on screen when an answer lands -- a search or Refresh may
+      // have rebuilt it since (3.76 N2: results and errors went to a
+      // detached row).
+      function row() { return walkRenderers[w.walk]; }
+      function note(msg) { const r = row(); showInlineError(r ? r.replaySelect : replaySelect, msg); }
       // What is stored now, so a result that lands after a lost response
       // can be told from an older one (3.64 C1). If even this read fails,
       // no older record can be told apart, so nothing is recovered.
@@ -537,11 +610,11 @@
       try {
         const r = await api("POST", "/recording/walks/" + encodeURIComponent(w.walk) + "/replay",
           { model_id: modelId, prompt_variant: promptVariant });
-        w.replays = (w.replays || []).filter(function (x) {
+        const cur = live(w);
+        cur.replays = (cur.replays || []).filter(function (x) {
           return !(x.model_id === r.model_id && (x.prompt_variant || "default") === (r.prompt_variant || "default"));
         });
-        w.replays.push(r);
-        renderReplays();
+        cur.replays.push(r);
         loadSummary();
         noteKept(r);
       } catch (e) {
@@ -555,16 +628,14 @@
         const recovered = (before === null || !lost) ? null
           : await pollForReplay(w, modelId, promptVariant, before);
         if (recovered) {
-          renderReplays();
           loadSummary();
           noteKept(recovered);
         } else {
-          showInlineError(replaySelect, "Replay failed: " + e.message);
+          note("Replay failed: " + e.message);
         }
       } finally {
-        replaySelect.options[replaySelect.selectedIndex].textContent = was;
-        replaySelect.selectedIndex = 0;
-        replaySelect.disabled = false;
+        f.replays -= 1;
+        repaint(w.walk);
       }
     };
     actions.appendChild(replaySelect);
@@ -671,11 +742,25 @@
     }
     renderReplays();
 
+    // Every control's state from what is out for this walk, so a rebuilt
+    // row starts as busy as the one it replaced.
+    function syncControls() {
+      const f = flight(w.walk);
+      const busyScoring = f.scoring || f.queued;
+      evalBtn.disabled = busyScoring;
+      evalBtn.textContent = busyScoring ? "Scoring…" : (w.eval ? "Re-score" : "Evaluate");
+      replaySelect.disabled = f.replays > 0;
+      replaySelect.options[0].textContent = f.replays > 0 ? "Replaying…" : "Replay with…";
+      delBtn.disabled = f.deleting;
+    }
+    syncControls();
+
     walkRenderers[w.walk] = {
       renderHead: renderHead,
       renderEvalDetail: renderEvalDetail,
-      markScored: function () { evalBtn.textContent = "Re-score"; },
       renderReplays: renderReplays,
+      repaint: function () { renderHead(); renderEvalDetail(); renderReplays(); syncControls(); },
+      evalBtn: evalBtn, replaySelect: replaySelect, delBtn: delBtn,
     };
 
     const framesEl = document.createElement("div");
@@ -702,8 +787,8 @@
       try {
         const detail = await ensureDetail();
         framesEl.innerHTML = "";
-        detail.frames.forEach(function (f, i) {
-          framesEl.appendChild(renderFrame(w, detail, i, el));
+        detail.frames.forEach(function (f) {
+          framesEl.appendChild(renderFrame(w, detail, f, el));
         });
       } catch (e) {
         framesEl.innerHTML = '<div class="empty">Failed to load frames: ' + escapeHtml(e.message) + "</div>";
@@ -715,8 +800,7 @@
     return el;
   }
 
-  function renderFrame(w, detail, index, walkEl) {
-    const f = detail.frames[index];
+  function renderFrame(w, detail, f, walkEl) {
     const entry = detail.byFile[f.file];
     const card = document.createElement("div");
     card.className = "frame";
@@ -727,7 +811,13 @@
       img.src = url;
       img._blobUrl = url;
     }).catch(function () {});
-    img.onclick = function () { openSlideshow(w, detail, index); };
+    // Its place looked up at the tap, not kept from when it was drawn (3.76
+    // N2: after a frame delete every later card opened the next frame, and
+    // the last one threw).
+    img.onclick = function () {
+      const index = detail.frames.findIndex(function (x) { return x.file === f.file; });
+      if (index >= 0) openSlideshow(w, detail, index);
+    };
     card.appendChild(img);
 
     const body = document.createElement("div");
@@ -737,8 +827,10 @@
       html += '<div class="frame-action">' + escapeHtml(entry.navigate.action || "?") + "</div>";
       if (entry.navigate.model_id) {
         const usage = entry.navigate.usage || {};
+        // Escaped like every other stored field (3.76 N2: a frame posted under
+        // the brain's secret ran script here, in the page holding this one's).
         const tokens = (usage.input_tokens != null && usage.output_tokens != null)
-          ? " &middot; " + usage.input_tokens + " in / " + usage.output_tokens + " out"
+          ? " &middot; " + escapeHtml(usage.input_tokens) + " in / " + escapeHtml(usage.output_tokens) + " out"
           : "";
         html += '<div class="frame-model">' + escapeHtml(entry.navigate.model_id) + tokens + "</div>";
       }
@@ -783,18 +875,39 @@
     return card;
   }
 
-  async function downloadWalk(walk) {
-    const res = await fetch("/recording/walks/" + encodeURIComponent(walk) + "/download", { headers: headers() });
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
+  function saveFrom(href, name) {
     const a = document.createElement("a");
-    a.href = url;
-    a.download = walk + ".zip";
+    a.href = href;
+    a.download = name;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+  }
+
+  // `?link=1` (3.76 N2): on S3 the server answered a 307 to a presigned URL,
+  // which a fetch() carrying the secret header follows as a cross-origin
+  // CORS request -- the bucket has no CORS rules, so it failed and said
+  // nothing. Now the server hands the link back and the browser just opens
+  // it (the URL is its own credential); locally the zip comes inline.
+  async function downloadWalk(walk, link) {
+    try {
+      const res = await fetch("/recording/walks/" + encodeURIComponent(walk) + "/download?link=1",
+        { headers: headers() });
+      if (!res.ok) {
+        const body = await res.json().catch(function () { return {}; });
+        throw new Error(typeof body.detail === "string" ? body.detail : "HTTP " + res.status);
+      }
+      if ((res.headers.get("content-type") || "").includes("application/json")) {
+        const body = await res.json();
+        saveFrom(body.url, walk + ".zip");
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      saveFrom(url, walk + ".zip");
+      setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+    } catch (e) {
+      showInlineError(link, "Download failed: " + e.message);
+    }
   }
 
   // --- Slideshow -------------------------------------------------------
@@ -807,11 +920,24 @@
   const slideshowPlayBtn = document.getElementById("slideshow-play");
   let slideshowState = null; // {walk, detail, index, timer}
 
+  let slideSeq = 0;
+  function showSlideImage(url) {
+    if (slideshowImg._blobUrl) URL.revokeObjectURL(slideshowImg._blobUrl);
+    slideshowImg._blobUrl = url;
+    slideshowImg.src = url || "";
+  }
+
   function renderSlide() {
     const s = slideshowState;
     const f = s.detail.frames[s.index];
     const entry = s.detail.byFile[f.file];
-    frameBlobUrl(s.walk.walk, f.file).then(function (url) { slideshowImg.src = url; }).catch(function () {});
+    // Only the newest step's picture (3.76 N2: a slow frame landed under the
+    // next frame's caption).
+    const seq = ++slideSeq;
+    frameBlobUrl(s.walk.walk, f.file).then(function (url) {
+      if (seq === slideSeq && slideshowState === s) showSlideImage(url);
+      else URL.revokeObjectURL(url);
+    }).catch(function () {});
     slideshowAction.textContent = entry && entry.navigate ? (entry.navigate.action || "?") : "";
     if (entry && entry.navigate && entry.navigate.model_id) {
       const usage = entry.navigate.usage || {};
@@ -834,6 +960,8 @@
   function closeSlideshow() {
     if (slideshowState && slideshowState.timer) clearInterval(slideshowState.timer);
     slideshowState = null;
+    slideSeq += 1;
+    showSlideImage(null);
     slideshowEl.classList.remove("show");
     slideshowPlayBtn.textContent = "Play";
   }
@@ -916,19 +1044,24 @@
   sortEl.onchange = applyFilterSort;
 
   btnConnect.onclick = function () {
-    secret = secretEl.value.trim();
-    try { localStorage.setItem(SECRET_KEY, secret); } catch (e) { /* private mode */ }
+    const tried = secretEl.value.trim();
+    const previous = secret;
+    secret = tried;
     setStatus(connStatusEl, "Connecting…");
     // /recording/walks, not /health -- /health is deliberately unauthenticated
     // (same reasoning as robot/server.py's), so it can't tell a right secret
     // from a wrong one. This is also the first real data load, not just a check.
     api("GET", "/recording/walks").then(function (data) {
+      // Kept only once it worked (3.76 N2), as metrics.js does: a mistyped
+      // secret replaced the saved one and served the old list with it.
+      try { localStorage.setItem(SECRET_KEY, tried); } catch (e) { /* private mode */ }
       setStatus(connStatusEl, "Connected.", "ok");
       btnRefresh.disabled = false;
       searchEl.disabled = false;
       sortEl.disabled = false;
       onWalksLoaded(data);
     }).catch(function (e) {
+      if (secret === tried) secret = previous;
       setStatus(connStatusEl, "Failed: " + e.message, "err");
     });
   };

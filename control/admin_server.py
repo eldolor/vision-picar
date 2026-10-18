@@ -524,7 +524,7 @@ def create_app(config_path=None, store=None) -> FastAPI:
         return Response(content=store.read_bytes(walk, filename), media_type=media_type)
 
     @app.get("/recording/walks/{walk}/download", dependencies=[Depends(require_secret)])
-    async def download_walk(walk: str):
+    async def download_walk(walk: str, link: bool = False):
         _require_walk(walk)
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -538,6 +538,12 @@ def create_app(config_path=None, store=None) -> FastAPI:
         # to 8.64MB and 6.68MB, so proxying them through is already broken.
         # Backend decides, not size -- see WalkStore.download_url().
         url = store.download_url(f"{walk}.zip", data, "application/zip")
+        if url and link:
+            # 3.76 N2: the console's fetch() carries the secret header, and a
+            # 307 to the bucket turned it into a cross-origin CORS request the
+            # bucket (no CORS rules) refused. Asked for a link, it gets one
+            # and opens it itself; the presigned URL is its own credential.
+            return {"url": url}
         if url:
             return RedirectResponse(url, status_code=307)
         return Response(

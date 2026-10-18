@@ -70,7 +70,7 @@ explore's decisions were missing from every live run before 3.45.
 |---|---|
 | `control/metrics_client.py` | `row_for(status, git_revision=, config=, walk=)` builds a row from `MissionRunner.status()`; `started_at` is `finished_at` less the status's `budget.elapsed_s` (it was always null before 3.76 F13). `ship_run()` POSTs it and never raises. `ship_run_async()` does it on a daemon thread, which is how "off the mission's path" is met |
 | `control/metrics_routes.py` | `register_metrics_routes(app, store, require_secret)`, mounted by `control/admin_server.py` and so by the walks Lambda |
-| `control/metrics.html`, `control/metrics.js` | The dashboard, served at `/metrics` from the static bucket. Every stored value is escaped before it reaches the page (3.76 F14: a mission's target, typed by a person, ran as script in the page that holds the walks secret) |
+| `control/metrics.html`, `control/metrics.js` | The dashboard, served at `/metrics` from the static bucket. Every stored value is escaped before it reaches the page (3.76 F14: a mission's target, typed by a person, ran as script in the page that holds the walks secret). Only the newest load paints, and an error clears the last window's numbers (3.76 N2) |
 
 `MissionRunner._ship_metrics()` (`control/mission_runner.py`) calls the
 shipper last, after the mission has ended.
