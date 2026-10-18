@@ -521,8 +521,18 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   never seen), the env banner scrolled every tab 2 px sideways, iOS
   capitalised a hand-typed secret, the reduced-motion countdown, the
   portrait action badge over the telemetry (and, in round 1, the chevron),
-  home-screen insets. Deploy with the same `sync.sh`. Next: P1-P3.
-  Handoff:
+  home-screen insets. Deploy with the same `sync.sh`. **P1 (the Jetson
+  tools), merged 2026-10-18:** 12 fixed -- `bench_local_vlm.sh` installed,
+  then DELETED, the production `picar-local-vlm` unit and rewrote its env
+  file (now its own `picar-local-vlm-bench`); README's G4 left `picar-ros`
+  restarting at every boot, and the headroom harnesses measured it in place
+  of their own (they now refuse a busy :8090); OOM kills counted 3x; the
+  identity harness's perception p90 outside its window; secrets redacted
+  from the committed memory samples. No recorded number moved. `tegrastats`
+  on JetPack 6 prints no throttling: "no throttling" rests on temperature.
+  **For the user:** check `~/.vision-picar-local-vlm.env` on the board
+  before 3.80 E (the old bench may have left its driver-log path there).
+  Next: P2-P3. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
