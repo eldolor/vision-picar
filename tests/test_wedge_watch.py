@@ -216,12 +216,25 @@ def test_the_mask_draws_each_disc_and_nothing_else():
     marked = [((i + 0.5) * res + m["origin_x_m"], (j + 0.5) * res + m["origin_y_m"])
               for j in range(m["height"]) for i in range(w) if m["data"][j * w + i] == 100]
     assert marked and all(math.hypot(x - 1.0, y + 2.0) <= 0.15 for x, y in marked)
-    assert set(m["data"]) == {0, 100}
+    assert set(m["data"]) == {-1, 100}
     assert len(marked) == pytest.approx(math.pi * 0.15 ** 2 / res ** 2, rel=0.3)
 
 
 def test_an_empty_set_is_still_a_mask_so_it_replaces_the_last():
-    assert keepout.mask([])["data"] == [0]
+    assert keepout.mask([])["data"] == [-1]
+
+
+def test_the_mask_leaves_every_cell_outside_a_disc_unknown():
+    """3.76 K5: nav2's KeepoutFilter writes any mask cell that is not
+    unknown over an unknown master cell. A 0 outside the discs made every
+    unmapped cell in the mask's box free -- under NavFn's allow_unknown the
+    cheapest terrain there is (unknown costs 253), so plans ran through
+    unmapped space beside the wedge the spot was marked for."""
+    spots = keepout.parse([{"x_m": 1.0, "y_m": -2.0, "r_m": 0.15, "ttl_s": 5},
+                           {"x_m": 3.0, "y_m": 1.0, "r_m": 0.15, "ttl_s": 5}], now=0.0)
+    m = keepout.mask(spots)
+    assert 0 not in m["data"], "free cells outside the discs overwrite unknown space"
+    assert keepout.mask([])["data"] != [0]
 
 
 def test_spots_expire_in_the_bridge():

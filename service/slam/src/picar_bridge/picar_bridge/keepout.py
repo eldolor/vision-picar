@@ -2,8 +2,10 @@
 
 The robot server decides where nav2 must not plan (robot/wedge_watch.py);
 this only draws those discs into an OccupancyGrid for nav2's stock
-KeepoutFilter: 100 inside a disc (lethal to the robot's centre), 0
-elsewhere. Kept out of bridge.py, which imports rclpy, so it is tested on a
+KeepoutFilter: 100 inside a disc (lethal to the robot's centre), -1
+(unknown) elsewhere, which the filter skips -- it writes any other value
+over an unknown master cell, so a 0 made unmapped space free (3.76 K5).
+Kept out of bridge.py, which imports rclpy, so it is tested on a
 laptop (tests/test_wedge_watch.py).
 """
 
@@ -11,6 +13,7 @@ import math
 
 RES_M = 0.05
 MARGIN_M = 0.10
+UNKNOWN = -1      # nav_msgs/OccupancyGrid's unknown: the filter leaves the cell as it was
 
 
 def parse(spots, now: float) -> list:
@@ -30,18 +33,18 @@ def live(spots: list, now: float) -> list:
 
 
 def mask(spots: list, res: float = RES_M) -> dict:
-    """One grid that covers every disc (a single free cell when there are
-    none, so a cleared set still replaces the last mask). Row-major from
+    """One grid that covers every disc (a single unknown cell when there
+    are none, so a cleared set still replaces the last mask). Row-major from
     the origin, +x then +y, as nav_msgs/OccupancyGrid."""
     if not spots:
         return {"origin_x_m": 0.0, "origin_y_m": 0.0, "resolution_m": res,
-                "width": 1, "height": 1, "data": [0]}
+                "width": 1, "height": 1, "data": [UNKNOWN]}
     x0 = min(s["x_m"] - s["r_m"] for s in spots) - MARGIN_M
     y0 = min(s["y_m"] - s["r_m"] for s in spots) - MARGIN_M
     x1 = max(s["x_m"] + s["r_m"] for s in spots) + MARGIN_M
     y1 = max(s["y_m"] + s["r_m"] for s in spots) + MARGIN_M
     w, h = int(math.ceil((x1 - x0) / res)), int(math.ceil((y1 - y0) / res))
-    data = [0] * (w * h)
+    data = [UNKNOWN] * (w * h)
     for s in spots:
         r2 = s["r_m"] ** 2
         i0, i1 = int((s["x_m"] - s["r_m"] - x0) / res), int((s["x_m"] + s["r_m"] - x0) / res)
