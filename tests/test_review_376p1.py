@@ -44,7 +44,7 @@ def test_the_local_vlm_bench_leaves_the_production_unit_alone():
 def test_the_local_vlm_bench_stops_and_restores_the_production_service():
     code = _code("bench_local_vlm.sh")
     assert re.search(r"systemctl stop [^\n]*picar-local-vlm\b(?!-)", code)
-    assert '[ "$PROD_WAS" = active ] && sudo systemctl start picar-local-vlm' in code
+    assert 'case "$PROD_WAS" in active|activating) sudo systemctl start picar-local-vlm' in code
     assert '"sport = :8005"' in code                         # refuses another VLM
 
 
@@ -127,3 +127,63 @@ def test_a_secret_on_a_command_line_is_not_recorded():
     assert "s3cret" not in memory_account.redact(cmd)
     assert "localhost:8000/wheels" in memory_account.redact(cmd)
     assert "redact(" in (JETSON / "memory_account.py").read_text().split("def processes")[1]
+
+
+# ---------- the fixes' round 1 ----------
+
+
+import threading  # noqa: E402
+
+
+def test_the_headroom_runs_put_a_running_vlm_back():
+    """Round 1 (Thermos): the identity run now stopped `picar-local-vlm`
+    and nothing started it again (installed, not enabled), so identity fell
+    to the cloud after every bench."""
+    for name in ("headroom_identity.sh", "headroom_mission.sh"):
+        code = _code(name)
+        assert code.index("VLM_WAS=$(systemctl is-active picar-local-vlm") < code.index(
+            "systemctl isolate multi-user.target"), name
+        assert 'case "$VLM_WAS" in active|activating) sudo systemctl start picar-local-vlm' in code
+
+
+def test_a_missing_ss_refuses_rather_than_passes():
+    """Round 1 (Thermos): with no `ss`, every busy-port check passed."""
+    for name in ("bench_local_vlm.sh", "headroom_identity.sh", "headroom_mission.sh"):
+        for line in (l for l in _code(name).splitlines() if '"sport = :' in l):
+            assert "! command -v ss >/dev/null ||" in line, (name, line)
+
+
+def _serve_once(reply: bytes):
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    s.listen(1)
+
+    def run():
+        c, _ = s.accept()
+        c.recv(65536)
+        c.sendall(reply)
+        c.close()
+        s.close()
+    threading.Thread(target=run, daemon=True).start()
+    return f"http://127.0.0.1:{s.getsockname()[1]}"
+
+
+def test_a_garbled_reply_is_one_failed_frame():
+    """Round 1 (Thermos): `http.client`'s own errors (a garbage status line,
+    a short body) are not `OSError` and still ended the run."""
+    from tools.jetson.bench_local_vlm import post
+    for reply in (b"garbage\r\n\r\n",
+                  b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{\"status\": "):
+        got, _ = post(_serve_once(reply), b"\xff\xd8", "cup", 0.5, "x")
+        assert got["status"].startswith("error") and got["score"] is None, (reply, got)
+
+
+def test_a_reply_of_the_wrong_shape_is_one_failed_frame():
+    """Round 1 (Thermos): `{"status": [..]}` or a string score passed
+    through and crashed the summary."""
+    from tools.jetson.bench_local_vlm import post
+    for body in (b'{"status": ["a"], "score": 0.5}', b'{"status": "answered", "score": "0.9"}',
+                 b'{"status": "answered", "score": true}'):
+        reply = b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n%s" % (len(body), body)
+        got, _ = post(_serve_once(reply), b"\xff\xd8", "cup", 0.5, "x")
+        assert got == {"status": "error malformed reply", "score": None}, (body, got)

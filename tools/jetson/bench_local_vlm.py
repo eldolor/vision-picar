@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import os
 import statistics
@@ -45,12 +46,14 @@ def post(url: str, jpeg: bytes, target: str, deadline_s: float, secret: str) -> 
             got = json.loads(r.read())
     except urllib.error.HTTPError as e:
         got = {"status": f"http {e.code}", "score": None}
-    except (urllib.error.URLError, OSError, ValueError) as e:
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as e:
         # One refused, timed-out or garbled call is one failed frame, not the
         # end of a 299-frame run with nothing written (3.76 P1).
         got = {"status": f"error {type(e).__name__}", "score": None}
-    if not isinstance(got, dict) or "status" not in got:
-        got = {"status": "error no status", "score": None}
+    score = got.get("score") if isinstance(got, dict) else None
+    if (not isinstance(got, dict) or not isinstance(got.get("status"), str)
+            or isinstance(score, bool) or not (score is None or isinstance(score, (int, float)))):
+        got = {"status": "error malformed reply", "score": None}
     return got, (time.perf_counter() - t0) * 1000
 
 
@@ -126,7 +129,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover -- ne
         score = got.get("score")
         if got["status"] == "unparsed":
             score = 0.0  # 3.78 scored a reply that never opened a list as 0
-        ms.append(took)
+        if not got["status"].startswith("error"):
+            ms.append(took)      # a refused call's 1 ms is not the service's latency
         records.append({"walk": w.name, "frame": p.name, "visible": vis,
                         "status": ("unavailable" if score is None
                                    else "detected" if score >= 0.5 else "absent"),

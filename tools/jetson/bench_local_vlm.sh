@@ -44,7 +44,7 @@ teardown() {
   sudo rm -f "$UNIT" "$ENVF"; sudo systemctl daemon-reload
   sudo systemctl isolate graphical.target; sleep 5
   sudo systemctl start picar-stack picar-ngrok
-  [ "$PROD_WAS" = active ] && sudo systemctl start picar-local-vlm
+  case "$PROD_WAS" in active|activating) sudo systemctl start picar-local-vlm;; esac
   log "torn down; desktop $(systemctl is-active gdm); twin units $(systemctl is-active picar-stack) $(systemctl is-active picar-ngrok)"
 }
 trap teardown EXIT
@@ -52,7 +52,7 @@ trap teardown EXIT
 sudo systemctl isolate multi-user.target; sleep 5
 sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3
 # :8005 must be free, or the ready checks below would pass on another VLM.
-ss -ltnH "sport = :8005" | grep -q . && { log "STOP: :8005 is already in use"; exit 2; }
+{ ! command -v ss >/dev/null || ss -ltnH "sport = :8005" | grep -q .; } && { log "STOP: :8005 is already in use"; exit 2; }
 log "rev $(git rev-parse --short HEAD) $(sudo nvpmodel -q | head -1); desktop $(systemctl is-active gdm); twin $(systemctl is-active picar-stack)"
 
 ( umask 077; printf 'LOCAL_VLM_ENGINES=%s\nLOCAL_VLM_EDGELLM=%s\nAPP_SHARED_SECRET=%s\nLOCAL_VLM_DRIVER_LOG=%s\n' \

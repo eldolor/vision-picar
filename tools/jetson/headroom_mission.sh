@@ -84,9 +84,14 @@ teardown() {
   pids="$(for p in 8000 8001 8002 8003 8004 8080; do lsof -nP -tiTCP:$p -sTCP:LISTEN; done)"
   [ -n "$pids" ] && kill -9 $pids 2>/dev/null
   sudo systemctl isolate graphical.target
+  # The production VLM as found (round 1: installed, not enabled -- stopped
+  # here, nothing started it again, and identity fell to the cloud).
+  case "$VLM_WAS" in active|activating) sudo systemctl start picar-local-vlm;; esac
   echo "== torn down; desktop: $(systemctl is-active gdm)" | tee -a "$OUT/run.log"
 }
 PERC=; MEM=; WHL=; NAV=; VLMP=
+# Read before the isolate, which itself stops a unit that is not enabled.
+VLM_WAS=$(systemctl is-active picar-local-vlm 2>/dev/null)
 trap teardown EXIT
 
 sudo systemctl isolate multi-user.target; sleep 5
@@ -105,7 +110,7 @@ fi
 if [ "$VLM" = service ]; then
   # :8005 must be free, or the ready check below would pass on someone
   # else's VLM (another session's hand-started one).
-  ss -ltnH "sport = :8005" | grep -q . && { echo "STOP: :8005 is already in use" | tee -a "$OUT/run.log"; exit 2; }
+  { ! command -v ss >/dev/null || ss -ltnH "sport = :8005" | grep -q .; } && { echo "STOP: :8005 is already in use" | tee -a "$OUT/run.log"; exit 2; }
   # The unit's own settings, by hand: same engines, same secret, OOM first.
   LOCAL_VLM_ENGINES="$ENGINES" LOCAL_VLM_EDGELLM="$EDGELLM" \
     python -m service.local_vlm.server > "$OUT/local_vlm.log" 2>&1 &
@@ -128,7 +133,7 @@ fi
 # :8090 must be free (3.76 P1): a container left from README's G4 steps
 # (`--restart unless-stopped`) answered "bridge up" for this run's, so the
 # run measured the wrong stack -- and its memory.
-ss -ltnH "sport = :8090" | grep -q . && { echo "STOP: :8090 is already in use ($(docker ps --format '{{.Names}}' | tr '\n' ' '))" | tee -a "$OUT/run.log"; exit 2; }
+{ ! command -v ss >/dev/null || ss -ltnH "sport = :8090" | grep -q .; } && { echo "STOP: :8090 is already in use ($(docker ps --format '{{.Names}}' | tr '\n' ' '))" | tee -a "$OUT/run.log"; exit 2; }
 docker run -d --name "$NAME" --network host "${ROS_MOUNT[@]}" \
   -e APP_SHARED_SECRET -e ROBOT_URL=http://127.0.0.1:8000 -e BRAIN_URL=http://127.0.0.1:8001/brain \
   "$IMAGE" ros2 launch picar_bringup picar.launch.py >/dev/null
