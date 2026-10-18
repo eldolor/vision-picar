@@ -1066,6 +1066,14 @@ class TieredVision:
         absent, to the cloud about the same frame). The pacing counts are
         reset when a DECIDED answer lands (`_apply_local`), not here: an
         unable answer leaves the question open."""
+        with self._local_lock:
+            arrival_out = self._local_inflight is not None
+        if arrival_out:
+            # The arrival's identity call (one the runner gave up on, still
+            # out) holds the VLM: a question now comes back `busy` and is
+            # counted unable, and two of those bought a paid cloud call
+            # (3.76 K3). Not asked; still open, so asked once it ends.
+            return self._local_scene(perception, note="local VLM busy with the arrival check")
         self._count("local_triggers", trigger)
         q = _Question(
             trigger=trigger, epoch=epoch,
@@ -1172,6 +1180,10 @@ class TieredVision:
         logger.warning("cloud call failed (not fatal under an explore search): %s", exc)
         with self._stats_lock:
             self.stats.cloud_errors += 1
+        # A cloud that gave no answer is no better than a spent cap: the
+        # free local tier gets the question back (3.76 K3). Only an answer
+        # restarted the count, so offline the local VLM was never asked again.
+        self._frame_unable = 0
 
     def _ask_direction(self, frame: dict, q: "_Question", got: dict) -> Optional[dict]:
         """3.80.F, on the worker: the direction question about the same
