@@ -246,8 +246,12 @@ class Photon:
     native prompts, `query` for any other text (no scores: binary / words)."""
 
     def __init__(self, model_id, device):
+        import os
         import moondream as md
-        self.model = md.vl(model=model_id, local=True)
+        # $PHOTON_RUNTIME: Photon's runtime knobs as JSON (e.g. a smaller KV
+        # cache), recorded per row; unset is the vendor's defaults.
+        self.model = md.vl(model=model_id, local=True,
+                           **json.loads(os.environ.get("PHOTON_RUNTIME") or "{}"))
 
     def answer(self, image, text, max_tokens):
         hit = native_target("photon", text)

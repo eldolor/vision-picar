@@ -7,7 +7,7 @@ NAME=$1; SPEC=$2; ARM=$3; NAT=${4:-}
 cd "$(dirname "$0")/../../.."
 R=evaluations/tiered-380/R
 N=(); [ "$ARM" = N ] && N=(--native "$NAT")
-.venv/bin/python $R/identity.py --arm $ARM "${N[@]}" --server $R/nsrv.sh --model "$SPEC" --mmproj none \
+.venv/bin/python $R/identity.py --arm $ARM ${N[@]+"${N[@]}"} --server $R/nsrv.sh --model "$SPEC" --mmproj none \
   --recordings /Users/anshugaind/vision-picar/recordings --port 9599 \
   --walk blue-bottle-20260907-142454 --walk blue-bottle-20260907-185007 \
   --walk blue-shoes-20260907-152528 --walk red-backpack-20260907-144856 \
