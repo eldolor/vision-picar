@@ -5,3 +5,8 @@ f73a9fc7fb024f2405af6970c5945c3d3bfe160757119acf8ef335f1f10a4235  Eagle2-2B/mode
 7715423d6549bf1e71188bdd84f4ac960cc0597886af24a5ef7b66f128660685  fc-Florence-2-large/model.safetensors
 15efda22df32db0a18bf7ddc187877ea3a9d19ea2fdb7dc9777c5c728e5711b7  NVILA-Lite-2B-hf/model.safetensors
 e2f6e3c372f4ef76afb5e9e28ec56679944fcc3b4f2ce2ebda8b21264e96eb2f  RoboBrain2.5-4B/model.safetensors
+# allenai/Molmo2-4B (fp32 as published; match HF LFS oids 2026-10-19), converted to fp16 on the board by bench-380R/molmo_fp16.py
+065ed844edb74cc3f3992415dc412cfae4c2f6e324de76dc84fffe3a652f6fd3  Molmo2-4B-fp32/model-00001-of-00004.safetensors
+ac1506897468e69d5af2f46127d30274eecb71c60745e7d27ea0319a27addbb4  Molmo2-4B-fp32/model-00002-of-00004.safetensors
+da71a15c961f92361b64c3b45f5465d370c9992f032f0f4adf544d0b208ed573  Molmo2-4B-fp32/model-00003-of-00004.safetensors
+519e694862a7d6d82e539424733f6f55fd8118c3c37e328c2dd942a6d4a16120  Molmo2-4B-fp32/model-00004-of-00004.safetensors
