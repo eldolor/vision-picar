@@ -334,9 +334,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   the goal timeout itself) and one hall run at 150.2 s; laundry 6 marks
   (bar 5). `nav2.yaml` now has the keepout filter; `vision-picar-ros:latest`
   rebuilt from `dev` 778846d on 2026-10-18.
-* **Review of the code written before the review rule (3.76): batches
-  A-I (the risky files) merged by 2026-10-14, J and K on 2026-10-18;
-  L1-P3 (all non-risky code) to go.** Both reviewers on whole files, risky files only,
+* **Review of the code written before the review rule (3.76): done 2026-10-18,
+  every batch A-P3 merged; what waits on the user is the plan's closing list.** Both reviewers on whole files, risky files only,
   every confirmed bug fixed (the user, 2026-10-12). A (`safety.py`,
   `server.py`): 5 fixed -- a verb longer than the watchdog lost its
   driver's authority, the wheel loop could overwrite a stop, lost feedback
