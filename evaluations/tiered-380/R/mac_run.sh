@@ -12,9 +12,12 @@ N=(); [ "$ARM" = N ] && N=(--native "$NAT")
   --walk blue-bottle-20260907-142454 --walk blue-bottle-20260907-185007 \
   --walk blue-shoes-20260907-152528 --walk red-backpack-20260907-144856 \
   --stop-at-decision --out $R/mac/$NAME-$ARM.json > $R/mac/$NAME-$ARM.log 2>&1
-echo "$(date +%T) $NAME identity $ARM exit $?" >> $R/mac/done.log
+rc=$?
+echo "$(date +%T) $NAME identity $ARM exit $rc" >> $R/mac/done.log
 $R/nsrv.sh -m "$SPEC" --port 9598 > $R/mac/$NAME-server.log 2>&1 &
-for i in $(seq 300); do curl -s localhost:9598/health | grep -q ok && break; sleep 2; done
+ok=; for i in $(seq 300); do curl -s localhost:9598/health | grep -q ok && ok=1 && break; sleep 2; done
+[ -n "$ok" ] || { echo "$(date +%T) $NAME server never healthy" >> $R/mac/done.log; pkill -f "native_server.py.*9598"; exit 1; }
 .venv/bin/python $R/steer.py mac/$NAME http://127.0.0.1:9598 ${NAT:+--native $NAT} > $R/mac/$NAME.run.log 2>&1
-echo "$(date +%T) $NAME steer exit $?" >> $R/mac/done.log
+rc=$?
+echo "$(date +%T) $NAME steer exit $rc" >> $R/mac/done.log
 pkill -f "native_server.py.*9598"

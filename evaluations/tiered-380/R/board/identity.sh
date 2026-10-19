@@ -12,4 +12,5 @@ N=(); [ "$2" = N ] && N=(--native "$3")
   --walk blue-bottle-20260907-142454 --walk blue-bottle-20260907-185007 \
   --walk blue-shoes-20260907-152528 --walk red-backpack-20260907-144856 \
   --stop-at-decision --out ~/out-380R/$1-$2.json > ~/out-380R/$1-$2.log 2>&1
-echo "$(date +%T) $1 arm $2 exit $?" >> ~/out-380R/ident.done
+rc=$?
+echo "$(date +%T) $1 arm $2 exit $rc" >> ~/out-380R/ident.done

@@ -8,7 +8,8 @@ with the prompt and the reader swapped, as `M/llama_identity.py` does:
   `prompts.json`, read by `readers.p_native`.
 `--server` is llama-server (a GGUF) or `nsrv.sh` (`native_server.py`). On a
 machine without /proc (the Mac rows) memory reads 0: those rows are never
-judged on R3.
+judged on R3. The output's `config` is relabelled for native_server and Mac
+rows (`relabel`).
 
     python evaluations/tiered-380/R/identity.py --arm N --native locateanything:box <bench args...>
 """
@@ -45,9 +46,27 @@ def main(argv):
         bench.PROMPT = JSON_PROMPT
         bench.p_localised = readers.p_box
         bench.decision_reached = readers.decided
-    if not Path("/proc/meminfo").exists():
+    mac = not Path("/proc/meminfo").exists()
+    if mac:
         bench.mem_available_mb = lambda: 0.0
-    return bench.main(argv)
+    rc = bench.main(argv)
+    out = dict(zip(argv, argv[1:])).get("--out")
+    if out and Path(out).exists():
+        relabel(Path(out), dict(zip(argv, argv[1:])).get("--server", ""), mac)
+    return rc
+
+
+def relabel(path, server, mac):
+    """The bench writes its own board/llama.cpp labels; a native_server or Mac
+    row says what it really ran on (P24), numbers untouched."""
+    d = json.loads(path.read_text())
+    c = d["config"]
+    if server.endswith("nsrv.sh"):
+        c["runtime"] = "native_server.py (torch)"
+        c["detector"] = c["detector"].replace("llama.cpp:", "native:", 1)
+    if mac:
+        c["device"] = "mac-m1-mps"
+    path.write_text(json.dumps(d, indent=1))
 
 
 if __name__ == "__main__":
