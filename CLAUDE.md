@@ -218,6 +218,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     56.1% vs Opus 4.5's 67.9%, recall 100%; the teal bin). Opus 4.5 stays
     `/navigate`'s default. Astra's Bedrock usage omits image tokens, so
     its reported cost is a floor.
+  * R (2026-10-19, on dev at `061637f`): every grounding VLM from the
+    2026-10-18 web check; none replaces VE on R1-R3. Bonsai 2 2B fails
+    identity by one false positive (94.5%, bar 95), meets steering 48/60
+    and memory; PaliGemma 2 (Mac) meets identity (97.4%, 0/34 teal) but is
+    6.1 GB; Florence-2 steers best (57/60, 0.58 s for -base) but always
+    draws a box. Photon, RoboRefer, the Moondream GGUF and Moondream 3.1
+    do not load; Molmo2 not run (Mac disk), open for the user. The board's
+    zram has been off since 2026-10-17 (`nvzramconfig.service` failed).
   * O: the local VLM's box finishes the approach and the arrival when
     perception is silent, and only the cloud may confirm such an arrival
     (never the local tier). Blind perception, 21 houses: 17 at pace 1, 12 at
