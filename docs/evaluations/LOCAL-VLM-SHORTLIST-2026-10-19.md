@@ -51,6 +51,8 @@ Measured and failed clearly:
 Would not load at all:
 * Moondream 2 / 3.1 under Photon: needs CUDA 12.8; JetPack 6.2.1 ships 12.6.
 * RoboRefer-2B: out of memory at load.
+* Molmo2-4B: 9.1 GB at fp16, more than the board's memory; on the 16 GB
+  Mac it hung the machine (3.80.R).
 
 ## Rover-day notes
 

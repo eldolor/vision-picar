@@ -224,7 +224,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     and memory; PaliGemma 2 (Mac) meets identity (97.4%, 0/34 teal) but is
     6.1 GB; Florence-2 steers best (57/60, 0.58 s for -base) but always
     draws a box. Photon, RoboRefer, the Moondream GGUF and Moondream 3.1
-    do not load; Molmo2 not run (Mac disk), open for the user. The board's
+    do not load; Molmo2 (9.1 GB fp16) hung the 16 GB Mac into a kernel
+    panic, not run. The board's
     zram has been off since 2026-10-17 (`nvzramconfig.service` failed).
   * O: the local VLM's box finishes the approach and the arrival when
     perception is silent, and only the cloud may confirm such an arrival
