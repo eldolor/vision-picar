@@ -2,7 +2,6 @@
  "config": {
   "detector": "native:NVILA-Lite-2B-hf",
   "mmproj": "none",
-  "llama_cpp": "5eb4fa96",
   "device": "mac-m1-mps",
   "runtime": "native_server.py (torch)",
   "prompt": "Output the bounding box of the {target} as JSON: [{{\"bbox_2d\": [x1, y1, x2, y2]}}]. If it is not visible, output []. Output JSON only.",
@@ -11,7 +10,8 @@
   "metric": "confidence",
   "cache_ram_mib": 0,
   "stop_at_decision": true,
-  "extra_body": {}
+  "extra_body": {},
+  "harness_commit": "5eb4fa96"
  },
  "records": [
   {

@@ -2,7 +2,6 @@
  "config": {
   "detector": "native:fc-Florence-2-base",
   "mmproj": "none",
-  "llama_cpp": "fcea78d",
   "device": "jetson-orin-nano-super-15w",
   "runtime": "native_server.py (torch)",
   "prompt": "<CAPTION_TO_PHRASE_GROUNDING>{target}",
@@ -11,7 +10,8 @@
   "metric": "confidence",
   "cache_ram_mib": 0,
   "stop_at_decision": true,
-  "extra_body": {}
+  "extra_body": {},
+  "harness_commit": "fcea78d"
  },
  "records": [
   {

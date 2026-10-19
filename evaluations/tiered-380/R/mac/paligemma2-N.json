@@ -2,7 +2,6 @@
  "config": {
   "detector": "native:paligemma2-3b-mix-448",
   "mmproj": "none",
-  "llama_cpp": "552fcc04",
   "device": "mac-m1-mps",
   "runtime": "native_server.py (torch)",
   "prompt": "detect {target}",
@@ -11,7 +10,8 @@
   "metric": "confidence",
   "cache_ram_mib": 0,
   "stop_at_decision": true,
-  "extra_body": {}
+  "extra_body": {},
+  "harness_commit": "552fcc04"
  },
  "records": [
   {

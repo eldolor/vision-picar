@@ -64,6 +64,8 @@ def relabel(path, server, mac):
     if server.endswith("nsrv.sh"):
         c["runtime"] = "native_server.py (torch)"
         c["detector"] = c["detector"].replace("llama.cpp:", "native:", 1)
+        if "llama_cpp" in c:   # the bench's field holds this repo's commit here
+            c["harness_commit"] = c.pop("llama_cpp")
     if mac:
         c["device"] = "mac-m1-mps"
     path.write_text(json.dumps(d, indent=1))
