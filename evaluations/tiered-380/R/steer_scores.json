@@ -803,6 +803,193 @@
    }
   }
  },
+ "Mac eagle2: direction": {
+  "rows": 142,
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 60,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 28,
+    "acc_all": 0.467,
+    "acc_answered": 0.467,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 32,
+    "answers": {
+     "FORWARD": 60
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 40,
+    "consistent": 40,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "FORWARD": 40
+   }
+  },
+  "S3": {
+   "mirror": {
+    "pairs": 42,
+    "consistent": 42,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "all": {
+    "n": 42,
+    "answered": 42,
+    "right": 7,
+    "acc_all": 0.167,
+    "acc_answered": 0.167,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 35,
+    "answers": {
+     "FORWARD": 42
+    }
+   }
+  }
+ },
+ "Mac eagle2: box_answer": {
+  "rows": 142,
+  "S1": {
+   "mirror": {
+    "pairs": 2,
+    "consistent": 2,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "all": {
+    "n": 60,
+    "answered": 5,
+    "right": 4,
+    "acc_all": 0.067,
+    "acc_answered": 0.8,
+    "coverage": 0.083,
+    "side_right": 2,
+    "side_n": 32,
+    "answers": {
+     "None": 55,
+     "FORWARD": 3,
+     "LEFT": 2
+    }
+   }
+  }
+ },
+ "Mac nvila2b: direction": {
+  "rows": 142,
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 60,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 28,
+    "acc_all": 0.467,
+    "acc_answered": 0.467,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 32,
+    "answers": {
+     "FORWARD": 60
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 40,
+    "consistent": 40,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "answers": {
+    "FORWARD": 40
+   }
+  },
+  "S3": {
+   "mirror": {
+    "pairs": 42,
+    "consistent": 42,
+    "rate": 1.0,
+    "turn_pairs": 0,
+    "turn_consistent": 0
+   },
+   "all": {
+    "n": 42,
+    "answered": 42,
+    "right": 7,
+    "acc_all": 0.167,
+    "acc_answered": 0.167,
+    "coverage": 1.0,
+    "side_right": 0,
+    "side_n": 35,
+    "answers": {
+     "FORWARD": 42
+    }
+   }
+  }
+ },
+ "Mac nvila2b: box_answer": {
+  "rows": 142,
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 30,
+    "rate": 0.5,
+    "turn_pairs": 41,
+    "turn_consistent": 15
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 37,
+    "acc_all": 0.617,
+    "acc_answered": 0.617,
+    "coverage": 1.0,
+    "side_right": 20,
+    "side_n": 32,
+    "answers": {
+     "LEFT": 29,
+     "RIGHT": 12,
+     "FORWARD": 19
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 31,
+    "consistent": 9,
+    "rate": 0.29,
+    "turn_pairs": 24,
+    "turn_consistent": 6
+   },
+   "answers": {
+    "FORWARD": 7,
+    "None": 6,
+    "LEFT": 25,
+    "RIGHT": 2
+   }
+  }
+ },
  "Mac paligemma2: box_answer": {
   "rows": 142,
   "S1": {

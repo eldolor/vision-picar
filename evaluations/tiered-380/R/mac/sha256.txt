@@ -1,0 +1,4 @@
+# Mac rows (3.80.R amendment 1): weights hashed after download, then deleted
+# Efficient-Large-Model/NVILA-Lite-2B-hf
+15efda22df32db0a18bf7ddc187877ea3a9d19ea2fdb7dc9777c5c728e5711b7  model.safetensors
+# PaliGemma 2 and Eagle2-2B: see board/sha256.txt (same files)
