@@ -538,11 +538,15 @@ def create_app(
                              "every question is a cloud call whose direction is unused.")
         policy_name = "explore policy" if req.policy == "explore" else "explore search"
         explores = req.policy == "explore" or tier_search == "explore"
-        if req.explore_ask and not explores:
+        # Not a tiered search: its questions (perception, the local VLM, a
+        # paid cloud call on cold search) would keep running through a pause
+        # on the same frame, and skipping them breaks its arrival (review).
+        plain = req.policy == "explore"
+        if req.explore_ask and not plain:
             raise ValueError("explore_ask pauses explore's goal choice: it needs policy "
-                             "'explore' (or a tiered mission whose search is explore's).")
-        asks = explores and (config["explore_ask"] if req.explore_ask is None
-                             else req.explore_ask)
+                             "'explore' (a find or a survey); a tiered search does not ask.")
+        asks = plain and (config["explore_ask"] if req.explore_ask is None
+                          else req.explore_ask)
         if req.policy == "explore" or tier_search == "explore":
             # 3.31. Goals go to nav2 through the robot server; checked here so
             # a world with no planner refuses at start, not on the first tick.

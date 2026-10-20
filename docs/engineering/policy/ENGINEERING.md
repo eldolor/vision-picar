@@ -647,8 +647,10 @@ threshold counted in steps.
   runs on sim time (live, on wall time); the pause is not bounded by the time
   limit, so an unattended ask mission runs up to 60 s longer per choice; a
   choice can offer dozens of candidates (61 in `home_first_floor`'s live
-  check, mostly view gaps). While paused the scene is the free sensed one:
-  perception, the local VLM and the cloud are not asked.
+  check, mostly view gaps). Ask mode is for the plain `explore` policy (a
+  find or a survey) only: a tiered search's questions would run on through
+  a pause, and skipping them would hand its arrival the simulator's free
+  scene (review round 2), so a tiered start with `explore_ask` is a 400.
 - The room-level planner is not built; `MissionMemory.as_context()` feeds
   nothing.
 - `tier_hold_bearing` is off; a 1-in-3 detector closes only ~1.6 cells and

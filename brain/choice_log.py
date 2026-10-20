@@ -61,22 +61,22 @@ class GoalAsk:
         self._paused_s = 0.0            # every closed pause, summed
         self._ended = False
 
-    def open(self, candidates: list, default: int) -> Optional[int]:
+    def open(self, candidates: list, default: int) -> Optional[tuple]:
         """Open choice N+1 over `candidates` (dicts), whose rule pick is the
-        one at index `default`. Each gets its id here, `"<N+1>.<index>"`, so
-        the number and the ids cannot disagree. Returns the choice number, or
-        None once the mission has ended (a Stop landed while it was chosen)."""
+        one at index `default`. Each is copied with its id, `"<N+1>.<index>"`,
+        so the number and the ids cannot disagree. Returns (the choice number,
+        the copies), or None once the mission has ended (a Stop landed while
+        it was chosen)."""
         with self._lock:
             if self._ended:
                 return None
             self._close_locked()
             self.choice += 1
-            for i, c in enumerate(candidates):
-                c["id"] = f"{self.choice}.{i}"
+            candidates = [dict(c, id=f"{self.choice}.{i}") for i, c in enumerate(candidates)]
             self._open = {"choice": self.choice, "candidates": candidates,
                           "default": candidates[default]["id"], "opened_at": self.clock()}
             self._pick = None
-            return self.choice
+            return self.choice, candidates
 
     def pick(self, choice, candidate_id) -> tuple:
         """A person's pick, from the brain's HTTP thread: (True, "") once

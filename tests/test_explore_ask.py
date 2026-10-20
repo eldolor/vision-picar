@@ -480,19 +480,15 @@ def test_explore_ask_on_a_policy_without_explore_is_refused(monkeypatch):
 # ---------- review (2026-10-20) ----------
 
 
-def test_a_pause_asks_no_perception_question():
-    """/code-review: every paused tick still called `vision_fn` -- under a
-    tiered mission perception, the local VLM and, on cold search, a paid
-    cloud call about the same frame for up to a minute."""
-    runner, nav, grid = _runner()
-    runner.start()
-    _until_asked(runner)
-    calls = []
-    real = runner.agent.vision_fn
-    runner.agent.vision_fn = lambda frame: (calls.append(1), real(frame))[1]
-    for _ in range(20):
-        assert runner.tick()
-    assert calls == [], f"{len(calls)} perception calls during a pause"
+def test_a_tiered_search_does_not_ask(monkeypatch):
+    """Review round 2: a pause's free scene in a tiered search marked the
+    target found without the arrival check, and its real questions would run
+    on through a pause. Ask mode is for the plain explore policy only."""
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    brain = TestClient(brain_server.create_app(robot_factory=lambda: object()))
+    r = brain.post("/mission/start", json={"target_object": "x", "policy": "tiered",
+                                           "explore_ask": True})
+    assert r.status_code == 400 and "explore_ask" in r.json()["detail"], r.text
 
 
 def test_a_wait_elsewhere_keeps_the_question_and_its_ids():
@@ -534,3 +530,11 @@ def test_a_stop_while_choosing_opens_nothing_and_fails_nothing():
     ask = GoalAsk(clock=lambda: t[0])
     ask.end()
     assert ask.open([{"kind": "frontier"}], 0) is None
+
+
+def test_the_ask_mints_its_ids_on_copies():
+    ask = GoalAsk(clock=lambda: 0.0)
+    given = [{"kind": "frontier"}, {"kind": "view"}]
+    n, cands = ask.open(given, 1)
+    assert [c["id"] for c in cands] == [f"{n}.0", f"{n}.1"] and "id" not in given[0]
+    assert ask.snapshot()["default"] == f"{n}.1"

@@ -324,12 +324,7 @@ class ExploreAgent(MissionAgent):
 
     def step(self) -> StepResult:
         frame = self.robot.get_camera_frame()
-        # 3.88 A: paused on a person's pick, nothing moves and the view does
-        # not change -- the free sensed scene, never a perception or (cold
-        # search) paid question about the same frame for up to a minute.
-        waiting = self._asked is not None and self._asked["answer"] is None
-        see = self.sensed_scene if waiting else self.vision_fn
-        scene = self._review_scene(see(frame), frame)
+        scene = self._review_scene(self.vision_fn(frame), frame)
         action, executed, detail = self._choose(frame, scene)
         self._update_track()
         result = StepResult(step=len(self.history), frame=frame, scene=scene,
@@ -1019,9 +1014,10 @@ class ExploreAgent(MissionAgent):
                 "x_m": round(c.goal[0], 3), "y_m": round(c.goal[1], 3),
                 "path_m": round(c.distance_m, 2), "rank": rank,
                 "features": {k: round(v, 4) for k, v in zip(GOAL_FEATURES, f)}})
-        opened = self.ask.open(candidates, default)       # ids minted here
-        if opened is None:
+        got = self.ask.open(candidates, default)       # ids minted there
+        if got is None:
             return "WAIT", False, "the mission ended while choosing"
+        opened, candidates = got
         self._asked = {"choice": opened, "pool": pool, "candidates": candidates,
                        "default": candidates[default]["id"],
                        "skipped": dict(skipped), "answer": None,

@@ -821,21 +821,24 @@
     var ask = state.brainAskOpen;
     // One pick a choice: a second tap (or a double tap) would read as
     // "not taken" after the first was (review).
-    if (ask.picked || ask.sending) {
+    // Held by choice number, not on the ask object: every poll replaces that
+    // with the brain's snapshot (review).
+    if (ask.picked || state.askPickChoice === ask.choice) {
       showToast("Already picked -- explore is on its way", "info");
       return;
     }
-    ask.sending = true;
+    state.askPickChoice = ask.choice;
     try {
       await brainApi("POST", "/mission/explore/pick", { choice: ask.choice, candidate: c.id });
-      ask.picked = c.id;
+      if (state.brainAskOpen && state.brainAskOpen.choice === ask.choice) {
+        state.brainAskOpen.picked = c.id;
+      }
       renderMap();
       showToast("Explore will go there next", "ok");
     } catch (e) {
       // 409: that choice is over (timed out, superseded, mission ended).
       showToast("Pick not taken: " + e.message, e.status === 409 ? "warn" : "err");
-    } finally {
-      ask.sending = false;
+      if (state.askPickChoice === ask.choice) state.askPickChoice = null;
     }
   }
 
