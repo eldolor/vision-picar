@@ -351,9 +351,11 @@ class ExploreAgent(MissionAgent):
         # to face, found -- withdraws it, and the pause ends there.
         self._ask_touched = False
         out = self._choose_tick(frame, scene)
-        if self._asked is not None and not self._ask_touched and out[0] != "WAIT":
-            # Only a tick that acted: a wait elsewhere (the local tier's next
-            # answer, nav2's) leaves the question and its ids standing (review).
+        idle = out[0] == "WAIT" and not self._pending and self._sighting(frame) is None
+        if self._asked is not None and not self._ask_touched and not idle:
+            # A tick that acted, or saw the target, or queued a look: the
+            # choice is over. A plain wait elsewhere leaves the question and
+            # its ids standing (review rounds 1 and 4).
             self._withdraw_ask(f"superseded: {out[2]}")
         return out
 

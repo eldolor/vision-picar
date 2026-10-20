@@ -547,3 +547,19 @@ def test_the_ask_mints_its_ids_on_copies():
     n, cands = ask.open(given, 1)
     assert [c["id"] for c in cands] == [f"{n}.0", f"{n}.1"] and "id" not in given[0]
     assert ask.snapshot()["default"] == f"{n}.1"
+
+
+def test_a_refused_approach_after_a_sighting_still_withdraws_the_choice():
+    """Thermos round 4: a sighting whose approach was refused returns WAIT,
+    and the stale choice stayed open -- a tap or the timeout could then send
+    a frontier away from a target in view."""
+    runner, nav, grid = _runner()
+    runner.start()
+    _until_asked(runner)
+    agent = runner.agent
+    real_s, real_a = agent._sighting, agent._send_approach
+    agent._sighting = lambda frame: (grid.x * 0.3 + 1.0, grid.y * 0.3)
+    agent._send_approach = lambda *a, **k: ("WAIT", False, "approach refused")
+    runner.tick()
+    agent._sighting, agent._send_approach = real_s, real_a
+    assert runner.status()["explore"]["ask"] is None
