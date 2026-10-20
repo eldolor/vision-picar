@@ -242,6 +242,7 @@ class ExploreAgent(MissionAgent):
         self.choice_sink = choice_sink
         self._asked: Optional[dict] = None   # the open choice's own pool, frozen
         self._ask_touched = False
+        self._pended = False
         self.exhausted = False         # read by MissionRunner: ends `exhausted`
         # 3.70 E3: labelled rooms the robot's centre has been inside, by the
         # map's own room labels; and how often a room goal arrived without
@@ -346,18 +347,17 @@ class ExploreAgent(MissionAgent):
         return result
 
     def _choose(self, frame: dict, scene: dict):
-        # 3.88 A: an open question survives only a tick that comes back to the
-        # goal choice. Anything that acts first -- the target seen, a glimpse
-        # to face, found -- withdraws it, and the pause ends there.
+        # 3.88 A: an open question survives a tick that does not come back to
+        # the goal choice only if that tick was idle: it waited, ran nothing
+        # queued and left nothing queued, and saw no target. Otherwise the
+        # choice is over and the pause ends there.
         self._ask_touched = self._pended = False
         out = self._choose_tick(frame, scene)
-        # Idle: it waited, ran nothing queued, and saw no target -- read from
-        # this tick's memo, taken before any verb (review round 5).
         if (self._asked is not None and not self._ask_touched
-                and (out[0] != "WAIT" or self._pended or self._sighting(frame) is not None)):
-            # A tick that acted, or saw the target, or queued a look: the
-            # choice is over. A plain wait elsewhere leaves the question and
-            # its ids standing (review rounds 1 and 4).
+                and (out[0] != "WAIT" or self._pended or self._pending
+                     or self._sighting(frame) is not None)):
+            # (A plain wait elsewhere leaves the question and its ids
+            # standing: review rounds 1, 4 and 5.)
             self._withdraw_ask(f"superseded: {out[2]}")
         return out
 
@@ -438,7 +438,6 @@ class ExploreAgent(MissionAgent):
             self._pending = []
         # A look queued after an arrival goes first: no goal is live then.
         if self._pending and self._goal is None:
-            self._pended = True
             return self._do_pending()
 
         sighting = self._sighting(frame)
@@ -1315,6 +1314,7 @@ class ExploreAgent(MissionAgent):
         self._pending = ["REVERSE", ("CREEP",), ("OPEN",)]
 
     def _do_pending(self):
+        self._pended = True            # 3.88 A: this tick ran a queued verb
         item = self._pending.pop(0)
         if isinstance(item, tuple) and item[0] == "OPEN":
             # Turn towards whichever side the lidar finds more room: a

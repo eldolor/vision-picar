@@ -572,11 +572,11 @@ def test_a_queued_verb_that_waits_still_withdraws_the_choice():
     runner.start()
     _until_asked(runner)
     agent = runner.agent
-    real = agent._do_pending
-    agent._pending = ["LOOK_CENTER"]
-    agent._do_pending = lambda: (agent._pending.clear(), ("WAIT", True, "already facing it"))[1]
-    try:
-        runner.tick()
-    finally:
-        agent._do_pending = real
-    assert runner.status()["explore"]["ask"] is None
+    pose = agent._pose()
+    # A real queued FACE at a point dead ahead: "already facing it", a WAIT.
+    h = math.radians(pose["heading_deg"])
+    agent._pending = [("FACE", (pose["x_m"] + math.sin(h), pose["y_m"] - math.cos(h)))]
+    runner.tick()
+    assert any(e["event"] == "ask_withdrawn" for e in agent.events)
+    assert runner.status()["explore"]["ask"] is None or \
+        runner.status()["explore"]["ask"]["choice"] > 1
