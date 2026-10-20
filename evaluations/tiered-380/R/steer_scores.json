@@ -696,6 +696,90 @@
    }
   }
  },
+ "board pg-nf4-detect: box_answer": {
+  "rows": 142,
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 60,
+    "rate": 1.0,
+    "turn_pairs": 31,
+    "turn_consistent": 31
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 55,
+    "acc_all": 0.917,
+    "acc_answered": 0.917,
+    "coverage": 1.0,
+    "side_right": 29,
+    "side_n": 32,
+    "answers": {
+     "RIGHT": 22,
+     "FORWARD": 29,
+     "LEFT": 9
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 27,
+    "consistent": 19,
+    "rate": 0.704,
+    "turn_pairs": 22,
+    "turn_consistent": 16
+   },
+   "answers": {
+    "FORWARD": 5,
+    "RIGHT": 7,
+    "None": 12,
+    "LEFT": 16
+   }
+  }
+ },
+ "board pg-nf4lm2-detect: box_answer": {
+  "rows": 142,
+  "S1": {
+   "mirror": {
+    "pairs": 60,
+    "consistent": 59,
+    "rate": 0.983,
+    "turn_pairs": 32,
+    "turn_consistent": 31
+   },
+   "all": {
+    "n": 60,
+    "answered": 60,
+    "right": 56,
+    "acc_all": 0.933,
+    "acc_answered": 0.933,
+    "coverage": 1.0,
+    "side_right": 30,
+    "side_n": 32,
+    "answers": {
+     "RIGHT": 22,
+     "FORWARD": 28,
+     "LEFT": 10
+    }
+   }
+  },
+  "S2": {
+   "mirror": {
+    "pairs": 27,
+    "consistent": 18,
+    "rate": 0.667,
+    "turn_pairs": 21,
+    "turn_consistent": 15
+   },
+   "answers": {
+    "FORWARD": 6,
+    "RIGHT": 6,
+    "None": 13,
+    "LEFT": 15
+   }
+  }
+ },
  "board robobrain25: direction": {
   "rows": 142,
   "S1": {

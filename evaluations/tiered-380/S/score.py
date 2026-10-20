@@ -5,7 +5,8 @@ evaluations/tiered-380/S/score.py
 board rows (`S/board/out/<res>.jsonl`) and scores them with 3.80.I's own
 `accuracy` and `mirror`; latency from the rows, memory from
 `S/board/out/<res>.mem`. Writes `S/scores.json`. Amendment 1's runs
-(`orig-ve`, VE in Florence's place; `orig-2`, Florence again) are scored
+(`orig-ve`, VE in Florence's place; `orig-2`, Florence again; 3.80.T's
+`orig-paligemma`, PaliGemma 2 at NF4 in Florence's place) are scored
 the same way: in `orig-ve`, F and G's second model is VE.
 
     .venv/bin/python evaluations/tiered-380/S/score.py
@@ -115,7 +116,7 @@ def score_res(res):
 
 def main():
     res_out = {}
-    for res in ("orig", "640", "320", "orig-ve", "orig-2"):
+    for res in ("orig", "640", "320", "orig-ve", "orig-2", "orig-paligemma"):
         if (OUT / f"{res}.jsonl").exists():
             res_out[res] = score_res(res)
     (HERE / "scores.json").write_text(json.dumps(res_out, indent=1) + "\n")

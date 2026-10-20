@@ -1,19 +1,24 @@
 #!/bin/bash
 # 3.80.S: one resolution on the board. $1 orig|640|320; $2 florence (default),
-# ve (amendment 1) or both (amendment 2); $3 the output tag (default $1, or
-# $1-ve / $1-both). MemAvailable every second from before the first server
+# ve (amendment 1), both (amendment 2) or paligemma (3.80.T: PaliGemma 2 at
+# NF4 on :8006 in Florence's place, $PG_SPEC, under ~/bench-380T's venv);
+# $3 the output tag (default $1, or $1-ve / $1-both / $1-paligemma). MemAvailable every second from before the first server
 # starts (and before the runner loads YOLOE + CLIP) to the end, in
 # ~/out-380S/$TAG.mem.
 set -u
 RES=$1; SECOND=${2:-florence}; OUT=~/out-380S; V=~/vp-380R; mkdir -p $OUT
 case $SECOND in florence) TAG=${3:-$RES};; *) TAG=${3:-$RES-$SECOND};; esac
 WANT_VE=; WANT_FL=
-case $SECOND in ve) WANT_VE=1;; florence) WANT_FL=1;; both) WANT_VE=1; WANT_FL=1;; *) echo "bad $SECOND"; exit 2;; esac
+FLSPEC=florence:$HOME/models-380R/fc-Florence-2-base; FLPY=
+case $SECOND in ve) WANT_VE=1;; florence) WANT_FL=1;; both) WANT_VE=1; WANT_FL=1;;
+  paligemma) WANT_FL=1; FLSPEC=${PG_SPEC:-paligemma-nf4:$HOME/models-380R/paligemma2-3b-mix-448}
+             FLPY=$HOME/bench-380T/venv/bin/python;;
+  *) echo "bad $SECOND"; exit 2;; esac
 # Only this bench's own servers (:8006 Florence, :8007 VE): the board is shared.
 # VE is stopped by its own pid, never by pattern: the production unit
 # (picar-local-vlm) runs the same command line. It must be stopped too, or
 # its memory would be in the "before" figure.
-MINE='native_server\.py -m florence:.* --port 8006'
+MINE='native_server\.py -m [a-z0-9-]*:.* --port 8006'
 VEP=
 stop() {
   [ -n "$WANT_FL" ] && pkill -f "$MINE" 2>/dev/null
@@ -39,8 +44,8 @@ if [ -n "$WANT_VE" ]; then
   ok=; for i in $(seq 150); do curl -s localhost:8007/health | grep -q '"ready": *true' && ok=1 && break; sleep 2; done
 fi
 if [ -n "$ok" ] && [ -n "$WANT_FL" ]; then
-  (setsid nohup $V/evaluations/tiered-380/R/nsrv.sh -m florence:$HOME/models-380R/fc-Florence-2-base --port 8006 > $OUT/$TAG-server.log 2>&1 < /dev/null &)
-  ok=; for i in $(seq 150); do curl -s localhost:8006/health | grep -q '"status":"ok"' && grep -q "native_server: florence" $OUT/$TAG-server.log && ok=1 && break; sleep 2; done
+  (setsid nohup env ${FLPY:+NSRV_PY=$FLPY} $V/evaluations/tiered-380/R/nsrv.sh -m $FLSPEC --port 8006 > $OUT/$TAG-server.log 2>&1 < /dev/null &)
+  ok=; for i in $(seq 150); do curl -s localhost:8006/health | grep -q '"status":"ok"' && grep -q "native_server: ${FLSPEC%%:*}" $OUT/$TAG-server.log && ok=1 && break; sleep 2; done
   # Amendment 2: the bench's servers, not the twin stack, are the OOM killer's first choice.
   for P in $(pgrep -f "$MINE"); do echo 1000 | sudo tee /proc/$P/oom_score_adj >/dev/null; done
 fi

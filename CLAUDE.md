@@ -238,6 +238,11 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     request, lowest 25 MB; the twin stack unharmed). Downscaling hurts
     YOLOE + CLIP (44 -> 42 -> 21 at 320), not Florence (56 -> 56 -> 51).
     Not adopted.
+  * T (2026-10-20): PaliGemma 2 3B (R's best identity, 97.4% on the Mac
+    at fp16) at 4 bits on the board (bitsandbytes NF4, its library built
+    for sm_87) does not replace VE: precision 93.7% (92.5% with the vision
+    tower at fp16; new false yeses on one walk), 3,398 MB alone, p90 2.76 s,
+    and beside YOLOE + CLIP a 5,294 MB drop, leaving 137 MB. It steers 55/60.
   * O: the local VLM's box finishes the approach and the arrival when
     perception is silent, and only the cloud may confirm such an arrival
     (never the local tier). Blind perception, 21 houses: 17 at pace 1, 12 at

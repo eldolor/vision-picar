@@ -13,7 +13,10 @@ Amendment 1: `--second ve` asks VE's service (`service/local_vlm/`,
 already serving) `/identity` with `box: true` in Florence's place, the
 question the tier asks; its rows carry `ve` where Florence's carry
 `florence`. Amendment 2: `--second both` asks both on every frame, rows
-carrying both `florence` and `ve`.
+carrying both `florence` and `ve`. 3.80.T: `--second paligemma` asks
+PaliGemma 2's `detect <name>` (`R/native_server.py` on --florence's URL)
+in Florence's place; its rows carry `florence`, so `score.py` reads them
+unchanged.
 
     python evaluations/tiered-380/S/run_gated.py orig|640|320 \
         --recordings ~/vision-picar/recordings --out ~/out-380S/orig.jsonl
@@ -81,6 +84,28 @@ def florence(url: str, jpeg: bytes, target: str, width: int) -> dict:
             "answer": common.third(frac), "ms": ms}
 
 
+def paligemma(url: str, jpeg: bytes, target: str, width: int) -> dict:
+    """PaliGemma's `detect {target}`: the first `<loc>` box (R's reader, 0-1000)
+    -> its centre's third, as 3.80.R's steering read it."""
+    sys.path.insert(0, str(HERE.parent / "R"))
+    import readers
+    body = {"messages": [{"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b64(jpeg)}},
+        {"type": "text", "text": f"detect {target}"}]}],
+        "max_tokens": 32}
+    req = urllib.request.Request(url + "/v1/chat/completions", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    t0 = time.perf_counter()
+    with urllib.request.urlopen(req, timeout=120) as r:
+        reply = json.loads(r.read())
+    ms = round((time.perf_counter() - t0) * 1000)
+    text = reply["choices"][0]["message"]["content"] or ""
+    box = readers.parse_any_box(text) if "<loc" in text else None
+    frac = round((box[0] + box[2]) / 2 / 1000, 4) if box else None
+    return {"boxes": int(box is not None), "box": box, "frac": frac,
+            "answer": common.third(frac), "ms": ms, "text": text}
+
+
 def ve(url: str, jpeg: bytes, target: str, width: int) -> dict:
     """VE's yes (score >= 0.5, tiered's LOCAL_YES_AT) with a box -> the box
     centre's third, as 3.80.I's `run_qwen.answer` reads it."""
@@ -122,7 +147,7 @@ def main():
     ap.add_argument("res", choices=("orig", "640", "320"))
     ap.add_argument("--recordings", required=True)
     ap.add_argument("--florence", default="http://127.0.0.1:8006")
-    ap.add_argument("--second", choices=("florence", "ve", "both"), default="florence")
+    ap.add_argument("--second", choices=("florence", "ve", "both", "paligemma"), default="florence")
     ap.add_argument("--ve", default="http://127.0.0.1:8007")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
@@ -147,7 +172,9 @@ def main():
 
     askers = {"florence": lambda jpeg, t, w: florence(args.florence, jpeg, t, w),
               "ve": lambda jpeg, t, w: ve(args.ve, jpeg, t, w)}
-    names = list(askers) if args.second == "both" else [args.second]
+    if args.second == "paligemma":
+        askers = {"florence": lambda jpeg, t, w: paligemma(args.florence, jpeg, t, w)}
+    names = list(askers) if args.second in ("both", "paligemma") else [args.second]
 
     def ask(jpeg, t, w):
         return {n: askers[n](jpeg, t, w) for n in names}

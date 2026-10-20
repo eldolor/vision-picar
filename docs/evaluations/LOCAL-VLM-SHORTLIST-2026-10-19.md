@@ -107,7 +107,7 @@ Decide on the Rover's own frames.
 
 | model | result | what would change it |
 |---|---|---|
-| PaliGemma 2 3B mix-448 (`detect <name>`) | Best identity measured: 97.4% / 100%, teal 0/34; steers 54/60. Measured on the Mac (MPS); at 6.1 GB of bf16 it will not load on the board. | An int4 build that loads beside the stack, with a runtime that decides in under 2.0 s. Gemma licence terms apply. |
+| PaliGemma 2 3B mix-448 (`detect <name>`) | Best identity measured: 97.4% / 100%, teal 0/34; steers 54/60. Measured on the Mac (MPS); at 6.1 GB of bf16 it will not load on the board. **The 4-bit build failed (3.80.T, 2026-10-20):** bitsandbytes NF4 on the board drops to 93.7% precision (92.5% with the vision tower at fp16), takes 3,398 MB alone and 5,294 MB beside YOLOE + CLIP (137 MB left), with a p90 of 2.76 s. It still steers 55/60. | Off the list. Only an 8-bit build was left untried: it would be larger than the 4-bit one, which already does not fit. Gemma licence terms apply. |
 | RoboBrain2.5-4B, llama.cpp Q4_K_M | The only model whose left/right answer is real (direction 47/60); box 54/60. Fails identity (42.8%) and memory (3,918 MB). | Steering only, if memory allows. |
 
 ## Not worth trying

@@ -218,13 +218,37 @@ class PaliGemma(HFGenerate):
     logprobs are generate's own, so the first token decides as for any
     native reply (a `<loc` token opens a box)."""
 
-    def __init__(self, model_id, device):
+    def __init__(self, model_id, device, quant=None):
         import torch
         from transformers import AutoProcessor, PaliGemmaForConditionalGeneration
         self.device = device
         self.proc = AutoProcessor.from_pretrained(model_id)
-        self.model = PaliGemmaForConditionalGeneration.from_pretrained(
-            model_id, torch_dtype=torch.float16).to(device).eval()
+        if quant is None:
+            self.model = PaliGemmaForConditionalGeneration.from_pretrained(
+                model_id, torch_dtype=torch.float16).to(device).eval()
+        else:
+            # 3.80.T: bitsandbytes NF4 (double quant, fp16 compute). "nf4" is
+            # arm T-a, every linear but lm_head; "nf4lm" is arm T-b, the
+            # vision tower and projector kept at fp16.
+            from transformers import BitsAndBytesConfig
+            # transformers 5.18 matches a skip pattern from the start of the
+            # full module name, so the towers need their `model.` prefix.
+            skip = ["lm_head"] + (["model.vision_tower", "model.multi_modal_projector"]
+                                  if quant == "nf4lm" else [])
+            cfg = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
+                                     bnb_4bit_use_double_quant=True,
+                                     bnb_4bit_compute_dtype=torch.float16,
+                                     llm_int8_skip_modules=skip)
+            self.model = PaliGemmaForConditionalGeneration.from_pretrained(
+                model_id, torch_dtype=torch.float16, quantization_config=cfg,
+                device_map={"": device}).eval()
+            # 3.80.T amendment 1: loading leaves ~1 GB of freed fp16 staging
+            # in the C heap; hand it back before serving.
+            import ctypes
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
         self.tok = self.proc.tokenizer
 
     def answer(self, image, text, max_tokens):
@@ -311,6 +335,8 @@ def build(spec: str, device: str):
         return ChatHF(model_id, device, model_id)
     if backend == "paligemma":
         return PaliGemma(model_id, device)
+    if backend in ("paligemma-nf4", "paligemma-nf4lm"):
+        return PaliGemma(model_id, device, quant=backend.split("-", 1)[1])
     if backend == "eagle":
         return Eagle(model_id, device, model_id)
     if backend == "roborefer":
