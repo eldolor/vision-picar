@@ -349,10 +349,12 @@ class ExploreAgent(MissionAgent):
         # 3.88 A: an open question survives only a tick that comes back to the
         # goal choice. Anything that acts first -- the target seen, a glimpse
         # to face, found -- withdraws it, and the pause ends there.
-        self._ask_touched = False
+        self._ask_touched = self._pended = False
         out = self._choose_tick(frame, scene)
-        idle = out[0] == "WAIT" and not self._pending and self._sighting(frame) is None
-        if self._asked is not None and not self._ask_touched and not idle:
+        # Idle: it waited, ran nothing queued, and saw no target -- read from
+        # this tick's memo, taken before any verb (review round 5).
+        if (self._asked is not None and not self._ask_touched
+                and (out[0] != "WAIT" or self._pended or self._sighting(frame) is not None)):
             # A tick that acted, or saw the target, or queued a look: the
             # choice is over. A plain wait elsewhere leaves the question and
             # its ids standing (review rounds 1 and 4).
@@ -436,6 +438,7 @@ class ExploreAgent(MissionAgent):
             self._pending = []
         # A look queued after an arrival goes first: no goal is live then.
         if self._pending and self._goal is None:
+            self._pended = True
             return self._do_pending()
 
         sighting = self._sighting(frame)

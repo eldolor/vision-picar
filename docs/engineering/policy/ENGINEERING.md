@@ -532,9 +532,10 @@ its `goal_sent` event, and once nav2's goal is accepted, recorded
 pick, by, `waited_s`; the runner adds `mission_id` and `house`) -- a record
 is a choice carried out. A send refused before nav2 saw it is sent
 again on later ticks, and each attempt re-checks the retry book; a pick no
-longer available withdraws the choice. A tick that acts before reaching the
-choice (found, a sighting, a glimpse to face) withdraws it unrecorded
-(`ask_withdrawn`). While waiting, `_probe_authority()` centres the camera
+longer available withdraws the choice. A tick that does not come back to the
+choice withdraws it unrecorded (`ask_withdrawn`) if it acted (any result but
+WAIT), ran a queued verb, or saw the target (`_sighting`, from the tick's
+memo); a plain wait elsewhere leaves it open with its ids. While waiting, `_probe_authority()` centres the camera
 every `ASK_PROBE_S` (1 s): it moves nothing, and a person's Stop latch or a
 person holding the robot is refused by name and ends the mission as the
 next goal would on `dev`; the mission's own goal holding the robot or a

@@ -560,6 +560,23 @@ def test_a_refused_approach_after_a_sighting_still_withdraws_the_choice():
     real_s, real_a = agent._sighting, agent._send_approach
     agent._sighting = lambda frame: (grid.x * 0.3 + 1.0, grid.y * 0.3)
     agent._send_approach = lambda *a, **k: ("WAIT", False, "approach refused")
-    runner.tick()
-    agent._sighting, agent._send_approach = real_s, real_a
+    try:
+        runner.tick()
+    finally:
+        agent._sighting, agent._send_approach = real_s, real_a
+    assert runner.status()["explore"]["ask"] is None
+
+
+def test_a_queued_verb_that_waits_still_withdraws_the_choice():
+    runner, nav, grid = _runner()
+    runner.start()
+    _until_asked(runner)
+    agent = runner.agent
+    real = agent._do_pending
+    agent._pending = ["LOOK_CENTER"]
+    agent._do_pending = lambda: (agent._pending.clear(), ("WAIT", True, "already facing it"))[1]
+    try:
+        runner.tick()
+    finally:
+        agent._do_pending = real
     assert runner.status()["explore"]["ask"] is None
