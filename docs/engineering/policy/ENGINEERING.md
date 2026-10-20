@@ -526,10 +526,11 @@ pool's first) or, under a learned policy, its `best()`. Nothing is sent and
 the step is a WAIT; choice time (`choice_ms`) ends at the opening. Later ticks
 reach `_answer_ask` from `_next_frontier`: a pick taken by
 `GoalAsk.pick()` (`person`), or the default once `timeout_s` has passed
-(`rule_timeout`), is recorded (`_record_choice`: choice, step, pose, every
-candidate's features, default, pick, by, `waited_s`; the runner adds
-`mission_id` and `house`) and sent by `_send_pooled` with `picked_by` and
-`pick` on its `goal_sent` event. A send refused before nav2 saw it is sent
+(`rule_timeout`), is sent by `_send_pooled` with `picked_by` and `pick` on
+its `goal_sent` event, and once nav2's goal is accepted, recorded
+(`_record_choice`: choice, step, pose, every candidate's features, default,
+pick, by, `waited_s`; the runner adds `mission_id` and `house`) -- a record
+is a choice carried out. A send refused before nav2 saw it is sent
 again on later ticks, and each attempt re-checks the retry book; a pick no
 longer available withdraws the choice. A tick that acts before reaching the
 choice (found, a sighting, a glimpse to face) withdraws it unrecorded
@@ -637,6 +638,17 @@ threshold counted in steps.
 
 ## Known gaps
 
+- **Explore's ask mode (3.88 A), kept as is after review:** the pool is
+  frozen at the opening and sent up to `explore_ask_timeout_s` later with
+  only the retry book re-checked, not the map (a mover or a SLAM shift in
+  the meantime is nav2's abort and the retry rule, as for any goal); a pick
+  the brain took can still be dropped unrecorded if the next tick acts first
+  (a sighting), after the twin said it was taken; in process the timeout
+  runs on sim time (live, on wall time); the pause is not bounded by the time
+  limit, so an unattended ask mission runs up to 60 s longer per choice; a
+  choice can offer dozens of candidates (61 in `home_first_floor`'s live
+  check, mostly view gaps). While paused the scene is the free sensed one:
+  perception, the local VLM and the cloud are not asked.
 - The room-level planner is not built; `MissionMemory.as_context()` feeds
   nothing.
 - `tier_hold_bearing` is off; a 1-in-3 detector closes only ~1.6 cells and

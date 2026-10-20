@@ -819,6 +819,13 @@
 
   async function pickAskCandidate(c) {
     var ask = state.brainAskOpen;
+    // One pick a choice: a second tap (or a double tap) would read as
+    // "not taken" after the first was (review).
+    if (ask.picked || ask.sending) {
+      showToast("Already picked -- explore is on its way", "info");
+      return;
+    }
+    ask.sending = true;
     try {
       await brainApi("POST", "/mission/explore/pick", { choice: ask.choice, candidate: c.id });
       ask.picked = c.id;
@@ -827,6 +834,8 @@
     } catch (e) {
       // 409: that choice is over (timed out, superseded, mission ended).
       showToast("Pick not taken: " + e.message, e.status === 409 ? "warn" : "err");
+    } finally {
+      ask.sending = false;
     }
   }
 
@@ -2612,6 +2621,7 @@
     document.getElementById("brain-target").disabled = state.brainMissionRunning;
     document.getElementById("brain-policy").disabled = state.brainMissionRunning;
     document.getElementById("brain-job").disabled = state.brainMissionRunning;
+    document.getElementById("brain-ask").disabled = state.brainMissionRunning;
     renderBrainJob();
     updateHouseButton();
     if (hint) {

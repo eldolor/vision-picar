@@ -19,8 +19,9 @@ its own message (`POST /mission/explore/pick`), not the person's map goal
 adopts nor cancels (3.76 E); a person's Stop or D-pad still ends explore and
 latches the brain out (3.84), unchanged.
 
-**The log** (`ChoiceLog`). One JSON line a choice, one file a mission, each
-line flushed and fsynced before the goal is sent: the candidates' features,
+**The log** (`ChoiceLog`). One JSON line a choice explore carried out (the
+goal sent: a pick withdrawn before it went is no record), one file a
+mission, each line flushed and fsynced: the candidates' features,
 the pick and who made it (`person`, `rule_timeout`; 3.88 B adds `oracle`).
 Positions only in the house frame, and never an image. Written only under
 ask mode: a mission without it records nothing new.
@@ -60,16 +61,20 @@ class GoalAsk:
         self._paused_s = 0.0            # every closed pause, summed
         self._ended = False
 
-    def open(self, candidates: list, default_id: str) -> int:
-        """Open choice N+1 over `candidates` ([{"id", ...}]), whose rule pick
-        is `default_id`. Returns the choice number."""
+    def open(self, candidates: list, default: int) -> Optional[int]:
+        """Open choice N+1 over `candidates` (dicts), whose rule pick is the
+        one at index `default`. Each gets its id here, `"<N+1>.<index>"`, so
+        the number and the ids cannot disagree. Returns the choice number, or
+        None once the mission has ended (a Stop landed while it was chosen)."""
         with self._lock:
             if self._ended:
-                raise RuntimeError("the mission has ended; no more questions")
+                return None
             self._close_locked()
             self.choice += 1
+            for i, c in enumerate(candidates):
+                c["id"] = f"{self.choice}.{i}"
             self._open = {"choice": self.choice, "candidates": candidates,
-                          "default": default_id, "opened_at": self.clock()}
+                          "default": candidates[default]["id"], "opened_at": self.clock()}
             self._pick = None
             return self.choice
 

@@ -324,7 +324,12 @@ class ExploreAgent(MissionAgent):
 
     def step(self) -> StepResult:
         frame = self.robot.get_camera_frame()
-        scene = self._review_scene(self.vision_fn(frame), frame)
+        # 3.88 A: paused on a person's pick, nothing moves and the view does
+        # not change -- the free sensed scene, never a perception or (cold
+        # search) paid question about the same frame for up to a minute.
+        waiting = self._asked is not None and self._asked["answer"] is None
+        see = self.sensed_scene if waiting else self.vision_fn
+        scene = self._review_scene(see(frame), frame)
         action, executed, detail = self._choose(frame, scene)
         self._update_track()
         result = StepResult(step=len(self.history), frame=frame, scene=scene,
@@ -351,7 +356,9 @@ class ExploreAgent(MissionAgent):
         # to face, found -- withdraws it, and the pause ends there.
         self._ask_touched = False
         out = self._choose_tick(frame, scene)
-        if self._asked is not None and not self._ask_touched:
+        if self._asked is not None and not self._ask_touched and out[0] != "WAIT":
+            # Only a tick that acted: a wait elsewhere (the local tier's next
+            # answer, nav2's) leaves the question and its ids standing (review).
             self._withdraw_ask(f"superseded: {out[2]}")
         return out
 
@@ -1005,15 +1012,16 @@ class ExploreAgent(MissionAgent):
             return None
         default = 0 if self.goal_policy is None else self.goal_policy.best(feats)
         self._decided()                 # choice time ends here; the pause is not choice time
-        choice = self.ask.choice + 1
         candidates = []
         for i, ((kind, c, rank), f) in enumerate(zip(pool, feats)):
             candidates.append({
-                "id": f"{choice}.{i}", "kind": kind,
+                "kind": kind,
                 "x_m": round(c.goal[0], 3), "y_m": round(c.goal[1], 3),
                 "path_m": round(c.distance_m, 2), "rank": rank,
                 "features": {k: round(v, 4) for k, v in zip(GOAL_FEATURES, f)}})
-        opened = self.ask.open(candidates, candidates[default]["id"])
+        opened = self.ask.open(candidates, default)       # ids minted here
+        if opened is None:
+            return "WAIT", False, "the mission ended while choosing"
         self._asked = {"choice": opened, "pool": pool, "candidates": candidates,
                        "default": candidates[default]["id"],
                        "skipped": dict(skipped), "answer": None,
@@ -1040,9 +1048,8 @@ class ExploreAgent(MissionAgent):
                                       f"({snap.get('remaining_s', 0):.0f} s left)")
             by, cid = got
             i = next(k for k, c in enumerate(a["candidates"]) if c["id"] == cid)
-            waited = self.ask.close()
+            a["waited"] = self.ask.close()
             a["answer"] = (by, i)
-            self._record_choice(a, by, cid, waited)
         by, i = a["answer"]
         kind, c, rank = a["pool"][i]
         # Never sends what the rules exclude: nothing they read changes while
@@ -1054,7 +1061,10 @@ class ExploreAgent(MissionAgent):
         out = self._send_pooled(kind, c, rank, now, len(a["pool"]), a["skipped"],
                                 picked_by=by, pick=a["candidates"][i]["id"])
         if out[0] == "GOAL":
+            # Recorded once sent: a record is a choice explore carried out
+            # (review: a pick withdrawn after its decision was a label too).
             self._asked = None
+            self._record_choice(a, by, a["candidates"][i]["id"], a.get("waited"))
         # Refused before nav2 saw it (this mission's own authority still
         # held): the same pick is sent again next tick, as the rule's would be.
         return out

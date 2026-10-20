@@ -406,13 +406,12 @@ def test_a_cut_off_last_line_is_skipped(tmp_path):
 def test_the_ask_box_refuses_after_the_mission_ended():
     t = [0.0]
     ask = GoalAsk(clock=lambda: t[0], timeout_s=5)
-    n = ask.open([{"id": "1.0"}], "1.0")
+    n = ask.open([{"kind": "frontier"}], 0)
     t[0] = 2.0
     ask.end()
     assert ask.pick(n, "1.0") == (False, "no goal choice is open")
     assert ask.paused_s() == 2.0
-    with pytest.raises(RuntimeError):
-        ask.open([{"id": "2.0"}], "2.0")
+    assert ask.open([{"kind": "frontier"}], 0) is None
 
 
 # ---------- the route ----------
@@ -476,3 +475,62 @@ def test_explore_ask_on_a_policy_without_explore_is_refused(monkeypatch):
     r = brain.post("/mission/start", json={"target_object": "x", "policy": "frontier",
                                            "explore_ask": True})
     assert r.status_code == 400 and "explore_ask" in r.json()["detail"], r.text
+
+
+# ---------- review (2026-10-20) ----------
+
+
+def test_a_pause_asks_no_perception_question():
+    """/code-review: every paused tick still called `vision_fn` -- under a
+    tiered mission perception, the local VLM and, on cold search, a paid
+    cloud call about the same frame for up to a minute."""
+    runner, nav, grid = _runner()
+    runner.start()
+    _until_asked(runner)
+    calls = []
+    real = runner.agent.vision_fn
+    runner.agent.vision_fn = lambda frame: (calls.append(1), real(frame))[1]
+    for _ in range(20):
+        assert runner.tick()
+    assert calls == [], f"{len(calls)} perception calls during a pause"
+
+
+def test_a_wait_elsewhere_keeps_the_question_and_its_ids():
+    """/code-review: a tick that WAITed before reaching the goal choice (the
+    local tier's next answer) withdrew the choice; the next opened a new one
+    and the person's tap on the old ids was a 409."""
+    runner, nav, grid = _runner()
+    runner.start()
+    ask = _until_asked(runner)
+    agent = runner.agent
+    real = agent._next_frontier
+    agent._next_frontier = lambda now: ("WAIT", True, "elsewhere")
+    runner.tick()
+    agent._next_frontier = real
+    assert runner.status()["explore"]["ask"]["choice"] == ask["choice"]
+    assert runner.pick_goal(ask["choice"], ask["candidates"][-1]["id"])[0]
+
+
+def test_a_choice_withdrawn_after_its_pick_is_not_recorded():
+    """Both reviewers: the record was written at the decision, before the
+    send -- a pick then set aside stayed in the log as a label."""
+    runner, nav, grid = _runner()
+    runner.start()
+    ask = _until_asked(runner)
+    assert runner.pick_goal(ask["choice"], ask["default"])[0]
+    agent = runner.agent
+    real = agent.retry.available
+    agent.retry.available = lambda *a, **k: False
+    runner.tick()
+    agent.retry.available = real
+    assert runner.choices == [], runner.choices
+    assert any(e["event"] == "ask_withdrawn" for e in agent.events)
+
+
+def test_a_stop_while_choosing_opens_nothing_and_fails_nothing():
+    """/code-review: `open()` after the mission's `end()` raised, logged as
+    'mission step failed' for an ordinary Stop."""
+    t = [0.0]
+    ask = GoalAsk(clock=lambda: t[0])
+    ask.end()
+    assert ask.open([{"kind": "frontier"}], 0) is None

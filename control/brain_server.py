@@ -93,7 +93,7 @@ from brain.tiered import tiered_vision_fn_for
 from brain.choice_log import ChoiceLog
 from control import drills
 from control.brain_config import load_brain_config
-from control.inventory_store import inventory_store_from_config
+from control.inventory_store import _slug, inventory_store_from_config
 from control.mission_runner import VISION_POLICIES, MissionRunner
 from control.reconfirm import CloudWatch, Reconfirmer, health_probe
 from control.recording_routes import (  # noqa: F401 -- re-exported, see above
@@ -716,9 +716,8 @@ def create_app(
         runner.mission_id = mission_id
         if asks:
             # 3.88 A: one file a mission, created at its first choice.
-            safe = re.sub(r"[^A-Za-z0-9._-]+", "-", mission_id).strip("-")[:100]
             runner.choice_log = ChoiceLog(os.path.join(config["explore_choice_dir"],
-                                                       f"{safe}.jsonl"))
+                                                       f"{_slug(mission_id)}.jsonl"))
         # The knobs whose effect the dashboard exists to watch. A trend
         # line without the config that produced it is a set of numbers
         # with no cause attached.
