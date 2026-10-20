@@ -470,3 +470,32 @@ if (1) and (2) leave a gap, since it costs a model call per frontier.
   on the lidar path and is left alone.
 - **Steering by verbs versus nav2 goals**: the tier keeps steering by verbs
   for now (R6). Revisit with continuous motion.
+- **Learning explore's goal choice from a person** (raised 2026-10-20, not
+  built). The ideas it rests on:
+  * *Reinforcement versus imitation.* Reinforcement learning learns from a
+    reward over many tries (3.65's +1 found, minus goals and metres).
+    Imitation (behaviour cloning) learns "choose what the expert chose"
+    from examples. A person at the controls gives examples, not a reward,
+    so teleoperation feeds imitation.
+  * *Learn at the level of the decision.* What is learned is the choice
+    among the goals the rules allow, so the example worth recording is the
+    person's pick among those same candidates (a tap on the map), not
+    their D-pad verbs. Wheel commands do not map onto "which candidate",
+    and the driving is nav2's.
+  * *Warm start.* Cloned choices give a sensible starting policy; RL in
+    simulation then improves past the expert instead of being capped at
+    the person's skill.
+  * *Intervention learning (DAgger and its human-gated form).* The robot
+    runs on its own, a person corrects it when it goes wrong, and each
+    correction is a training example. Efficient, because the corrections
+    land exactly where the policy is weak.
+  * *The feature gap.* A person may choose by cues the ten candidate facts
+    cannot express (a hallway's look, where bins live); cloning through
+    those facts loses exactly that, so the payoff is unknown until
+    measured.
+  * *How much data.* About 10-30 choices a mission: a few hundred taps can
+    fit the ten-weight linear score, not the network.
+
+  The constraint: a person's Stop and D-pad end explore and keep the brain
+  out (the safety domain); a correction must not weaken that. A correction
+  that is a goal tap, not a drive, needs no exception.
