@@ -93,4 +93,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.85](3.85-unsurveyed-13-of-13.md) | All 13 rooms from an empty map (2026-10-16): 26/26 found; FAILED 2-4 narrowly, adopted with 3.83 |
 | [3.86](3.86-twin-stop-labels.md) | The twin names a Stop's refusals |
 | [3.87](3.87-map-reply-off-loop.md) | The robot server's map reply, encoded off the event loop the wheel loop runs on |
+| [3.88](3.88-goal-tap-learning.md) | Explore learns its goal choice from a person's taps |
 <!-- /sections -->
