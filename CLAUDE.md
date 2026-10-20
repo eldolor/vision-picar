@@ -582,6 +582,20 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   (141 ms a map version; now numpy, 11 ms, cell-for-cell the old loop).
   H3: 0 late in 18,273 (max 99 ms, a thin margin). A sync route returning
   a big dict blocks the wheel loop: return a built `JSONResponse`.
+* **Explore asks a person (3.88 A), merged 2026-10-20, NOT YET DEPLOYED.**
+  `explore_ask` (default off; plain `explore` only, 400 for tiered): explore
+  pauses at each goal choice and publishes 3.65's candidate pool
+  (`status.explore.ask`); `POST /mission/explore/pick` names one by id (409
+  on a stale, unknown, second or late pick); 60 s without one takes the
+  rule's pick as `rule_timeout`. Paused time is outside
+  `mission_time_limit_s`; Stop and D-pad unchanged (a `LOOK_CENTER` probe each
+  second hears 3.84's latch). Each choice carried out is one fsynced JSON line
+  (`recordings/explore-choices/`, `brain/choice_log.py`). The twin's Sim tab
+  numbers the goals; a tap is a pick, never `/world/goal` (UI test pinned).
+  Live 1 of 2 found, 0 contacts, 0.0 cm moved in pauses; run 2 failed on
+  `dev`'s escape creep outliving `RemoteRobot`'s 10 s timeout under
+  `drive: ros` (open for the user). Up to 71 candidates a choice. B (oracle,
+  cloning, DAgger) next on the same branch; C (the user's taps) only if B passes.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
