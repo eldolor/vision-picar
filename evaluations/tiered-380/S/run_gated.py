@@ -95,12 +95,17 @@ def main():
     common.RECORDINGS = Path(args.recordings).expanduser()
 
     from brain.perceive import pipeline_for
-    pipes, seen = {}, {}
+    # One pipeline at a time, as the brain holds one a mission:
+    # `pipeline_for` frees the previous one only once nothing refers to it.
+    held, seen = {}, {}
 
     def perceive(path, target, jpeg=None):
         jpeg = jpeg if jpeg is not None else at_res(path, args.res)
         w, _h = width_of(jpeg)
-        pipe = pipes.setdefault(target, pipeline_for(target))
+        if held.get("target") != target:
+            held.clear()
+            held.update(target=target, pipe=pipeline_for(target))
+        pipe = held["pipe"]
         t0 = time.perf_counter()
         a = answer(pipe, jpeg, w)
         a["ms"] = round((time.perf_counter() - t0) * 1000)
