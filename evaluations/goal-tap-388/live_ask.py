@@ -51,6 +51,13 @@ def picker(brain, robot, out, stop):
             moved, t0 = 0.0, time.time()
             hold = ASK_HOLD_S if ask["choice"] != TIMEOUT_CHOICE else 62.0
             while time.time() - t0 < hold:
+                # Only while this choice is still open: the 2026-10-20 run
+                # watched choice 3 for 62 s, past its 60 s pause, and counted
+                # the rule's goal driving off (39.98 cm).
+                cur = ((brain.get("/mission/status").json().get("explore") or {}).get("ask")
+                       or {})
+                if cur.get("choice") != ask["choice"]:
+                    break
                 t = robot.get("/world/truth").json()
                 moved = max(moved, math.hypot(t["x_m"] - before["x_m"], t["y_m"] - before["y_m"]))
                 time.sleep(0.25)
