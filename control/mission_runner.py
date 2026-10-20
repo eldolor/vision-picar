@@ -53,6 +53,7 @@ from typing import Callable, Optional, Tuple
 from brain.agent import ObjectSearchAgent, _takes_local_ok
 from brain.arrival import SOURCE_LOCAL
 from brain.explore import OWN_GOAL_TOLERANCE_M, ExploreAgent  # one tolerance for both (3.76)
+from brain.choice_log import GoalAsk
 from brain.goal_policy import goal_policy_for
 from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
 from brain.inventory import MAX_RANGE_M as INVENTORY_RANGE_M
@@ -563,6 +564,8 @@ class MissionRunner:
         room_label_fn: Optional[Callable[[dict], Optional[str]]] = None,
         room_label_max_calls: Optional[int] = None,
         room_label_mode: str = "spacing",
+        explore_ask_timeout_s: Optional[float] = None,
+        house: Optional[str] = None,
     ):
         if job not in JOBS:
             raise ValueError(f"Unknown job: {job!r}. Known: {', '.join(JOBS)}")
@@ -696,6 +699,13 @@ class MissionRunner:
         # paying again.
         self._late_box: Optional[dict] = None
         self.max_vision_failures = max_vision_failures
+        # 3.88 A: who and where, on every recorded choice; the file is set by
+        # the brain server (`choice_log`), and the records kept here as well.
+        self.mission_id: Optional[str] = None
+        self.house = house
+        self.choice_log = None
+        self.choices: list = []
+        self._choice_error_logged = False
 
         self.memory = MissionMemory(
             mission=mission or ("Survey the house." if job == "survey"
@@ -724,6 +734,12 @@ class MissionRunner:
             extra = {"navigator": self._navigator, "clock": self.clock,
                      # 3.65 phase 2: "rule" (None) or the learned goal choice.
                      "goal_policy": goal_policy_for(explore_goal_policy)}
+            if explore_ask_timeout_s:
+                # 3.88 A: ask mode -- each goal choice waits for a person's
+                # pick (POST /mission/explore/pick), and is recorded.
+                extra["ask"] = GoalAsk(clock=lambda: self.clock(),
+                                       timeout_s=explore_ask_timeout_s)
+                extra["choice_sink"] = self._record_choice
             if policy == "tiered":
                 extra["sight_from"] = "perception"
                 # 3.80.O: the agent's vision_fn is the guarded wrapper below,
@@ -1043,10 +1059,13 @@ class MissionRunner:
         if not self._running:
             return True
         elapsed = self._elapsed_s()
+        # 3.88 A: time paused on a person's pick is not the search's.
+        paused = self._paused_s()
         if (self.mission_time_limit_s and elapsed is not None
-                and elapsed >= self.mission_time_limit_s):
+                and elapsed - paused >= self.mission_time_limit_s):
             self._finish(OUT_OF_BUDGET, f"time limit of {self.mission_time_limit_s:g} s "
-                         f"reached ({elapsed:.1f} s)")
+                         f"reached ({elapsed - paused:.1f} s"
+                         + (f", plus {paused:.1f} s paused on picks)" if paused else ")"))
             return True
         if self.vision_max_calls and self._cloud_calls >= self.vision_max_calls:
             self._finish(OUT_OF_BUDGET, f"cloud call cap of {self.vision_max_calls} "
@@ -1058,6 +1077,40 @@ class MissionRunner:
                          f"{BATTERY_LOW_READINGS} readings in a row")
             return True
         return False
+
+    def _ask(self) -> Optional[GoalAsk]:
+        return getattr(self.agent, "ask", None) if self.explores else None
+
+    def _paused_s(self) -> float:
+        ask = self._ask()
+        return ask.paused_s() if ask is not None else 0.0
+
+    def pick_goal(self, choice, candidate_id) -> tuple:
+        """3.88 A: a person's pick among the open choice's candidates, from
+        the brain's HTTP thread. (True, "") once taken; (False, why) when no
+        mission runs, it does not ask, or the id is stale or unknown -- and
+        then nothing is sent. The tick thread sends the pick."""
+        with self._lock:
+            if not self._running:
+                return False, "no mission is running"
+            ask = self._ask()
+            if ask is None:
+                return False, "this mission does not ask for goal picks"
+            return ask.pick(choice, candidate_id)
+
+    def _record_choice(self, rec: dict) -> None:
+        """One decided choice: kept, and appended to the mission's file. A
+        write that fails is logged once and never fails the mission."""
+        full = {"mission_id": self.mission_id, "house": self.house, **rec}
+        self.choices.append(full)
+        if self.choice_log is None:
+            return
+        try:
+            self.choice_log.append(full)
+        except Exception as e:  # noqa: BLE001 -- a label lost, never the mission
+            if not self._choice_error_logged:
+                logger.warning("goal choice not recorded: %s", e)
+                self._choice_error_logged = True
 
     def _battery_spent(self) -> bool:
         """Read the battery at most every `BATTERY_CHECK_S` of the mission's
@@ -1157,6 +1210,8 @@ class MissionRunner:
                 "budget": {
                     "time_limit_s": self.mission_time_limit_s,
                     "elapsed_s": (round(elapsed, 1) if elapsed is not None else None),
+                    # 3.88 A: of which paused on a person's pick (not counted).
+                    "paused_s": round(self._paused_s(), 1),
                     "battery_floor_v": self.battery_floor_v,
                     "battery_v": self._battery_v,
                     "cloud_calls": self._cloud_calls if self.policy == "vision" else None,
@@ -1221,7 +1276,12 @@ class MissionRunner:
                              "camera_seen_m2": round(len(self.agent.seen)
                                                      * (self.agent.seen_res or 0) ** 2, 2),
                              # 3.77: goal-choice wall time, every choice.
-                             "choice_ms": self.agent.choice_stats()}
+                             "choice_ms": self.agent.choice_stats(),
+                             # 3.88 A: ask mode, and the choice open now.
+                             "asks": self._ask() is not None,
+                             "ask": (self._ask().snapshot()
+                                     if self._ask() is not None else None),
+                             "choices": len(self.choices)}
                             if self.explores else None),
                 "tier_search": self.tier_search,
                 # 3.46: counts only; the list is GET /mission/inventory.
@@ -1557,6 +1617,13 @@ class MissionRunner:
                 try:
                     self._ended_clock = self.clock()
                 except Exception:  # noqa: BLE001 -- nothing before the stop may raise (3.55)
+                    pass
+            ask = self._ask()
+            if ask is not None:
+                # 3.88 A: the pause ends with the mission; no pick lands after.
+                try:
+                    ask.end()
+                except Exception:  # noqa: BLE001 -- nothing before the stop may raise
                     pass
             # 3.47: set with the outcome, in the same locked step, so a
             # stop() that wins the race never finds them rewritten.

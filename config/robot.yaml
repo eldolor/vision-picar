@@ -407,6 +407,13 @@ brain:
   # "learned" (a linear score trained in simulation, brain/explore_goal_weights.json)
   # or "network" (that plus a small network, brain/explore_goal_net.json).
   explore_goal_policy: rule
+  # 3.88 A -- ask mode: explore pauses at each goal choice for a person's pick
+  # among the candidates the rules allow (the Sim tab's map), takes the rule's
+  # pick after explore_ask_timeout_s, and records every choice, one file a
+  # mission, under explore_choice_dir. Off unless set here or by a mission start.
+  explore_ask: false
+  explore_ask_timeout_s: 60.0
+  explore_choice_dir: recordings/explore-choices
 
   # Replaying a recorded walk, which is NOT a mission and wants a longer
   # deadline: nothing is driving, and replay is the burstiest caller here

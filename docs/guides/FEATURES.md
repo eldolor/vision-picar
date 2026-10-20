@@ -675,7 +675,17 @@ finished map at mission start; N1's discovered map replaced it.)
   its scene from the depth grid -- no grid cells), the **vision policy** (one
   paid `/navigate` call per step), or the **tiered policy** (below). The two
   paid ones state the model and wording they will ask with before anything
-  is spent, and validate both at start.
+  is spent, and validate both at start. **Explore policy** (free): nav2's
+  frontier search (`brain/explore.py`, `WORLD_MODE=ros`).
+- **Ask me at each goal** (3.88 A) -- shown for the explore policy and a
+  survey. Explore then pauses at each goal choice: the candidates it may
+  send are drawn on the map as numbered yellow circles (1, ringed bold, is
+  its own pick; a dashed ring is unseen floor rather than an unmapped edge)
+  and the map's readout counts down to its own pick (60 s). A tap on a
+  circle sends that pick (`POST /mission/explore/pick`) and the robot goes
+  there; a tap anywhere else sends nothing -- while explore asks, the map is
+  not tap-to-goal. Every choice is recorded for learning (3.88). Stop and
+  the D-pad still end the mission, as always.
 - **Drill picker** -- `control/drills.py`, off unless `brain.allow_drills`:
   vision errors, vision hangs, or a hung brain loop, each ending with the
   robot stopped.

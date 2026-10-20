@@ -38,6 +38,9 @@
     --map-truth: #F5F7FA;
     /* R6: a nav2 goal and its planned route. */
     --map-goal: #39D98A;
+    /* 3.88 A: explore's candidate goals while it asks for a pick. */
+    --map-ask: #FFC94D;
+    --map-ask-ink: #1A1300;
     --door: #3A4250;
     /* Brand/primary (interactive default, active states) is distinct
        from the semantic accents below -- a single green doing double
@@ -1470,9 +1473,23 @@
           <option value="frontier">Rule-based policy &middot; free</option>
           <option value="vision">Vision policy &middot; paid, one model call per step</option>
           <option value="tiered">Tiered policy &middot; on-board perception, model on a trigger</option>
+          <option value="explore">Explore policy &middot; free, nav2 frontier search</option>
         </select>
       </div>
       <div class="hint" id="brain-policy-hint" style="display:none;"></div>
+      <!-- 3.88 A: explore pauses at each goal choice and this phone picks one
+           by tapping the map. A pick, never a takeover: Stop and the D-pad
+           still end the mission. -->
+      <label class="switch-row" for="brain-ask" id="brain-ask-row" style="display:none;">
+        <span class="switch-copy">
+          <span class="switch-title">Ask me at each goal</span>
+          <span class="switch-sub">
+            Explore pauses at each choice; tap a numbered goal on the map, or it
+            takes its own pick after a minute. Stop and the D-pad still end it.
+          </span>
+        </span>
+        <input type="checkbox" id="brain-ask" class="switch">
+      </label>
       <div class="btn-row" id="brain-policy-pickers-row" style="display:none;">
         <button id="btn-brain-pickers" class="ghost" style="flex:1;">
           Pick the model &amp; wording

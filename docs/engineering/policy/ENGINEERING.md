@@ -26,6 +26,7 @@ file is true only until the code changes and is updated in the same commit.
 | `brain/memory.py` | `MissionMemory` (visited/searched rooms, `Sighting` with a map-frame pose, `ActionRecord`, `is_complete()`, `summary()`, `as_context()`). |
 | `brain/explore.py` | `ExploreAgent(MissionAgent)`, the `explore` policy over nav2 (3.31): frontier, view and approach goals through a `Navigator`, the retry rule, the wedged/boxed escape (`_queue_escape()`, `_do_pending()`: REVERSE, CREEP, OPEN). Since 3.45 every decision is a record in `agent.events` and an INFO line `explore {json}`: `goal_sent` (kind, goal, and for a frontier its `rank`, `candidates`, `path_m`, `size_m`, `score`, `skipped`; since 3.77 every frontier, view or room goal also carries `choice_ms`, the wall time of the goal choice that sent it), `goal_refused`, `goal_ended` (`state`, `seconds`, `moved_m`; `state` may be `stalled`, 3.83), `escape` (`why`: wedged or boxed), `creep` (3.74: `way`, `executed`, `waited`, the safety layer's `forward` and `floor` readings just before, each `[cm, source]` off one depth grid, and `floor_blind`, the band zones reading unusable), `verb` (action, `executed`, `waited`, the refusal), `searched`; each with the SLAM `pose`. A verb refused for the mission's own goal (`OWN_GOAL_REFUSAL`) or for `ros` still holding the robot just after it (`OWN_GOAL_HOLDER`, 3.76 C5) waits; any other refusal ends the mission. A goal refused because a person holds the robot raises `Preempted` from the runner's gated navigator (3.76 C4); one refused `person_stop` (a person pressed Stop; explore's goals carry `x-driver: brain` through `RemoteNavigator` since 3.84) raises `StoppedByPerson`, and the mission ends `cancelled` by that Stop. Since 3.76 E: a goal nav2 holds that is not the mission's own (`OWN_GOAL_TOLERANCE_M`, 0.05 m, shared with the runner) -- live or just finished -- raises `Preempted`, and `_verb`/`_cancel` cancel only the mission's own (a leftover before its first goal is still cancelled); a goal call that fails transiently is a wait, up to `BRIDGE_BLIPS_MAX` (40) in a row, and any other error still ends the mission -- a transport error or a 5xx from the robot server, unless its `x-bridge-retryable: false` header says its bridge refused it for a fault no wait mends, which raises `_setup_fault()` (3.82); a goal the robot server refuses with `retryable: false`, or a map that is unusable with `retryable: false` (its bridge refuses the robot server: a 401 for mismatched secrets; 3.82), raises `_setup_fault()`, so the mission ends `failed` naming the status and `hint()`'s advice, where any other refusal or missing map still waits; an approach already within standoff cancels a live goal. A goal with no house position (`RosWorld`'s `unanchored`: a new SLAM session not yet anchored) is never the mission's own -- its goals are sent on an anchored session whose anchor never changes -- so it is treated exactly as any goal that is not the mission's own (`_is_own` is False without `x_m`; 3.76 round 7, replacing rounds 3-6's special cases). Known consequence: before the mission's first goal, such a goal is a leftover and `_verb` cancels it, as it cancels a placed leftover; on `dev` before 3.76 H1 an unanchored session's goal read as no goal and was not cancelled. |
 | `brain/frontier.py` | `find_frontiers()`, `reachable()`, `RetryBook`, `camera_seen()`, `find_view_gaps()`: pure functions over `get_map()`'s grid (3.31). `RetryBook.fail(known=)` takes a count or a callable measured at the entry's own position; explore passes its map since 3.76, which turns on the early retry (`early_growth`, 25% more known cells around a failed place) that had never run. Since 3.77 the grid work is numpy and gives exactly the answers of the pure-Python version it replaced (frozen in `tests/frontier_reference.py`, compared by `tests/test_frontier_fast*.py`), where an order or a tie decides an answer, the old order is kept. `reach()` returns a `Reach` (the stops in BFS order, their path lengths, `steps` as a dict on demand); explore computes it once per goal choice and passes it to `find_frontiers(..., reach_map=)`, `find_view_gaps(..., reach_map=)` and the boxed-in check. |
+| `brain/choice_log.py` | 3.88 A: `GoalAsk` (one open goal choice at a time: `open()`, `pick()` from the brain's HTTP thread, `poll()` from the tick, `close()`, `end()`, `paused_s()`, `snapshot()`; one lock, nothing called out under it), `ChoiceLog` (one mission's JSON lines, each flushed and fsynced; the file made at the first record), `read_choices()` (skips a cut-off last line). |
 | `brain/rooms.py` | `ROOM_FEATURES`, `identify_room()`. Tested, but nothing in the mission path calls it: sim frames carry a room label and real frames take the cloud's `room_guess`. |
 
 **Which agent runs.** `control/mission_runner.py` builds `VisionAgent` for
@@ -512,6 +513,31 @@ from `brain/explore_goal_net.json` (the linear weights plus each layer's
 each mission's advantage its reward against the mean of 8 rollouts of the
 same house, the MLP's last layer starting at zero so training starts at the
 linear policy.
+
+**Explore asks a person (3.88 A).** With `explore_ask` on (brain config,
+or a start's own `explore_ask`), `MissionRunner` gives `ExploreAgent` a
+`GoalAsk` (timeout `explore_ask_timeout_s`, 60 s) and a `choice_sink`. Then
+`_choose_next` calls `_open_ask` where the rule or `_learned_goal` would
+send: the same pool as 3.65 (`_pool()`, frontiers first in the rule's order,
+then view gaps), published as `status.explore.ask` -- each candidate `{id:
+"<choice>.<index>", kind, x_m, y_m, path_m, rank, features}` (features by
+`FEATURES` name, rounded to 4 places) -- with `default` the rule's pick (the
+pool's first) or, under a learned policy, its `best()`. Nothing is sent and
+the step is a WAIT; choice time (`choice_ms`) ends at the opening. Later ticks
+reach `_answer_ask` from `_next_frontier`: a pick taken by
+`GoalAsk.pick()` (`person`), or the default once `timeout_s` has passed
+(`rule_timeout`), is recorded (`_record_choice`: choice, step, pose, every
+candidate's features, default, pick, by, `waited_s`; the runner adds
+`mission_id` and `house`) and sent by `_send_pooled` with `picked_by` and
+`pick` on its `goal_sent` event. A send refused before nav2 saw it is sent
+again on later ticks, and each attempt re-checks the retry book; a pick no
+longer available withdraws the choice. A tick that acts before reaching the
+choice (found, a sighting, a glimpse to face) withdraws it unrecorded
+(`ask_withdrawn`). While waiting, `_probe_authority()` centres the camera
+every `ASK_PROBE_S` (1 s): it moves nothing, and a person's Stop latch or a
+person holding the robot is refused by name and ends the mission as the
+next goal would on `dev`; the mission's own goal holding the robot or a
+veto is ignored. Events: `ask_opened`, `goal_picked`, `ask_withdrawn`.
 
 Arrival reads the scan in the body frame using `LIDAR_X_M` from
 `robot/safety.py`; its value is in the canonical chassis table,

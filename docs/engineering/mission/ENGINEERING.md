@@ -394,6 +394,7 @@ otherwise). CORS allows any origin.
 | `POST /mission/start` | `MissionStartRequest` (below); first, after the 409 check and before the build, `robot().resume_autonomy()` (`POST /autonomy/resume` on the robot server) lifts a person's Stop's latch (3.84) -- a failure is logged, never a refusal; a start refused after it puts the latch back (`relatch_autonomy()`, 3.76 K2). The build slot is held until a stopped build's runner is discarded, so a start meanwhile gets the 409 and 3.81.E's wait never reads an older runner | `{"started": true, "status": {...}}` | 409 `"A mission is already running."` (also while another start is still building its runner, 3.76 C2); 409 `"Stopped while the mission was being set up."` when a Stop landed during the build (the runner is discarded, never started); 400 config or validation error with its message (explore: an unreachable robot server or a refused secret is named as such, 3.76); 403 drill on a brain with drills off; 422 an unknown field or a bad type |
 | `POST /mission/stop` | none | `{"stopped": true, "status": {...}}` -- cancels the loop task, then `runner.stop()`; with no mission ever run, stops the robot anyway and returns the idle status | -- |
 | `GET /mission/status` | none | `MissionRunner.status()` plus `fault`; before any mission `{"running": false, "outcome": "idle", "step": 0, "log_tail": [], "fault": "none"}` | -- |
+| `POST /mission/explore/pick` | `GoalPickRequest` (`extra="forbid"`): `choice` int >= 1, `candidate` str 1-32 chars, as `status.explore.ask` publishes them (3.88 A) | `{"accepted": true, "choice", "candidate"}` -- `runner.pick_goal()` stores it under the runner's and the ask's locks; the next tick sends it to nav2 through the gated navigator. Never `/world/goal` | 409 with the reason, nothing sent: no mission, a mission that does not ask, a choice that is not the open one, an id not offered, a second pick, a pick at or after the timeout; 422 a bad body |
 | `GET /mission/inventory` | none | `{"inventory": null}` before any mission; else the current or last mission's object inventory (3.46; shape in the [perception engineering spec](../perception/ENGINEERING.md), "Inventory"). On mission end the report is also saved by `control/inventory_store.py` on a daemon thread | -- |
 | `GET /health` | none | liveness and configuration description; the verdict rules are the operations domain's | -- |
 | `POST /recording/frame`, `POST /recording/finish` | mounted from `control/recording_routes.py` | owned by the recordings domain | -- |
@@ -410,6 +411,7 @@ otherwise). CORS allows any origin.
 | `job` | str, `"find"` | 3.70: `"survey"` takes no target and `policy: "explore"` only; its time limit is the config's `survey_time_limit_s`. Checked by `MissionRunner` (400) |
 | `policy` | str, `"frontier"` | a plain `str` in the model, not a `Literal`. A value outside `POLICIES` (`frontier`, `vision`, `tiered`) passes validation and is refused by `MissionRunner` with `Unknown policy: ...`, which is a **400**, not a 422 |
 | `model_id`, `prompt_variant` | str, None | request, then config, then the vision service's default; checked once against `GET {vision_url}/navigate/models` |
+| `explore_ask` | bool, None | 3.88 A: ask mode for this mission, over the config's `explore_ask`; `true` for a policy whose search is not explore's is a 400. With it on, `house` is the robot server's `/health` `sim_map` (`RemoteRobot.sim_map()`, None on the car) and the choices go to `<explore_choice_dir>/<mission id>.jsonl` (`runner.choice_log`, `runner.mission_id`); `metrics_config.explore_ask` records it |
 | `fault` | str, `"none"` | a plain `str`. `drills.apply()` refuses a value outside `drills.FAULTS` (`none`, `vision_error`, `vision_hang`, `tick_hang`) with `Unknown fault: ...`, which is a **400**. It does so before the drills-off check, so an unknown fault is a 400 even when drills are off |
 
 ### `MissionRunner.status()` fields
@@ -417,7 +419,9 @@ otherwise). CORS allows any origin.
 `running`, `outcome`, `end_state` (3.70: one of the four end states, or
 null), `end_reason`, `cancelled_by` (`stop`, `dpad` or null), `report`
 (above; null until built, and for other outcomes), `budget`
-(`time_limit_s`, `elapsed_s`, `battery_floor_v`, `battery_v`,
+(`time_limit_s`, `elapsed_s`, `paused_s` -- 3.88 A: of the elapsed time,
+how much was paused on a person's pick, which the time limit leaves out --
+`battery_floor_v`, `battery_v`,
 `cloud_calls`, `cloud_call_limit`; both null except under `vision`, and
 the limit null with the cap off), `error`,
 `policy`, `job` (3.70: `find` or `survey`), `survey` (null for `find`;
@@ -428,7 +432,11 @@ seed `[x_m, y_m, name]`), `mission`, `target_object`,
 `spinning`), `last_reasoning`, `rooms_visited`, `rooms_searched`,
 `vision_failures`, `tier`, `perception`, `arrival`, `late_confirmation`,
 `last_frame_seq`, `ticks`, `seconds_since_last_tick`, `tick_rate_hz`,
-`sighting`, `log_tail` (last `LOG_TAIL_LINES` = 20). `tier`/`perception`
+`sighting`, `explore` (null unless explore searches: `goals_sent`,
+`goals_failed`, `last_event`, `camera_seen_m2`, `choice_ms`, and 3.88 A's
+`asks`, `ask` -- the open choice, `{choice, candidates, default, picked,
+waited_s, timeout_s, remaining_s}`, or null -- and `choices`, the count
+recorded), `log_tail` (last `LOG_TAIL_LINES` = 20). `tier`/`perception`
 are null under any policy without a perception tier. `late_confirmation`
 (3.53) is null except after an `arrived_unconfirmed` ending: `{state,
 probes, paid_calls, reason, at, confirmed?}`, `state` one of `waiting`,
@@ -498,6 +506,9 @@ The `brain:` block of `config/robot.yaml`, read by
 | `drill_vision_timeout_s` | 2.0 | 2.0 | s | vision drills | a demo in seconds, same guard |
 | `drill_tick_timeout_s` | 3.0 | 3.0 | s | `tick_hang` drill | the hang lasts 3x this (`drills.OVERSHOOT`) |
 | `metrics_url`, `metrics_secret` | `""` | `""` | -- | `_ship_metrics` | empty disables shipping |
+| `explore_ask` | false | false | -- | brain_server | 3.88 A: explore pauses at each goal choice for a person's pick; env `EXPLORE_ASK` (0/1/true/false). A start's `explore_ask` overrides it |
+| `explore_ask_timeout_s` | 60.0 | 60.0 | s | runner (`GoalAsk`) | 3.88 criterion 1: no pick in this long takes the rule's (`rule_timeout`). Must be > 0 |
+| `explore_choice_dir` | `recordings/explore-choices` | same | path | brain_server | 3.88 A: one `<mission id>.jsonl` a mission asked in; env `EXPLORE_CHOICE_DIR`. `recordings/` is git-ignored |
 
 The `tier_*` and `perception_*` keys are passed straight through to the
 policy and perception pipeline; see [policy](../policy/ENGINEERING.md) and

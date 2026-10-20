@@ -130,6 +130,16 @@ class RemoteRobot(RobotInterface):
         that never started. True if it latched (False: one was set since)."""
         return bool(self._request("POST", "/autonomy/relatch", json={"by": by}).get("latched"))
 
+    def sim_map(self) -> Optional[str]:
+        """3.88 A: the simulated house behind this robot server (its
+        /health's `sim_map`), for the record of a goal choice. None on the
+        car, or when it cannot be read -- never an error."""
+        try:
+            name = self._request("GET", "/health").get("sim_map")
+        except Exception:  # noqa: BLE001 -- a label, not a reason to refuse a start
+            return None
+        return name if isinstance(name, str) else None
+
     # ---------- camera pan ----------
 
     def look_left(self) -> dict:

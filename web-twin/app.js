@@ -190,6 +190,10 @@
     // "tiered" runs YOLO + CLIP inside the brain process on every frame and
     // spends a call only on a trigger (PLAN-onboard-perception.md 2.4, P2).
     brainPolicy: "frontier",
+    // 3.88 A: start explore in ask mode, and the choice it has open now
+    // (`status.explore.ask`), drawn on the map and answered by a tap.
+    brainAsk: false,
+    brainAskOpen: null,
     // 3.70 S5: the panel's job -- "find" (a target) or "survey" (no target,
     // explore only). Not remembered across loads: a survey on the car spends
     // paid room-name calls, so it is chosen each time. brainLabelCap is the
@@ -735,15 +739,113 @@
     return '<br><span class="goal-line">' + what + hint + "</span>";
   }
 
+  // ---------- 3.88 A: a person picks explore's next goal ----------
+  // While the brain's explore asks, its candidates are drawn on the map,
+  // numbered (1 is its own pick), and a tap on one is a PICK -- its own
+  // message to the brain, `POST /mission/explore/pick`. Never the map goal
+  // below (`/world/goal` as `twin-dpad`), which outranks the brain and is a
+  // person taking the robot, not teaching explore (the user, 2026-10-20).
+  function setBrainAsk(ask) {
+    var before = state.brainAskOpen;
+    state.brainAskOpen = ask && ask.candidates && ask.candidates.length ? ask : null;
+    if ((before && before.choice) !== (state.brainAskOpen && state.brainAskOpen.choice)
+        || !!before !== !!state.brainAskOpen) renderMap();
+    else if (state.brainAskOpen) {
+      var r = document.getElementById("ask-left");
+      if (r) r.textContent = Math.round(state.brainAskOpen.remaining_s) + " s";
+    }
+  }
+
+  // The candidates in the order drawn: the brain's own pick first, so "1"
+  // always means "what it would do anyway".
+  function askOrder(ask) {
+    var first = ask.candidates.filter(function (c) { return c.id === ask.default; });
+    return first.concat(ask.candidates.filter(function (c) { return c.id !== ask.default; }));
+  }
+
+  function askRadiusPx(scale) { return Math.max(8, Math.min(13, scale * 1.6)); }
+
+  function drawAsk(ctx, grid, scale) {
+    var ask = state.brainAskOpen;
+    if (!ask) return;
+    var css = getComputedStyle(document.documentElement);
+    var fill = (css.getPropertyValue("--map-ask") || "#FFC94D").trim();
+    var ink = (css.getPropertyValue("--map-ask-ink") || "#1A1300").trim();
+    var r = askRadiusPx(scale);
+    askOrder(ask).forEach(function (c, k) {
+      var x = ((c.x_m - grid.origin_x_m) / grid.resolution_m) * scale;
+      var y = ((c.y_m - grid.origin_y_m) / grid.resolution_m) * scale;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = fill;
+      ctx.globalAlpha = c.id === ask.picked ? 1 : 0.9;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      // A frontier (unmapped edge) ringed solid, a view gap (mapped floor the
+      // camera has not seen) dashed; the brain's own pick and a sent pick bold.
+      ctx.lineWidth = k === 0 || c.id === ask.picked ? Math.max(2.5, scale * 0.45) : 1.5;
+      ctx.setLineDash(c.kind === "view" ? [3, 2] : []);
+      ctx.strokeStyle = ink;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = ink;
+      ctx.font = "bold " + Math.round(r * 1.1) + "px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(k + 1), x, y + 0.5);
+    });
+  }
+
+  function askText() {
+    var ask = state.brainAskOpen;
+    var n = ask.candidates.length;
+    var head = ask.picked ? "explore: picked, sending it"
+      : "explore asks: tap a numbered goal (" + n + " allowed; 1 is its own pick)";
+    return '<br><span class="goal-line ask-line">' + head + ' \u00b7 rule pick in <span id="ask-left">'
+      + Math.round(ask.remaining_s) + " s</span></span>";
+  }
+
+  // The candidate under a tap, within its drawn circle; null when none is.
+  function askCandidateAt(grid, px, py, scale) {
+    var best = null, bestD = askRadiusPx(scale) * 1.4;
+    askOrder(state.brainAskOpen).forEach(function (c) {
+      var x = ((c.x_m - grid.origin_x_m) / grid.resolution_m) * scale;
+      var y = ((c.y_m - grid.origin_y_m) / grid.resolution_m) * scale;
+      var d = Math.hypot(px - x, py - y);
+      if (d <= bestD) { best = c; bestD = d; }
+    });
+    return best;
+  }
+
+  async function pickAskCandidate(c) {
+    var ask = state.brainAskOpen;
+    try {
+      await brainApi("POST", "/mission/explore/pick", { choice: ask.choice, candidate: c.id });
+      ask.picked = c.id;
+      renderMap();
+      showToast("Explore will go there next", "ok");
+    } catch (e) {
+      // 409: that choice is over (timed out, superseded, mission ended).
+      showToast("Pick not taken: " + e.message, e.status === 409 ? "warn" : "err");
+    }
+  }
+
   // Tap the SLAM map: send the robot there (nav2, through the robot server).
   function onMapTap(ev) {
     var grid = state.lastMap;
-    if (!isSlamMap(grid) || state.goalsUnsupported || !state.connected) return;
     var canvas = ev.currentTarget;
     var rect = canvas.getBoundingClientRect();
     var px = (ev.clientX - rect.left) * (canvas.width / rect.width);
     var py = (ev.clientY - rect.top) * (canvas.height / rect.height);
-    var scale = canvas.width / grid.width;
+    var scale = grid ? canvas.width / grid.width : 1;
+    if (state.brainAskOpen && grid && grid.usable) {
+      // 3.88 A: while explore asks, a tap is a pick or nothing -- never a goal.
+      var c = askCandidateAt(grid, px, py, scale);
+      if (c) pickAskCandidate(c);
+      else showToast("Tap one of the numbered goals -- explore picks only among those", "info");
+      return;
+    }
+    if (!isSlamMap(grid) || state.goalsUnsupported || !state.connected) return;
     var x = grid.origin_x_m + (px / scale) * grid.resolution_m;
     var y = grid.origin_y_m + (py / scale) * grid.resolution_m;
     // A person's tap (handoff 3b): named as the D-pad is, so it outranks a
@@ -821,8 +923,10 @@
       drawPose(ctx, grid, SCALE, werr.truth, "ghost");
     }
     drawGoal(ctx, grid, SCALE);
+    drawAsk(ctx, grid, SCALE);
     drawPose(ctx, grid, SCALE, state.lastPose, "estimate");
-    canvas.classList.toggle("tappable", isSlamMap(grid) && !state.goalsUnsupported);
+    canvas.classList.toggle("tappable", !!state.brainAskOpen
+      || (isSlamMap(grid) && !state.goalsUnsupported));
 
     var seen = 0;
     for (var i = 0; i < grid.cells.length; i++) {
@@ -832,7 +936,7 @@
     readout.innerHTML = "map: " + seen + "/" + grid.cells.length + " cells seen (" +
       pct + "%) \u00b7 " + Math.round(grid.resolution_m * 100) + "cm cells \u00b7 " +
       '<span class="src">' + grid.map_id + " v" + grid.map_version + "</span>" +
-      slamErrorText(slam ? werr : null) + goalText(grid);
+      slamErrorText(slam ? werr : null) + (state.brainAskOpen ? askText() : goalText(grid));
   }
 
   // "SLAM error 4.2 cm / 1.1° · odometry alone 45 cm / 39°" -- the one
@@ -2310,6 +2414,7 @@
 
     const wasRunning = state.brainMissionRunning;
     state.brainMissionRunning = !!status.running;
+    setBrainAsk(status.running && status.explore ? status.explore.ask : null);
     renderBrainStatus(status);
     updateBrainControls();
 
@@ -2491,6 +2596,7 @@
     state.brainPollTimerId = null;
     brainPollGen++;                  // 3.76: a poll in flight is now stale
     state.brainPollErrored = false;
+    setBrainAsk(null);               // 3.88 A: an unwatched choice is not drawn
   }
 
   function updateBrainControls() {
@@ -2612,6 +2718,7 @@
     document.getElementById("brain-fault-row").style.display = survey ? "none" : "";
     renderBrainPolicyHint();   // both read the job: one redraw for all its controls
     updateBrainPickersRow();
+    updateBrainAskRow();
     const hint = document.getElementById("brain-job-hint");
     hint.style.display = survey ? "" : "none";
     if (!survey) return;
@@ -2659,6 +2766,8 @@
     setButtonBusy(btn, true, "Starting\u2026");
     const body = survey ? { job: "survey", policy: "explore" }
       : { target_object: target, fault: fault, policy: state.brainPolicy };
+    // 3.88 A: sent only when switched on, and only for explore's search.
+    if (state.brainAsk && (survey || state.brainPolicy === "explore")) body.explore_ask = true;
     // Sent only on the policy that reads them, and only when actually
     // picked: an absent field means "whatever the brain, and then the vision
     // service, defaults to". Sending null instead would be the same value
@@ -2724,7 +2833,19 @@
     updateModelPickerRow();
     renderBrainPolicyHint();
     updateBrainPickersRow();
+    updateBrainAskRow();
   });
+
+  document.getElementById("brain-ask").addEventListener("change", function () {
+    state.brainAsk = this.checked;
+  });
+
+  // 3.88 A: the switch shows for the missions whose search is explore's.
+  function updateBrainAskRow() {
+    const row = document.getElementById("brain-ask-row");
+    if (row) row.style.display = state.brainJob === "survey"
+      || state.brainPolicy === "explore" ? "" : "none";
+  }
 
   async function connectBrain(opts) {
     const silent = !!(opts && opts.silent);
@@ -6216,7 +6337,8 @@
   // load for the many setups that run no brain service at all.
   const brainPolicyEl = document.getElementById("brain-policy");
   const savedPolicy = prefGet(PREF.brainPolicy);
-  if (savedPolicy === "vision" || savedPolicy === "frontier" || savedPolicy === "tiered") {
+  if (savedPolicy === "vision" || savedPolicy === "frontier" || savedPolicy === "tiered"
+      || savedPolicy === "explore") {
     state.brainPolicy = savedPolicy;
     brainPolicyEl.value = savedPolicy;
     // A remembered "vision" has to bring the Guide tab's pickers back with

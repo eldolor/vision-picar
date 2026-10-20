@@ -233,6 +233,14 @@ DEFAULTS = {
     # hand-written order), "learned" (brain/explore_goal_weights.json) or
     # "network" (that plus a small network, brain/explore_goal_net.json).
     "explore_goal_policy": "rule",
+    # 3.88 A -- ask mode: explore pauses at each goal choice for a person's
+    # pick among the candidates the rules allow (POST /mission/explore/pick),
+    # takes the rule's pick after explore_ask_timeout_s, and records every
+    # choice to <explore_choice_dir>/<mission id>.jsonl. Off by default; a
+    # mission start may turn it on for itself (`explore_ask`).
+    "explore_ask": False,
+    "explore_ask_timeout_s": 60.0,
+    "explore_choice_dir": "recordings/explore-choices",
     # Replaying a recorded walk (control/walk_replay.py) is a different
     # question from a live mission's vision call, and it wants a different
     # deadline. A mission is impatient on purpose -- there is a robot
@@ -346,6 +354,14 @@ def load_brain_config(config_path=None) -> dict:
     # goal choice per stack without editing this yaml; validated below.
     if os.environ.get("EXPLORE_GOAL_POLICY"):
         merged["explore_goal_policy"] = os.environ["EXPLORE_GOAL_POLICY"]
+    # 3.88 A: the same, for ask mode and where its choices are written.
+    if os.environ.get("EXPLORE_ASK"):
+        raw = os.environ["EXPLORE_ASK"].strip().lower()
+        if raw not in ("0", "1", "true", "false"):
+            raise ValueError(f"EXPLORE_ASK must be 0/1/true/false; got {raw!r}")
+        merged["explore_ask"] = raw in ("1", "true")
+    if os.environ.get("EXPLORE_CHOICE_DIR"):
+        merged["explore_choice_dir"] = os.environ["EXPLORE_CHOICE_DIR"]
     # Same idea, for a brain deployment whose robot has no EFS-backed
     # recordings volume mounted (cloudformation/teleop-brain.yaml) --
     # without this, a recorded frame would silently land on the container's
@@ -436,6 +452,15 @@ def load_brain_config(config_path=None) -> dict:
     if float(merged["cloud_probe_s"]) < 0:
         raise ValueError(f"brain.cloud_probe_s must be >= 0 (0 = off); "
                          f"got {merged['cloud_probe_s']}")
+    if not isinstance(merged["explore_ask"], bool):
+        raise ValueError(f"brain.explore_ask must be true or false; got {merged['explore_ask']!r}")
+    ask_s = merged["explore_ask_timeout_s"]
+    if (isinstance(ask_s, bool) or not isinstance(ask_s, (int, float))
+            or not math.isfinite(ask_s) or ask_s <= 0):
+        raise ValueError(f"brain.explore_ask_timeout_s must be a number of seconds > 0; "
+                         f"got {ask_s!r}")
+    if not str(merged["explore_choice_dir"] or "").strip():
+        raise ValueError("brain.explore_choice_dir must name a directory")
     if merged["explore_goal_policy"] not in ("rule", "learned", "network"):
         raise ValueError(f"brain.explore_goal_policy must be 'rule', 'learned' or 'network'; "
                          f"got {merged['explore_goal_policy']!r}")

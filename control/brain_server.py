@@ -90,6 +90,7 @@ from brain.navigate import MAX_TARGET_CHARS, vision_fn_for
 from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
                             DEFAULT_MATCH_PROBABILITY, PerceptionUnavailable)
 from brain.tiered import tiered_vision_fn_for
+from brain.choice_log import ChoiceLog
 from control import drills
 from control.brain_config import load_brain_config
 from control.inventory_store import inventory_store_from_config
@@ -172,6 +173,19 @@ class MissionStartRequest(BaseModel):
     # One of control/drills.FAULTS. Breaks exactly one thing so a failsafe
     # can be watched firing; "none" is an ordinary mission.
     fault: str = "none"
+    # 3.88 A: ask mode for this mission (explore's search only), over the
+    # config's `explore_ask`. Omitted follows the config.
+    explore_ask: Optional[bool] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class GoalPickRequest(BaseModel):
+    """3.88 A: a person's pick of explore's next goal -- one candidate of
+    the open choice, by the ids `/mission/status` publishes. Its own message:
+    never the person's map goal (`/world/goal`)."""
+    choice: int = Field(ge=1)
+    candidate: str = Field(min_length=1, max_length=32)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -523,6 +537,12 @@ def create_app(
                              "(brain.tier_local_vlm_url / LOCAL_VLM_URL): without it "
                              "every question is a cloud call whose direction is unused.")
         policy_name = "explore policy" if req.policy == "explore" else "explore search"
+        explores = req.policy == "explore" or tier_search == "explore"
+        if req.explore_ask and not explores:
+            raise ValueError("explore_ask pauses explore's goal choice: it needs policy "
+                             "'explore' (or a tiered mission whose search is explore's).")
+        asks = explores and (config["explore_ask"] if req.explore_ask is None
+                             else req.explore_ask)
         if req.policy == "explore" or tier_search == "explore":
             # 3.31. Goals go to nav2 through the robot server; checked here so
             # a world with no planner refuses at start, not on the first tick.
@@ -645,7 +665,13 @@ def create_app(
             max_vision_failures=config["max_vision_failures"],
             explore_goal_policy=config["explore_goal_policy"],
             tier_search=tier_search,
+            explore_ask_timeout_s=config["explore_ask_timeout_s"] if asks else None,
         )
+        if asks:
+            # 3.88 A: which house each recorded choice was made in -- the
+            # simulator's, from the robot server; None on the car.
+            sim_map = getattr(robot, "sim_map", None)
+            kwargs["house"] = sim_map() if sim_map is not None else None
         if navigator is not None:
             kwargs["navigator"] = navigator
         try:
@@ -687,6 +713,12 @@ def create_app(
                                or ("survey" if req.job == "survey" else "mission")))
         runner.inventory_sink = lambda report: threading.Thread(
             target=store.save, args=(mission_id, report), daemon=True).start()
+        runner.mission_id = mission_id
+        if asks:
+            # 3.88 A: one file a mission, created at its first choice.
+            safe = re.sub(r"[^A-Za-z0-9._-]+", "-", mission_id).strip("-")[:100]
+            runner.choice_log = ChoiceLog(os.path.join(config["explore_choice_dir"],
+                                                       f"{safe}.jsonl"))
         # The knobs whose effect the dashboard exists to watch. A trend
         # line without the config that produced it is a set of numbers
         # with no cause attached.
@@ -705,6 +737,7 @@ def create_app(
                 "navigate_model_id", "navigate_prompt_variant",
                 "explore_goal_policy",
             ) if k in config},
+            "explore_ask": asks,
         }
         return runner
 
@@ -1026,6 +1059,22 @@ def create_app(
         # No mission has ever run: stop the car anyway.
         await asyncio.to_thread(robot().stop)
         return {"stopped": True, "status": {**_idle_status(), "cloud": cloud_status()}}
+
+    @app.post(prefix + "/mission/explore/pick", dependencies=[Depends(require_secret)])
+    async def pick_goal(req: GoalPickRequest):
+        """3.88 A: a person picks explore's next goal among the candidates of
+        the open choice (`status.explore.ask`). 409, and nothing sent, for no
+        mission, a mission that does not ask, or a stale or unknown id. It
+        never drives: the mission's next tick sends the pick to nav2 as its
+        own goal, through the same gate as every goal it sends."""
+        runner = state["runner"]
+        pick = getattr(runner, "pick_goal", None)
+        if runner is None or pick is None:
+            raise HTTPException(status_code=409, detail="no mission is running")
+        ok, why = pick(req.choice, req.candidate)
+        if not ok:
+            raise HTTPException(status_code=409, detail=why)
+        return {"accepted": True, "choice": req.choice, "candidate": req.candidate}
 
     @app.get(prefix + "/mission/inventory", dependencies=[Depends(require_secret)])
     async def mission_inventory():

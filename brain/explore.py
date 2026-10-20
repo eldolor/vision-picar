@@ -50,6 +50,8 @@ from brain.perceive import DETECTED
 from brain.tiered import STEER_BAND_DEG, located_local_bearing, turn_for
 from brain.frontier import (RetryBook, camera_seen, find_frontiers, find_view_gaps,
                             known_near, reach, reachable)
+from brain.choice_log import BY_RULE_TIMEOUT, GoalAsk
+from brain.goal_policy import FEATURES as GOAL_FEATURES
 from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
@@ -135,6 +137,11 @@ LOCAL_FACE_DEG = 15.0
 # 3.80.O review: the longest it waits a stretch for the local VLM's next
 # answer with no ranged sighting (two of its answer windows).
 LOCAL_WAIT_MAX_S = 6.0
+# 3.88 A: while paused on a person's pick, the camera is centred this often
+# (sim or wall seconds) -- a command that moves nothing, so a person's Stop
+# or D-pad meanwhile is heard as dev's next command hears it (3.84: refused
+# by name, the mission ends `cancelled`), not after the pause.
+ASK_PROBE_S = 1.0
 # Transient goal-call failures in a row before the search gives up (3.76):
 # about ten seconds of ticks.
 BRIDGE_BLIPS_MAX = 40
@@ -194,6 +201,8 @@ class ExploreAgent(MissionAgent):
         goal_policy: Optional[LinearGoalPolicy] = None,
         sight_from: str = "frame",
         local_track_fn: Optional[Callable[[bool], None]] = None,
+        ask: Optional[GoalAsk] = None,
+        choice_sink: Optional[Callable[[dict], None]] = None,
         **kwargs,
     ):
         super().__init__(robot, memory, **kwargs)
@@ -226,6 +235,13 @@ class ExploreAgent(MissionAgent):
         self.retry = retry or RetryBook()
         # 3.65 phase 2: None is the rule; a policy ranks the same candidates.
         self.goal_policy = goal_policy
+        # 3.88 A: ask mode. None is off. Else each goal choice pauses on this
+        # question until a person picks (or it times out to the rule's pick),
+        # and every choice so made goes to `choice_sink` (brain/choice_log.py).
+        self.ask = ask
+        self.choice_sink = choice_sink
+        self._asked: Optional[dict] = None   # the open choice's own pool, frozen
+        self._ask_touched = False
         self.exhausted = False         # read by MissionRunner: ends `exhausted`
         # 3.70 E3: labelled rooms the robot's centre has been inside, by the
         # map's own room labels; and how often a room goal arrived without
@@ -330,6 +346,16 @@ class ExploreAgent(MissionAgent):
         return result
 
     def _choose(self, frame: dict, scene: dict):
+        # 3.88 A: an open question survives only a tick that comes back to the
+        # goal choice. Anything that acts first -- the target seen, a glimpse
+        # to face, found -- withdraws it, and the pause ends there.
+        self._ask_touched = False
+        out = self._choose_tick(frame, scene)
+        if self._asked is not None and not self._ask_touched:
+            self._withdraw_ask(f"superseded: {out[2]}")
+        return out
+
+    def _choose_tick(self, frame: dict, scene: dict):
         self._ticks += 1
         now = self.clock()
         # 3.80.G: the tiers' scene, for sightings read from their perception
@@ -779,6 +805,10 @@ class ExploreAgent(MissionAgent):
         return known_near(m, x_m, y_m, self.retry.radius_m)
 
     def _next_frontier(self, now: float):
+        if self.ask is not None:
+            self._ask_touched = True
+            if self._asked is not None:
+                return self._answer_ask(now)
         self._choice_t0, self._choice_ms = time.perf_counter(), None
         try:
             return self._choose_next(now)
@@ -830,11 +860,16 @@ class ExploreAgent(MissionAgent):
         frontiers = find_frontiers(m, pose["x_m"], pose["y_m"], clearance_m=leave,
                                    reach_map=rch)
         skipped = {"reached twice": 0, "set aside": 0}
-        if self.goal_policy is not None:
+        pooled = self.goal_policy is not None or self.ask is not None
+        if self.ask is not None:
+            out = self._open_ask(m, pose, frontiers, leave, known, now, skipped, rch)
+            if out is not None:
+                return out
+        elif self.goal_policy is not None:
             out = self._learned_goal(m, pose, frontiers, leave, known, now, skipped, rch)
             if out is not None:
                 return out
-        for rank, f in enumerate(frontiers if self.goal_policy is None else ()):
+        for rank, f in enumerate(frontiers if not pooled else ()):
             if sum(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < self.retry.radius_m
                    for rx, ry in self._reached) >= 2:
                 skipped["reached twice"] += 1
@@ -895,11 +930,11 @@ class ExploreAgent(MissionAgent):
                     or any(math.hypot(g.goal[0] - vx, g.goal[1] - vy) < self.retry.radius_m
                            for vx, vy in self._view_goals))
 
-    def _learned_goal(self, m, pose, frontiers, leave, known, now, skipped, rch=None):
-        """3.65 phase 2: pool every frontier and view gap the rule would
-        send, and send the one the policy scores highest. None when the rules
-        allow none -- the caller then decides boxed, cooling or exhausted,
-        exactly as under the rule."""
+    def _pool(self, m, pose, frontiers, leave, known, now, skipped, rch=None):
+        """3.65 phase 2: every frontier and view gap the rule would send, as
+        `[(kind, candidate, rank)]` with their features -- frontiers first, in
+        the rule's order, then view gaps in theirs. The rule's own pick is the
+        first (3.88 A's default)."""
         r = self.retry.radius_m
         seen_cells = {self._to_cell(m, c) for c in self.seen}
         pool, feats = [], []
@@ -927,25 +962,138 @@ class ExploreAgent(MissionAgent):
                                        area_m2=g.area_m2, seen_cells=seen_cells,
                                        failures=self.retry.failures_near(*g.goal),
                                        goals_sent=self.goals_sent))
-        i = self.goal_policy.best(feats)
-        if i is None:
-            return None
-        kind, c, rank = pool[i]
-        score = round(self.goal_policy.score(feats[i]), 3)
+        return pool, feats
+
+    def _send_pooled(self, kind, c, rank, now, n, skipped, **info):
+        """Send one pooled candidate as the rule's own send would."""
         if kind == "frontier":
             return self._send(c.goal[0], c.goal[1], "frontier", now, rank=rank,
-                              candidates=len(pool), path_m=round(c.distance_m, 2),
+                              candidates=n, path_m=round(c.distance_m, 2),
                               size_m=round(c.size_m, 2), score=round(c.score, 2),
-                              skipped=dict(skipped), learned=score)
+                              skipped=dict(skipped), **info)
         out = self._send(c.goal[0], c.goal[1], "view", now,
                          look_at=[round(c.centre[0], 2), round(c.centre[1], 2)],
                          area_m2=round(c.area_m2, 2), path_m=round(c.distance_m, 2),
-                         candidates=len(pool), learned=score)
+                         candidates=n, **info)
         if out[0] == "GOAL":
             self._goal["look_at"] = c.centre
             self._goal["face"] = c.face
             self._view_goals.append(c.goal)
         return out
+
+    def _learned_goal(self, m, pose, frontiers, leave, known, now, skipped, rch=None):
+        """3.65 phase 2: pool every frontier and view gap the rule would
+        send, and send the one the policy scores highest. None when the rules
+        allow none -- the caller then decides boxed, cooling or exhausted,
+        exactly as under the rule."""
+        pool, feats = self._pool(m, pose, frontiers, leave, known, now, skipped, rch)
+        i = self.goal_policy.best(feats)
+        if i is None:
+            return None
+        kind, c, rank = pool[i]
+        score = round(self.goal_policy.score(feats[i]), 3)
+        return self._send_pooled(kind, c, rank, now, len(pool), skipped, learned=score)
+
+    # ---------- 3.88 A: ask mode ----------
+
+    def _open_ask(self, m, pose, frontiers, leave, known, now, skipped, rch=None):
+        """Pause on the pool: publish it and wait for a pick. None when the
+        rules allow no candidate -- then nothing is asked, and the caller
+        decides room, boxed, cooling or exhausted as without ask mode."""
+        pool, feats = self._pool(m, pose, frontiers, leave, known, now, skipped, rch)
+        if not pool:
+            return None
+        default = 0 if self.goal_policy is None else self.goal_policy.best(feats)
+        self._decided()                 # choice time ends here; the pause is not choice time
+        choice = self.ask.choice + 1
+        candidates = []
+        for i, ((kind, c, rank), f) in enumerate(zip(pool, feats)):
+            candidates.append({
+                "id": f"{choice}.{i}", "kind": kind,
+                "x_m": round(c.goal[0], 3), "y_m": round(c.goal[1], 3),
+                "path_m": round(c.distance_m, 2), "rank": rank,
+                "features": {k: round(v, 4) for k, v in zip(GOAL_FEATURES, f)}})
+        opened = self.ask.open(candidates, candidates[default]["id"])
+        self._asked = {"choice": opened, "pool": pool, "candidates": candidates,
+                       "default": candidates[default]["id"],
+                       "skipped": dict(skipped), "answer": None,
+                       "pose": [round(pose["x_m"], 3), round(pose["y_m"], 3),
+                                round(pose["heading_deg"], 1)],
+                       "step": len(self.history)}
+        self._event("ask_opened", pose, choice=opened, candidates=len(pool),
+                    default=candidates[default]["id"])
+        self.last_event = f"waiting for a pick among {len(pool)} goals (choice {opened})"
+        return "WAIT", True, self.last_event
+
+    def _answer_ask(self, now: float):
+        """The open choice, on a later tick: still waiting, or decided -- a
+        person's pick or the rule's at the timeout -- and then sent."""
+        a = self._asked
+        if a["answer"] is None:
+            got = self.ask.poll()
+            if got is None:
+                if now - a.get("probed_at", -math.inf) >= ASK_PROBE_S:
+                    a["probed_at"] = now
+                    self._probe_authority()
+                snap = self.ask.snapshot() or {}
+                return "WAIT", True, (f"waiting for a pick among {len(a['pool'])} goals "
+                                      f"({snap.get('remaining_s', 0):.0f} s left)")
+            by, cid = got
+            i = next(k for k, c in enumerate(a["candidates"]) if c["id"] == cid)
+            waited = self.ask.close()
+            a["answer"] = (by, i)
+            self._record_choice(a, by, cid, waited)
+        by, i = a["answer"]
+        kind, c, rank = a["pool"][i]
+        # Never sends what the rules exclude: nothing they read changes while
+        # paused (no goal is live, nothing moves), but a refused send below
+        # retries on later ticks, and those are checked again here.
+        if not self.retry.available(c.goal[0], c.goal[1], now, self._known_at):
+            self._withdraw_ask("the picked goal is set aside now")
+            return "WAIT", True, "the picked goal is set aside now; choosing again"
+        out = self._send_pooled(kind, c, rank, now, len(a["pool"]), a["skipped"],
+                                picked_by=by, pick=a["candidates"][i]["id"])
+        if out[0] == "GOAL":
+            self._asked = None
+        # Refused before nav2 saw it (this mission's own authority still
+        # held): the same pick is sent again next tick, as the rule's would be.
+        return out
+
+    def _probe_authority(self) -> None:
+        """Centre the camera (it already is: a choice follows the look-around's
+        LOOK_CENTER). Nothing moves; the point is the answer. A person's Stop
+        latch or a person holding the robot is refused by name and raises, as
+        it would on the goal after the pause; the mission's own goal still
+        holding the robot, or a veto, is not a person and is ignored."""
+        try:
+            self.robot.look_center()
+        except SafetyViolation:
+            pass
+        except Preempted as exc:
+            if OWN_GOAL_REFUSAL not in str(exc) and not str(exc).startswith(OWN_GOAL_HOLDER):
+                raise
+
+    def _record_choice(self, a: dict, by: str, cid: str, waited: Optional[float]) -> None:
+        rec = {"choice": a["choice"], "step": a["step"], "pose": a["pose"],
+               "candidates": [{k: c[k] for k in ("id", "kind", "x_m", "y_m", "rank",
+                                                 "features")}
+                              for c in a["candidates"]],
+               "default": a["default"], "pick": cid, "by": by,
+               "waited_s": round(waited or 0.0, 1)}
+        self._event("goal_picked", choice=a["choice"], pick=cid, by=by,
+                    default=rec["default"], waited_s=rec["waited_s"])
+        if self.choice_sink is not None:
+            self.choice_sink(rec)
+
+    def _withdraw_ask(self, why: str) -> None:
+        """Drop the open choice unrecorded (it was never decided, or its pick
+        can no longer be sent); the pause ends."""
+        a, self._asked = self._asked, None
+        if a is None:
+            return
+        if a["answer"] is None:
+            self.ask.close()
+        self._event("ask_withdrawn", choice=a["choice"], why=why[:120])
 
     # ---------- 3.70 E3: labelled rooms ----------
 
