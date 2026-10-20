@@ -735,6 +735,11 @@ class MissionRunner:
                      # 3.65 phase 2: "rule" (None) or the learned goal choice.
                      "goal_policy": goal_policy_for(explore_goal_policy)}
             if explore_ask_timeout_s:
+                if policy != "explore":
+                    # A tiered search's questions run on through a pause, and
+                    # skipping them breaks its arrival (3.88 A review).
+                    raise ValueError("explore_ask_timeout_s (ask mode) is for policy "
+                                     f"'explore' only, not {policy!r}")
                 # 3.88 A: ask mode -- each goal choice waits for a person's
                 # pick (POST /mission/explore/pick), and is recorded.
                 extra["ask"] = GoalAsk(clock=lambda: self.clock(),

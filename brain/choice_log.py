@@ -30,6 +30,7 @@ The lock here is the one place the brain's HTTP thread and the mission's
 tick thread meet over an ask; nothing in it calls out.
 """
 
+import copy
 import json
 import logging
 import os
@@ -76,7 +77,7 @@ class GoalAsk:
             self._open = {"choice": self.choice, "candidates": candidates,
                           "default": candidates[default]["id"], "opened_at": self.clock()}
             self._pick = None
-            return self.choice, candidates
+            return self.choice, copy.deepcopy(candidates)
 
     def pick(self, choice, candidate_id) -> tuple:
         """A person's pick, from the brain's HTTP thread: (True, "") once
@@ -142,7 +143,8 @@ class GoalAsk:
                 return None
             waited = max(0.0, self.clock() - self._open["opened_at"])
             return {"choice": self._open["choice"],
-                    "candidates": self._open["candidates"],
+                    # A copy: serialised on the HTTP thread, outside this lock.
+                    "candidates": copy.deepcopy(self._open["candidates"]),
                     "default": self._open["default"],
                     "picked": self._pick,
                     "waited_s": round(waited, 1),

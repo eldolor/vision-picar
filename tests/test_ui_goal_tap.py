@@ -179,3 +179,32 @@ def test_the_phone_screenshot_of_an_open_choice(browser, twin_server):
         page.screenshot(path=os.path.join(out, "3.88-goal-tap-390.png"))
     assert not errors, errors
     page.context.close()
+
+
+def test_a_new_missions_choice_1_takes_a_tap_after_the_last_ones_choice_1(browser, twin_server):
+    """Review round 3: the one-pick guard was kept by choice number and never
+    cleared, and a new mission numbers from 1 again -- every tap on its first
+    choice read "Already picked" and sent nothing."""
+    grid, points = _free_cells(twin_server, 2)
+    page, errors = open_with_brain(browser, twin_server, health=TIERED_BRAIN_HEALTH,
+                                   status=ask_status(points, choice=1))
+    sync_api.expect(page.locator("#map-readout")).to_contain_text("explore asks", timeout=5000)
+    picks = _record(page, "**/brain-stub/mission/explore/pick")
+    _tap_at(page, grid, *points[0])
+    page.wait_for_timeout(400)
+    assert len(picks) == 1
+    # The mission ends (no ask), then the next one opens its choice 1.
+    page.unroute("**/brain-stub/mission/status")
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json",
+        body=_json({**ask_status(points, choice=1), "explore": {"asks": True, "ask": None}})))
+    page.wait_for_timeout(1500)
+    page.unroute("**/brain-stub/mission/status")
+    page.route("**/brain-stub/mission/status", lambda route: route.fulfill(
+        status=200, content_type="application/json", body=_json(ask_status(points, choice=1))))
+    sync_api.expect(page.locator("#map-readout")).to_contain_text("explore asks", timeout=5000)
+    _tap_at(page, grid, *points[1])
+    page.wait_for_timeout(400)
+    assert len(picks) == 2, "the next mission's choice 1 refused a tap"
+    assert not errors, errors
+    page.context.close()

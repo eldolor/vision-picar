@@ -406,7 +406,7 @@ def test_a_cut_off_last_line_is_skipped(tmp_path):
 def test_the_ask_box_refuses_after_the_mission_ended():
     t = [0.0]
     ask = GoalAsk(clock=lambda: t[0], timeout_s=5)
-    n = ask.open([{"kind": "frontier"}], 0)
+    n, _ = ask.open([{"kind": "frontier"}], 0)
     t[0] = 2.0
     ask.end()
     assert ask.pick(n, "1.0") == (False, "no goal choice is open")
@@ -489,6 +489,15 @@ def test_a_tiered_search_does_not_ask(monkeypatch):
     r = brain.post("/mission/start", json={"target_object": "x", "policy": "tiered",
                                            "explore_ask": True})
     assert r.status_code == 400 and "explore_ask" in r.json()["detail"], r.text
+
+
+def test_a_runner_refuses_ask_mode_for_a_tiered_search():
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    with pytest.raises(ValueError, match="explore"):
+        MissionRunner(robot, target_object="red backpack", policy="tiered",
+                      vision_fn=lambda f: {}, tier_search="explore", navigator=FakeNav(robot),
+                      world=MockWorld(grid), explore_ask_timeout_s=60.0)
 
 
 def test_a_wait_elsewhere_keeps_the_question_and_its_ids():

@@ -748,6 +748,11 @@
   function setBrainAsk(ask) {
     var before = state.brainAskOpen;
     state.brainAskOpen = ask && ask.candidates && ask.candidates.length ? ask : null;
+    // The one-pick guard lasts one open choice: a new mission numbers from 1
+    // again (review round 3).
+    if (!state.brainAskOpen || state.brainAskOpen.choice !== state.askPickChoice) {
+      state.askPickChoice = null;
+    }
     if ((before && before.choice) !== (state.brainAskOpen && state.brainAskOpen.choice)
         || !!before !== !!state.brainAskOpen) renderMap();
     else if (state.brainAskOpen) {
@@ -837,8 +842,11 @@
       showToast("Explore will go there next", "ok");
     } catch (e) {
       // 409: that choice is over (timed out, superseded, mission ended).
-      showToast("Pick not taken: " + e.message, e.status === 409 ? "warn" : "err");
-      if (state.askPickChoice === ask.choice) state.askPickChoice = null;
+      // No answer at all (a dropped tunnel) may still have been taken: the
+      // next poll's `picked` says. Only a refusal frees the choice.
+      showToast((e.status ? "Pick not taken: " : "Pick may not have arrived: ") + e.message,
+        e.status === 409 || !e.status ? "warn" : "err");
+      if (e.status && state.askPickChoice === ask.choice) state.askPickChoice = null;
     }
   }
 
