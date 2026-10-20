@@ -496,6 +496,11 @@ if (1) and (2) leave a gap, since it costs a model call per frontier.
   * *How much data.* About 10-30 choices a mission: a few hundred taps can
     fit the ten-weight linear score, not the network.
 
-  The constraint: a person's Stop and D-pad end explore and keep the brain
-  out (the safety domain); a correction must not weaken that. A correction
-  that is a goal tap, not a drive, needs no exception.
+  **Decided by the user (2026-10-20): corrections are goal taps, never
+  takeovers.** A person's Stop and D-pad still end explore and keep the
+  brain out (the safety domain), unchanged. A person instead taps another
+  candidate while explore runs; explore sends that goal and logs the pick
+  as a training example, so the correction needs no exception to the
+  safety rule. It must be its own explicit message, not the person's map
+  goal, which explore deliberately neither adopts nor cancels (3.76 E).
+  Not built; no criteria yet.
