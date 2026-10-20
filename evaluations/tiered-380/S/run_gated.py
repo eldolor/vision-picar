@@ -12,7 +12,8 @@ pipeline sees the same answers.
 Amendment 1: `--second ve` asks VE's service (`service/local_vlm/`,
 already serving) `/identity` with `box: true` in Florence's place, the
 question the tier asks; its rows carry `ve` where Florence's carry
-`florence`.
+`florence`. Amendment 2: `--second both` asks both on every frame, rows
+carrying both `florence` and `ve`.
 
     python evaluations/tiered-380/S/run_gated.py orig|640|320 \
         --recordings ~/vision-picar/recordings --out ~/out-380S/orig.jsonl
@@ -121,7 +122,7 @@ def main():
     ap.add_argument("res", choices=("orig", "640", "320"))
     ap.add_argument("--recordings", required=True)
     ap.add_argument("--florence", default="http://127.0.0.1:8006")
-    ap.add_argument("--second", choices=("florence", "ve"), default="florence")
+    ap.add_argument("--second", choices=("florence", "ve", "both"), default="florence")
     ap.add_argument("--ve", default="http://127.0.0.1:8007")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
@@ -144,9 +145,12 @@ def main():
         a["ms"] = round((time.perf_counter() - t0) * 1000)
         return a
 
-    name = args.second
-    ask = (lambda jpeg, t, w: florence(args.florence, jpeg, t, w)) if name == "florence" \
-        else (lambda jpeg, t, w: ve(args.ve, jpeg, t, w))
+    askers = {"florence": lambda jpeg, t, w: florence(args.florence, jpeg, t, w),
+              "ve": lambda jpeg, t, w: ve(args.ve, jpeg, t, w)}
+    names = list(askers) if args.second == "both" else [args.second]
+
+    def ask(jpeg, t, w):
+        return {n: askers[n](jpeg, t, w) for n in names}
 
     frames = [(s, k, p, t, tr) for s, k, p, t, tr in common.items() if s != "S3"]
     for s, k, p, t, tr in frames[:WARMUP]:
@@ -167,12 +171,12 @@ def main():
             m = mirrored(jpeg)
             row = {"set": s, "key": k, "target": t, "truth": tr, "res": args.res, "img": [w, h],
                    "perc": perceive(p, t, jpeg), "prev": prev,
-                   name: ask(jpeg, t, w),
-                   "mirror": {"perc": perceive(p, t, m), name: ask(m, t, w)}}
+                   **ask(jpeg, t, w),
+                   "mirror": {"perc": perceive(p, t, m), **ask(m, t, w)}}
             f.write(json.dumps(row) + "\n")
             f.flush()
             print(s, k, tr, row["perc"]["status"], row["perc"]["answer"],
-                  [x["status"] for x in prev], row[name]["answer"], flush=True)
+                  [x["status"] for x in prev], [row[n]["answer"] for n in names], flush=True)
 
 
 if __name__ == "__main__":

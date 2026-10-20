@@ -13,7 +13,11 @@ Each model has two jobs:
 * **steering:** "where is it in the frame?", scored as S1 right of 60
   frames. The bar is 34.
 
-Memory is the drop in `MemAvailable`; the bar is 3,000 MB.
+Memory is the drop in `MemAvailable`; the bar is 3,000 MB. Those drops
+come from each section's own bench, so compare rows within a section only.
+3.80.S measured VE and Florence the same way, each beside YOLOE + CLIP, and
+VE's drop came out at 5,063 MB rather than 2,978 MB (see "Florence behind a
+gate" below).
 
 ## Top 3 (the identity check)
 
@@ -27,8 +31,77 @@ Memory is the drop in `MemAvailable`; the bar is 3,000 MB.
 
 | # | model, runtime | identity | steering S1 | memory drop | p90 | why it is here |
 |---|---|---|---|---|---|---|
-| 4 | **Florence-2-base (0.23B), torch fp16, `<CAPTION_TO_PHRASE_GROUNDING>`** (3.80.R) | fails: it always draws a box | **56/60** (-large: 57/60, 1.17 s, 2,252 MB) | 1,355 MB | **0.58 s** | The best and fastest local steerer. It always draws a box, even with the target out of view, so it can only steer behind an identity check such as VE. Uses the `florence-community` checkpoint, MIT licence. |
+| 4 | **Florence-2-base (0.23B), torch fp16, `<CAPTION_TO_PHRASE_GROUNDING>`** (3.80.R, 3.80.S) | fails: it always draws a box | **56/60** (-large: 57/60, 1.17 s, 2,252 MB); **53/60 behind a YOLOE + CLIP gate**, with 2/40 out of view | 1,355 MB alone; 3,118-3,372 MB with YOLOE + CLIP (VE with YOLOE + CLIP: 5,063) | **0.58 s** (0.75 s beside YOLOE + CLIP) | The best and fastest local steerer. It always draws a box, even with the target out of view (40/40), so it can only steer behind something that says the target is there. 3.80.S built that gate from YOLOE + CLIP. Uses the `florence-community` checkpoint, MIT licence. |
 | 5 | **InternVL3.5-4B, llama.cpp Q4_K_M or Edge-LLM** (3.80.M, 3.80.N) | fails: 82.8% / 97.3%, 7/34 | 50/60 (llama.cpp), 52-53/60 (Edge-LLM) | 3,677 MB | 5.91 s (llama.cpp) | The best chat-VLM steerer, and it never drew a box with the target out of view. It says yes too easily at arrival, and it is over the memory bar. |
+
+## Florence behind a gate (3.80.S, 2026-10-20)
+
+**The gate:** YOLOE + CLIP runs on every frame. If it detects the target
+(P >= 0.8), its own box steers. If it detected the target in any of the 3
+frames before this one but not in this one, Florence's box steers. If
+neither, YOLOE + CLIP's unsure candidate (P 0.5-0.8) steers if there is
+one; otherwise there is no steer. Measured on the board at 15 W, beside
+the desktop and the idle twin stack, on 3.80.I's frames: 60 with the
+target in view and 40 without, each also mirrored.
+
+| On the phone's frames (`orig`) | YOLOE + CLIP alone | **The gate** | Florence alone | YOLOE + CLIP, then VE's box (3.80.I) |
+|---|---|---|---|---|
+| right, of 60 with the target in view | 44 | **53** | 56 | 51 |
+| answers, of 40 without the target | 1 | **2** | 40 | -- |
+| same answer when mirrored | 93.3% | 94.6% | 96.7% | -- |
+| time per frame where Florence is asked, p90 | -- | **0.81 s** (n 21) | 0.74 s | -- |
+
+**Memory, measured the same way for both (amendment 1):** `MemAvailable`
+sampled every second from before the second model loads to the end of
+the run.
+
+| beside YOLOE + CLIP | before | median | lowest | drop to lowest |
+|---|---|---|---|---|
+| Florence, run 1 | 5,397 MB | 2,761 | 2,025 | 3,372 MB |
+| Florence, run 2 | 5,449 MB | 2,718 | 2,331 | 3,118 MB |
+| **VE** | 5,409 MB | 683 | 346 | **5,063 MB** |
+
+* Florence plus perception uses about 2 GB less than VE plus perception.
+  The two Florence runs differ by 254 MB at the lowest point, so the gap
+  is far larger than run-to-run noise.
+* The lowest points are short dips when the target changes (a new
+  target's text encoder loads). The median is the steady level.
+* Same frames, VE's box in Florence's place: VE alone steers 42/60 with
+  0/40 out of view; a gate with VE 50/60; VE's answer p90 2.37 s.
+
+**At smaller sizes (the depth camera's width and below):**
+
+| right of 60 | phone frames | 640 wide | 320 wide |
+|---|---|---|---|
+| YOLOE + CLIP alone | 44 | 42 | 21 |
+| Florence alone | 56 | 56 | 51 |
+| the gate | 53 | 48 | 27 |
+
+Smaller frames hurt YOLOE + CLIP, not Florence. The gate loses frames at
+640 because YOLOE + CLIP detects less often, so the gate opens on 6 frames
+instead of 9. Frames that were only re-saved as JPEG (the 11 already
+640x480) scored the same, so the loss comes from the resize. A downscaled
+phone frame does not show the Rover's lens or field of view; the OAK-D
+Lite's colour camera is 13 MP and its two depth cameras are greyscale.
+
+**What it cannot do:** check identity at arrival, because Florence draws a
+box whether or not the target is there. And **Florence and VE do not fit
+together** beside YOLOE + CLIP (amendment 2):
+
+| seconds | `MemAvailable` | loaded |
+|---|---|---|
+| 0 | 5,358 MB | nothing of the bench |
+| 10 | 2,791 MB | VE |
+| 36 | 1,059 MB | VE and Florence |
+| 45 | **25 MB** | YOLOE + CLIP loading; the kernel then killed Florence on its first request |
+
+So on this board it is one or the other:
+* **VE:** checks identity, and its box steers 42/60 (50/60 behind the
+  gate).
+* **Florence behind the gate:** steers 53/60, and every arrival's
+  identity check goes to the cloud.
+
+Decide on the Rover's own frames.
 
 ## Nearly made the list
 
@@ -77,7 +150,10 @@ Would not load at all:
     InternVL3.5-4B Q4_K_M: `~/models-380M`.
   * InternVL3.5-4B under Edge-LLM, VE's recipe: `~/bench-380N/NVE`.
   * Florence-2 base and large: `~/models-380R/fc-Florence-2-*`, run
-    from `~/venv-380R`.
+    from `~/venv-380R`. The gate's runner is
+    `evaluations/tiered-380/S/board/run.sh <orig|640|320> <florence|ve|both>`
+    from the board checkout `~/vp-380R`; it serves Florence on :8006 and
+    VE on :8007, so the production unit on :8005 is never touched.
   * RoboBrain2.5-4B, Q4_K_M and mmproj only: `~/models-380R/RoboBrain2.5-4B`.
   * Gemma 4 E2B/E4B (LiteRT, the inventory namers): `~/litert-346`.
 * **Never merge Mac rows with board rows (P24).** The Rover's camera needs

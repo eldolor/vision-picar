@@ -1,0 +1,2 @@
+Loading weights:   0%|          | 0/665 [00:00<?, ?it/s]Loading weights:   9%|▉         | 61/665 [00:00<00:00, 609.44it/s]Loading weights:  18%|█▊        | 122/665 [00:00<00:00, 606.41it/s]Loading weights:  28%|██▊       | 189/665 [00:00<00:00, 605.74it/s]Loading weights:  38%|███▊      | 250/665 [00:00<00:00, 554.36it/s]Loading weights: 100%|██████████| 665/665 [00:00<00:00, 1290.83it/s]
+3.80.R native_server: florence:/home/picar/models-380R/fc-Florence-2-base on cuda

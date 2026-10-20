@@ -233,7 +233,9 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     drop vs VE-alone's 2,978) and the 640-wide arm (48/60). Like for like
     (amendment 1), VE + perception drops 5,063 MB against Florence +
     perception's 3,118-3,372, so S4b is met. Florence can't do the arrival
-    identity check (it boxes 40/40 out of view). Downscaling hurts
+    identity check (it boxes 40/40 out of view), and Florence + VE +
+    perception does not fit (amendment 2: Florence OOM-killed at the first
+    request, lowest 25 MB; the twin stack unharmed). Downscaling hurts
     YOLOE + CLIP (44 -> 42 -> 21 at 320), not Florence (56 -> 56 -> 51).
     Not adopted.
   * O: the local VLM's box finishes the approach and the arrival when

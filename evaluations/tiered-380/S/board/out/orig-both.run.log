@@ -1,0 +1,36 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+WARNING:huggingface_hub.utils._http:Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+/home/picar/vp-380R/.venv/lib/python3.10/site-packages/open_clip/factory.py:450: UserWarning: QuickGELU mismatch between final model config (quick_gelu=False) and pretrained tag 'openai' (quick_gelu=True).
+  warnings.warn(
+Traceback (most recent call last):
+  File "/home/picar/vp-380R/evaluations/tiered-380/S/run_gated.py", line 183, in <module>
+    main()
+  File "/home/picar/vp-380R/evaluations/tiered-380/S/run_gated.py", line 159, in main
+    ask(jpeg, t, width_of(jpeg)[0])
+  File "/home/picar/vp-380R/evaluations/tiered-380/S/run_gated.py", line 153, in ask
+    return {n: askers[n](jpeg, t, w) for n in names}
+  File "/home/picar/vp-380R/evaluations/tiered-380/S/run_gated.py", line 153, in <dictcomp>
+    return {n: askers[n](jpeg, t, w) for n in names}
+  File "/home/picar/vp-380R/evaluations/tiered-380/S/run_gated.py", line 148, in <lambda>
+    askers = {"florence": lambda jpeg, t, w: florence(args.florence, jpeg, t, w),
+  File "/home/picar/vp-380R/evaluations/tiered-380/S/run_gated.py", line 74, in florence
+    with urllib.request.urlopen(req, timeout=120) as r:
+  File "/usr/lib/python3.10/urllib/request.py", line 216, in urlopen
+    return opener.open(url, data, timeout)
+  File "/usr/lib/python3.10/urllib/request.py", line 519, in open
+    response = self._open(req, data)
+  File "/usr/lib/python3.10/urllib/request.py", line 536, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+  File "/usr/lib/python3.10/urllib/request.py", line 496, in _call_chain
+    result = func(*args)
+  File "/usr/lib/python3.10/urllib/request.py", line 1377, in http_open
+    return self.do_open(http.client.HTTPConnection, req)
+  File "/usr/lib/python3.10/urllib/request.py", line 1352, in do_open
+    r = h.getresponse()
+  File "/usr/lib/python3.10/http/client.py", line 1404, in getresponse
+    response.begin()
+  File "/usr/lib/python3.10/http/client.py", line 323, in begin
+    version, status, reason = self._read_status()
+  File "/usr/lib/python3.10/http/client.py", line 292, in _read_status
+    raise RemoteDisconnected("Remote end closed connection without"
+http.client.RemoteDisconnected: Remote end closed connection without response
