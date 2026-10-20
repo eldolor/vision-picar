@@ -229,10 +229,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     zram has been off since 2026-10-17 (`nvzramconfig.service` failed).
   * S (2026-10-20, on dev at `7aecad7`): YOLOE + CLIP gates Florence-2-base
     (asked only after a detection in the last 3 frames): steers 53/60,
-    answers 2/40 out of view, p90 0.81 s; FAILED memory (3,372 MB drop vs
-    VE-alone's 2,978; VE + perception together not measured) and the
-    640-wide arm (48/60). Downscaling hurts YOLOE + CLIP (44 -> 42 -> 21 at
-    320), not Florence (56 -> 56 -> 51). Not adopted.
+    answers 2/40 out of view, p90 0.81 s; FAILED memory as written (3,372 MB
+    drop vs VE-alone's 2,978) and the 640-wide arm (48/60). Like for like
+    (amendment 1), VE + perception drops 5,063 MB against Florence +
+    perception's 3,118-3,372, so S4b is met. Florence can't do the arrival
+    identity check (it boxes 40/40 out of view). Downscaling hurts
+    YOLOE + CLIP (44 -> 42 -> 21 at 320), not Florence (56 -> 56 -> 51).
+    Not adopted.
   * O: the local VLM's box finishes the approach and the arrival when
     perception is silent, and only the cloud may confirm such an arrival
     (never the local tier). Blind perception, 21 houses: 17 at pace 1, 12 at

@@ -4,7 +4,9 @@ evaluations/tiered-380/S/score.py
 3.80.S: composes the four pipelines (A, G, F, FS) from each resolution's
 board rows (`S/board/out/<res>.jsonl`) and scores them with 3.80.I's own
 `accuracy` and `mirror`; latency from the rows, memory from
-`S/board/out/<res>.mem`. Writes `S/scores.json`.
+`S/board/out/<res>.mem`. Writes `S/scores.json`. Amendment 1's runs
+(`orig-ve`, VE in Florence's place; `orig-2`, Florence again) are scored
+the same way: in `orig-ve`, F and G's second model is VE.
 
     .venv/bin/python evaluations/tiered-380/S/score.py
 """
@@ -26,6 +28,11 @@ _spec.loader.exec_module(I)
 
 OUT = HERE / "board" / "out"
 DETECTED = "detected"   # brain/perceive.py's DETECTED
+
+
+def second(r) -> dict:
+    """The second model's answer: Florence's, or VE's (amendment 1)."""
+    return r["florence"] if "florence" in r else r["ve"]
 
 
 def recent(row) -> bool:
@@ -68,7 +75,8 @@ def memory(res):
             if len(line.split()) == 2 and line.split()[1].isdigit()]
     if not vals:
         return None
-    return {"before": vals[0], "min": min(vals), "drop": vals[0] - min(vals), "samples": len(vals)}
+    return {"before": vals[0], "min": min(vals), "drop": vals[0] - min(vals),
+            "median": sorted(vals)[len(vals) // 2], "samples": len(vals)}
 
 
 def score_res(res):
@@ -79,8 +87,8 @@ def score_res(res):
     out = {"rows": len(rows), "sizes": sizes, "memory": memory(res)}
     for name, fn in PIPES.items():
         built = [{"set": r["set"], "key": r["key"], "truth": r["truth"],
-                  "ans": fn(r["perc"], r["florence"], r),
-                  "mirror": {"ans": fn(r["mirror"]["perc"], r["mirror"]["florence"], r)}}
+                  "ans": fn(r["perc"], second(r), r),
+                  "mirror": {"ans": fn(r["mirror"]["perc"], second(r["mirror"]), r)}}
                  for r in rows]
         s1 = [b for b in built if b["set"] == "S1"]
         s2 = [b for b in built if b["set"] == "S2"]
@@ -91,7 +99,7 @@ def score_res(res):
     # Florence when G asks it), originals and mirrors both.
     asked, perc_ms = [], []
     for r in rows:
-        for perc, flo in ((r["perc"], r["florence"]), (r["mirror"]["perc"], r["mirror"]["florence"])):
+        for perc, flo in ((r["perc"], second(r)), (r["mirror"]["perc"], second(r["mirror"]))):
             perc_ms.append(perc["ms"])
             if g_asks(perc, r):
                 asked.append(perc["ms"] + flo["ms"])
@@ -101,13 +109,13 @@ def score_res(res):
     out["G"]["asked_ms"] = percentiles(asked)
     out["perception_ms"] = percentiles(perc_ms)
     out["florence_ms"] = percentiles([x for r in rows
-                                      for x in (r["florence"]["ms"], r["mirror"]["florence"]["ms"])])
+                                      for x in (second(r)["ms"], second(r["mirror"])["ms"])])
     return out
 
 
 def main():
     res_out = {}
-    for res in ("orig", "640", "320"):
+    for res in ("orig", "640", "320", "orig-ve", "orig-2"):
         if (OUT / f"{res}.jsonl").exists():
             res_out[res] = score_res(res)
     (HERE / "scores.json").write_text(json.dumps(res_out, indent=1) + "\n")

@@ -9,6 +9,11 @@ on every S1/S2 frame and its mirror. Writes one row a frame; the pipelines
 (A, G, F, FS) are composed from the rows by `S/score.py`, so every
 pipeline sees the same answers.
 
+Amendment 1: `--second ve` asks VE's service (`service/local_vlm/`,
+already serving) `/identity` with `box: true` in Florence's place, the
+question the tier asks; its rows carry `ve` where Florence's carry
+`florence`.
+
     python evaluations/tiered-380/S/run_gated.py orig|640|320 \
         --recordings ~/vision-picar/recordings --out ~/out-380S/orig.jsonl
 """
@@ -18,6 +23,7 @@ import io
 import json
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -74,6 +80,31 @@ def florence(url: str, jpeg: bytes, target: str, width: int) -> dict:
             "answer": common.third(frac), "ms": ms}
 
 
+def ve(url: str, jpeg: bytes, target: str, width: int) -> dict:
+    """VE's yes (score >= 0.5, tiered's LOCAL_YES_AT) with a box -> the box
+    centre's third, as 3.80.I's `run_qwen.answer` reads it."""
+    from brain.local_vlm import _box_frac
+    body = {"image_b64": b64(jpeg), "target": target, "deadline_s": 6.0, "box": True}
+    req = urllib.request.Request(url + "/identity", data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    t0 = time.perf_counter()
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            got = json.loads(r.read())
+    except urllib.error.HTTPError as e:   # busy or unable: no answer, as 3.80.I's `post`
+        got = {"status": f"HTTP {e.code}"}
+    except (urllib.error.URLError, TimeoutError) as e:   # no answer, recorded
+        got = {"status": f"error {type(e).__name__}"}
+    ms = round((time.perf_counter() - t0) * 1000)
+    score, frac = got.get("score"), None
+    if got.get("status") == "answered" and isinstance(score, (int, float)) and score >= 0.5 \
+            and got.get("box") is not None:
+        bf = _box_frac(got["box"], jpeg)
+        frac = round((bf[0] + bf[2]) / 2, 4) if bf else None
+    return {"status": got.get("status"), "score": score, "box": got.get("box"), "frac": frac,
+            "answer": common.third(frac), "ms": ms}
+
+
 def previous(path: Path) -> list:
     """The up-to-WINDOW frames before `path` in its walk, nearest first."""
     n = int(path.stem.split("-")[1])
@@ -90,6 +121,8 @@ def main():
     ap.add_argument("res", choices=("orig", "640", "320"))
     ap.add_argument("--recordings", required=True)
     ap.add_argument("--florence", default="http://127.0.0.1:8006")
+    ap.add_argument("--second", choices=("florence", "ve"), default="florence")
+    ap.add_argument("--ve", default="http://127.0.0.1:8007")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     common.RECORDINGS = Path(args.recordings).expanduser()
@@ -111,11 +144,15 @@ def main():
         a["ms"] = round((time.perf_counter() - t0) * 1000)
         return a
 
+    name = args.second
+    ask = (lambda jpeg, t, w: florence(args.florence, jpeg, t, w)) if name == "florence" \
+        else (lambda jpeg, t, w: ve(args.ve, jpeg, t, w))
+
     frames = [(s, k, p, t, tr) for s, k, p, t, tr in common.items() if s != "S3"]
     for s, k, p, t, tr in frames[:WARMUP]:
         jpeg = at_res(p, args.res)
         perceive(p, t, jpeg)
-        florence(args.florence, jpeg, t, width_of(jpeg)[0])
+        ask(jpeg, t, width_of(jpeg)[0])
 
     with open(Path(args.out).expanduser(), "w") as f:
         for s, k, p, t, tr in frames:
@@ -130,12 +167,12 @@ def main():
             m = mirrored(jpeg)
             row = {"set": s, "key": k, "target": t, "truth": tr, "res": args.res, "img": [w, h],
                    "perc": perceive(p, t, jpeg), "prev": prev,
-                   "florence": florence(args.florence, jpeg, t, w),
-                   "mirror": {"perc": perceive(p, t, m), "florence": florence(args.florence, m, t, w)}}
+                   name: ask(jpeg, t, w),
+                   "mirror": {"perc": perceive(p, t, m), name: ask(m, t, w)}}
             f.write(json.dumps(row) + "\n")
             f.flush()
             print(s, k, tr, row["perc"]["status"], row["perc"]["answer"],
-                  [x["status"] for x in prev], row["florence"]["answer"], flush=True)
+                  [x["status"] for x in prev], row[name]["answer"], flush=True)
 
 
 if __name__ == "__main__":
