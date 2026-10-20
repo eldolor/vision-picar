@@ -67,5 +67,18 @@ Would not load at all:
     `score_steer.py`.
   * `evaluations/tiered-380/M/` for llama.cpp.
   * 3.78's Edge-LLM build for VE.
+* **What is still on the board** (everything else measured was deleted
+  2026-10-19, and can be fetched again by the SHA256s in each section):
+  * VE: `~/bench-378/ws91/q25VE` (the live engines), `ell91`, and the
+    Qwen2.5-VL-3B checkpoint in `ws91` to rebuild from.
+  * Bonsai 2 2B: `~/models-380R/Ternary-Bonsai-2-2B-gguf`, with the
+    fork built in `~/bench-380R/prism`.
+  * MiniCPM-V 4.0 (`ggml-model-Q4_K_M.gguf`, `mmproj-model-f16.gguf`) and
+    InternVL3.5-4B Q4_K_M: `~/models-380M`.
+  * InternVL3.5-4B under Edge-LLM, VE's recipe: `~/bench-380N/NVE`.
+  * Florence-2 base and large: `~/models-380R/fc-Florence-2-*`, run
+    from `~/venv-380R`.
+  * RoboBrain2.5-4B, Q4_K_M and mmproj only: `~/models-380R/RoboBrain2.5-4B`.
+  * Gemma 4 E2B/E4B (LiteRT, the inventory namers): `~/litert-346`.
 * **Never merge Mac rows with board rows (P24).** The Rover's camera needs
   its own pinned frame set before any comparison.
