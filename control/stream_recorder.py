@@ -91,12 +91,14 @@ class StreamRecorder:
         self._pending = collections.deque()   # (fetched_at, frame), oldest first
         self._pending_bytes = 0
         self._decided_past_warned = False
+        self._lookup_warned = False
         self._rows: list = []           # (walk.jsonl line, perceived) not yet appended
         self._capture = None
         self.saved = 0
         self.rows_failed = 0            # images stored whose rows did not append
         self.lookup_failed = 0          # frames whose decision could not be read
         self.dropped = 0                # fetched, never filed: the recorder ended early
+        self.usable = 0                 # images with a row stored or still to append
         self.written = 0                # images stored, whatever became of their rows
         self.perceived = 0
         self.lost = 0
@@ -122,10 +124,9 @@ class StreamRecorder:
         # by up to a batch until the walk ends); `usable`: images with a row
         # stored or still to append. `failed` counts images never stored,
         # `rows_failed` images stored without a row.
-        written, rows_failed = self.written, self.rows_failed   # one snapshot
-        return {"walk": self.walk, "written": written, "saved": self.saved,
-                "usable": written - rows_failed, "rows_failed": rows_failed,
-                "lookup_failed": self.lookup_failed,
+        return {"walk": self.walk, "written": self.written, "saved": self.saved,
+                "usable": self.usable, "rows_failed": self.rows_failed,
+                "lookup_failed": self.lookup_failed, "dropped": self.dropped,
                 "perceived": self.perceived,
                 "lost": self.lost, "over_cap": self.over_cap, "failed": self.failed,
                 "finished": self.finished.is_set()}
@@ -212,6 +213,7 @@ class StreamRecorder:
             self.store.append_text(self.walk, "walk.jsonl", "".join(line for line, _ in rows))
         except Exception as e:  # noqa: BLE001
             self.rows_failed += len(rows)
+            self.usable -= len(rows)
             logger.warning("stream recorder: %d walk.jsonl rows not saved: %s", len(rows), e)
             return
         self.saved += len(rows)
@@ -222,10 +224,12 @@ class StreamRecorder:
         try:
             decision = self.runner.decision_for(seq, frame["metadata"].get("boot_id"))
         except Exception:  # noqa: BLE001 -- one bad lookup costs one frame's decision (review)
-            self.lookup_failed += 1
-            if self.lookup_failed == 1:
+            if not self._lookup_warned:
+                self._lookup_warned = True
                 logger.exception("stream recorder: no decision for frame %s", seq)
-            decision = None
+            decision, lookup_failed = None, True
+        else:
+            lookup_failed = False
         try:
             image = base64.b64decode(frame["image_base64"])
             if self._capture is None:
@@ -249,17 +253,25 @@ class StreamRecorder:
                 logger.warning("stream recorder: a frame was not saved: %s", e)
             return
         self.written += 1
+        self.usable += 1
+        self.lookup_failed += lookup_failed      # counted only for a frame filed
         self._rows.extend((line, decision is not None) for line in held)
 
     def _finish(self) -> None:
         try:
-            # Frames fetched but never filed (the loop ended on an error) are
-            # counted, never silently gone (review).
-            self.dropped = len(self._pending)
-            self._pending.clear()
+            # Frames fetched but not yet filed (the loop ended on an error)
+            # are filed unperceived, as a normal end does; any that cannot be
+            # are counted, never silently gone (review).
+            while self._pending:
+                _, frame = self._pending.popleft()
+                try:
+                    self._save(frame)
+                except Exception:  # noqa: BLE001
+                    self.dropped += 1
+            self._pending_bytes = 0
             if self._rows:
                 self._flush_rows()
-            if self.written:
+            if self.written or self.dropped:
                 # Whenever an image was stored: a walk whose rows failed is
                 # marked finished with its failures, never left looking
                 # in progress (review).

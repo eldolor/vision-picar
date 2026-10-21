@@ -3877,7 +3877,7 @@
       // Frames a replay can use: stored, with a row stored or to come.
       const r = status.recording;
       state.recordSaved = ("usable" in r ? r.usable : "written" in r ? r.written : r.saved) || 0;
-      state.recordFailed = (status.recording.failed || 0) + (status.recording.rows_failed || 0);
+      state.recordFailed = (r.failed || 0) + (r.rows_failed || 0) + (r.dropped || 0);
       state.recordLost = status.recording.lost || 0;
       renderRecordStatus();
     }

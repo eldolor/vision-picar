@@ -374,9 +374,7 @@ def test_a_recorder_ending_on_an_error_counts_what_it_held(tmp_path):
     rec = StreamRecorder(store, "w1", robot.frames_after, Dies(), poll_s=0.01,
                          settle_s=30).start(after=0)
     assert rec.finished.wait(5)
-    status = rec.status()
-    assert status["written"] == 0
-    meta_path = tmp_path / "w1" / "meta.json"
-    # Nothing was written, so no walk; the four fetched frames are counted.
-    assert rec.dropped == 4 and not meta_path.exists()
-
+    # The four fetched frames are filed (unperceived), not lost.
+    assert rec.status()["written"] == 4 and rec.status()["dropped"] == 0
+    assert [r["perceived"] for r in _rows(store, "w1")] == [False] * 4
+    assert "finished_at" in json.loads((tmp_path / "w1" / "meta.json").read_text())
