@@ -48,6 +48,7 @@ import math
 import re
 import collections
 import threading
+from concurrent.futures import CancelledError
 import time
 from typing import Callable, Optional, Tuple
 
@@ -1241,9 +1242,9 @@ class MissionRunner:
             return []
         try:
             return list((take(final=True) if final else take()) or [])
-        except BaseException as e:  # noqa: BLE001 -- a record never costs a tick, nor
-            # the stop `_finish` runs it before (3.55); a cancelled future's
-            # CancelledError is a BaseException (review round 3)
+        except (Exception, CancelledError) as e:  # noqa: BLE001 -- a record never
+            # costs a tick, nor the stop `_finish` runs it before (3.55); a
+            # cancelled future's CancelledError is a BaseException (round 3)
             logger.warning("reading the cloud answers failed: %s", e)
             return []
 
@@ -1256,10 +1257,12 @@ class MissionRunner:
         meta = ((result.frame or {}).get("metadata") or {}) if isinstance(result.frame, dict) else {}
         seq = meta.get("seq")
         if not isinstance(seq, int):
-            # No frame number, no row and no stream recorder (only a body
-            # that numbers its frames has one): taken and dropped, so the
-            # queue never grows for a record nobody files (review round 3).
-            self._take_cloud_answers()
+            # No frame number, no row. A body that never numbers its frames
+            # has no stream recorder: taken and dropped, so the queue never
+            # grows for a record nobody files (review round 3). Once a
+            # numbered frame was decided, they wait for the next (round 4).
+            if self._last_decided is None:
+                self._take_cloud_answers()
             return
         boot = meta.get("boot_id")
         perception = self._perception or {}
@@ -1271,15 +1274,17 @@ class MissionRunner:
                                        "last_action": result.action,
                                        "perception": self._perception,
                                        "tier_trigger": (self._tier or {}).get("trigger")}}
+        # A frame decided on again (the newest frame is taken, so a phone that
+        # stalls repeats it) may already be filed by the recorder: it keeps
+        # its first answers, and later ones wait for the next new frame
+        # (review round 2). Taken once the row is built, and outside
+        # `_decisions_lock`, which the recorder reads under (round 4). One
+        # tick thread notes decisions, so the two reads cannot interleave.
         with self._decisions_lock:
-            # A frame decided on again (the newest frame is taken, so a phone
-            # that stalls repeats it) may already be filed by the recorder:
-            # it keeps its first answers, and later ones wait for the next new
-            # frame (review round 2). Taken once the row is built, so nothing
-            # between take and store raises.
             earlier = self._decisions.get((boot, seq))
-            answers = (earlier.get("cloud_answers") if earlier is not None
-                       else self._take_cloud_answers())
+        answers = (earlier.get("cloud_answers") if earlier is not None
+                   else self._take_cloud_answers())
+        with self._decisions_lock:
             if answers:
                 decision["cloud_answers"] = answers
             self._decisions[(boot, seq)] = decision

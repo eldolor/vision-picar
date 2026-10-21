@@ -188,13 +188,15 @@ and `__call__` puts every question to the local tier first:
   robot seq it was asked on (`_dispatch()`), `via_local_tier` when the cloud
   answered a local-first question; a failure as its type and HTTP status
   (`_http_status`), never its text. At most `CLOUD_ANSWERS_KEPT` (64) wait;
-  older ones go, counted. Scenes never carry them: `take_cloud_answers()`
+  older ones go, counted (`stats.cloud_answers_dropped`). Scenes never carry them: `take_cloud_answers()`
   hands each out once, to `MissionRunner._note_decision()` (a frame's first
-  decision only, after its seq check -- a frame with no number drops them,
-  there being no row or recorder) and to `_finish` before the end is
-  visible (`final=True`: a call that landed but that no frame collected is
-  noted and NOT applied -- it runs on the Stop's thread before the motors
-  stop -- and a later collect does not note it again; `unfiled_cloud_answers`).
+  decision only, after its seq check -- on a body that has never numbered a
+  frame they are dropped, there being no row or recorder) and to `_finish`
+  before the end is visible (`final=True`: a call that landed but that no
+  frame collected is noted with its verdict and NOT applied -- it runs on the
+  Stop's thread before the motors stop -- and a later collect does not note
+  it again; `unfiled_cloud_answers`). Known limit: a tick that has taken a
+  landed call but not yet noted it when the Stop's take runs loses that note.
   `reset_epoch()` drops what was not taken. Read-only: nothing decides on it.
 * `_apply_local()` (on landing; a different epoch is ignored): yes (>= 0.5)
   and no (<= `local_no_below`) reset `_frame_unable` and the pacing counts

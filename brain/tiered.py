@@ -594,6 +594,8 @@ class TierStats:
     candidate_steers: int = 0
     # 3.80.G: cloud failures logged rather than raised (cloud_errors_fatal off).
     cloud_errors: int = 0
+    # 3.91 A: cloud answers dropped from the walk record's queue, untaken.
+    cloud_answers_dropped: int = 0
     # How many samples each bucket has been offered, and the reservoir's
     # draw (seeded, so a replay samples the same way) -- 3.76.
     _seen: dict = field(default_factory=dict, repr=False, compare=False)
@@ -649,6 +651,7 @@ class TierStats:
             "local_direction_ms": self._percentiles("local_direction_ms"),
             "candidate_steers": self.candidate_steers,
             "cloud_errors": self.cloud_errors,
+            "cloud_answers_dropped": self.cloud_answers_dropped,
             "frames": self.frames,
             "frames_skipped": self.frames_skipped,
             "vote": dict(self.vote) if self.vote else None,
@@ -961,7 +964,6 @@ class TieredVision:
         # `_collect_lock`, so an answer collected by the runner's wait thread
         # is neither lost nor shown twice.
         self._cloud_answers: list = []
-        self._cloud_answers_dropped = 0
         self._unapplied_noted = None
         self._inflight_seq = None
         self._pending_error: Optional[BaseException] = None
@@ -1027,12 +1029,13 @@ class TieredVision:
         thread, beside a tick that may be mid-frame, before the motors stop
         (review round 3), so it reads the finished future and touches
         nothing a decision reads."""
-        try:
-            if final:
+        if final:
+            try:
                 self._note_landed_unapplied()
-        finally:
-            with self._collect_lock:
-                answers, self._cloud_answers = self._cloud_answers, []
+            except Exception as e:  # noqa: BLE001 -- the queue is taken regardless
+                logger.warning("noting the last cloud answer failed: %s", e)
+        with self._collect_lock:
+            answers, self._cloud_answers = self._cloud_answers, []
         return answers
 
     def _note_landed_unapplied(self) -> None:
@@ -1043,11 +1046,17 @@ class TieredVision:
             self._unapplied_noted = fut
             trigger, asked_seq = self._inflight_trigger, self._inflight_seq
             via_local = self._inflight_tier == "local"
+            perception = self._inflight_perception
         error = fut.exception()
         if error is not None:
             self._note_cloud_answer(trigger, asked_seq, error=error, via_local=via_local)
         elif isinstance(fut.result(), dict):      # not a local answer, not superseded
-            self._note_cloud_answer(trigger, asked_seq, scene=fut.result(), via_local=via_local)
+            scene = fut.result()
+            # The verdict as a collect would read it, without its counting.
+            verdict = (corroboration_for(scene, perception, self.corroboration_bar)["verdict"]
+                       if perception is not None else None)
+            self._note_cloud_answer(trigger, asked_seq, scene=scene, verdict=verdict,
+                                    via_local=via_local)
 
     def __call__(self, frame: dict) -> dict:
         # 3.76: the mission this frame belongs to. A Stop closes the policy
@@ -1870,6 +1879,7 @@ class TieredVision:
             # 3.91 A: the runner takes what landed before it closes the policy;
             # nothing of this mission may ride out on another.
             self._cloud_answers = []
+            self._unapplied_noted = None
         self._landed_corroboration = None
         self._local_turn = None
         self._local_landed = None
@@ -1947,7 +1957,7 @@ class TieredVision:
             if len(self._cloud_answers) > CLOUD_ANSWERS_KEPT:
                 # Bounded whoever takes them: the oldest go, counted.
                 del self._cloud_answers[0]
-                self._cloud_answers_dropped += 1
+                self.stats.cloud_answers_dropped += 1
 
     def _held_direction(self) -> Optional[str]:
         """The last direction the cloud gave, if there is one.

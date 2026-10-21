@@ -298,7 +298,7 @@ def test_the_queue_is_bounded_when_nobody_takes_it():
         tier._note_cloud_answer("t", seq)
     kept = tier.take_cloud_answers()
     assert len(kept) == CLOUD_ANSWERS_KEPT and kept[0]["asked_seq"] == 5
-    assert tier._cloud_answers_dropped == 5
+    assert tier.stats.cloud_answers_dropped == 5
 
 
 def test_a_take_that_raises_a_cancelled_error_cannot_stop_the_stop():
@@ -311,3 +311,35 @@ def test_a_take_that_raises_a_cancelled_error_cannot_stop_the_stop():
             raise concurrent.futures.CancelledError()
     runner = _runner(Cancelled())
     assert MissionRunner._take_cloud_answers(runner, final=True) == []
+
+
+def test_the_final_take_reads_the_verdict_too():
+    """Round 4: noted at the end, the answer had no verdict."""
+    tier = TieredVision(ScriptedPipeline([DETECTED] * 3), NumberedCloud(delay=0.05),
+                        async_cloud=True)
+    tier(_frame(1))
+    tier._inflight.result(timeout=5)
+    (answer,) = tier.take_cloud_answers(final=True)
+    assert answer["verdict"] == "no_claim"
+    tier.close()
+
+
+def test_the_final_take_keeps_the_queue_when_noting_fails():
+    """Round 4: the swap in a `finally` threw the queue away with the error."""
+    tier = TieredVision(ScriptedPipeline([DETECTED] * 3), NumberedCloud())
+    tier(_frame(1))                                # one answer queued
+    tier._note_landed_unapplied = lambda: (_ for _ in ()).throw(ValueError("odd"))
+    (answer,) = tier.take_cloud_answers(final=True)
+    assert answer["asked_seq"] == 1
+
+
+def test_a_stray_unnumbered_frame_on_a_numbering_body_keeps_the_answers():
+    """Round 4: dropped only where no frame has ever been numbered."""
+    policy = _Policy()
+    runner = _runner(policy)
+    MissionRunner._note_decision(runner, SimpleNamespace(
+        frame=_frame(1), scene={}, action="LEFT"))
+    policy.queue = [{"asked_seq": 1}]
+    MissionRunner._note_decision(runner, SimpleNamespace(
+        frame={"image_base64": "x"}, scene={}, action="LEFT"))
+    assert policy.queue == [{"asked_seq": 1}]
