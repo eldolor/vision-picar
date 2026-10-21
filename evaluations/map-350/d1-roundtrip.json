@@ -1,0 +1,74 @@
+{
+ "house": "starter_house",
+ "image": "vision-picar-ros:latest",
+ "lap_end_error": {
+  "usable": true,
+  "position_error_m": 0.0034,
+  "heading_error_deg": -0.2
+ },
+ "serialise": {
+  "code": 0,
+  "reply": "requester: making request: slam_toolbox.srv.SerializePoseGraph_Request(filename='/tmp/picar-maps/v1')\n\nresponse:\nslam_toolbox.srv.SerializePoseGraph_Response(result=0)"
+ },
+ "files": {
+  "v1.data": 412415,
+  "v1.posegraph": 6871345
+ },
+ "arms": {
+  "A_async_first_node": {
+   "before": {
+    "usable": true,
+    "position_error_m": 0.0,
+    "heading_error_deg": 0.0
+   },
+   "deserialise": {
+    "code": 0,
+    "s": 0.83,
+    "reply": "requester: making request: slam_toolbox.srv.DeserializePoseGraph_Request(filename='/tmp/picar-maps/v1', match_type=1, initial_pose=geometry_msgs.msg.Pose2D(x=0.0, y=0.0, theta=0.0))\n\nresponse:\nslam_toolbox.srv.DeserializePoseGraph_Response()"
+   },
+   "map_agreement": {
+    "all_cells": 1.0,
+    "known_cells": 1.0,
+    "saved_known": 2169,
+    "saved_cells": 3283
+   },
+   "at_rest_5s": {
+    "usable": true,
+    "position_error_m": 0.0,
+    "heading_error_deg": 0.0
+   }
+  },
+  "B_map_and_loc_at_pose": {
+   "before": {
+    "usable": true,
+    "position_error_m": 0.0,
+    "heading_error_deg": 0.0
+   },
+   "deserialise": {
+    "code": 0,
+    "s": 0.86,
+    "reply": "requester: making request: slam_toolbox.srv.DeserializePoseGraph_Request(filename='/tmp/picar-maps/v1', match_type=3, initial_pose=geometry_msgs.msg.Pose2D(x=0.0, y=0.0, theta=0.0))\n\nresponse:\nslam_toolbox.srv.DeserializePoseGraph_Response()"
+   },
+   "map_agreement": {
+    "all_cells": 1.0,
+    "known_cells": 1.0,
+    "saved_known": 2169,
+    "saved_cells": 3283
+   },
+   "at_rest_5s": {
+    "usable": true,
+    "position_error_m": 0.0,
+    "heading_error_deg": 0.0
+   },
+   "to_mapping": {
+    "code": 0,
+    "reply": "requester: making request: std_srvs.srv.SetBool_Request(data=False)\n\nresponse:\nstd_srvs.srv.SetBool_Response(success=True, message='')"
+   },
+   "remap_serialise": {
+    "code": 0,
+    "reply": "requester: making request: slam_toolbox.srv.SerializePoseGraph_Request(filename='/tmp/picar-maps/v2')\n\nresponse:\nslam_toolbox.srv.SerializePoseGraph_Response(result=0)"
+   },
+   "remap_files": "total 14596\n-rw-r--r-- 1  504 root   11678 Oct 21 10:37 saved_map.json\n-rw-r--r-- 1  504 root  412415 Oct 21 10:37 v1.data\n-rw-r--r-- 1  504 root 6871345 Oct 21 10:37 v1.posegraph\n-rw-r--r-- 1 root root  428014 Oct 21 10:37 v2.data\n-rw-r--r-- 1 root root 7213622 Oct 21 10:37 v2.posegraph"
+  }
+ }
+}
