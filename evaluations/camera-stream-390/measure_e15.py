@@ -82,7 +82,7 @@ def _wait(url):
     raise RuntimeError(f"{url} never answered")
 
 
-def run(fps, seconds, cloud, logdir):
+def run(fps, seconds, cloud, logdir, record=False):
     cfg = os.path.join(logdir, "robot.yaml")
     with open(os.path.join(ROOT, "config", "robot.yaml")) as f:
         text = f.read()
@@ -90,7 +90,8 @@ def run(fps, seconds, cloud, logdir):
         f.write(text.replace("\nmode: sim", "\nmode: teleop", 1))
     env = {k: v for k, v in os.environ.items() if k not in ("APP_SHARED_SECRET", "LOCAL_SECRET")}
     env.update(ROBOT_CONFIG_PATH=cfg, ROBOT_MODE="teleop", WORLD_MODE="none",
-               VISION_URL=cloud.url, ROBOT_URL=f"http://127.0.0.1:{ROBOT}")
+               VISION_URL=cloud.url, ROBOT_URL=f"http://127.0.0.1:{ROBOT}",
+               RECORDING_BACKEND="local")   # walks land in ./recordings (gitignored)
     procs = [subprocess.Popen([sys.executable, "-m", "uvicorn", "robot.server:app", "--port",
                                str(ROBOT), "--log-level", "warning"], cwd=ROOT, env=env,
                               stdout=open(f"{logdir}/robot-{fps}.log", "w"), stderr=subprocess.STDOUT),
@@ -107,7 +108,8 @@ def run(fps, seconds, cloud, logdir):
             ctx = b.new_context(viewport={"width": 390, "height": 844}, permissions=["camera"])
             seed = {"guidanceMode": "robot", "vp_guide_onboarded": "1",
                     "vp_brain_url": f"http://127.0.0.1:{BRAIN}", "vp_drive_via_brain": "1",
-                    "vp_drive_policy": "tiered", "vp_stream_fps": str(fps)}
+                    "vp_drive_policy": "tiered", "vp_stream_fps": str(fps),
+                    "vp_record_walk": "1" if record else "0"}
             ctx.add_init_script("(() => { const s = %s; for (const k in s)"
                                 " localStorage.setItem(k, s[k]); })();" % json.dumps(seed))
             page = ctx.new_page()
@@ -134,6 +136,13 @@ def run(fps, seconds, cloud, logdir):
             seq1 = httpx.get(f"http://127.0.0.1:{ROBOT}/teleop/frames",
                              params={"after": 10**9}).json()["latest_seq"]
             page.click("#btn-guidance-close")
+            rec = None
+            if record:
+                for _ in range(120):          # the recorder drains and finishes
+                    rec = brain.get("/mission/status").json().get("recording")
+                    if rec and rec.get("finished"):
+                        break
+                    time.sleep(0.5)
             b.close()
         stats = (st.get("tier") or {}).get("stats") or {}
         return {"fps_set": fps, "seconds": round(elapsed, 1),
@@ -143,6 +152,7 @@ def run(fps, seconds, cloud, logdir):
                 "cloud_calls": stats.get("cloud_calls"), "stub_calls": cloud.calls - calls0,
                 "calls_per_min": round(60 * (stats.get("cloud_calls") or 0) / elapsed, 2),
                 "triggers": stats.get("triggers"), "error": st.get("error"),
+                "recording": rec,
                 "log_tail": (st.get("log_tail") or [])[-4:]}
     finally:
         for proc in procs:
@@ -155,9 +165,25 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seconds", type=int, default=120)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--record", action="store_true",
+                    help="criterion 14: one recorded walk at 4 fps instead of the 2-vs-8 comparison")
     args = ap.parse_args()
     cloud = Cloud()
     logdir = tempfile.mkdtemp(prefix="e15-")
+    if args.record:
+        row = run(4, args.seconds, cloud, logdir, record=True)
+        rec = row["recording"] or {}
+        # Pushed between the probe and the end; the recorder starts one frame
+        # before the newest at start and keeps the frames pushed while the
+        # mission ends, so it may hold a frame or two more.
+        share = (rec.get("saved", 0) / row["frames_pushed"]) if row["frames_pushed"] else 0
+        result = {"row": row, "recorded_share": round(share, 3), "logs": logdir,
+                  "bar": ">= 95% of pushed frames recorded, 0 duplicate seqs",
+                  "met": share >= 0.95}
+        with open(args.out, "w") as f:
+            json.dump(result, f, indent=2)
+        print(json.dumps(result, indent=2))
+        return
     rows = [run(fps, args.seconds, cloud, logdir) for fps in (2, 8)]
     low, high = rows[0]["calls_per_min"], rows[1]["calls_per_min"]
     result = {"rows": rows, "logs": logdir, "bar": "8 fps within 10% of 2 fps",

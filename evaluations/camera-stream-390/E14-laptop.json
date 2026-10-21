@@ -1,0 +1,39 @@
+{
+  "row": {
+    "fps_set": 4,
+    "seconds": 300.0,
+    "running_at_end": true,
+    "outcome": "running",
+    "frames_pushed": 1192,
+    "fps_delivered": 3.97,
+    "perceived": 781,
+    "frames_skipped": 412,
+    "cloud_calls": 94,
+    "stub_calls": 94,
+    "calls_per_min": 18.8,
+    "triggers": {
+      "mission_start": 1,
+      "cold_search": 93
+    },
+    "error": null,
+    "recording": {
+      "walk": "red-backpack-20261021-110043",
+      "saved": 1195,
+      "perceived": 782,
+      "lost": 0,
+      "over_cap": 0,
+      "failed": 0,
+      "finished": true
+    },
+    "log_tail": [
+      "step 777: LEFT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal LEFT",
+      "step 778: LEFT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal LEFT",
+      "step 779: LEFT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal LEFT",
+      "step 780: LEFT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal LEFT"
+    ]
+  },
+  "recorded_share": 1.003,
+  "logs": "/var/folders/4m/90g11pps7z52mxb1k0ps3pjm0000gr/T/e15-rdk_niqh",
+  "bar": ">= 95% of pushed frames recorded, 0 duplicate seqs",
+  "met": true
+}

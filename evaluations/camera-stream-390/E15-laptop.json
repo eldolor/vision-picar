@@ -1,0 +1,55 @@
+{
+  "rows": [
+    {
+      "fps_set": 2,
+      "seconds": 120.0,
+      "running_at_end": true,
+      "outcome": "running",
+      "frames_pushed": 239,
+      "fps_delivered": 1.99,
+      "perceived": 314,
+      "frames_skipped": 0,
+      "cloud_calls": 38,
+      "stub_calls": 38,
+      "calls_per_min": 19.0,
+      "triggers": {
+        "mission_start": 1,
+        "cold_search": 37
+      },
+      "error": null,
+      "log_tail": [
+        "step 310: LEFT (ok) -- [cloud: cold_search] target not visible -- [reactive tier, cloud call dispatched] dispatched -- holding last cloud goal LEFT",
+        "step 311: LEFT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal LEFT",
+        "step 312: LEFT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal LEFT",
+        "step 313: LEFT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal LEFT"
+      ]
+    },
+    {
+      "fps_set": 8,
+      "seconds": 120.0,
+      "running_at_end": true,
+      "outcome": "running",
+      "frames_pushed": 945,
+      "fps_delivered": 7.87,
+      "perceived": 313,
+      "frames_skipped": 634,
+      "cloud_calls": 38,
+      "stub_calls": 38,
+      "calls_per_min": 19.0,
+      "triggers": {
+        "mission_start": 1,
+        "cold_search": 37
+      },
+      "error": null,
+      "log_tail": [
+        "step 309: LEFT (ok) -- [cloud: cold_search] target not visible -- [reactive tier, cloud call dispatched] dispatched -- holding last cloud goal LEFT",
+        "step 310: LEFT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal LEFT",
+        "step 311: LEFT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal LEFT",
+        "step 312: LEFT (ok) -- target not visible -- [reactive tier, no cloud call] no trigger (absent) -- holding last cloud goal LEFT"
+      ]
+    }
+  ],
+  "logs": "/var/folders/4m/90g11pps7z52mxb1k0ps3pjm0000gr/T/e15-lo1urrov",
+  "bar": "8 fps within 10% of 2 fps",
+  "met": true
+}
