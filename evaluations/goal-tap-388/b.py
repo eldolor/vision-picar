@@ -24,7 +24,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from oracle import run, yield_to_live_runs               # noqa: E402
-from brain.goal_policy import FEATURES                   # noqa: E402
+from brain.goal_policy import FEATURES, NetGoalPolicy    # noqa: E402
 from sim.maps.procthor import usable                     # noqa: E402
 
 WORKERS = int(os.environ.get("B_WORKERS", "4"))
@@ -49,6 +49,10 @@ def _job(args):
         return run(h, split, label=False)
     if spec == "oracle":
         return run(h, split)
+    if spec[0] == "net":                       # clone then PPO: the network drives
+        net = spec[1]
+        return run(h, split, policy=NetGoalPolicy(net["weights"], [(l["W"], l["b"]) for l in net["layers"]]),
+                   label=False)
     if spec[0] == "learner":                   # DAgger: the learner drives, the oracle labels
         return run(h, split, weights=spec[1])
     return run(h, split, weights=spec[1], label=False)
@@ -203,6 +207,8 @@ def spec_of(name: str):
     if name in ("rule", "oracle"):
         return name
     data = json.load(open(name))
+    if "net" in data.get("best", {}):          # train_net.py's output
+        return ("net", data["best"]["net"])
     for key in ("best",):
         if key in data and "weights" in data[key] and "layers" not in data.get(key, {}):
             return ("weights", data[key]["weights"])
