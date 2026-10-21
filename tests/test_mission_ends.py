@@ -306,17 +306,56 @@ def _battery_runner(volts, floor=10.5):
 
 
 def test_a_battery_below_the_floor_ends_out_of_budget_within_two_seconds():
-    runner, robot, grid = _battery_runner([12.0] * 6 + [10.0])
+    """A reading that moves (the fake board measures every frame) ends it
+    inside E4's 2 s: each low reading is a sample of its own."""
+    runner, robot, grid = _battery_runner([12.0] * 6 + [10.0, 9.99, 9.98, 9.97])
     runner.start()
     crossed_at = None
     while runner.tick():
-        if crossed_at is None and robot.volts == [10.0]:
+        if crossed_at is None and robot.reads >= 7:     # the first low read
             crossed_at = grid.sim_time
     s = runner.status()
     assert s["outcome"] == OUT_OF_BUDGET, s["log_tail"]
     assert "battery" in s["end_reason"]
     assert crossed_at is not None and grid.sim_time - crossed_at <= 2.0
-    assert s["budget"]["battery_v"] == 10.0
+    assert s["budget"]["battery_v"] == 9.99
+
+
+def test_one_board_sample_read_twice_is_one_low_reading():
+    """3.76 M2.7: the Rover's board refreshes its battery reading every 10 s
+    (`oled_ctrl.h` `inaDataUpdate()`), so two reads 0.5 s apart can be one
+    sample -- one sag under load. The same value counts again only once a
+    board refresh has passed (`BATTERY_SAMPLE_S`)."""
+    from control.mission_runner import BATTERY_SAMPLE_S
+    runner, robot, grid = _battery_runner([12.0, 10.0, 12.0, 12.0])
+    runner.start()
+    for _ in range(40):
+        if not runner.tick():
+            break
+    assert runner.is_running(), runner.status()["log_tail"]
+    # A low value that holds: ended, but only after a board refresh.
+    runner, robot, grid = _battery_runner([12.0, 10.0])
+    runner.start()
+    first_low = None
+    while runner.tick():
+        if first_low is None and robot.reads >= 2:
+            first_low = grid.sim_time
+        assert grid.sim_time < 120, "never ended"
+    s = runner.status()
+    assert s["outcome"] == OUT_OF_BUDGET, s["log_tail"]
+    held = grid.sim_time - first_low
+    assert BATTERY_SAMPLE_S <= held + 0.5 <= BATTERY_SAMPLE_S + 2.0, held
+
+
+def test_a_repeated_value_does_not_bridge_a_recovery():
+    """A low, a recovered and the same low again are two separate sags, not
+    two samples of one: a reading over the floor resets the count."""
+    runner, robot, grid = _battery_runner([12.0, 10.0, 12.0, 10.0, 12.0])
+    runner.start()
+    for _ in range(40):
+        if not runner.tick():
+            break
+    assert runner.is_running(), runner.status()["log_tail"]
 
 
 def test_one_low_reading_is_a_sag_not_an_empty_battery():

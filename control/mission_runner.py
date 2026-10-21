@@ -107,6 +107,15 @@ STEP_BACKSTOP_FACTOR = 2
 # apart, end the mission well inside E4's 2 s.
 BATTERY_CHECK_S = 0.5
 BATTERY_LOW_READINGS = 2
+# 3.76 M2.7 (the user, 2026-10-21: "two distinct samples"): the Rover's
+# board measures its battery only every 10 s (`oled_ctrl.h`
+# `inaDataUpdate()`) and repeats that value in every frame between, so two
+# reads half a second apart can be one sample -- one sag counted twice. A
+# low reading counts again only when its value differs from the last one
+# counted, or when the same value is still there past one board refresh (a
+# pack that reads, say, 10.40 V twice running). 12 s: the 10 s refresh plus
+# the firmware loop's slack, so a repeat is always a later sample.
+BATTERY_SAMPLE_S = 12.0
 DEFAULT_VISION_TIMEOUT_S = 20.0
 # 3.56. The arrival confirmation's own deadline (the user's choice, "~8 s"):
 # above the slowest cloud call ever recorded (6.78 s of 98), so a hanging
@@ -685,6 +694,8 @@ class MissionRunner:
         self._battery_checked_at: Optional[float] = None
         self._battery_v: Optional[float] = None
         self._battery_low = 0
+        self._battery_low_v: Optional[float] = None     # the last low reading counted
+        self._battery_low_at: Optional[float] = None    # ... and when
         self._battery_error_logged = False
         # None means "the agent's own sensor-built scene" -- resolved after
         # the agent exists, below, because that scene reads the agent's
@@ -1131,7 +1142,8 @@ class MissionRunner:
     def _battery_spent(self) -> bool:
         """Read the battery at most every `BATTERY_CHECK_S` of the mission's
         clock. A body with no reading, or a read that fails, never ends a
-        mission: the floor guards a battery the brain can see."""
+        mission: the floor guards a battery the brain can see. Low readings
+        count only as distinct samples (`BATTERY_SAMPLE_S`, M2.7)."""
         now = self.clock()
         if (self._battery_checked_at is not None
                 and now - self._battery_checked_at < BATTERY_CHECK_S):
@@ -1149,7 +1161,15 @@ class MissionRunner:
             self._battery_low = 0
             return False
         self._battery_v = float(v)
-        self._battery_low = self._battery_low + 1 if v < self.battery_floor_v else 0
+        if v >= self.battery_floor_v:
+            self._battery_low = 0
+            return False
+        # Under the floor: a new sample, or the board's last one read again
+        # (M2.7)? Only a new one adds to the count.
+        if (self._battery_low == 0 or v != self._battery_low_v
+                or now - self._battery_low_at >= BATTERY_SAMPLE_S):
+            self._battery_low += 1
+            self._battery_low_v, self._battery_low_at = float(v), now
         return self._battery_low >= BATTERY_LOW_READINGS
 
     def _back_off(self) -> None:

@@ -348,7 +348,7 @@ tools, a tool runner belongs inside the vision function, below the runner.
 | The brain process dies mid-move | nothing here can act | the robot's watchdog stops the motors within one watchdog period (safety domain) |
 | Stop lands while a tick is in flight | the halt gate refuses that tick's move or pan | after a mission ends, no further movement command from it reaches the robot |
 | A person takes the robot | the mission ends **cancelled** (`cancelled_by: dpad`); it stops the car, not retries | a preempted brain never re-takes the robot |
-| The time limit passes or the battery reads under its floor | the mission ends **out_of_budget**, the robot stopped, with a report of where it looked | ends within one tick of the limit; two low readings in a row (one is a motor's sag) |
+| The time limit passes or the battery reads under its floor | the mission ends **out_of_budget**, the robot stopped, with a report of where it looked | ends within one tick of the limit; two low readings in a row that are distinct samples of the board (one is a motor's sag; the car's board measures only every 10 s, 3.76 M2.7) |
 | The safety layer keeps refusing forward | the mission ends **blocked** after a short run of refusals | no mission spends its budget pushing into a wall |
 | A body read or move raises anything else | the mission ends **failed** with the robot stopped | the brain never loops blind on a dead robot link |
 | World unreachable | missions run without a map | a mapper outage costs exploration efficiency, never a mission |

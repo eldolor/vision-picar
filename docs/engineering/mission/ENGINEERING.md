@@ -142,7 +142,13 @@ the limit moves nothing) and again at the end. It ends the mission
 `out_of_budget` when `self.clock() - start >= mission_time_limit_s` (the
 mission's clock: sim time in process, `time.monotonic()` live), or when the
 battery reads under `battery_floor_v` on `BATTERY_LOW_READINGS` (2)
-consecutive reads, `BATTERY_CHECK_S` (0.5 s) apart on that clock.
+consecutive low samples, read `BATTERY_CHECK_S` (0.5 s) apart on that clock.
+A low read counts as a new sample only when its value differs from the last
+one counted or `BATTERY_SAMPLE_S` (12 s) has passed since it (3.76 M2.7: the
+Rover's board refreshes its reading every 10 s and repeats it between, so a
+repeat inside that is the same sag read twice); any read at or over the
+floor resets the count. A moving reading (the fake board's drain) still
+ends inside 2 s; a value that holds ends 12-12.5 s after its first read.
 `robot.get_battery()` with `usable: false`, or a read that raises, never
 ends a mission (logged once). `max_steps` defaults to
 `derived_max_steps(mission_time_limit_s)` = limit / 0.5 s x 2 (120 with no
