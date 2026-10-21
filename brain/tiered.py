@@ -77,6 +77,7 @@ import logging
 import threading
 import math
 import random
+import re
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -384,18 +385,6 @@ DEFAULT_CORROBORATION_P = 0.5
 CORROBORATED = "corroborated"
 UNCLEAR = "unclear"
 NO_CLAIM = "no_claim"            # the cloud says the target is not visible
-
-# 3.91 A: the cloud answer's fields a walk row keeps, and how much text.
-CLOUD_ANSWER_KEYS = ("action", "safest_direction", "target_visible",
-                     "target_direction", "target_reached", "obstacle_ahead",
-                     "reasoning", "model_id")
-CLOUD_TEXT_CHARS = 500
-
-
-def _frame_seq(frame) -> Optional[int]:
-    """The robot's own number for a frame (3.90's `metadata.seq`), or None."""
-    seq = ((frame or {}).get("metadata") or {}).get("seq") if isinstance(frame, dict) else None
-    return seq if isinstance(seq, int) else None
 CORROBORATION_UNAVAILABLE = "unavailable"   # the local tier could not tell
 CORROBORATION_VERDICTS = (CORROBORATED, UNCLEAR, NO_CLAIM,
                           CORROBORATION_UNAVAILABLE)
@@ -707,6 +696,21 @@ class _Question:
     local_done: threading.Event = field(default_factory=threading.Event)
 
 
+# 3.91 A: the cloud answer's fields a walk row keeps, and how much text.
+CLOUD_ANSWER_KEYS = ("action", "safest_direction", "target_visible",
+                     "target_direction", "target_reached", "obstacle_ahead",
+                     "reasoning", "model_id")
+CLOUD_TEXT_CHARS = 500
+CLOUD_ERROR_CHARS = 200
+_URL = re.compile(r"\w+://\S+")
+
+
+def _frame_seq(frame) -> Optional[int]:
+    """The robot's own number for a frame (3.90's `metadata.seq`), or None."""
+    seq = ((frame or {}).get("metadata") or {}).get("seq") if isinstance(frame, dict) else None
+    return seq if isinstance(seq, int) else None
+
+
 @dataclass
 class _LocalAnswer:
     q: _Question
@@ -941,9 +945,9 @@ class TieredVision:
         # never read as this frame's.
         self._landed_corroboration: Optional[dict] = None
         # 3.91 A: every cloud answer (or failure) that landed, as a summary,
-        # until the frame that returns next carries it out in `_tier`.
-        # Appended and taken under `_collect_lock`, so an answer collected by
-        # the runner's wait thread is neither lost nor shown twice.
+        # until `take_cloud_answers()`. Appended and taken under
+        # `_collect_lock`, so an answer collected by the runner's wait thread
+        # is neither lost nor shown twice.
         self._cloud_answers: list = []
         self._inflight_seq = None
         self._pending_error: Optional[BaseException] = None
@@ -995,22 +999,18 @@ class TieredVision:
 
     # -- the vision_fn contract ------------------------------------------
 
-    def __call__(self, frame: dict) -> dict:
-        scene = self._decide(frame)
-        # 3.91 A: the answers that landed up to this frame's decision ride
-        # out on it, once. A frame that raised keeps them for the next one.
+    def take_cloud_answers(self) -> list:
+        """3.91 A: every cloud answer (or failure) that landed since the
+        last take, oldest first, each handed out once. Taken by the one
+        reader that files rows (`MissionRunner._note_decision`) when it files
+        a decision, not by `__call__`: a frame's scene can be thrown away (a
+        guard that gave up on it, a halt before the decision is noted), and
+        an answer taken into it would be lost."""
         with self._collect_lock:
             answers, self._cloud_answers = self._cloud_answers, []
-        if answers:
-            tier = scene.get("_tier")
-            if isinstance(tier, dict):
-                scene["_tier"] = {**tier, "cloud_answers": answers}
-            else:
-                with self._collect_lock:
-                    self._cloud_answers[:0] = answers
-        return scene
+        return answers
 
-    def _decide(self, frame: dict) -> dict:
+    def __call__(self, frame: dict) -> dict:
         # 3.76: the mission this frame belongs to. A Stop closes the policy
         # from another thread, often while this frame is in perception; the
         # call this frame would fire must then not go out (it was billed,
@@ -1209,6 +1209,7 @@ class TieredVision:
             self._absent_streak = 0
             self._since_call = 0
             self._mark_odometry_call()
+            self._note_cloud_answer(trigger, _frame_seq(frame), error=exc)
             if self.cloud_errors_fatal:
                 raise
             self._count_cloud_error(exc)
@@ -1227,7 +1228,10 @@ class TieredVision:
         self._local_held_why = None
         self._local_turn = None
         self._frame_unable = 0
-        return self._annotate(got, perception, trigger)
+        out = self._annotate(got, perception, trigger)
+        self._note_cloud_answer(trigger, _frame_seq(frame), scene=got,
+                                verdict=(out["_tier"].get("corroboration") or {}).get("verdict"))
+        return out
 
     def _ask_tiers(self, frame: dict, q: "_Question", fn):
         """Runs on the worker (or inline, synchronously). The local answer,
@@ -1741,7 +1745,8 @@ class TieredVision:
             self._inflight = None
             self._last_taken = fut
             trigger, self._inflight_trigger = self._inflight_trigger, None
-            self._inflight_tier = None
+            # 3.91 A: kept, so a local job's fault is not filed as the cloud's.
+            job_tier, self._inflight_tier = self._inflight_tier, None
             self._inflight_question = None
             perception, self._inflight_perception = self._inflight_perception, None
             asked_seq, self._inflight_seq = self._inflight_seq, None
@@ -1767,7 +1772,7 @@ class TieredVision:
             # already charged this call when its wait timed out
             # (`abandon_inflight`). Decided under the lock, against it.
             logger.warning("async cloud call failed: %s", exc)
-            self._note_cloud_answer(trigger, asked_seq, error=exc)
+            self._note_cloud_answer(trigger, asked_seq, error=exc, tier=job_tier)
             with self._collect_lock:
                 if fut is not self._charged:
                     self._pending_error = exc
@@ -1788,11 +1793,14 @@ class TieredVision:
         # frame belongs to this frame's pixels, and what carries forward is
         # the goal, not the whole answer.
         verdict = None
-        if perception is not None:
-            annotated = self._annotate(scene, perception, trigger or "", executed=False)
-            verdict = (annotated.get("_tier") or {}).get("corroboration")
-        self._note_cloud_answer(trigger, asked_seq, scene=scene,
-                                verdict=(verdict or {}).get("verdict"))
+        try:
+            if perception is not None:
+                annotated = self._annotate(scene, perception, trigger or "", executed=False)
+                verdict = (annotated.get("_tier") or {}).get("corroboration")
+        finally:
+            # Noted even if the annotation raised: the answer did land.
+            self._note_cloud_answer(trigger, asked_seq, scene=scene,
+                                    verdict=(verdict or {}).get("verdict"), tier=job_tier)
         if perception is not None:
             if verdict:
                 # Marked `landed_late`, and carrying the trigger it belongs
@@ -1818,6 +1826,9 @@ class TieredVision:
             self._inflight_question = None
             self._inflight_perception = None
             self._inflight_seq = None
+            # 3.91 A: the runner takes what landed before it closes the policy;
+            # nothing of this mission may ride out on another.
+            self._cloud_answers = []
         self._landed_corroboration = None
         self._local_turn = None
         self._local_landed = None
@@ -1853,16 +1864,21 @@ class TieredVision:
 
     def _note_cloud_answer(self, trigger, asked_seq, scene: Optional[dict] = None,
                            verdict: Optional[str] = None,
-                           error: Optional[BaseException] = None) -> None:
+                           error: Optional[BaseException] = None,
+                           tier: Optional[str] = "cloud") -> None:
         """3.91 A: what the cloud said, kept for the walk's rows. Recorded
         whatever the answer does next, so a reader can tell a held REVERSE
         that meant "too close" from one that meant "not the target"."""
         if error is not None:
-            entry = {"trigger": trigger, "asked_seq": asked_seq,
-                     "cloud_error": str(error)[:CLOUD_TEXT_CHARS]}
+            # Stored in walk rows that go to S3: addresses are cut out of
+            # the text (an HTTP error can quote the endpoint).
+            text = _URL.sub("<url>", f"{type(error).__name__}: {error}")
+            entry = {"trigger": trigger, "asked_seq": asked_seq, "tier": tier,
+                     "error": text[:CLOUD_ERROR_CHARS]}
         else:
             scene = scene or {}
-            entry = {"trigger": trigger, "asked_seq": asked_seq, "verdict": verdict}
+            entry = {"trigger": trigger, "asked_seq": asked_seq, "tier": tier,
+                     "verdict": verdict}
             for key in CLOUD_ANSWER_KEYS:
                 if key in scene:
                     value = scene[key]

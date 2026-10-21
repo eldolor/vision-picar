@@ -179,16 +179,19 @@ and `__call__` puts every question to the local tier first:
   `_stats_lock`, cap checked; a Stop since dispatch returns None and pays
   nothing). A cloud scene lands as before and drops `_local_held`.
 
-* **What the cloud said is carried out (3.91 A).** Every cloud answer that
-  lands, async (`_collect_inflight()`, whichever thread collects it) or
-  synchronous, and every failed call, is summarised by `_note_cloud_answer()`
-  (`CLOUD_ANSWER_KEYS`, text cut to `CLOUD_TEXT_CHARS`, the robot seq it was
-  asked on from `_dispatch()`) into `_cloud_answers` under `_collect_lock`.
-  `__call__` (now `_decide()` plus this) takes the list after the decision
-  and puts it on the returned scene as `_tier.cloud_answers`; a frame that
-  raises leaves it for the next. `MissionRunner._note_decision()` copies it
-  from that tick's own scene, never the held `_tier`, onto the decision a
-  stream walk files. Read-only: nothing decides on it.
+* **What the cloud said is kept (3.91 A).** Every cloud answer that
+  lands, async (`_collect_inflight()`, whichever thread collects it; noted
+  even if `_annotate` raises) or synchronous (the main path and the
+  local-first path's cloud fallback), and every failed call, is summarised
+  by `_note_cloud_answer()` (`CLOUD_ANSWER_KEYS`, text cut to
+  `CLOUD_TEXT_CHARS`, the robot seq it was asked on from `_dispatch()`, the
+  job's `tier`; a failure as `error`, its type and text with addresses cut
+  out, `CLOUD_ERROR_CHARS`) into `_cloud_answers` under `_collect_lock`.
+  Scenes never carry them: `take_cloud_answers()` hands each out once, to
+  `MissionRunner._note_decision()` (every tick that notes a decision, so one
+  left by a halted tick rides on the next) and to `_finish` before the end
+  is visible (`unfiled_cloud_answers`). `reset_epoch()` drops what was not
+  taken. Read-only: nothing decides on it.
 * `_apply_local()` (on landing; a different epoch is ignored): yes (>= 0.5)
   and no (<= `local_no_below`) reset `_frame_unable` and the pacing counts
   as a landed cloud answer does. A yes whose reply has `box_frac` gives a

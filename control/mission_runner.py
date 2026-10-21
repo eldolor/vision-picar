@@ -837,6 +837,8 @@ class MissionRunner:
         self._decisions: "collections.OrderedDict[int, dict]" = collections.OrderedDict()
         self._decisions_lock = threading.Lock()
         self._last_decided = None          # (boot_id, seq) of the newest decision
+        # 3.91 A: cloud answers taken at the end that no decision carried.
+        self.unfiled_cloud_answers: list = []
         self._log: list = []
         self._camera_centred = False
 
@@ -1231,8 +1233,25 @@ class MissionRunner:
 
     DECISIONS_KEPT = 256
 
+    def _take_cloud_answers(self) -> list:
+        """3.91 A: the cloud answers the tiered policy holds, taken once.
+        Any other policy has none."""
+        take = getattr(self.vision_fn, "take_cloud_answers", None)
+        if take is None:
+            return []
+        try:
+            return list(take() or [])
+        except Exception as e:  # noqa: BLE001 -- a record never costs a tick
+            logger.warning("reading the cloud answers failed: %s", e)
+            return []
+
     def _note_decision(self, result) -> None:
         """3.90 E: what was decided on this tick's frame, kept by its seq."""
+        # 3.91 A: every cloud answer that landed by this decision, including
+        # one collected by the arrival's wait inside this tick, and any left
+        # by a tick that ended before its decision was noted. Taken here, the
+        # one place rows are filed from, so a scene thrown away loses none.
+        answers = self._take_cloud_answers()
         meta = ((result.frame or {}).get("metadata") or {}) if isinstance(result.frame, dict) else {}
         seq = meta.get("seq")
         if not isinstance(seq, int):
@@ -1247,12 +1266,6 @@ class MissionRunner:
                                        "last_action": result.action,
                                        "perception": self._perception,
                                        "tier_trigger": (self._tier or {}).get("trigger")}}
-        # 3.91 A: the cloud answers that landed on this tick, read from this
-        # tick's own scene -- never the held `_tier`, which outlives a frame
-        # and would copy one answer onto later rows.
-        scene = getattr(result, "scene", None)
-        scene = scene if isinstance(scene, dict) else {}
-        answers = (scene.get("_tier") or {}).get("cloud_answers")
         if answers:
             decision["cloud_answers"] = answers
         with self._decisions_lock:
@@ -1696,6 +1709,10 @@ class MissionRunner:
         with self._lock:
             if self._ended():
                 return
+            # 3.91 A: answers that landed after the last decision was noted
+            # (an arrival's wait, the last frame's call). Taken before the
+            # end is visible, so the stream recorder's finish can read them.
+            self.unfiled_cloud_answers = self._take_cloud_answers()
             self._running = False
             self._outcome = outcome
             self._end_reason = note
