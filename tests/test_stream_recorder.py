@@ -375,6 +375,27 @@ def test_a_recorder_ending_on_an_error_counts_what_it_held(tmp_path):
                          settle_s=30).start(after=0)
     assert rec.finished.wait(5)
     # The four fetched frames are filed (unperceived), not lost.
-    assert rec.status()["written"] == 4 and rec.status()["dropped"] == 0
+    assert rec.status()["written"] == 4
     assert [r["perceived"] for r in _rows(store, "w1")] == [False] * 4
     assert "finished_at" in json.loads((tmp_path / "w1" / "meta.json").read_text())
+
+
+def test_a_walk_whose_every_image_failed_is_still_finished(tmp_path):
+    robot = TeleopRobot()
+    for _ in range(2):
+        robot.push_frame(JPEG)
+    store = LocalWalkStore(tmp_path)
+    real_write = store.write_bytes
+
+    def no_space(walk, name, data):
+        if name.startswith("frame-"):
+            raise OSError("disk full")
+        return real_write(walk, name, data)
+
+    store.write_bytes = no_space
+    runner = FakeRunner()
+    rec = StreamRecorder(store, "w1", robot.frames_after, runner, poll_s=0.01).start(after=0)
+    runner.running.clear()
+    assert rec.finished.wait(5)
+    meta = json.loads((tmp_path / "w1" / "meta.json").read_text())
+    assert meta["frames_failed"] == 2 and meta["frames"] == 0 and "finished_at" in meta

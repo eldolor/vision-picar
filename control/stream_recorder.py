@@ -97,7 +97,6 @@ class StreamRecorder:
         self.saved = 0
         self.rows_failed = 0            # images stored whose rows did not append
         self.lookup_failed = 0          # frames whose decision could not be read
-        self.dropped = 0                # fetched, never filed: the recorder ended early
         self.usable = 0                 # images with a row stored or still to append
         self.written = 0                # images stored, whatever became of their rows
         self.perceived = 0
@@ -126,7 +125,7 @@ class StreamRecorder:
         # `rows_failed` images stored without a row.
         return {"walk": self.walk, "written": self.written, "saved": self.saved,
                 "usable": self.usable, "rows_failed": self.rows_failed,
-                "lookup_failed": self.lookup_failed, "dropped": self.dropped,
+                "lookup_failed": self.lookup_failed,
                 "perceived": self.perceived,
                 "lost": self.lost, "over_cap": self.over_cap, "failed": self.failed,
                 "finished": self.finished.is_set()}
@@ -260,18 +259,16 @@ class StreamRecorder:
     def _finish(self) -> None:
         try:
             # Frames fetched but not yet filed (the loop ended on an error)
-            # are filed unperceived, as a normal end does; any that cannot be
-            # are counted, never silently gone (review).
+            # are filed as a normal end files them; `_save` counts any it
+            # cannot store (review).
             while self._pending:
-                _, frame = self._pending.popleft()
-                try:
-                    self._save(frame)
-                except Exception:  # noqa: BLE001
-                    self.dropped += 1
+                self._save(self._pending.popleft()[1])
             self._pending_bytes = 0
             if self._rows:
                 self._flush_rows()
-            if self.written or self.dropped:
+            # Whenever a frame was attempted, so a walk whose every image
+            # failed is marked finished with its failures (review).
+            if self.written or self.failed or self.over_cap:
                 # Whenever an image was stored: a walk whose rows failed is
                 # marked finished with its failures, never left looking
                 # in progress (review).
@@ -281,8 +278,7 @@ class StreamRecorder:
                     frames_over_cap=self.over_cap or None,
                     frames_failed=self.failed or None,
                     frames_without_rows=self.rows_failed or None,
-                    frames_lookup_failed=self.lookup_failed or None,
-                    frames_dropped=self.dropped or None, capture=self._capture,
+                    frames_lookup_failed=self.lookup_failed or None, capture=self._capture,
                     **{k: v for k, v in self._meta.items() if v is not None})
         except Exception:  # noqa: BLE001
             logger.exception("stream recorder: finishing %s failed", self.walk)
