@@ -1237,7 +1237,7 @@ class MissionRunner:
     def _take_cloud_answers(self, final: bool = False) -> list:
         """3.91 A: the cloud answers the tiered policy holds, taken once.
         Any other policy has none."""
-        take = getattr(self.vision_fn, "take_cloud_answers", None)
+        take = getattr(getattr(self, "vision_fn", None), "take_cloud_answers", None)
         if take is None:
             return []
         try:
