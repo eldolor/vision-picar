@@ -118,6 +118,18 @@ mark; progress beyond `_VERB_STALL_M` (1 mm) or `_VERB_STALL_DEG`
 `stalled`, wheels zeroed. The sim's path (`advance()`) keeps its exact
 check.
 
+**A wall-clock verb's time is capped** (3.89): `carry_out_verb()` ends a
+wall-clock verb `timeout` (reason "cut at 7s (VERB_MAX_S)") once
+`VERB_MAX_S` has passed since it began, wheels zeroed, whatever is left of
+it; `robot/ros_drive.py` caps its own deadline at the same number and
+reports such a verb `stopped_short: "timeout"`. The caller is waiting:
+`RemoteRobot` reads each `/action` for `DEFAULT_TIMEOUT_S` (10 s), and a
+verb past it failed the mission while the robot still moved (3.88 A's live
+run 2, a creep FORWARD that nav2's collision_monitor had slowed to half).
+Only verbs planned longer than ~1.3 s can reach it (a creep plans 10 s);
+speed-50 verbs and turns end on their own well inside it. Sim-time verbs
+never reach it.
+
 **The skid-steer scrub** (3.35): `HardwareRobot(track_scrub=)` sets
 `_track_m = TRACK_WIDTH_M * track_scrub`, used for pivot wheel speeds
 (`verb_plan()`, `_pivot()`), the odometry heading, and the published
@@ -232,6 +244,7 @@ above raises `RobotTransportError`. Sensing routes catch only `HTTP 404`.
 | `DEFAULT_STALE_S` | 0.5 s | `robot/camera_stream.py` | Newest frame older than this is not served: 3.90 criterion 2 (503 within 1.0 s), with margin |
 | `DEFAULT_REOPEN_S` | 0.5 s | `robot/camera_stream.py` | Between attempts to open a camera that is not answering: criterion 2 (frames again within 3 s of a replug) |
 | Hardware verb turn rate | 1.2 rad/s body | `robot/hardware_robot.py` | Same as `TURN_RATE_RAD_S` in `robot/ros_drive.py` |
+| `VERB_MAX_S` | 7.0 s | `robot/interface.py` | 3.89: the most wall-clock time a verb runs before it ends `timeout`; shared by direct mode and `robot/ros_drive.py`. With the settle (0.15 s) and the reply it stays 2 s inside `RemoteRobot`'s 10 s (`tests/test_escape_creep_389.py` pins the sum) |
 | `VERB_STALL_S` | 0.6 s | `robot/interface.py` | No encoder progress this long while commanded: the verb has stalled. Shared by direct mode and `robot/ros_drive.py` (3.35). `[PLACEHOLDER]` until the board's low-speed deadband is measured |
 | `HEARTBEAT_MS` | 1500 ms | `robot/hardware_robot.py` | Board-side deadman, above the server's 1.0 s watchdog |
 | `FEEDBACK_STALE_S` | 0.25 s | `robot/hardware_robot.py` | No frame for this long and the wheels are not measured (3.34). Five of the board's 50 ms feedback intervals, below the 1 s watchdog and the 1.5 s heartbeat, so it acts first |
@@ -336,6 +349,7 @@ key means the new body returns something the contract does not allow.
 | `tests/test_blind_reverse.py` (5) | `HardwareRobot` with no sensors refuses reverse; a body without wheels still reverses (rule in [safety engineering](../safety/ENGINEERING.md)) |
 | `tests/test_wheel_feedback.py` (15) | 3.34: silence makes wheels and odometry unusable within 0.35 s; the body zeroes a standing command within 0.4 s; motion refused and stop never raising, on a dead port too; a verb losing feedback ends within 0.5 s; clean recovery; `/action` and `/wheels` answer `no_feedback`, `/health` `motor_board` describes the link, `RemoteRobot` raises; a `timeout` or `stalled` FORWARD is not executed and five end a mission `blocked` |
 | `tests/test_stall_and_scrub.py` (11) | 3.35: a snagged wall-clock verb ends `stalled` within `VERB_STALL_S` + 0.2 s; a pivot blocked by furniture on the fake board ends `stalled` (was `timeout`); clear fake-board verbs complete; one stall constant; the scrub sizes pivots, scales heading and is published; the fake board ignores `TRACK_SCRUB`, a real board reads it |
+| `tests/test_escape_creep_389.py` (12) | 3.89: a creep FORWARD from the 20 cm bar through the ROS chain with nav2's collision_monitor slowdown modelled answers within `VERB_MAX_S` + 0.5 s (11.7 s on `dev`), says `stopped_short: "timeout"`, and a second reaches the 3 cm line; a REVERSE creep is not cut; a slow wall-clock verb in direct mode ends `timeout` at the cap; the escape's creep pieces (policy engineering spec) |
 | `tests/test_health_sim_map.py` (4) | `/health` `sim_map` names the house the factory built, including `mode: hardware` with the fake board |
 | `tests/test_fake_esp32.py`, `tests/test_ros_driver_board.py` | The hardware body against the fake board (detail in [motor-board](../motor-board/ENGINEERING.md)) |
 | `tests/test_sim_body_process.py` | 3.36's split simulator: the robot server's process imports no simulator module, the factory refuses an in-process fake board, sensors follow the body and furniture moves reach both programs, the physics program dying stops the wheels, a dead sensor program blinds the vet within the stale bound, the vet never touches the network, and the safety stream and heavy reads land on different programs |

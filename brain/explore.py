@@ -103,9 +103,16 @@ OPEN_ANGLES = (90, 45, 20, 10, 5)
 # 3.44: a verb asked this slowly (0-100; 0.03 m/s = robot.safety.CREEP_M_S)
 # needs only CREEP_MARGIN_CM (3 cm) of room, so a robot wedged at 19 cm can
 # still creep out. The escape creeps only toward an end the full bar
-# already refuses -- at most 17 cm to the 3 cm line, ~6 s, inside
-# RemoteRobot's 10 s request timeout (a creep verb plans a whole cell).
+# already refuses -- at most 17 cm to the 3 cm line, ~6 s at the asked speed
+# (a creep verb plans a whole cell). 3.89: not always at the asked speed --
+# under `drive: ros` nav2's collision_monitor halves a forward twist with
+# something 13-33 cm ahead, and the creep took 10-12 s, past RemoteRobot's
+# 10 s request timeout. A wall-clock verb now ends at robot.interface's
+# VERB_MAX_S (7 s) and says `stopped_short: "timeout"`; such a creep is
+# followed by another the same way, up to CREEP_PIECES in all, so it still
+# reaches the line.
 CREEP_SPEED = 5
+CREEP_PIECES = 3
 # "Boxed in": fewer reachable stopping places than this around the robot.
 BOXED_CELLS = 40
 # 3.70 E3: a room goal aims at least this far inside the room's label where
@@ -1359,6 +1366,7 @@ class ExploreAgent(MissionAgent):
             # roomier end (the other if that is refused), which frees the
             # far end and changes what the corners can swing past.
             ends = item[1] if len(item) > 1 else self._creep_ends()
+            piece = item[2] if len(item) > 2 else 1
             if not ends:                 # the reverse freed it: on to the turn
                 return self._do_pending() if self._pending else ("WAIT", True, "not wedged")
             seen = self._creep_readings()
@@ -1367,12 +1375,17 @@ class ExploreAgent(MissionAgent):
             # floor band had something ahead just before -- the car's numbers
             # decide whether the band's blind range needs closing (a forward
             # creep can carry a sock inside it). A record, no behaviour.
+            cut = (out[0] != "WAIT" and out[1] and isinstance(out[2], dict)
+                   and out[2].get("stopped_short") == "timeout")
             self._event("creep", way=ends[0], executed=bool(out[1]),
-                        waited=out[0] == "WAIT", **seen)
+                        waited=out[0] == "WAIT", piece=piece, cut_by_time=cut, **seen)
             if out[0] == "WAIT":
-                self._requeue(ends[0], ("CREEP", ends))
+                self._requeue(ends[0], ("CREEP", ends, piece))
+            elif cut and piece < CREEP_PIECES:
+                # 3.89: its time ran out short of the line -- on, the same way.
+                self._pending.insert(0, ("CREEP", ends[:1], piece + 1))
             elif not out[1] and len(ends) > 1:
-                self._pending.insert(0, ("CREEP", ends[1:]))
+                self._pending.insert(0, ("CREEP", ends[1:], piece))
             return out
         if isinstance(item, tuple) and item[0] == "FACE":
             pose = self._pose()

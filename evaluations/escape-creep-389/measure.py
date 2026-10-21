@@ -29,6 +29,7 @@ sys.path.insert(0, ROOT)
 
 import httpx                                   # noqa: E402
 
+from brain.explore import CREEP_PIECES           # noqa: E402
 from tests import demo_explore as demo         # noqa: E402
 
 HOUSE = os.environ.get("SIM_MAP", "home_first_floor")
@@ -98,7 +99,7 @@ def sample_wheels(robot, stop, rows):
         time.sleep(0.05)
 
 
-def creep(robot, action, truth, emit, trial, room=None):
+def creep(robot, action, truth, emit, trial, room=None, piece=1):
     rows, stop = [], threading.Event()
     th = threading.Thread(target=sample_wheels, args=(robot, stop, rows), daemon=True)
     th.start()
@@ -118,7 +119,8 @@ def creep(robot, action, truth, emit, trial, room=None):
                       "first_move_s": round(next(b[0] for (a, b), dd in zip(zip(rows, rows[1:]), d)
                                                  if dd > 0.0002) - rows[0][0], 2)}
     g, inside = truth(robot)
-    emit({"trial": trial, "verb": action, "creep": True, "room_cm": room, "seconds": secs,
+    emit({"trial": trial, "verb": action, "creep": True, "piece": piece, "room_cm": room,
+          "seconds": secs,
           "wheels": moving,
           "gap_cm": g, "inside": inside, "out": out})
     return secs, out
@@ -165,10 +167,16 @@ def main():
                 refusal = to_bar(robot, drive, truth, emit, trial)
                 if refusal is not None:
                     room = room_cm(robot, crawl, refusal)
-                    secs, out = creep(robot, crawl, truth, emit, trial, room)
-                    moved = abs((out.get("result") or {}).get("moved_m") or 0.0)
+                    moved, pieces = 0.0, []
+                    for piece in range(1, CREEP_PIECES + 1):
+                        # as the escape does since 3.89: on, the same way, after a time cut
+                        secs, out = creep(robot, crawl, truth, emit, trial, room, piece)
+                        moved += abs((out.get("result") or {}).get("moved_m") or 0.0)
+                        pieces.append(secs)
+                        if (out.get("result") or {}).get("stopped_short") != "timeout":
+                            break
                     if (room is not None and room >= 15) or moved >= 0.12:
-                        creeps.append(secs)        # started at the bar
+                        creeps.extend(pieces)      # started at the bar
     finally:
         emit({"summary": True, "mode": mode, "house": HOUSE, "creeps": len(creeps),
               "max_s": max(creeps or [0]), "over_8": sum(s > 8 for s in creeps),

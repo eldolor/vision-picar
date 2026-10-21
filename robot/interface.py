@@ -251,6 +251,15 @@ VERB_TURN_STEP_DEG = 5.0
 # one number. [PLACEHOLDER] on the car: the board's low-speed deadband
 # (stick-slip on slow pivots and settle passes) is unmeasured.
 VERB_STALL_S = 0.6
+# 3.89: the most wall-clock time a verb runs before it ends 'timeout',
+# whatever is left of it. Its caller is waiting: the brain's RemoteRobot
+# reads each `/action` for 10 s (`control/remote_robot.py`
+# DEFAULT_TIMEOUT_S), and a verb that outlived that failed the mission while
+# the robot still moved (3.88 A's live run 2: a creep FORWARD under
+# `drive: ros`, slowed to half by nav2's collision_monitor near the wall,
+# answered at 10.4 s). 7 s leaves the settle, the reply and 2 s spare.
+# Sim-time verbs never reach it.
+VERB_MAX_S = 7.0
 _VERB_STALL_M = 0.001          # progress that resets the window: 1 mm ...
 _VERB_STALL_DEG = 0.125        # ... or 0.125 degrees (ros_drive's tolerance / 4)
 _VERB_DONE_M = 1e-7
@@ -308,6 +317,7 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
     # rule, and number, as robot/ros_drive.py's. The sim's clock is advance(),
     # which detects it exactly below.
     mark, mark_at = None, time.monotonic()
+    started = mark_at
     budge = _VERB_STALL_M if straight else _VERB_STALL_DEG
     try:
         for _ in range(periods):
@@ -321,6 +331,9 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
                 break
             if plan.get("wall_clock"):
                 now = time.monotonic()
+                if now - started >= VERB_MAX_S:
+                    ended, reason = "timeout", f"cut at {VERB_MAX_S:g}s (VERB_MAX_S)"
+                    break
                 if mark is None or done - mark > budge:
                     mark, mark_at = done, now
                 elif now - mark_at > VERB_STALL_S:

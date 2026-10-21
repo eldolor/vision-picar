@@ -48,8 +48,8 @@ from typing import Optional
 
 import httpx
 
-from robot.interface import (DRIVER_MANUAL, VERB_STALL_S, RobotInterface, WheelFeedbackLost,
-                             driver_priority, verb_stop_baseline)
+from robot.interface import (DRIVER_MANUAL, VERB_MAX_S, VERB_STALL_S, RobotInterface,
+                             WheelFeedbackLost, driver_priority, verb_stop_baseline)
 
 logger = logging.getLogger("ros_drive")
 
@@ -82,6 +82,13 @@ ANGULAR_TOLERANCE_RAD = math.radians(0.5)
 # No encoder progress for VERB_STALL_S while commanding motion: the safety
 # vet (or a wall) has stopped the wheels. End the verb rather than push. The
 # number is robot/interface.py's, shared with direct mode's verbs (3.35).
+
+
+def _timed_out(timed_out: bool) -> dict:
+    """3.89: a verb its time ran out on says so, in direct mode's words
+    (`stopped_short`, `robot/interface.py`'s "timeout"), so a caller can
+    tell it from one that reached its line or stalled against it."""
+    return {"stopped_short": "timeout"} if timed_out else {}
 
 
 def moves_for(speed: int, duration: float) -> int:
@@ -278,8 +285,10 @@ class RosDriveRobot(RobotInterface):
     def _run(self, gen: int, target: float, max_rate: float, min_rate: float,
              tolerance: float, progress, linear: bool, gain: float) -> float:
         """Stream twists until `progress()` is within `tolerance` of `target`
-        (signed), the verb is superseded, or the wheels stall. Returns the
-        progress made.
+        (signed), the verb is superseded, the wheels stall, or its time is up
+        -- three times what the plan should take plus 3 s, and never more than
+        `VERB_MAX_S` (3.89). Returns the progress made and whether the time
+        ran out with the target not reached.
 
         The error is SIGNED and the loop may drive back: after the zero
         lands and the wheels settle, a verb that overshot on a latency spike
@@ -288,8 +297,9 @@ class RosDriveRobot(RobotInterface):
         """
         expected_s = abs(target) / max_rate
         started = time.monotonic()
-        deadline = started + 3 * expected_s + 3.0
+        deadline = started + min(3 * expected_s + 3.0, VERB_MAX_S)
         done = progress()
+        stalled = False
         for _settle in range(3):
             last_progress, last_change = done, time.monotonic()
             while time.monotonic() < deadline and not self._superseded(gen):
@@ -301,7 +311,7 @@ class RosDriveRobot(RobotInterface):
                     last_progress, last_change = done, time.monotonic()
                 elif time.monotonic() - last_change > VERB_STALL_S:
                     logger.info("verb stalled at %.3f of %.3f -- ended", done, target)
-                    deadline = 0.0          # a wall is not something to retry into
+                    deadline, stalled = 0.0, True   # a wall is not something to retry into
                     break
                 rate = math.copysign(min(max_rate, max(min_rate, gain * abs(err))), err)
                 with self._send_lock:
@@ -319,9 +329,14 @@ class RosDriveRobot(RobotInterface):
             done = progress()
             if abs(target - done) <= tolerance or time.monotonic() >= deadline:
                 break
+        # Short of the target (an overshoot is not), and out of time.
+        timed_out = (not stalled and not self._superseded(gen)
+                     and math.copysign(1.0, target) * (target - done) > tolerance
+                     and time.monotonic() >= deadline)
         logger.info("verb target=%.4f final=%.4f in %.2fs%s", target, done,
-                    time.monotonic() - started, " (superseded)" if self._superseded(gen) else "")
-        return done
+                    time.monotonic() - started, " (superseded)" if self._superseded(gen)
+                    else " (timed out)" if timed_out else "")
+        return done, timed_out
 
     def _straight(self, moves: int, speed: int) -> dict:
         if moves == 0:
@@ -334,10 +349,11 @@ class RosDriveRobot(RobotInterface):
             return radius * ((l - l0) + (r - r0)) / 2.0
 
         v = max(1, min(100, speed)) / 100.0 * MOVES_PER_SECOND_AT_FULL_SPEED * MOVE_M
-        moved = self._run(gen, moves * MOVE_M, v, MIN_LINEAR_M_S,
-                          LINEAR_TOLERANCE_M, travelled, linear=True, gain=LINEAR_GAIN_PER_S)
+        moved, timed_out = self._run(gen, moves * MOVE_M, v, MIN_LINEAR_M_S,
+                                     LINEAR_TOLERANCE_M, travelled, linear=True,
+                                     gain=LINEAR_GAIN_PER_S)
         return {"requested": moves, "moved": round(moved / MOVE_M, 4), "moved_m": round(moved, 4),
-                **self._cut_off(gen)}
+                **self._cut_off(gen), **_timed_out(timed_out)}
 
     def _turn(self, degrees_right: float) -> dict:
         if degrees_right == 0:
@@ -351,10 +367,11 @@ class RosDriveRobot(RobotInterface):
 
         # REP-103: positive yaw is to the LEFT; the project's degrees are
         # positive to the RIGHT. One conversion, here.
-        turned = self._run(gen, -math.radians(degrees_right), TURN_RATE_RAD_S,
-                           MIN_ANGULAR_RAD_S, ANGULAR_TOLERANCE_RAD, turned_ccw, linear=False,
-                           gain=ANGULAR_GAIN_PER_S)
-        return {"turned_deg": round(-math.degrees(turned), 2), **self._cut_off(gen)}
+        turned, timed_out = self._run(gen, -math.radians(degrees_right), TURN_RATE_RAD_S,
+                                      MIN_ANGULAR_RAD_S, ANGULAR_TOLERANCE_RAD, turned_ccw,
+                                      linear=False, gain=ANGULAR_GAIN_PER_S)
+        return {"turned_deg": round(-math.degrees(turned), 2), **self._cut_off(gen),
+                **_timed_out(timed_out)}
 
     def _cut_off(self, gen: int) -> dict:
         """3.76 T1: a verb a newer verb or a stop cut off says so, so it is
