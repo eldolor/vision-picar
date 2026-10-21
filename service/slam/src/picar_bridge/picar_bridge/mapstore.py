@@ -35,6 +35,9 @@ KEEP = 3
 # Whole maps kept (3.50.D2 review): every container start that does not
 # reload is a new map_id, ~7 MB a version; the current one is never removed.
 KEEP_MAPS = 3
+# Older than any serialize (the bridge gives up after 30 s): a staging no
+# save of this process owns is only removed once a writer cannot be in it.
+STALE_STAGING_S = 600
 MAP_ID_RE = re.compile(r"map-[0-9a-f]{8}")
 # The dock is the pose of the graph's first node: session 1 began there,
 # so it is the map frame's origin. Localisation mode cannot start "at the
@@ -75,6 +78,13 @@ def _fsync_write(path: str, data: str) -> None:
         f.write(data)
         f.flush()
         os.fsync(f.fileno())
+
+
+def _age(path: str) -> float:
+    try:
+        return time.time() - os.path.getmtime(path)
+    except OSError:
+        return 0.0
 
 
 def _fsync_dir(path: str) -> None:
@@ -155,6 +165,7 @@ class MapStore:
             final = os.path.join(self._map_dir(pending.map_id), f"v{pending.version}")
             if os.path.exists(final):
                 raise SaveFailed(f"{final} already exists (two saves at once?)")
+            _fsync_dir(pending.staging)          # its entries, before it is named v<N>
             os.rename(pending.staging, final)
             _fsync_dir(os.path.dirname(final))
         except BaseException:
@@ -181,7 +192,11 @@ class MapStore:
         self._live.discard(pending.staging)
 
     def _meta_of(self, map_id: str, versions: list) -> Optional[dict]:
-        """The oldest kept version's meta: the facts fixed at the first save."""
+        """The oldest kept version's meta: the facts fixed at the first save.
+        Its start_truth may have been None (saved before it arrived) and
+        filled by a later version of the same first session, so the first
+        non-None start_truth of any kept version is carried."""
+        oldest = None
         for v in versions:
             try:
                 with open(os.path.join(self._map_dir(map_id), f"v{v}", META)) as f:
@@ -192,15 +207,29 @@ class MapStore:
             # one bad file must not fail every later save of the map.
             if (isinstance(meta, dict) and meta.get("map_id") == map_id
                     and isinstance(meta.get("first_session"), str) and "start_truth" in meta):
-                return meta
-        return None
+                if oldest is None:
+                    oldest = dict(meta)
+                if oldest["start_truth"] is None and meta["start_truth"] is not None \
+                        and meta["first_session"] == oldest["first_session"]:
+                    oldest["start_truth"] = meta["start_truth"]
+        return oldest
 
     def _point_at(self, map_id: str, version: int) -> None:
         # Not by pid: a container's pids repeat, and two stacks may share a volume.
         tmp = os.path.join(self.root, f".{CURRENT}.{uuid.uuid4().hex[:8]}.tmp")
-        _fsync_write(tmp, json.dumps({"map_id": map_id, "version": version}))
-        os.replace(tmp, os.path.join(self.root, CURRENT))
-        _fsync_dir(self.root)
+        try:
+            _fsync_write(tmp, json.dumps({"map_id": map_id, "version": version}))
+            os.replace(tmp, os.path.join(self.root, CURRENT))
+        except BaseException:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            raise
+        try:
+            _fsync_dir(self.root)
+        except OSError:
+            pass             # the pointer has moved; only its durability is weaker
 
     def _prune(self, map_id: str) -> None:
         have = self.versions(map_id)
@@ -209,7 +238,9 @@ class MapStore:
         d = self._map_dir(map_id)
         for n in os.listdir(d):
             p = os.path.join(d, n)
-            if n.startswith(".staging-") and p not in self._live:
+            # A staging a timed-out save left may still have slam_toolbox
+            # writing in it: removed only once it is STALE_STAGING_S old.
+            if n.startswith(".staging-") and p not in self._live and _age(p) > STALE_STAGING_S:
                 shutil.rmtree(p, ignore_errors=True)
         maps = sorted((n for n in os.listdir(self.root) if MAP_ID_RE.fullmatch(n) and n != map_id),
                       key=lambda n: os.path.getmtime(os.path.join(self.root, n)), reverse=True)

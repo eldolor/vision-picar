@@ -119,7 +119,8 @@ def test_current_ignores_a_pointer_to_something_not_saved(tmp_path):
 def test_a_crashed_save_is_pruned_at_the_next_commit(tmp_path):
     """Staging from an earlier process (a container restarted mid-save) is
     removed; this store's own save in flight is not."""
-    MapStore(str(tmp_path)).begin("map-0a1b2c3d")          # the crashed process
+    crashed = MapStore(str(tmp_path)).begin("map-0a1b2c3d")     # the crashed process
+    os.utime(crashed.staging, (1, 1))                           # long ago
     store = MapStore(str(tmp_path))
     _save(store, "map-0a1b2c3d")
     left = [n for n in os.listdir(tmp_path / "map-0a1b2c3d") if n.startswith(".")]
@@ -240,5 +241,47 @@ def test_a_timed_out_save_leaves_its_staging_for_the_next_prune(tmp_path):
     pending = store.begin("map-0a1b2c3d")
     store.abandon(pending, remove=False)
     assert os.path.isdir(pending.staging)
+    # Review round 3: slam_toolbox may still be writing there -- the next
+    # save, seconds later, leaves it; once stale, a save removes it.
+    _save(store, "map-0a1b2c3d")
+    assert os.path.isdir(pending.staging)
+    os.utime(pending.staging, (1, 1))
     _save(store, "map-0a1b2c3d")
     assert not os.path.isdir(pending.staging)
+
+
+def test_a_start_truth_filled_later_is_carried_past_the_first_version(tmp_path):
+    """Review round 3: v1 saved before the start truth arrived, v2 filled it;
+    a later session's save carries v2's, not v1's None."""
+    store = MapStore(str(tmp_path))
+    truth = {"x_m": 1.0, "y_m": 2.0, "heading_deg": 0}
+    _save(store, "map-0a1b2c3d", start_truth=None, session="s1")
+    _save(store, "map-0a1b2c3d", start_truth=truth, session="s1")
+    assert _save(store, "map-0a1b2c3d", start_truth=None, session="s2")["start_truth"] == truth
+
+
+def test_a_failed_pointer_write_leaves_no_temp_file(tmp_path, monkeypatch):
+    store = MapStore(str(tmp_path))
+    _save(store, "map-0a1b2c3d")
+
+    def boom(a, b):
+        raise OSError("no space")
+    monkeypatch.setattr(mapstore.os, "replace", boom)
+    with pytest.raises(mapstore.SaveFailed):
+        _save(store, "map-0a1b2c3d")
+    monkeypatch.undo()
+    assert not [n for n in os.listdir(tmp_path) if n.endswith(".tmp")]
+    assert store.current().version == 1
+
+
+def test_a_pointer_that_moved_is_a_save_even_if_the_dir_sync_fails(tmp_path, monkeypatch):
+    store = MapStore(str(tmp_path))
+    real = mapstore._fsync_dir
+
+    def flaky(path):
+        if path == str(tmp_path):
+            raise OSError("EIO")
+        real(path)
+    monkeypatch.setattr(mapstore, "_fsync_dir", flaky)
+    _save(store, "map-0a1b2c3d")
+    assert store.current().version == 1
