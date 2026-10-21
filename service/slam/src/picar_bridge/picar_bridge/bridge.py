@@ -69,17 +69,18 @@ from geometry_msgs.msg import Point, PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from nav2_msgs.msg import CostmapFilterInfo
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
-from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from sensor_msgs.msg import JointState, LaserScan
+from slam_toolbox.srv import SerializePoseGraph
 from std_msgs.msg import String
 from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
-from picar_bridge import brain_view, convert, keepout
+from picar_bridge import brain_view, convert, keepout, mapstore
 from picar_bridge.keepalive import KeepAliveClient
 
 # Driver (robot/interface.py DRIVER_PRIORITY names) -> twist_mux input.
@@ -137,6 +138,13 @@ CANCEL_TIMER_S = 0.5
 # ends `aborted` (3.76 R6): otherwise it read `active` for the session, the
 # stop held `ros` at zero and every autonomous driver was refused for good.
 CANCEL_RESULT_TIMEOUT_S = 10.0
+# 3.50.D: where saved maps live -- a Docker volume in the sim, the NVMe on
+# the car. A container without it saves nothing, as before 3.50 (every
+# other session's stack mounts none).
+MAP_DIR = os.environ.get("PICAR_MAP_DIR", "/maps")
+# slam_toolbox writes the graph in well under a second for a house
+# (3.50.D1: 0.4 s for 7 MB); a save stuck this long is abandoned.
+SAVE_TIMEOUT_S = 30.0
 
 
 def _yaw_pitch_roll(q):
@@ -241,6 +249,20 @@ class Bridge(Node):
         self.brain_at = None
         self.brain_error = None
         self.brain_polls = 0
+        # ---- 3.50.D: the saved map ----
+        # One map_id for the map this session builds; saved versions of it
+        # carry it (a reload, D3, will adopt the saved map's instead).
+        self.map_id = mapstore.new_map_id()
+        self.map_store = mapstore.MapStore(MAP_DIR) if os.path.isdir(MAP_DIR) else None
+        self.map_saves = {"saved": 0, "failed": 0, "last_version": None,
+                          "last_at": None, "last_error": None}
+        self._saving = False             # one save at a time; under self.lock
+        self._mission_running = None     # the brain's last `running`, for the end edge
+        self.serialize_cli = self.create_client(
+            SerializePoseGraph, "slam_toolbox/serialize_map",
+            callback_group=ReentrantCallbackGroup())
+        if self.map_store is None:
+            self.get_logger().warning(f"no {MAP_DIR}: maps are not saved this session")
         if self.brain_url:
             # A thread, not a ROS timer: an HTTP call that times out must not
             # hold an executor thread the nav2 action client needs.
@@ -263,9 +285,18 @@ class Bridge(Node):
         with self.lock:
             self.brain_polls += 1
             self.brain_error = error
+            ended = False
             if status is not None:
                 self.brain_at = time.time()
+                running = bool(status.get("running"))
+                ended = self._mission_running is True and not running
+                self._mission_running = running
             pan = self.pan_rad
+        if ended:
+            # 3.50: a map is saved when a mission ends -- no new route (the
+            # bridge's cap), and the brain names the moment the map is worth
+            # keeping. Off the poll thread: a save must not stall /diagnostics.
+            self.save_map_async("mission_end")
         stamp = self.get_clock().now().to_msg()
         if status is not None:
             self.brain_status_pub.publish(String(data=json.dumps(status)))
@@ -848,6 +879,57 @@ class Bridge(Node):
         return 200, {"translation_m": [t.x, t.y, t.z], "quaternion_xyzw": [q.x, q.y, q.z, q.w],
                      "yaw_rad": yaw, "pitch_rad": pitch, "roll_rad": roll}
 
+    # ---------- 3.50.D: saving the map ----------
+
+    def save_map_async(self, why: str) -> bool:
+        with self.lock:
+            if self.map_store is None or self._saving:
+                return False
+            self._saving = True
+        threading.Thread(target=self._save_map, args=(why,), daemon=True,
+                         name="map-save").start()
+        return True
+
+    def _save_map(self, why: str) -> None:
+        """slam_toolbox serialises into a staging directory; the store makes
+        it the next version only if both files arrived. Any failure leaves
+        the previous version current."""
+        pending, error, meta = None, None, None
+        try:
+            pending = self.map_store.begin(self.map_id)
+            if not self.serialize_cli.wait_for_service(timeout_sec=2.0):
+                raise mapstore.SaveFailed("slam_toolbox's serialize_map is not up")
+            req = SerializePoseGraph.Request()
+            req.filename = pending.prefix
+            done = threading.Event()
+            future = self.serialize_cli.call_async(req)
+            future.add_done_callback(lambda _f: done.set())
+            if not done.wait(SAVE_TIMEOUT_S):
+                future.cancel()
+                raise mapstore.SaveFailed(f"serialize_map gave no answer in {SAVE_TIMEOUT_S:.0f} s")
+            result = future.result()
+            if result is None or result.result != SerializePoseGraph.Response.RESULT_SUCCESS:
+                raise mapstore.SaveFailed(f"serialize_map failed ({getattr(result, 'result', None)})")
+            with self.lock:
+                start = self.start_truth
+            meta = self.map_store.commit(pending, session=self.session, start_truth=start)
+        except Exception as e:  # noqa: BLE001 -- a failed save is a state, not a crash
+            error = f"{type(e).__name__}: {e}"[:300]
+            if pending is not None:
+                self.map_store.abandon(pending)
+        with self.lock:
+            self._saving = False
+            if error is None:
+                self.map_saves.update(saved=self.map_saves["saved"] + 1,
+                                      last_version=meta["version"], last_at=time.time(),
+                                      last_error=None)
+            else:
+                self.map_saves.update(failed=self.map_saves["failed"] + 1, last_error=error)
+        if error is None:
+            self.get_logger().info(f"map {self.map_id} v{meta['version']} saved ({why})")
+        else:
+            self.get_logger().error(f"map {self.map_id} not saved ({why}): {error}")
+
     def health(self):
         with self.lock:
             return 200, {"ok": True, "robot_url": self.robot_url,
@@ -859,7 +941,9 @@ class Bridge(Node):
                          "brain_url": self.brain_url,
                          "brain_polls": self.brain_polls,
                          "brain_age_s": None if not self.brain_at else time.time() - self.brain_at,
-                         "brain_error": self.brain_error}
+                         "brain_error": self.brain_error,
+                         "map": {"map_id": self.map_id, "saving": self._saving,
+                                 "store": self.map_store is not None, **self.map_saves}}
 
 
 def _handler(bridge):

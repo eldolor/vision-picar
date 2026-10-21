@@ -2,7 +2,8 @@
 
     twist_mux -> diff_drive_controller -> picar_sim_hardware -> HTTP -> robot/server.py
     robot_state_publisher (URDF, R3) . joint_state_broadcaster . picar_bridge
-    slam_toolbox (R5): /scan + odom -> /map and map -> odom
+    slam_toolbox (R5): /scan + odom -> /map and map -> odom; saved and
+        reloaded by the bridge (3.50.D)
     nav2 (R6): planner, controller, behaviours, bt_navigator -> cmd_vel/nav
     collision_monitor (R6): twist_mux -> /cmd_vel_mux -> collision_monitor
                             -> diff_drive_controller  (the collars in series)
@@ -80,8 +81,10 @@ def generate_launch_description():
              # R6: into collision_monitor, which feeds diff_drive_controller.
              remappings=[("cmd_vel_out", "/cmd_vel_mux")]),
         Node(package="picar_bridge", executable="bridge", output="both"),
-        # R5: the map, and the robot's place on it.
-        Node(package="slam_toolbox", executable="async_slam_toolbox_node",
+        # R5: the map, and the robot's place on it. 3.50.D: the node that
+        # switches between mapping and localising on one graph at runtime
+        # (3.50.D1); its `mode` in slam.yaml is where it starts.
+        Node(package="slam_toolbox", executable="map_and_localization_slam_toolbox_node",
              name="slam_toolbox", parameters=[slam], output="both"),
         # R6: nav2, and collision_monitor between the mux and the base.
         Node(package="nav2_controller", executable="controller_server",
