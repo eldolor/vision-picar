@@ -68,7 +68,8 @@ def face(robot, x_m, y_m):
     d = (want - t["heading_deg"] + 180) % 360 - 180
     if abs(d) > 5:
         act(robot, {"action": "RIGHT" if d > 0 else "LEFT", "angle": int(round(abs(d)))})
-    return want
+    # what it achieved, not what it asked: a pivot-guard refusal is silent here
+    return want, robot.get("/world/pose").json().get("heading_deg")
 
 
 def main():
@@ -90,7 +91,7 @@ def main():
                 print(f"skip {x, y}: goal {state}", file=sys.stderr, flush=True)
                 continue
             # toward the table, a little to one side: its legs and chairs
-            want = face(robot, cx * 0.3 + rng.uniform(-0.4, 0.4), cy * 0.3 + rng.uniform(-0.4, 0.4))
+            want, faced = face(robot, cx * 0.3 + rng.uniform(-0.4, 0.4), cy * 0.3 + rng.uniform(-0.4, 0.4))
             rows = []
             refusal = to_bar(robot, "FORWARD", truth, rows.append, done)
             if refusal is None or "error" in refusal:
@@ -123,7 +124,7 @@ def main():
                               "out": out[2] if isinstance(out[2], dict) else str(out[2])})
             gap, inside = truth(robot)
             print(json.dumps({"trial": done, "start": [round(x * 0.3, 2), round(y * 0.3, 2)],
-                              "room_cm": room, "rear_cm": rev_cm, "table_bearing_deg": round(want, 1), "full_escape": wedged,
+                              "room_cm": room, "rear_cm": rev_cm, "table_bearing_deg": round(want, 1), "faced_deg": faced, "full_escape": wedged,
                               "verbs": verbs,
                               "creeps": [e for e in agent.events if e["event"] == "creep"],
                               "error": error, "gap_cm": gap, "inside": inside,

@@ -22,7 +22,7 @@ import robot.ros_drive as ros_drive
 from brain.explore import CREEP_PIECES, ExploreAgent
 from brain.memory import MissionMemory
 from control.remote_robot import DEFAULT_TIMEOUT_S
-from robot.interface import VERB_MAX_REASON, VERB_MAX_S
+from robot.interface import VERB_MAX_REASON, VERB_MAX_S, VERB_MAX_TAG
 from robot.safety import LIDAR_X_M, SafetyController, SafetyViolation
 from sim.maps import build_world
 from sim.mock_robot import MockRobot
@@ -240,6 +240,19 @@ def test_a_timeout_that_is_not_the_cap_does_not_creep_on():
     agent._do_pending()
     assert asked == [("FORWARD", 5)]
     assert agent._pending == [("OPEN",)]
+
+
+def test_a_cap_cut_from_a_server_with_another_cap_still_creeps_on():
+    """Review (round 3, both reviewers): the brain matches the cap's tag, not
+    its number, so a robot server running another VERB_MAX_S still reads as
+    cut by time."""
+    cut = {"action": "drive_forward", "moved_m": 0.10, "stopped_short": "timeout",
+           "reason": f"cut at 6.5s {VERB_MAX_TAG}"}
+    agent, asked = _agent([cut])
+    agent.safety.forward_clearance = lambda *a, **k: (9.0, "scan_footprint")
+    agent._pending = [("CREEP", ["FORWARD"]), ("OPEN",)]
+    agent._do_pending()
+    assert agent._pending[0] == ("CREEP", ["FORWARD"], 2)
 
 
 def test_a_creep_cut_at_the_line_does_not_creep_on(monkeypatch):

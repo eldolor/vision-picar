@@ -55,7 +55,7 @@ from brain.goal_policy import FEATURES as GOAL_FEATURES
 from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
-from robot.interface import VERB_MAX_REASON, ZONE_UNUSABLE, Preempted, RobotInterface
+from robot.interface import VERB_MAX_TAG, ZONE_UNUSABLE, Preempted, RobotInterface
 from robot.safety import CREEP_MARGIN_CM, FOOTPRINT_LENGTH_M, SafetyViolation, verb_speed_m_s
 from world.bridge_faults import fault_from_headers, response_detail, setup_fault_message
 
@@ -108,8 +108,9 @@ OPEN_ANGLES = (90, 45, 20, 10, 5)
 # under `drive: ros` nav2's collision_monitor halves a forward twist with
 # something 13-33 cm ahead, and the creep took 10-12 s, past RemoteRobot's
 # 10 s request timeout. A wall-clock verb now ends at robot.interface's
-# VERB_MAX_S (7 s) and says `stopped_short: "timeout"`; such a creep is
-# followed by another the same way, up to CREEP_PIECES in all, so it still
+# VERB_MAX_S (7 s) and says `stopped_short: "timeout"` with VERB_MAX_TAG in
+# its reason; such a creep (only the cap's cut, not a board verb that ran
+# out its periods) is followed by another the same way, up to CREEP_PIECES in all, so it still
 # reaches the line.
 CREEP_SPEED = 5
 CREEP_PIECES = 3
@@ -1380,7 +1381,7 @@ class ExploreAgent(MissionAgent):
             # board also ends 'timeout' when a verb runs out its own periods.
             cut = (out[0] != "WAIT" and out[1] and isinstance(out[2], dict)
                    and out[2].get("stopped_short") == "timeout"
-                   and out[2].get("reason") == VERB_MAX_REASON)
+                   and VERB_MAX_TAG in str(out[2].get("reason") or ""))
             self._event("creep", way=ends[0], executed=bool(out[1]),
                         waited=out[0] == "WAIT", piece=piece, cut_by_time=cut, **seen)
             if out[0] == "WAIT":

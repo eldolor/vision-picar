@@ -135,12 +135,16 @@ never reach it. Known limits (3.89 review): the bound assumes a bridge that
 answers each twist post quickly (each may wait the client's 2 s, checked
 only between twists); a direct-mode verb that completes near the cap still
 runs its settle corrections (3.29, real board only), each with a budget of
-its own; a ROS turn over ~92 degrees or a FORWARD at speed ~22 or below,
-which no brain policy but explore's creep sends, now gets 7 s where it had
-`3 x planned + 3 s`, and if cut reads `timeout`, which `brain/agent.py`'s
-`SHORT_MOVES` counts as a move that fell short. Only the cap's reason
-(`VERB_MAX_REASON`) marks a time cut: direct mode also ends `timeout`
-(reason none) when a verb runs out its planned periods.
+its own; on ROS any verb planned over 4/3 s (`3 x planned + 3 s > 7`: a
+FORWARD below speed ~37, one of two or more moves at speed 50, a turn over
+~92 degrees) now gets 7 s where it had `3 x planned + 3 s`, and if cut reads
+`timeout`, which `brain/agent.py`'s `SHORT_MOVES` counts as a move that fell
+short. The policies send none today (their default 0.5 s at speed 50 plans
+1 s; only explore's creep passes a speed), a person's slow D-pad verb is cut
+by design. The cap's cut is marked by `VERB_MAX_TAG` in its reason
+(`VERB_MAX_REASON`), which the brain matches whatever cap a robot server
+runs; direct mode also ends `timeout` (reason none) when a verb runs out its
+planned periods, which is not a time cut.
 
 **The skid-steer scrub** (3.35): `HardwareRobot(track_scrub=)` sets
 `_track_m = TRACK_WIDTH_M * track_scrub`, used for pivot wheel speeds
@@ -361,7 +365,7 @@ key means the new body returns something the contract does not allow.
 | `tests/test_blind_reverse.py` (5) | `HardwareRobot` with no sensors refuses reverse; a body without wheels still reverses (rule in [safety engineering](../safety/ENGINEERING.md)) |
 | `tests/test_wheel_feedback.py` (15) | 3.34: silence makes wheels and odometry unusable within 0.35 s; the body zeroes a standing command within 0.4 s; motion refused and stop never raising, on a dead port too; a verb losing feedback ends within 0.5 s; clean recovery; `/action` and `/wheels` answer `no_feedback`, `/health` `motor_board` describes the link, `RemoteRobot` raises; a `timeout` or `stalled` FORWARD is not executed and five end a mission `blocked` |
 | `tests/test_stall_and_scrub.py` (11) | 3.35: a snagged wall-clock verb ends `stalled` within `VERB_STALL_S` + 0.2 s; a pivot blocked by furniture on the fake board ends `stalled` (was `timeout`); clear fake-board verbs complete; one stall constant; the scrub sizes pivots, scales heading and is published; the fake board ignores `TRACK_SCRUB`, a real board reads it |
-| `tests/test_escape_creep_389.py` (15) | 3.89: a creep FORWARD from the 20 cm bar through the ROS chain with nav2's collision_monitor slowdown modelled answers within `VERB_MAX_S` + 0.5 s (11.7 s on `dev`), says `stopped_short: "timeout"`, and a second reaches the 3 cm line; a REVERSE creep is not cut; a slow wall-clock verb in direct mode ends `timeout` at the cap; a ROS verb that runs out its own deadline carries no `stopped_short`; the escape's creep pieces, only after the cap's cut and with room past the line (policy engineering spec) |
+| `tests/test_escape_creep_389.py` (16) | 3.89: a creep FORWARD from the 20 cm bar through the ROS chain with nav2's collision_monitor slowdown modelled answers within `VERB_MAX_S` + 0.5 s (11.7 s on `dev`), says `stopped_short: "timeout"`, and a second reaches the 3 cm line; a REVERSE creep is not cut; a slow wall-clock verb in direct mode ends `timeout` at the cap; a ROS verb that runs out its own deadline carries no `stopped_short`; the escape's creep pieces, only after the cap's cut and with room past the line (policy engineering spec) |
 | `tests/test_health_sim_map.py` (4) | `/health` `sim_map` names the house the factory built, including `mode: hardware` with the fake board |
 | `tests/test_fake_esp32.py`, `tests/test_ros_driver_board.py` | The hardware body against the fake board (detail in [motor-board](../motor-board/ENGINEERING.md)) |
 | `tests/test_sim_body_process.py` | 3.36's split simulator: the robot server's process imports no simulator module, the factory refuses an in-process fake board, sensors follow the body and furniture moves reach both programs, the physics program dying stops the wheels, a dead sensor program blinds the vet within the stale bound, the vet never touches the network, and the safety stream and heavy reads land on different programs |

@@ -260,7 +260,10 @@ VERB_STALL_S = 0.6
 # answered at 10.4 s). 7 s leaves the settle, the reply and 2 s spare.
 # Sim-time verbs never reach it.
 VERB_MAX_S = 7.0
-VERB_MAX_REASON = f"cut at {VERB_MAX_S:g}s (VERB_MAX_S)"
+# A fixed tag in the reason marks the cap's cut, whatever VERB_MAX_S a robot
+# server of another version runs at (the brain matches the tag, not the number).
+VERB_MAX_TAG = "(VERB_MAX_S)"
+VERB_MAX_REASON = f"cut at {VERB_MAX_S:g}s {VERB_MAX_TAG}"
 _VERB_STALL_M = 0.001          # progress that resets the window: 1 mm ...
 _VERB_STALL_DEG = 0.125        # ... or 0.125 degrees (ros_drive's tolerance / 4)
 _VERB_DONE_M = 1e-7
