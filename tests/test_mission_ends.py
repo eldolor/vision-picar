@@ -336,15 +336,15 @@ def test_one_board_sample_read_twice_is_one_low_reading():
     # A low value that holds: ended, but only after a board refresh.
     runner, robot, grid = _battery_runner([12.0, 10.0])
     runner.start()
-    first_low = None
+    read_at = []
+    get = robot.get_battery
+    robot.get_battery = lambda: (read_at.append(grid.sim_time), get())[1]
     while runner.tick():
-        if first_low is None and robot.reads >= 2:
-            first_low = grid.sim_time
         assert grid.sim_time < 120, "never ended"
     s = runner.status()
     assert s["outcome"] == OUT_OF_BUDGET, s["log_tail"]
-    held = grid.sim_time - first_low
-    assert BATTERY_SAMPLE_S <= held + 0.5 <= BATTERY_SAMPLE_S + 2.0, held
+    held = read_at[-1] - read_at[1]          # the first low read to the one that ended it
+    assert BATTERY_SAMPLE_S <= held <= BATTERY_SAMPLE_S + 0.5, held
 
 
 def test_a_repeated_value_does_not_bridge_a_recovery():
