@@ -161,13 +161,23 @@ class MapStore:
             self.abandon(pending)
             raise
         self._live.discard(pending.staging)
-        self._point_at(pending.map_id, pending.version)
-        self._prune(pending.map_id)
+        try:
+            self._point_at(pending.map_id, pending.version)
+        except OSError as e:
+            raise SaveFailed(f"v{pending.version} is on disk but current.json was not "
+                             f"moved to it: {e}") from e
+        try:
+            self._prune(pending.map_id)
+        except OSError:
+            pass                 # old versions left: the next save prunes again
         return meta
 
-    def abandon(self, pending: Pending) -> None:
-        """A save that never reached commit(): drop its staging."""
-        shutil.rmtree(pending.staging, ignore_errors=True)
+    def abandon(self, pending: Pending, remove: bool = True) -> None:
+        """A save that never reached commit(): drop its staging -- or, with
+        `remove=False` (a writer may still be in it), leave it for the next
+        commit's prune."""
+        if remove:
+            shutil.rmtree(pending.staging, ignore_errors=True)
         self._live.discard(pending.staging)
 
     def _meta_of(self, map_id: str, versions: list) -> Optional[dict]:
@@ -175,13 +185,19 @@ class MapStore:
         for v in versions:
             try:
                 with open(os.path.join(self._map_dir(map_id), f"v{v}", META)) as f:
-                    return json.load(f)
+                    meta = json.load(f)
             except (OSError, ValueError):
                 continue
+            # A meta this store did not write whole is skipped, never trusted:
+            # one bad file must not fail every later save of the map.
+            if (isinstance(meta, dict) and meta.get("map_id") == map_id
+                    and isinstance(meta.get("first_session"), str) and "start_truth" in meta):
+                return meta
         return None
 
     def _point_at(self, map_id: str, version: int) -> None:
-        tmp = os.path.join(self.root, f".{CURRENT}.{os.getpid()}.tmp")
+        # Not by pid: a container's pids repeat, and two stacks may share a volume.
+        tmp = os.path.join(self.root, f".{CURRENT}.{uuid.uuid4().hex[:8]}.tmp")
         _fsync_write(tmp, json.dumps({"map_id": map_id, "version": version}))
         os.replace(tmp, os.path.join(self.root, CURRENT))
         _fsync_dir(self.root)

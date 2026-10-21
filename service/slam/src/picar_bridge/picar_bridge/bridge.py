@@ -259,6 +259,7 @@ class Bridge(Node):
         self._saving = False             # one save at a time; under self.lock
         self._save_again = None          # a save asked for during one: its reason
         self._mission_running = None     # the brain's last `running`, for the end edge
+        self._mission_elapsed = None     # and its budget.elapsed_s: a new mission restarts it
         self.serialize_cli = self.create_client(
             SerializePoseGraph, "slam_toolbox/serialize_map",
             callback_group=ReentrantCallbackGroup())
@@ -290,8 +291,18 @@ class Bridge(Node):
             if status is not None:
                 self.brain_at = time.time()
                 running = bool(status.get("running"))
-                ended = self._mission_running is True and not running
+                elapsed = (status.get("budget") or {}).get("elapsed_s")
+                # A mission ended: `running` fell, or (3.50.D2 review) a new
+                # mission began inside one poll -- running throughout, with
+                # its elapsed time back near zero. A mission shorter than one
+                # poll is never seen at all (a known limit).
+                restarted = (running and self._mission_running is True
+                             and isinstance(elapsed, (int, float))
+                             and isinstance(self._mission_elapsed, (int, float))
+                             and elapsed < self._mission_elapsed)
+                ended = (self._mission_running is True and not running) or restarted
                 self._mission_running = running
+                self._mission_elapsed = elapsed
             pan = self.pan_rad
         if ended:
             # 3.50: a map is saved when a mission ends -- no new route (the
@@ -934,6 +945,10 @@ class Bridge(Node):
             future.add_done_callback(lambda _f: done.set())
             if not done.wait(SAVE_TIMEOUT_S):
                 future.cancel()
+                # slam_toolbox may still be writing there: leave the staging
+                # for the next commit's prune rather than delete it under it.
+                self.map_store.abandon(pending, remove=False)
+                pending = None
                 raise mapstore.SaveFailed(f"serialize_map gave no answer in {SAVE_TIMEOUT_S:.0f} s")
             result = future.result()
             if result is None or result.result != SerializePoseGraph.Response.RESULT_SUCCESS:

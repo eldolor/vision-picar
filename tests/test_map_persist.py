@@ -210,3 +210,35 @@ def test_a_missing_start_truth_is_filled_only_by_its_own_session(tmp_path):
     other = MapStore(str(tmp_path / "b"))
     _save(other, "map-0a1b2c3d", start_truth=None, session="s1")
     assert _save(other, "map-0a1b2c3d", start_truth=later, session="s2")["start_truth"] is None
+
+
+def test_a_malformed_meta_does_not_block_later_saves(tmp_path):
+    """3.50.D2 review: one truncated or foreign meta.json is skipped."""
+    store = MapStore(str(tmp_path))
+    _save(store, "map-0a1b2c3d", start_truth={"x_m": 1.0, "y_m": 0.0, "heading_deg": 0})
+    for bad in ("{}", "[1, 2]", '{"map_id": "map-0a1b2c3d"}'):
+        (tmp_path / "map-0a1b2c3d" / "v1" / mapstore.META).write_text(bad)
+        meta = _save(store, "map-0a1b2c3d", session="s2")
+        assert meta["map_id"] == "map-0a1b2c3d"
+
+
+def test_a_failed_pointer_is_a_failed_save_that_names_the_version(tmp_path, monkeypatch):
+    store = MapStore(str(tmp_path))
+    _save(store, "map-0a1b2c3d")
+
+    def boom(*a):
+        raise OSError("no space")
+    monkeypatch.setattr(store, "_point_at", boom)
+    with pytest.raises(mapstore.SaveFailed, match="v2 is on disk"):
+        _save(store, "map-0a1b2c3d")
+    monkeypatch.undo()
+    assert store.current().version == 1
+
+
+def test_a_timed_out_save_leaves_its_staging_for_the_next_prune(tmp_path):
+    store = MapStore(str(tmp_path))
+    pending = store.begin("map-0a1b2c3d")
+    store.abandon(pending, remove=False)
+    assert os.path.isdir(pending.staging)
+    _save(store, "map-0a1b2c3d")
+    assert not os.path.isdir(pending.staging)

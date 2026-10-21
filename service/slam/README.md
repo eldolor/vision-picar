@@ -143,12 +143,21 @@ until curl -s -H "x-app-secret: $LOCAL_SECRET" localhost:8000/wheels | grep -q '
 export APP_SHARED_SECRET="$LOCAL_SECRET"
 docker run -d --name picar-ros --restart unless-stopped \
   -p 8090:8090 -p 127.0.0.1:8765:8765 \
+  -v picar-maps:/maps \
   -e APP_SHARED_SECRET \
   -e ROBOT_URL=http://host.docker.internal:8000 \
   vision-picar-ros ros2 launch picar_bringup picar.launch.py
 ```
 
 Notes on those choices:
+
+* **`-v picar-maps:/maps`** (3.50.D) is where the bridge saves the map
+  when a mission ends: `/maps/<map_id>/v<N>/` (slam_toolbox's
+  `graph.posegraph` and `graph.data`, plus `meta.json`), three versions
+  and three maps kept, `/maps/current.json` naming the newest. Without
+  it nothing is saved (the bridge logs `no /maps`, `/health` `map.store`
+  false), as before 3.50. It is a floor plan of a home: keep it private.
+  `PICAR_MAP_DIR` moves it.
 
 * **`-p 127.0.0.1:8765:8765`** publishes Foxglove to this machine only. The
   launch binds `0.0.0.0` inside the container and offers only the
@@ -197,6 +206,7 @@ reach. Use host networking and point both URLs at loopback:
 
 ```bash
 docker run -d --name picar-ros --restart unless-stopped --network host \
+  -v /home/$USER/picar-maps:/maps \
   -e APP_SHARED_SECRET \
   -e ROBOT_URL=http://127.0.0.1:8000 \
   -e BRAIN_URL=http://127.0.0.1:8001/brain \
