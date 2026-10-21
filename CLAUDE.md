@@ -243,6 +243,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     for sm_87) does not replace VE: precision 93.7% (92.5% with the vision
     tower at fp16; new false yeses on one walk), 3,398 MB alone, p90 2.76 s,
     and beside YOLOE + CLIP a 5,294 MB drop, leaving 137 MB. It steers 55/60.
+  * U (2026-10-20, the user: no VE-or-Florence choice yet; "target the top
+    3 / top 5 models for the rover"): the shortlist's five (VE, Bonsai 2 2B,
+    MiniCPM-V 4.0, Florence-2 behind the gate, InternVL3.5-4B) are re-measured
+    on the Rover's own frames by one harness (`evaluations/tiered-380/U/`,
+    `run.sh` then `score.py`), bars U1-U4 written, smoke-tested on phone
+    frames. U0: the board's llama.cpp `7f51953d7` (3.80.M's build was deleted)
+    gives 299/299 the same answers. Waits on the Rover's walks.
   * O: the local VLM's box finishes the approach and the arrival when
     perception is silent, and only the cloud may confirm such an arrival
     (never the local tier). Blind perception, 21 houses: 17 at pace 1, 12 at

@@ -129,6 +129,14 @@ Would not load at all:
 
 ## Rover-day notes
 
+* **The run is ready (3.80.U):** record the walks, draw the steering set
+  (`U/make_sets.py`), label S1 by viewing, then
+  `WALKS=... SET=... evaluations/tiered-380/U/run.sh rover` and
+  `U/score.py`. Its criteria U1-U4 are this page's bars, written before any
+  Rover frame exists. MiniCPM and InternVL now run on `~/bench-378/llama.cpp`
+  (`7f51953d7`); on phone frames it gives the same answers as the deleted
+  `e60eff9` build, 299/299 for both.
+
 * **Stop `picar-stack`, `picar-ngrok` and `picar-local-vlm` before any
   bench** (`tools/jetson/README.md`).
 * **zram has been off on the board since 2026-10-17**
