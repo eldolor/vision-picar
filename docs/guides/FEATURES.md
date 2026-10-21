@@ -429,6 +429,14 @@ a prompt is iterated on. It captures the same `/navigate` reply this
 sub-mode already produces, alongside each frame, so a recorded walk
 carries "what the model said at each step" too.
 
+**Under Drive via brain (3.90 E) the brain records instead.** The page
+sends the walk's name with `/mission/start` (`record_walk`) and uploads
+each frame once, to the robot server; the brain drains every frame the
+robot received and files it, marked `perceived` or not, with the decision
+taken on it. The count under the switch is the brain's (`status.recording`),
+and frames the brain fell too far behind to read are counted, never
+dropped silently. Up to 5,000 frames a walk (20 minutes at 4 fps).
+
 **Not the same thing as "Drive via brain" below** -- recording still
 does a one-off `/navigate` call per frame and just also saves it;
 driving via brain replaces that call entirely with a live mission tick.
@@ -486,6 +494,18 @@ are. The next frame is whatever you actually photograph after reading
 the instruction and walking, which is what makes this **closed-loop**
 where a recorded-walk replay is open-loop (a `LEFT` at frame 12 can't
 change what frame 13 shows in a replay; here, it can).
+
+**The camera as a stream (3.90 E).** Frames leave on their own timer at
+the rate chosen under the policy (2, 4 or 8 a second; default 4), apart
+from the 500 ms status poll, with one upload in flight: a slow network
+skips frames, it never queues them, so the brain always decides on the
+newest. The HUD's `FPS` row shows the rate delivered, the share of ticks
+skipped, and the share of frames the brain never perceived. With the
+tiered policy, "Combine frames" (off, 2 of 3, 3 of 5) makes a
+`candidate_sighting` need k detections among the last n frames perception
+took instead of two in a row; the `VOTE` row shows its tally. It is a
+switch for comparing walks, not an adopted setting (3.90 C decides on the
+Rover's frames).
 
 **On Start**, when the switch is on:
 1. A pre-flight check: `GET {serverUrl}/health` must report

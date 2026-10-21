@@ -169,6 +169,7 @@
     // The robot's own id for the most recently pushed teleop frame, so a
     // recorded frame can name the id the mission will report deciding on.
     lastTeleopSeq: null,
+    streamWalkName: null, recordLost: 0,      // 3.90 E
     recordWalk: false, recordWalkName: null, recordPending: [], recordSaved: 0, recordFailed: 0,
     // Which WALK a frame belongs to, which is not the same lifetime as
     // guidanceEpoch's run -- see recordWalkFrame(). recordOrphaned counts
@@ -224,6 +225,15 @@
     // detector by 1.12's design, and a phone on a rig is the
     // highest-fidelity pre-hardware test available.
     drivePolicy: "vision",
+    // 3.90 E: under Drive via brain the camera is pushed on its own timer at
+    // this rate (newest wins), apart from the 500 ms status poll; and the
+    // tiered policy's "combine frames" vote, sent at Start.
+    streamFps: 4,
+    frameVote: "off",
+    // The running push loop (null when none), and whether the brain is the
+    // one recording this walk (from the stream) rather than this page.
+    framePush: null,
+    recordByBrain: false,
     // Synced from the connected server's own /health reply
     // (renderWatchdog()) -- see MIN_DISTANCE_CM_FALLBACK above.
     minDistanceCm: MIN_DISTANCE_CM_FALLBACK,
@@ -252,6 +262,8 @@
     recordWalk: "vp_record_walk",
     driveViaBrain: "vp_drive_via_brain",
     drivePolicy: "vp_drive_policy",
+    streamFps: "vp_stream_fps",       // 3.90 E
+    frameVote: "vp_frame_vote",       // 3.90 E
     turnStepDeg: "vp_turn_step_deg",
     navigateModelId: "vp_navigate_model_id",
     navigatePromptVariant: "vp_navigate_prompt_variant",
@@ -3131,13 +3143,19 @@
       }
       return;
     }
-    state.recordWalkName = newWalkName();
+    // 3.90 E: a Drive-via-brain walk is recorded by the brain from the
+    // stream, under the name sent with /mission/start.
+    state.recordByBrain = !!state.streamWalkName;
+    state.recordWalkName = state.streamWalkName || newWalkName();
+    state.streamWalkName = null;
     state.recordPending = [];       // this walk's frame saves (3.76)
     state.recordSaved = 0;
     state.recordFailed = 0;
+    state.recordLost = 0;
     state.recordOrphaned = 0;
     state.recordSeq = 0;
-    showToast("Recording this walk as " + state.recordWalkName, "info");
+    showToast("Recording this walk as " + state.recordWalkName +
+      (state.recordByBrain ? " (every frame, saved by the brain)" : ""), "info");
     renderRecordStatus();
   }
 
@@ -3210,6 +3228,18 @@
 
   function endWalkRecording() {
     if (!state.recordWalkName) return;
+    if (state.recordByBrain) {
+      // 3.90 E: the brain drains the stream and finishes the walk itself
+      // when the mission ends; this page only says what it last heard.
+      const name = state.recordWalkName, saved = state.recordSaved;
+      state.recordWalkName = null;
+      state.recordByBrain = false;
+      state.recordEpoch++;
+      renderRecordStatus();
+      showToast(saved + "+ frames recorded as " + name + " by the brain " +
+        "(it saves the rest as the mission ends)", "ok");
+      return;
+    }
     const name = state.recordWalkName, pending = state.recordPending || [];
     // Read now: the canvas is the next walk's by the time the saves land.
     const captureWidth = guidanceCaptureCanvas.width || null;
@@ -3265,7 +3295,9 @@
     if (state.recordWalkName) {
       sub.textContent = "Recording " + state.recordWalkName + " \u2014 " +
         state.recordSaved + " frames saved" +
+        (state.recordByBrain ? " by the brain" : "") +
         (state.recordFailed ? ", " + state.recordFailed + " failed" : "") +
+        (state.recordLost ? ", " + state.recordLost + " lost (the brain fell behind)" : "") +
         (state.recordOrphaned ? ", " + state.recordOrphaned + " from a previous walk dropped" : "") + ".";
       return;
     }
@@ -3507,6 +3539,14 @@
     if (policyRow) {
       policyRow.style.display = (wanted && state.driveViaBrain) ? "" : "none";
     }
+    const streamRow = document.getElementById("drive-stream-row");
+    if (streamRow) {
+      streamRow.style.display = (wanted && state.driveViaBrain) ? "" : "none";
+    }
+    // Combining frames is the tiered policy's candidate rule: the vision
+    // policy has none, and the brain refuses one for it.
+    const voteEl = document.getElementById("cfg-frame-vote");
+    if (voteEl) voteEl.disabled = state.drivePolicy !== "tiered";
     renderDriveViaBrainStatus();
   }
 
@@ -3519,9 +3559,20 @@
     renderRecordStatus();
   });
 
+  document.getElementById("cfg-stream-fps").addEventListener("change", function () {
+    state.streamFps = Number(this.value) || 4;
+    prefSet(PREF.streamFps, this.value);
+  });
+
+  document.getElementById("cfg-frame-vote").addEventListener("change", function () {
+    state.frameVote = this.value;
+    prefSet(PREF.frameVote, this.value);
+  });
+
   document.getElementById("cfg-drive-policy").addEventListener("change", function () {
     state.drivePolicy = this.value;
     prefSet(PREF.drivePolicy, this.value);
+    updateDriveViaBrainRow();
     // The tiered policy has a second pair of models to name, and the row
     // above is where the walk's operator reads what they are about to run.
     renderDriveViaBrainStatus();
@@ -3702,6 +3753,58 @@
       });
   }
 
+  // 3.90 E: the camera as a stream. Under Drive via brain, frames leave on
+  // their own timer at state.streamFps, apart from the status poll (which
+  // keeps guidanceStep's 500 ms pace). One upload in flight: a tick that
+  // finds the last one still going skips its frame rather than queueing it,
+  // so the robot server always holds the newest picture the network could
+  // carry. `epoch` ties the loop to its run: a Stop (which bumps
+  // guidanceEpoch) ends it at its next tick, and stopFramePush() at once.
+  function startFramePush(epoch) {
+    stopFramePush();
+    const push = state.framePush = {
+      epoch: epoch, timerId: null, inFlight: false,
+      pushed: 0, skipped: 0, sentAt: [],
+    };
+    function tick() {
+      if (state.framePush !== push || epoch !== state.guidanceEpoch || !state.guidanceRunning) return;
+      push.timerId = setTimeout(tick, 1000 / (state.streamFps || 4));
+      // A hidden page cannot capture; the mission's stall timer says so.
+      if (document.hidden) return;
+      if (push.inFlight) { push.skipped += 1; return; }
+      let base64;
+      try { base64 = captureGuidanceFrame(); } catch (e) { return; }
+      push.inFlight = true;
+      pushTeleopFrame(base64).then(function () {
+        push.pushed += 1;
+        const now = Date.now();
+        push.sentAt.push(now);
+        while (push.sentAt.length && now - push.sentAt[0] > 5000) push.sentAt.shift();
+      }, function () { /* the status poll reports a lost robot */ })
+        .then(function () { push.inFlight = false; });
+    }
+    tick();
+  }
+
+  function stopFramePush() {
+    if (state.framePush && state.framePush.timerId) clearTimeout(state.framePush.timerId);
+    state.framePush = null;
+  }
+
+  // Frames a second actually delivered over the last 5 s, and the share of
+  // ticks skipped because an upload was still going.
+  function framePushRate() {
+    const push = state.framePush;
+    if (!push) return null;
+    const now = Date.now();
+    const recent = push.sentAt.filter(function (t) { return now - t <= 5000; });
+    const span = recent.length > 1 ? (recent[recent.length - 1] - recent[0]) / 1000 : 0;
+    return {
+      fps: span > 0 ? (recent.length - 1) / span : 0,
+      skipped: push.pushed + push.skipped ? push.skipped / (push.pushed + push.skipped) : 0,
+    };
+  }
+
   // Reshapes a GET /mission/status payload into the {action, reasoning,
   // target_reached, target_visible, target_direction, obstacle_ahead, error}
   // shape callGuidanceEndpoint()'s /navigate reply has -- so
@@ -3764,8 +3867,16 @@
   }
 
   async function driveViaBrainStep(base64, epoch) {
-    await pushTeleopFrame(base64);
+    // 3.90 E: with the stream running, frames go on their own timer and
+    // this tick only reads the mission.
+    if (base64) await pushTeleopFrame(base64);
     const status = await brainApi("GET", "/mission/status");
+    if (state.recordByBrain && status && status.recording) {
+      state.recordSaved = status.recording.saved || 0;
+      state.recordFailed = status.recording.failed || 0;
+      state.recordLost = status.recording.lost || 0;
+      renderRecordStatus();
+    }
     // 3.76: an answer from a run since stopped changes nothing here -- it
     // used to pause the next run, or watch an old mission over it.
     if (epoch !== undefined && epoch !== state.guidanceEpoch) return missionStatusToRobotResult(status);
@@ -3775,6 +3886,7 @@
       // pause the found-streak logic already drives, rather than a second
       // stop mechanism; "Resume searching" starts a fresh call loop, not a
       // fresh mission, so this stays a dead end until Stop/Start.
+      stopFramePush();   // 3.90 E: nothing reads the frames now
       pauseGuidanceSearch();
       watchLateConfirmation(status);
       const ended = missionStatusToRobotResult(status);
@@ -3905,6 +4017,23 @@
         (cw.cls === "safe" ? "v-safe" : cw.cls === "warn" ? "v-warn" : "") + '">' +
         escapeHtml(cw.text) + "</span></div>"
       : "";
+    // 3.90 E: the stream as delivered (FPS, and ticks skipped because an
+    // upload was still going) and what the brain skipped (frames it never
+    // perceived); the vote's tally when one is set.
+    const rate = mission ? framePushRate() : null;
+    const tstats = mission && mission.tier && mission.tier.stats;
+    const brainSkip = tstats && tstats.frames
+      ? (tstats.frames_skipped || 0) / (tstats.frames + (tstats.frames_skipped || 0)) : null;
+    const streamRow = rate
+      ? '<div id="robot-tel-fps"><b>FPS</b>' + rate.fps.toFixed(1) + "/" + state.streamFps +
+        " &middot; skip " + Math.round(100 * rate.skipped) + "%" +
+        (brainSkip !== null ? " &middot; unseen " + Math.round(100 * brainSkip) + "%" : "") + "</div>"
+      : "";
+    const vote = tstats && tstats.vote;
+    const voteRow = vote
+      ? '<div id="robot-tel-vote"><b>VOTE</b>' + vote.k + "/" + vote.n +
+        " &middot; " + String(vote.detected) + " seen</div>"
+      : "";
     el.innerHTML =
       "<div><b>TGT</b>" + escapeHtml(state.guidanceTarget || "--") + "</div>" +
       "<div><b>ACT</b>" + escapeHtml(result.action || "--") + "</div>" +
@@ -3912,7 +4041,7 @@
       "<div><b>OBS</b>" + obs + "</div>" +
       "<div><b>SEQ</b>" + String(state.guidanceCallCount).padStart(3, "0") +
         (isFinite(guidanceCallCap()) ? "/" + String(guidanceCallCap()).padStart(3, "0") : "") + "</div>" +
-      brainRow + cloudRow + reached;
+      brainRow + streamRow + voteRow + cloudRow + reached;
     document.getElementById("robot-obstacle")
       .classList.toggle("visible", result.obstacle_ahead === true);
   }
@@ -4700,7 +4829,10 @@
     // Reserved here, in the same synchronous block as the dispatch, so no
     // two overlapping calls can be handed the same frame number. Null
     // when this frame is not being recorded at all.
-    const recSeq = (isRobot && state.recordWalkName) ? state.recordSeq++ : null;
+    // 3.90 E: under Drive via brain the stream pushes the frames and the
+    // brain records them; this tick captures nothing and records nothing.
+    const streaming = isRobot && state.guidanceViaBrain && !!state.framePush;
+    const recSeq = (isRobot && state.recordWalkName && !streaming) ? state.recordSeq++ : null;
     // Which WALK this frame belongs to, captured in the same synchronous
     // block as its seq. Compared on return -- see recordWalkFrame().
     const recEpoch = state.recordEpoch;
@@ -4730,7 +4862,7 @@
     scheduleGuidanceNext();
 
     try {
-      const base64 = captureGuidanceFrame();
+      const base64 = streaming ? null : captureGuidanceFrame();
       robotSignalCapture();
       const result = (isRobot && state.guidanceViaBrain)
         ? await driveViaBrainStep(base64, epoch)
@@ -4753,8 +4885,8 @@
       // frame.
       // 3.76: null outside Drive via brain -- lastTeleopSeq outlives the
       // walk that set it, and a plain walk recorded after one carried it.
-      if (isRobot) recordWalkFrame(base64, result, recSeq, recEpoch,
-                                   state.guidanceViaBrain ? state.lastTeleopSeq : null);
+      if (isRobot && !streaming) recordWalkFrame(base64, result, recSeq, recEpoch,
+                                                 state.guidanceViaBrain ? state.lastTeleopSeq : null);
 
       // Everything past here changes what the person sees or the loop
       // believes, so it must not run for an answer that has been overtaken
@@ -5145,7 +5277,15 @@
         // falling back to the service default.
         reportToken++;             // 3.70: an older ending's report draws nothing
         state.guideEndShown = false;
-        await brainApi("POST", "/mission/start", {
+        // 3.90 E: the brain records this walk from the stream, so it needs
+        // the name now; beginWalkRecording() below takes it up.
+        state.streamWalkName = recordingActive() ? newWalkName() : null;
+        const streamExtras = {};
+        if (state.streamWalkName) streamExtras.record_walk = state.streamWalkName;
+        if (state.drivePolicy === "tiered" && state.frameVote && state.frameVote !== "off") {
+          streamExtras.frame_vote = state.frameVote;
+        }
+        await brainApi("POST", "/mission/start", Object.assign({
           target_object: state.guidanceTarget,
           // The walk's own policy, not the Sim tab's. "tiered" runs
           // brain/perceive.py's detector and CLIP over these frames inside
@@ -5158,7 +5298,7 @@
           policy: state.drivePolicy,
           model_id: state.navigateModelId || null,
           prompt_variant: state.navigatePromptVariant || null,
-        });
+        }, streamExtras));
         if (closed()) {
           // Closed while the brain was starting it: the Close's own
           // /mission/stop may have landed before the mission existed.
@@ -5166,6 +5306,7 @@
           return;
         }
       } catch (e) {
+        state.streamWalkName = null;
         if (closed()) return;
         showGuideStartError("Could not start the brain-driven mission: " + e.message);
         state.guidanceViaBrain = false;
@@ -5242,6 +5383,7 @@
     // on top of this one.
     guidanceLastAnnounceAt = Date.now();
     beginWalkRecording();
+    if (state.guidanceMode === "robot" && state.guidanceViaBrain) startFramePush(state.guidanceEpoch);
     guidanceStep();
   }
 
@@ -5267,6 +5409,7 @@
   // camera live, per PLAN-ar-guidance.md.
   function stopGuidance() {
     if (endGuidanceVideoWait) endGuidanceVideoWait();
+    stopFramePush();
     endWalkRecording();
     if (state.guidanceViaBrain) {
       // Fire-and-forget, same as recordWalkFrame() -- stopGuidance() isn't
@@ -6379,6 +6522,18 @@
   if (savedDrivePolicy === "vision" || savedDrivePolicy === "tiered") {
     state.drivePolicy = savedDrivePolicy;
     drivePolicyEl.value = savedDrivePolicy;
+  }
+  const streamFpsEl = document.getElementById("cfg-stream-fps");
+  const savedFps = prefGet(PREF.streamFps);
+  if (savedFps === "2" || savedFps === "4" || savedFps === "8") {
+    state.streamFps = Number(savedFps);
+    streamFpsEl.value = savedFps;
+  }
+  const frameVoteEl = document.getElementById("cfg-frame-vote");
+  const savedVote = prefGet(PREF.frameVote);
+  if (savedVote === "off" || savedVote === "2of3" || savedVote === "3of5") {
+    state.frameVote = savedVote;
+    frameVoteEl.value = savedVote;
   }
   updateDriveViaBrainRow();
   if (prefGet(PREF.brainUrl)) {

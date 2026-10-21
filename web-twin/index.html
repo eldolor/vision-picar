@@ -1366,8 +1366,7 @@
           <span class="switch-sub" id="drive-via-brain-sub">
             Runs a real mission on the brain service (PLAN-teleop-robot.md)
             instead of a one-off /navigate call -- mission memory, the step
-            budget and the failsafes all apply to your walk. Turns off
-            recording; the two use these frames differently.
+            budget and the failsafes all apply to your walk.
           </span>
         </span>
         <input type="checkbox" id="cfg-drive-via-brain" class="switch">
@@ -1386,6 +1385,21 @@
         <select id="cfg-drive-policy" class="select-input" style="flex:1;">
           <option value="vision">Vision policy &middot; a model call per frame</option>
           <option value="tiered">Tiered policy &middot; YOLO + CLIP local, model on a trigger</option>
+        </select>
+      </div>
+      <!-- 3.90 E: under Drive via brain the phone streams its camera on its
+           own timer (newest wins: a slow upload skips frames, never queues
+           them), and the tiered policy can combine frames. -->
+      <div class="btn-row" id="drive-stream-row" style="display:none;">
+        <select id="cfg-stream-fps" class="select-input" style="flex:0 0 33%;" aria-label="Frames a second">
+          <option value="2">2 fps</option>
+          <option value="4" selected>4 fps</option>
+          <option value="8">8 fps</option>
+        </select>
+        <select id="cfg-frame-vote" class="select-input" style="flex:1;" aria-label="Combine frames">
+          <option value="off" selected>Combine: off</option>
+          <option value="2of3">Combine: 2 of 3</option>
+          <option value="3of5">Combine: 3 of 5</option>
         </select>
       </div>
       <div class="btn-row" style="margin-top:8px;">
