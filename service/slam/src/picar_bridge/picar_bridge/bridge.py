@@ -257,6 +257,7 @@ class Bridge(Node):
         self.map_saves = {"saved": 0, "failed": 0, "last_version": None,
                           "last_at": None, "last_error": None}
         self._saving = False             # one save at a time; under self.lock
+        self._save_again = None          # a save asked for during one: its reason
         self._mission_running = None     # the brain's last `running`, for the end edge
         self.serialize_cli = self.create_client(
             SerializePoseGraph, "slam_toolbox/serialize_map",
@@ -882,13 +883,40 @@ class Bridge(Node):
     # ---------- 3.50.D: saving the map ----------
 
     def save_map_async(self, why: str) -> bool:
+        """Start a save, or -- with one already running -- queue ONE more
+        to follow it (3.50.D2 review): a mission that ends during a save
+        has a map worth keeping too."""
         with self.lock:
-            if self.map_store is None or self._saving:
+            if self.map_store is None:
                 return False
+            if self._saving:
+                self._save_again = why
+                return True
             self._saving = True
-        threading.Thread(target=self._save_map, args=(why,), daemon=True,
-                         name="map-save").start()
+        try:
+            threading.Thread(target=self._save_loop, args=(why,), daemon=True,
+                             name="map-save").start()
+        except Exception:
+            with self.lock:
+                self._saving = False
+            raise
         return True
+
+    def _save_loop(self, why: str) -> None:
+        try:
+            while True:
+                self._save_map(why)
+                # One critical section for "anything queued?" and the release:
+                # a request between the two would otherwise be lost.
+                with self.lock:
+                    why, self._save_again = self._save_again, None
+                    if why is None:
+                        self._saving = False
+                        return
+        except BaseException:
+            with self.lock:
+                self._saving = False
+            raise
 
     def _save_map(self, why: str) -> None:
         """slam_toolbox serialises into a staging directory; the store makes
@@ -918,7 +946,6 @@ class Bridge(Node):
             if pending is not None:
                 self.map_store.abandon(pending)
         with self.lock:
-            self._saving = False
             if error is None:
                 self.map_saves.update(saved=self.map_saves["saved"] + 1,
                                       last_version=meta["version"], last_at=time.time(),

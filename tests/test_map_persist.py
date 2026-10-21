@@ -183,3 +183,30 @@ def test_slam_runs_the_node_that_switches_modes():
         launch = f.read()
     assert 'executable="map_and_localization_slam_toolbox_node"' in launch
     assert "async_slam_toolbox_node" not in launch
+
+
+def test_only_the_newest_maps_are_kept(tmp_path):
+    """3.50.D2 review: each container start without a reload is a new
+    map_id; old maps beyond KEEP_MAPS are removed, the current one never."""
+    store = MapStore(str(tmp_path))
+    ids = [f"map-0000000{i}" for i in range(mapstore.KEEP_MAPS + 2)]
+    for i, map_id in enumerate(ids):
+        _save(store, map_id)
+        os.utime(tmp_path / map_id, (1000 + i, 1000 + i))
+    _save(store, ids[-1])
+    kept = sorted(n for n in os.listdir(tmp_path) if mapstore.MAP_ID_RE.fullmatch(n))
+    assert kept == sorted(ids[-mapstore.KEEP_MAPS:])
+    assert store.current().map_id == ids[-1]
+
+
+def test_a_missing_start_truth_is_filled_only_by_its_own_session(tmp_path):
+    """3.50.D2 review: a first save before the start truth arrived must not
+    pin None for the map's life -- but only the first session's start is the
+    map frame's; a later session's start truth is another place."""
+    store = MapStore(str(tmp_path))
+    _save(store, "map-0a1b2c3d", start_truth=None, session="s1")
+    later = {"x_m": 1.0, "y_m": 2.0, "heading_deg": 0}
+    assert _save(store, "map-0a1b2c3d", start_truth=later, session="s1")["start_truth"] == later
+    other = MapStore(str(tmp_path / "b"))
+    _save(other, "map-0a1b2c3d", start_truth=None, session="s1")
+    assert _save(other, "map-0a1b2c3d", start_truth=later, session="s2")["start_truth"] is None

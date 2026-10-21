@@ -12,7 +12,7 @@ for a filename prefix; this keeps them as numbered versions of one map:
 A version becomes visible only by a rename of its whole directory, and the
 pointer only by os.replace, so a crash mid-save leaves the previous version
 current (3.50 "versioned saves that can be rolled back"). Three versions
-are kept (3.50's default). `current()` offers only a version this store
+are kept (3.50's default), and the three newest maps. `current()` offers only a version this store
 committed: criterion 12's "map_file_name is only ever a file the robot
 saved". Kept out of bridge.py, which imports rclpy, so it is tested on a
 laptop (tests/test_map_persist.py).
@@ -32,6 +32,9 @@ GRAPH_NAME = "graph"
 META = "meta.json"
 CURRENT = "current.json"
 KEEP = 3
+# Whole maps kept (3.50.D2 review): every container start that does not
+# reload is a new map_id, ~7 MB a version; the current one is never removed.
+KEEP_MAPS = 3
 MAP_ID_RE = re.compile(r"map-[0-9a-f]{8}")
 # The dock is the pose of the graph's first node: session 1 began there,
 # so it is the map frame's origin. Localisation mode cannot start "at the
@@ -83,9 +86,10 @@ def _fsync_dir(path: str) -> None:
 
 
 class MapStore:
-    def __init__(self, root: str, keep: int = KEEP):
+    def __init__(self, root: str, keep: int = KEEP, keep_maps: int = KEEP_MAPS):
         self.root = root
         self.keep = keep
+        self.keep_maps = keep_maps
         # Staging this store has begun and not yet finished. Any other one is
         # a crashed save's, and pruned -- by name, not by pid: a container's
         # pids repeat at every start.
@@ -127,14 +131,21 @@ class MapStore:
                     raise SaveFailed(f"slam_toolbox wrote no {GRAPH_NAME}{ext}")
                 sizes[GRAPH_NAME + ext] = os.path.getsize(p)
             earlier = self._meta_of(pending.map_id, self.versions(pending.map_id))
+            first_session = earlier["first_session"] if earlier else session
+            kept_start = earlier["start_truth"] if earlier else start_truth
+            if kept_start is None and session == first_session:
+                # A first save before the start truth arrived: the same
+                # session's start is the map frame's, so it fills it in. A
+                # later session's start is another place and never does.
+                kept_start = start_truth
             meta = {
                 "map_id": pending.map_id, "version": pending.version,
                 "saved_at": time.time(), "session": session,
-                "first_session": earlier["first_session"] if earlier else session,
+                "first_session": first_session,
                 "dock_pose": dict(DOCK_POSE),
                 # Evaluation only, as the bridge's own start_truth: read by
                 # /world/error's anchor, never by the estimate (criterion 12).
-                "start_truth": earlier["start_truth"] if earlier else start_truth,
+                "start_truth": kept_start,
                 "files": sizes,
             }
             _fsync_write(os.path.join(pending.staging, META), json.dumps(meta, indent=1))
@@ -184,6 +195,10 @@ class MapStore:
             p = os.path.join(d, n)
             if n.startswith(".staging-") and p not in self._live:
                 shutil.rmtree(p, ignore_errors=True)
+        maps = sorted((n for n in os.listdir(self.root) if MAP_ID_RE.fullmatch(n) and n != map_id),
+                      key=lambda n: os.path.getmtime(os.path.join(self.root, n)), reverse=True)
+        for n in maps[self.keep_maps - 1:]:
+            shutil.rmtree(os.path.join(self.root, n), ignore_errors=True)
 
     def current(self) -> Optional[Saved]:
         """The map a reload loads, or None. Only a version this store
