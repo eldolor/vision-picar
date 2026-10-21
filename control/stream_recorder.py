@@ -49,7 +49,7 @@ POLL_S = 0.25
 SETTLE_S = 31.0
 # More frames than this waiting (a mission stalled with the phone pushing)
 # are filed oldest first, unperceived, to bound memory.
-MAX_PENDING = 256
+MAX_PENDING = 96            # 12 s at 8 fps, ~20 MB of base64 at most
 # walk.jsonl rows appended together: an append on S3 rewrites the file.
 ROW_BATCH = 25
 
@@ -72,7 +72,6 @@ class StreamRecorder:
         self.store = store
         self.walk = walk
         self._fetch = fetch_frames
-        self._runner = runner
         self.runner = runner            # whose mission this walk records
         self._meta = dict(meta or {})
         self.poll_s = poll_s
@@ -112,7 +111,7 @@ class StreamRecorder:
     # ---------- the thread ----------
 
     def _running(self) -> bool:
-        return self._runner.is_running() and not self._stop.is_set()
+        return self.runner.is_running() and not self._stop.is_set()
 
     def _run(self) -> None:
         try:
@@ -160,25 +159,33 @@ class StreamRecorder:
             meta = frame["metadata"]
             settled = (final or now - fetched_at >= self.settle_s
                        or len(self._pending) > MAX_PENDING
-                       or self._runner.decided_past(meta["seq"], meta.get("boot_id")))
+                       or self.runner.decided_past(meta["seq"], meta.get("boot_id")))
             if not settled:
                 break
             self._pending.pop(0)
             self._save(frame)
         if self._rows and (final or len(self._rows) >= ROW_BATCH):
-            self._flush_rows()
+            self._flush_rows(final=final)
 
-    def _flush_rows(self) -> None:
-        rows, self._rows = self._rows, []
+    def _flush_rows(self, final: bool = False) -> None:
+        """Append the held rows. A failed append keeps them for the next
+        flush (review: one transient error dropped 25 rows); only the last,
+        at the walk's end, counts them as failed. A brain killed between
+        flushes leaves up to ROW_BATCH - 1 images without their rows."""
         try:
-            self.store.append_text(self.walk, "walk.jsonl", "".join(rows))
-        except Exception as e:  # noqa: BLE001 -- counted; the frames are stored
-            self.failed += len(rows)
-            logger.warning("stream recorder: %d walk.jsonl rows not saved: %s", len(rows), e)
+            self.store.append_text(self.walk, "walk.jsonl", "".join(self._rows))
+            self._rows = []
+        except Exception as e:  # noqa: BLE001
+            logger.warning("stream recorder: %d walk.jsonl rows not saved yet: %s",
+                           len(self._rows), e)
+            if final:
+                self.failed += len(self._rows)
+                self.saved -= len(self._rows)
+                self._rows = []
 
     def _save(self, frame: dict) -> None:
         seq = frame["metadata"]["seq"]
-        decision = self._runner.decision_for(seq, frame["metadata"].get("boot_id"))
+        decision = self.runner.decision_for(seq, frame["metadata"].get("boot_id"))
         try:
             image = base64.b64decode(frame["image_base64"])
             if self._capture is None:
@@ -203,7 +210,7 @@ class StreamRecorder:
     def _finish(self) -> None:
         try:
             if self._rows:
-                self._flush_rows()
+                self._flush_rows(final=True)
             if self.saved:
                 finish_walk_meta(
                     self.store, self.walk, source="stream",

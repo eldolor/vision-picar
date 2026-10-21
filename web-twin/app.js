@@ -3133,6 +3133,7 @@
     state.recordEpoch++;
     if (!recordingActive()) {
       state.recordWalkName = null;
+      state.streamWalkName = null;   // 3.90 E: never inherited by a later walk (review)
       // Silence here costs a whole walk. The toggle stays on, every frame
       // is dropped by recordWalkFrame's own early return, and the first
       // sign of trouble is an empty admin console afterwards -- by which
@@ -5283,7 +5284,18 @@
         state.guideEndShown = false;
         // 3.90 E: the brain records this walk from the stream, so it needs
         // the name now; beginWalkRecording() below takes it up.
-        state.streamWalkName = recordingActive() ? newWalkName() : null;
+        state.streamWalkName = null;
+        if (recordingActive()) {
+          // The brain records this walk itself, which a brain that only
+          // forwards recordings to another cannot do (review).
+          const h = await brainApi("GET", "/health");
+          if (closed()) return;
+          if (h.records_streams === false) {
+            throw new Error("this brain only forwards recordings, so it cannot record a " +
+              "Drive-via-brain walk -- turn Record this walk off, or use a brain that stores walks");
+          }
+          state.streamWalkName = newWalkName();
+        }
         const streamExtras = {};
         if (state.streamWalkName) streamExtras.record_walk = state.streamWalkName;
         if (state.drivePolicy === "tiered" && state.frameVote && state.frameVote !== "off") {
@@ -5415,6 +5427,7 @@
   function stopGuidance() {
     if (endGuidanceVideoWait) endGuidanceVideoWait();
     stopFramePush();
+    state.streamWalkName = null;     // 3.90 E: a start that never began its walk
     endWalkRecording();
     if (state.guidanceViaBrain) {
       // Fire-and-forget, same as recordWalkFrame() -- stopGuidance() isn't

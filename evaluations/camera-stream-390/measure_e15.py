@@ -142,7 +142,8 @@ def run(fps, seconds, cloud, logdir):
                 "perceived": stats.get("frames"), "frames_skipped": stats.get("frames_skipped"),
                 "cloud_calls": stats.get("cloud_calls"), "stub_calls": cloud.calls - calls0,
                 "calls_per_min": round(60 * (stats.get("cloud_calls") or 0) / elapsed, 2),
-                "triggers": stats.get("triggers")}
+                "triggers": stats.get("triggers"), "error": st.get("error"),
+                "log_tail": (st.get("log_tail") or [])[-4:]}
     finally:
         for proc in procs:
             proc.terminate()

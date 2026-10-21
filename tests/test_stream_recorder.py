@@ -235,3 +235,42 @@ def test_a_restarted_body_never_borrows_the_old_lifes_decisions():
     assert runner.decision_for(7, "old") is not None
     assert runner.decision_for(7, "new") is None
     assert runner.decided_past(3, "old") and not runner.decided_past(3, "new")
+
+
+def test_a_stop_during_the_starts_frame_probe_is_not_lost(tmp_path, monkeypatch):
+    # Review round 2: the probe after the mission was built ran outside the
+    # build slot, so a Stop in it was lost and the mission started and drove.
+    from control import mission_runner
+
+    built = threading.Event()
+    real_init = mission_runner.MissionRunner.__init__
+
+    def init(self, *a, **kw):
+        real_init(self, *a, **kw)
+        built.set()
+
+    monkeypatch.setattr(mission_runner.MissionRunner, "__init__", init)
+    robot = TeleopRobot()
+    robot.push_frame(JPEG)
+    probing, release = threading.Event(), threading.Event()
+    real_latest = robot.latest
+
+    def slow_latest():
+        if built.is_set():            # the probe once the mission exists
+            probing.set()
+            release.wait(5)
+        return real_latest()
+
+    robot.latest = slow_latest
+    with _brain(tmp_path, robot) as client:
+        out = {}
+        t = threading.Thread(target=lambda: out.update(r=client.post(
+            "/mission/start", json={"policy": "frontier", "target_object": "backpack",
+                                    "record_walk": "w1"})))
+        t.start()
+        assert probing.wait(5)
+        client.post("/mission/stop")
+        release.set()
+        t.join(10)
+        assert out["r"].status_code == 409, out["r"].text
+        assert client.get("/mission/status").json()["running"] is False

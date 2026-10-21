@@ -1942,8 +1942,11 @@ class TieredVision:
             return TRIGGER_TRACK
         # The vote never fires on a frame that does not itself show the target
         # (review): the question and any steering need this frame's box.
-        sighted = (perception.status == DETECTED and self._voted()) if self.frame_vote \
-            else confirmed == DETECTED
+        if self.frame_vote:
+            voted = self._voted()          # every frame, so the tally stays current
+            sighted = perception.status == DETECTED and voted
+        else:
+            sighted = confirmed == DETECTED
         if sighted and self._last_confirmed != DETECTED:
             self._last_confirmed = DETECTED
             if self.frame_vote:

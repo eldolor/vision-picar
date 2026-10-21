@@ -564,8 +564,9 @@ def create_app(
                                  "(brain.allow_recording).")
             if walks.walk_exists(req.record_walk):
                 raise ValueError(f"A walk named {req.record_walk!r} already exists.")
-            # A body that keeps no frames (any mode but teleop) is a 400 here.
-            _frames_reader(robot)[1]()
+            # A body that keeps no frames (any mode but teleop) is a 400 here;
+            # its latest seq is read by the start itself.
+            _frames_reader(robot)
         # Checked before the tiered clients are built, so a refused start
         # leaves none open (review, 2026-10-16).
         navigator = None
@@ -1011,6 +1012,28 @@ def create_app(
                     await asyncio.to_thread(discard)
                 raise HTTPException(status_code=409,
                                     detail="Stopped while the mission was being set up.")
+            # 3.90 E: the stream's cursor, read while this start still holds
+            # the build slot (review: read after it, a Stop in the await was
+            # lost and a second start passed the 409) and before the mission
+            # can move (a failure refuses the start, never a 500 over a
+            # running mission). One before the newest, so the frame the
+            # opening tick takes is filed too.
+            record_from = None
+            if req.record_walk is not None:
+                try:
+                    latest = await asyncio.to_thread(_frames_reader(robot())[1])
+                    record_from = max(0, int(latest.get("latest_seq", 0)) - 1)
+                except Exception as e:  # noqa: BLE001
+                    discard = getattr(runner, "discard", None)
+                    if discard is not None:
+                        await asyncio.to_thread(discard)
+                    raise ValueError(f"record_walk: the robot's frames could not be read: {e}")
+                if build["stopped"]:
+                    discard = getattr(runner, "discard", None)
+                    if discard is not None:
+                        await asyncio.to_thread(discard)
+                    raise HTTPException(status_code=409,
+                                        detail="Stopped while the mission was being set up.")
         except drills.DrillNotAllowed as e:
             await put_back(lifted)
             raise HTTPException(status_code=403, detail=str(e))
@@ -1027,22 +1050,6 @@ def create_app(
         # once it really exists (a refused start leaves the check alone) and
         # before it can move -- and the generation bump stops an old loop
         # still finishing from starting one for itself.
-        # 3.90 E: the stream's cursor, read before the mission can move (a
-        # failure here refuses the start instead of answering 500 over a
-        # running mission, review). One before the newest, so the frame the
-        # opening tick takes is filed too.
-        record_from = None
-        if req.record_walk is not None:
-            try:
-                record_from = max(0, int((await asyncio.to_thread(
-                    _frames_reader(robot())[1])).get("latest_seq", 0)) - 1)
-            except Exception as e:  # noqa: BLE001
-                discard = getattr(runner, "discard", None)
-                if callable(discard):
-                    await asyncio.to_thread(discard)
-                await put_back(lifted)
-                raise HTTPException(status_code=400,
-                                    detail=f"record_walk: the robot's frames could not be read: {e}")
         state["generation"] += 1
         cancel_reconfirm("a new mission started")
         state["tick_timeout_s"] = getattr(runner, "tick_timeout_s", state["tick_timeout_s"])
@@ -1319,6 +1326,9 @@ def create_app(
             # startGuidance() (Guide/Robot view) reject a walk that would
             # have actually worked.
             "recording_allowed": bool(config["allow_recording"]) or bool(config["recording_proxy_url"]),
+            # 3.90 E: a Drive-via-brain walk is recorded by THIS brain from the
+            # stream (record_walk), which a brain that only proxies cannot do.
+            "records_streams": bool(config["allow_recording"]),
             "faults": list(drills.FAULTS),
         }
 
