@@ -27,7 +27,7 @@ def test_it_is_registered_by_name():
     assert parse_name("procthor:val:12") == 12
     assert parse_name("procthor:train:12") is None
     with pytest.raises(ValueError, match="procthor:val"):
-        build_world("procthor:train:1")
+        build_world("procthor:other:1")
 
 
 def test_all_val_houses_are_committed():
@@ -46,6 +46,18 @@ def test_the_test_split_is_its_own_set_of_houses():
     assert len(usable("test")) == 613
     a, b = build_world("procthor:test:7"), build_world("procthor:val:7")
     assert a.layout != b.layout
+
+
+def test_the_train_split_is_its_own_set_of_houses():
+    """3.88 B: `procthor:train:<i>`, the first 1,000 of ProcTHOR's `train`
+    split, are B's fresh test houses; 3.66's checks gave 615 usable."""
+    from sim.maps.procthor import parse_split_name
+    assert parse_split_name("procthor:train:7") == ("train", 7)
+    assert build_world("procthor:train:7").map_name == "procthor:train:7"
+    assert len(houses("train")) == 1000
+    assert len(usable("train")) == 615
+    a, b, c = (build_world(f"procthor:{s}:7") for s in ("train", "test", "val"))
+    assert a.layout != b.layout and a.layout != c.layout
 
 
 def test_the_outside_is_closed(sample):
