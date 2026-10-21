@@ -274,3 +274,27 @@ def test_a_stop_during_the_starts_frame_probe_is_not_lost(tmp_path, monkeypatch)
         t.join(10)
         assert out["r"].status_code == 409, out["r"].text
         assert client.get("/mission/status").json()["running"] is False
+
+
+def test_a_failed_append_is_counted_never_retried_and_the_walk_still_finishes(tmp_path):
+    # Review round 3: a retried S3 append that had in fact landed filed the
+    # rows twice; and a walk whose rows all failed was left with no meta.
+    robot = TeleopRobot()
+    for _ in range(3):
+        robot.push_frame(JPEG)
+    store = LocalWalkStore(tmp_path)
+    calls = []
+
+    def failing_append(walk, name, text):
+        calls.append(text)
+        raise OSError("throttled")
+
+    store.append_text = failing_append
+    runner = FakeRunner()
+    rec = StreamRecorder(store, "w1", robot.frames_after, runner, poll_s=0.01).start(after=0)
+    runner.running.clear()
+    assert rec.finished.wait(5)
+    assert len(calls) == 1                       # one attempt, no retry
+    assert rec.status()["saved"] == 0 and rec.status()["failed"] == 3
+    meta = json.loads((tmp_path / "w1" / "meta.json").read_text())
+    assert meta["frames_failed"] == 3 and "finished_at" in meta

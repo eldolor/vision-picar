@@ -121,7 +121,7 @@ class WalkFull(Exception):
 
 
 def store_frame(store, walk: str, seq: int, image: bytes, media_type: str, row: dict,
-                max_frames: int = MAX_FRAMES_PER_WALK, count: Optional[int] = None,
+                max_frames: Optional[int] = None, count: Optional[int] = None,
                 rows: Optional[list] = None) -> dict:
     """Write one frame and its walk.jsonl row. The route's body, shared with
     the brain's stream recorder (3.90 E). `walk` must already match
@@ -137,6 +137,8 @@ def store_frame(store, walk: str, seq: int, image: bytes, media_type: str, row: 
     # check would miscount as a frame.
     if count is None:
         count = len(store.list_names(walk, prefix="frame-"))
+    if max_frames is None:
+        max_frames = MAX_FRAMES_PER_WALK    # read now: tests and config may move it
     if count >= max_frames:
         raise WalkFull(f"This walk already has {max_frames} frames.")
     suffix = FRAME_SUFFIX.get(media_type, ".jpg")

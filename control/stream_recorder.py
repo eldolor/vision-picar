@@ -29,7 +29,6 @@ restarted (its `boot_id` changed) starts the cursor over.
 """
 
 import base64
-import io
 import logging
 import threading
 import time
@@ -49,19 +48,23 @@ POLL_S = 0.25
 SETTLE_S = 31.0
 # More frames than this waiting (a mission stalled with the phone pushing)
 # are filed oldest first, unperceived, to bound memory.
-MAX_PENDING = 96            # 12 s at 8 fps, ~20 MB of base64 at most
+MAX_PENDING = 256           # 32 s at 8 fps: outlasts SETTLE_S; ~50 MB of base64 at most
 # walk.jsonl rows appended together: an append on S3 rewrites the file.
 ROW_BATCH = 25
 
 
 def _jpeg_size(data: bytes):
-    try:
-        from PIL import Image
-
-        with Image.open(io.BytesIO(data)) as img:
-            return {"width": img.width, "height": img.height}
-    except Exception:  # noqa: BLE001 -- a size is a nicety, never a failure
-        return None
+    """Width and height from a JPEG's start-of-frame marker -- no imaging
+    library, as the walks Lambda packages control/ without one. None for
+    anything it cannot read: a size is a nicety, never a failure."""
+    i = 2
+    while i + 9 < len(data) and data[i] == 0xFF:
+        marker, length = data[i + 1], int.from_bytes(data[i + 2:i + 4], "big")
+        if marker in (0xC0, 0xC1, 0xC2):
+            return {"height": int.from_bytes(data[i + 5:i + 7], "big"),
+                    "width": int.from_bytes(data[i + 7:i + 9], "big")}
+        i += 2 + length
+    return None
 
 
 class StreamRecorder:
@@ -84,6 +87,7 @@ class StreamRecorder:
         self._rows: list = []           # walk.jsonl lines not yet appended
         self._capture = None
         self.saved = 0
+        self.written = 0                # images stored, whatever became of their rows
         self.perceived = 0
         self.lost = 0
         self.over_cap = 0
@@ -168,20 +172,19 @@ class StreamRecorder:
             self._flush_rows(final=final)
 
     def _flush_rows(self, final: bool = False) -> None:
-        """Append the held rows. A failed append keeps them for the next
-        flush (review: one transient error dropped 25 rows); only the last,
-        at the walk's end, counts them as failed. A brain killed between
-        flushes leaves up to ROW_BATCH - 1 images without their rows."""
+        """Append the held rows, once. A failed append is never retried: on
+        S3 an append that raised may still have landed, and a retry would
+        file the rows twice (review: a wrong walk is worse than a short
+        one). Its rows are counted failed at once, so status says so while
+        the walk runs. A brain killed between flushes leaves up to
+        ROW_BATCH - 1 images without rows."""
+        rows, self._rows = self._rows, []
         try:
-            self.store.append_text(self.walk, "walk.jsonl", "".join(self._rows))
-            self._rows = []
+            self.store.append_text(self.walk, "walk.jsonl", "".join(rows))
         except Exception as e:  # noqa: BLE001
-            logger.warning("stream recorder: %d walk.jsonl rows not saved yet: %s",
-                           len(self._rows), e)
-            if final:
-                self.failed += len(self._rows)
-                self.saved -= len(self._rows)
-                self._rows = []
+            self.failed += len(rows)
+            self.saved -= len(rows)
+            logger.warning("stream recorder: %d walk.jsonl rows not saved: %s", len(rows), e)
 
     def _save(self, frame: dict) -> None:
         seq = frame["metadata"]["seq"]
@@ -205,13 +208,17 @@ class StreamRecorder:
                 logger.warning("stream recorder: a frame was not saved: %s", e)
             return
         self.saved += 1
+        self.written += 1
         self.perceived += decision is not None
 
     def _finish(self) -> None:
         try:
             if self._rows:
                 self._flush_rows(final=True)
-            if self.saved:
+            if self.written:
+                # Whenever an image was stored: a walk whose rows failed is
+                # marked finished with its failures, never left looking
+                # in progress (review).
                 finish_walk_meta(
                     self.store, self.walk, source="stream",
                     frames_perceived=self.perceived, frames_lost=self.lost,

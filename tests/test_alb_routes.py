@@ -86,6 +86,8 @@ INTENTIONALLY_UNROUTED = {
     # does route it, at its own prefix. The twin runs mode: sim, where it
     # would 400 anyway.
     ("twin.yaml", "/teleop/frame"),
+    # 3.90 E: the same body's kept frames, read by the brain's recorder.
+    ("twin.yaml", "/teleop/frames"),
     # admin_server mounts control/recording_routes.py so the recordings
     # Lambda has the write path (the walks left EFS, and the brain is going
     # back to the Pi where it should not hold AWS credentials). In THIS

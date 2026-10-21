@@ -5290,7 +5290,9 @@
           // forwards recordings to another cannot do (review).
           const h = await brainApi("GET", "/health");
           if (closed()) return;
-          if (h.records_streams === false) {
+          // An older brain has no such field and would refuse record_walk
+          // (or, if it ignored it, record nothing): only a yes is a yes.
+          if (h.records_streams !== true) {
             throw new Error("this brain only forwards recordings, so it cannot record a " +
               "Drive-via-brain walk -- turn Record this walk off, or use a brain that stores walks");
           }

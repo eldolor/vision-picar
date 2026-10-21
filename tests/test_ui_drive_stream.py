@@ -35,7 +35,7 @@ PHONE = {"width": 390, "height": 844}
 
 BRAIN_HEALTH = {
     "status": "ok", "mission_running": False, "robot_url": "x",
-    "recording_allowed": True, "perception_available": True,
+    "recording_allowed": True, "records_streams": True, "perception_available": True,
     "perception_detector": "yoloe-11s-seg.pt", "perception_clip_model": "RN50",
 }
 

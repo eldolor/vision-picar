@@ -564,9 +564,10 @@ def create_app(
                                  "(brain.allow_recording).")
             if walks.walk_exists(req.record_walk):
                 raise ValueError(f"A walk named {req.record_walk!r} already exists.")
-            # A body that keeps no frames (any mode but teleop) is a 400 here;
-            # its latest seq is read by the start itself.
-            _frames_reader(robot)
+            # A body that keeps no frames (any mode but teleop) is a 400 here,
+            # before any model is loaded (a RemoteRobot has the methods
+            # whatever the server's mode, so it is asked, cheaply).
+            _frames_reader(robot)[1]()
         # Checked before the tiered clients are built, so a refused start
         # leaves none open (review, 2026-10-16).
         navigator = None
@@ -952,6 +953,17 @@ def create_app(
         except Exception as e:  # noqa: BLE001 -- the refusal stands either way
             logger.warning("could not put back a person's Stop after a refused start: %s", e)
 
+    async def _discard_quietly(runner) -> None:
+        """3.90 E: a runner refused after its build, discarded; a discard
+        that fails must not replace the refusal's own answer (review)."""
+        discard = getattr(runner, "discard", None)
+        if discard is None:
+            return
+        try:
+            await asyncio.to_thread(discard)
+        except Exception:  # noqa: BLE001
+            logger.exception("discarding a refused runner failed")
+
     @app.post(prefix + "/mission/start", dependencies=[Depends(require_secret)])
     async def start_mission(req: MissionStartRequest):
         runner = state["runner"]
@@ -1024,14 +1036,10 @@ def create_app(
                     latest = await asyncio.to_thread(_frames_reader(robot())[1])
                     record_from = max(0, int(latest.get("latest_seq", 0)) - 1)
                 except Exception as e:  # noqa: BLE001
-                    discard = getattr(runner, "discard", None)
-                    if discard is not None:
-                        await asyncio.to_thread(discard)
+                    await _discard_quietly(runner)
                     raise ValueError(f"record_walk: the robot's frames could not be read: {e}")
                 if build["stopped"]:
-                    discard = getattr(runner, "discard", None)
-                    if discard is not None:
-                        await asyncio.to_thread(discard)
+                    await _discard_quietly(runner)
                     raise HTTPException(status_code=409,
                                         detail="Stopped while the mission was being set up.")
         except drills.DrillNotAllowed as e:

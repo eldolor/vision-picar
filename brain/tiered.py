@@ -967,6 +967,7 @@ class TieredVision:
         self._votes: list = []
         self._last_seq: Optional[int] = None
         self._repeat_frame = False
+        self._vote_ok = False
         if self.frame_vote:
             self.stats.vote = {"k": self.frame_vote[0], "n": self.frame_vote[1],
                                "detected": 0, "fired": 0}
@@ -1873,6 +1874,9 @@ class TieredVision:
     def _trigger_for(self, perception: Perception) -> Optional[str]:
         if perception.status != UNAVAILABLE:
             self._note_vote(perception.status)
+            # Tallied on every frame, before any early return (review: the
+            # tracking and start returns left the HUD's count stale).
+            self._vote_ok = self._voted() if self.frame_vote else False
         if not self._started:
             self._started = True
             # **The opening call is also the first frame's confirmation.**
@@ -1943,8 +1947,7 @@ class TieredVision:
         # The vote never fires on a frame that does not itself show the target
         # (review): the question and any steering need this frame's box.
         if self.frame_vote:
-            voted = self._voted()          # every frame, so the tally stays current
-            sighted = perception.status == DETECTED and voted
+            sighted = perception.status == DETECTED and self._vote_ok
         else:
             sighted = confirmed == DETECTED
         if sighted and self._last_confirmed != DETECTED:
