@@ -260,6 +260,7 @@ VERB_STALL_S = 0.6
 # answered at 10.4 s). 7 s leaves the settle, the reply and 2 s spare.
 # Sim-time verbs never reach it.
 VERB_MAX_S = 7.0
+VERB_MAX_REASON = f"cut at {VERB_MAX_S:g}s (VERB_MAX_S)"
 _VERB_STALL_M = 0.001          # progress that resets the window: 1 mm ...
 _VERB_STALL_DEG = 0.125        # ... or 0.125 degrees (ros_drive's tolerance / 4)
 _VERB_DONE_M = 1e-7
@@ -332,7 +333,7 @@ def carry_out_verb(robot: "RobotInterface", plan: dict, limit: Optional[Limit] =
             if plan.get("wall_clock"):
                 now = time.monotonic()
                 if now - started >= VERB_MAX_S:
-                    ended, reason = "timeout", f"cut at {VERB_MAX_S:g}s (VERB_MAX_S)"
+                    ended, reason = "timeout", VERB_MAX_REASON
                     break
                 if mark is None or done - mark > budge:
                     mark, mark_at = done, now

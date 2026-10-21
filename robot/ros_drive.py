@@ -48,7 +48,7 @@ from typing import Optional, Tuple
 
 import httpx
 
-from robot.interface import (DRIVER_MANUAL, VERB_MAX_S, VERB_STALL_S, RobotInterface,
+from robot.interface import (DRIVER_MANUAL, VERB_MAX_REASON, VERB_MAX_S, VERB_STALL_S, RobotInterface,
                              WheelFeedbackLost, driver_priority, verb_stop_baseline)
 
 logger = logging.getLogger("ros_drive")
@@ -88,8 +88,7 @@ def _timed_out(timed_out: bool) -> dict:
     """3.89: a verb `VERB_MAX_S` cut short says so, in direct mode's words
     (`stopped_short`, `robot/interface.py`'s "timeout"), so a caller can
     tell it from one that reached its line or stalled against it."""
-    return ({"stopped_short": "timeout", "reason": f"cut at {VERB_MAX_S:g}s (VERB_MAX_S)"}
-            if timed_out else {})
+    return {"stopped_short": "timeout", "reason": VERB_MAX_REASON} if timed_out else {}
 
 
 def moves_for(speed: int, duration: float) -> int:

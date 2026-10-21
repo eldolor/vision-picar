@@ -186,6 +186,7 @@ def _agent(results):
 def test_the_escape_creeps_on_after_a_creep_cut_by_time():
     cut = {"action": "drive_forward", "moved_m": 0.10, "stopped_short": "timeout"}
     agent, asked = _agent([dict(cut), {"action": "drive_forward", "moved_m": 0.06}])
+    agent.safety.forward_clearance = lambda *a, **k: (9.0, "scan_footprint")   # room past the line
     agent._pending = [("CREEP", ["FORWARD", "REVERSE"]), ("OPEN",)]
     agent._do_pending()
     assert agent._pending[0][0] == "CREEP"
@@ -204,6 +205,7 @@ def test_a_creep_that_ends_at_the_line_is_not_repeated():
 def test_the_creep_pieces_are_bounded():
     cut = {"action": "drive_forward", "moved_m": 0.05, "stopped_short": "timeout"}
     agent, asked = _agent([dict(cut) for _ in range(10)])
+    agent.safety.forward_clearance = lambda *a, **k: (15.0, "scan_footprint")
     agent._pending = [("CREEP", ["FORWARD"]), ("OPEN",)]
     for _ in range(10):
         if agent._pending[0][0] != "CREEP":
@@ -254,7 +256,10 @@ def test_a_ros_verb_that_misses_its_own_deadline_reads_as_before():
     robot._http = httpx.Client(base_url="http://bridge", transport=httpx.MockTransport(chain.handler))
     world.x, world.y = _open_spot(entry, world)
     with rvs._virtual_time(chain.clock):
+        t0 = chain.clock.now
         out = entry.check_and_execute("FORWARD", speed=50, duration=0.5)
+        seconds = chain.clock.now - t0
+    assert seconds >= 5.9                          # ran out its own 3 x 1 + 3 s, did not stall
     assert abs(out["moved_m"]) < 0.30 - ros_drive.LINEAR_TOLERANCE_M
     assert "stopped_short" not in out
 
