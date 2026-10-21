@@ -352,4 +352,31 @@ def test_a_lookup_that_raises_costs_one_decision_not_the_walk(tmp_path):
     runner.running.clear()
     assert rec.finished.wait(5)
     assert len(_rows(store, "w1")) == 3
+    assert rec.status()["lookup_failed"] == 3
     assert "finished_at" in json.loads((tmp_path / "w1" / "meta.json").read_text())
+
+
+def test_a_recorder_ending_on_an_error_counts_what_it_held(tmp_path):
+    # Closing review: a loop that raised dropped its fetched frames uncounted,
+    # and the emergency finish had no red-first test.
+    robot = TeleopRobot()
+    for _ in range(4):
+        robot.push_frame(JPEG)
+
+    class Dies(FakeRunner):
+        def is_running(self):
+            if getattr(self, "polled", False):
+                raise RuntimeError("runner gone")
+            self.polled = True
+            return True
+
+    store = LocalWalkStore(tmp_path)
+    rec = StreamRecorder(store, "w1", robot.frames_after, Dies(), poll_s=0.01,
+                         settle_s=30).start(after=0)
+    assert rec.finished.wait(5)
+    status = rec.status()
+    assert status["written"] == 0
+    meta_path = tmp_path / "w1" / "meta.json"
+    # Nothing was written, so no walk; the four fetched frames are counted.
+    assert rec.dropped == 4 and not meta_path.exists()
+

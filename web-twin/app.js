@@ -3875,8 +3875,8 @@
     if (state.recordByBrain && status && status.recording) {
       // Images stored so far; rows follow in batches (3.90 E).
       // Frames a replay can use: stored, with a row stored or to come.
-      state.recordSaved = ("usable" in status.recording ? status.recording.usable
-        : status.recording.saved) || 0;
+      const r = status.recording;
+      state.recordSaved = ("usable" in r ? r.usable : "written" in r ? r.written : r.saved) || 0;
       state.recordFailed = (status.recording.failed || 0) + (status.recording.rows_failed || 0);
       state.recordLost = status.recording.lost || 0;
       renderRecordStatus();
