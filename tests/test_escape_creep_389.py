@@ -222,3 +222,49 @@ def test_only_a_cut_by_time_creeps_on(stopped):
     agent._pending = [("CREEP", ["FORWARD"]), ("OPEN",)]
     agent._do_pending()
     assert agent._pending == [("OPEN",)]
+
+
+def test_a_creep_cut_at_the_line_does_not_creep_on(monkeypatch):
+    """Review (both reviewers' race): a creep that reached the line just
+    before the cut reads as cut; with no room left past the line, no second
+    piece is sent into the wall."""
+    cut = {"action": "drive_forward", "moved_m": 0.16, "stopped_short": "timeout"}
+    agent, asked = _agent([dict(cut)])
+    monkeypatch.setattr(agent.safety, "forward_clearance", lambda *a, **k: (3.6, "scan_footprint"))
+    agent._pending = [("CREEP", ["FORWARD"]), ("OPEN",)]
+    agent._do_pending()
+    assert asked == [("FORWARD", 5)]
+    assert agent._pending == [("OPEN",)]
+
+
+def test_a_ros_verb_that_misses_its_own_deadline_reads_as_before():
+    """Review (both reviewers): only the VERB_MAX_S cap reports a time cut.
+    A speed-50 verb that runs out its own 3x+3 s deadline (6 s, under the
+    cap) carries no `stopped_short`, as on dev, so ConstrainedAgent's
+    SHORT_MOVES rule sees the ROS path exactly as before 3.89."""
+    world = build_world("scaled_house")
+    inner = MockRobot(world, render=False)
+    robot = ros_drive.RosDriveRobot(inner, "http://bridge")
+
+    class Crawl(rvs.SafeChain):
+        def _land(self, twist):             # a tenth of every twist: slow, never stalled
+            super()._land(dict(twist, linear_m_s=twist["linear_m_s"] * 0.1))
+    entry = SafetyController(robot, 20.0)
+    chain = Crawl(inner, entry, 0, lambda before: None)
+    robot._http = httpx.Client(base_url="http://bridge", transport=httpx.MockTransport(chain.handler))
+    world.x, world.y = _open_spot(entry, world)
+    with rvs._virtual_time(chain.clock):
+        out = entry.check_and_execute("FORWARD", speed=50, duration=0.5)
+    assert abs(out["moved_m"]) < 0.30 - ros_drive.LINEAR_TOLERANCE_M
+    assert "stopped_short" not in out
+
+
+def _open_spot(entry, world):
+    """A cell in the scaled house with a metre clear ahead."""
+    from tests.demo_explore import free_cells
+    for x, y in sorted(free_cells(world)):
+        world.x, world.y = x + 0.5, y + 0.5
+        cm, _ = entry.forward_clearance()
+        if cm is None or cm > 100:
+            return world.x, world.y
+    raise AssertionError("no open spot")

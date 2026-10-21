@@ -127,8 +127,16 @@ reports such a verb `stopped_short: "timeout"`. The caller is waiting:
 verb past it failed the mission while the robot still moved (3.88 A's live
 run 2, a creep FORWARD that nav2's collision_monitor had slowed to half).
 Only verbs planned longer than ~1.3 s can reach it (a creep plans 10 s);
-speed-50 verbs and turns end on their own well inside it. Sim-time verbs
-never reach it.
+speed-50 verbs and turns up to 90 degrees keep their own deadlines, and on
+the ROS path only a verb the cap itself cut reports `timeout` -- one that
+runs out its own `3 x planned + 3 s` reads as before 3.89, so
+`brain/agent.py`'s `SHORT_MOVES` sees nothing new there. Sim-time verbs
+never reach it. Known limits (3.89 review): the bound assumes a bridge that
+answers each twist post quickly (each may wait the client's 2 s, checked
+only between twists); a direct-mode verb that completes near the cap still
+runs its settle corrections (3.29, real board only), each with a budget of
+its own; a ROS turn over ~92 degrees, which no brain policy sends, now gets
+7 s where it had `3 x planned + 3 s`.
 
 **The skid-steer scrub** (3.35): `HardwareRobot(track_scrub=)` sets
 `_track_m = TRACK_WIDTH_M * track_scrub`, used for pivot wheel speeds

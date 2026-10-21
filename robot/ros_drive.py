@@ -44,7 +44,7 @@ import math
 import threading
 import time
 from contextlib import contextmanager
-from typing import Optional
+from typing import Optional, Tuple
 
 import httpx
 
@@ -85,10 +85,11 @@ ANGULAR_TOLERANCE_RAD = math.radians(0.5)
 
 
 def _timed_out(timed_out: bool) -> dict:
-    """3.89: a verb its time ran out on says so, in direct mode's words
+    """3.89: a verb `VERB_MAX_S` cut short says so, in direct mode's words
     (`stopped_short`, `robot/interface.py`'s "timeout"), so a caller can
     tell it from one that reached its line or stalled against it."""
-    return {"stopped_short": "timeout"} if timed_out else {}
+    return ({"stopped_short": "timeout", "reason": f"cut at {VERB_MAX_S:g}s (VERB_MAX_S)"}
+            if timed_out else {})
 
 
 def moves_for(speed: int, duration: float) -> int:
@@ -283,12 +284,14 @@ class RosDriveRobot(RobotInterface):
                 w["wheel_radius_m"], w["track_width_m"])
 
     def _run(self, gen: int, target: float, max_rate: float, min_rate: float,
-             tolerance: float, progress, linear: bool, gain: float) -> float:
+             tolerance: float, progress, linear: bool, gain: float) -> Tuple[float, bool]:
         """Stream twists until `progress()` is within `tolerance` of `target`
         (signed), the verb is superseded, the wheels stall, or its time is up
         -- three times what the plan should take plus 3 s, and never more than
-        `VERB_MAX_S` (3.89). Returns the progress made and whether the time
-        ran out with the target not reached.
+        `VERB_MAX_S` (3.89). Returns the progress made and whether that cap
+        cut it short of the target. Only a verb planned long enough for the
+        cap to bind (a creep, ~1.3 s and up) can be cut: every other verb
+        keeps its own deadline and its result is as before 3.89.
 
         The error is SIGNED and the loop may drive back: after the zero
         lands and the wheels settle, a verb that overshot on a latency spike
@@ -297,6 +300,7 @@ class RosDriveRobot(RobotInterface):
         """
         expected_s = abs(target) / max_rate
         started = time.monotonic()
+        capped = 3 * expected_s + 3.0 > VERB_MAX_S
         deadline = started + min(3 * expected_s + 3.0, VERB_MAX_S)
         done = progress()
         stalled = False
@@ -330,7 +334,7 @@ class RosDriveRobot(RobotInterface):
             if abs(target - done) <= tolerance or time.monotonic() >= deadline:
                 break
         # Short of the target (an overshoot is not), and out of time.
-        timed_out = (not stalled and not self._superseded(gen)
+        timed_out = (capped and not stalled and not self._superseded(gen)
                      and math.copysign(1.0, target) * (target - done) > tolerance
                      and time.monotonic() >= deadline)
         logger.info("verb target=%.4f final=%.4f in %.2fs%s", target, done,

@@ -56,7 +56,7 @@ from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
 from robot.interface import ZONE_UNUSABLE, Preempted, RobotInterface
-from robot.safety import FOOTPRINT_LENGTH_M, SafetyViolation, verb_speed_m_s
+from robot.safety import CREEP_MARGIN_CM, FOOTPRINT_LENGTH_M, SafetyViolation, verb_speed_m_s
 from world.bridge_faults import fault_from_headers, response_detail, setup_fault_message
 
 logger = logging.getLogger("explore")
@@ -113,6 +113,7 @@ OPEN_ANGLES = (90, 45, 20, 10, 5)
 # reaches the line.
 CREEP_SPEED = 5
 CREEP_PIECES = 3
+CREEP_ROOM_CM = 1.0
 # "Boxed in": fewer reachable stopping places than this around the robot.
 BOXED_CELLS = 40
 # 3.70 E3: a room goal aims at least this far inside the room's label where
@@ -1381,8 +1382,9 @@ class ExploreAgent(MissionAgent):
                         waited=out[0] == "WAIT", piece=piece, cut_by_time=cut, **seen)
             if out[0] == "WAIT":
                 self._requeue(ends[0], ("CREEP", ends, piece))
-            elif cut and piece < CREEP_PIECES:
-                # 3.89: its time ran out short of the line -- on, the same way.
+            elif cut and piece < CREEP_PIECES and self._creep_room(ends[0]):
+                # 3.89: its time ran out short of the line -- on, the same way
+                # (only that way: the other end would give back what it gained).
                 self._pending.insert(0, ("CREEP", ends[:1], piece + 1))
             elif not out[1] and len(ends) > 1:
                 self._pending.insert(0, ("CREEP", ends[1:], piece))
@@ -1519,6 +1521,18 @@ class ExploreAgent(MissionAgent):
         if f is None or b is None or f > lim or b > lim:
             return []
         return ["REVERSE", "FORWARD"] if b >= f else ["FORWARD", "REVERSE"]
+
+    def _creep_room(self, way: str) -> bool:
+        """3.89: room left past a creep's 3 cm line that way -- more than
+        CREEP_ROOM_CM over it -- so a creep its time cut short goes on only
+        if it really stopped short (one that reached the line in the last
+        moments before the cut reads as cut too)."""
+        try:
+            cm, _ = (self.safety.forward_clearance() if way == "FORWARD"
+                     else self.safety.reverse_clearance())
+        except Exception:  # noqa: BLE001 -- unknown: no further creep on a guess
+            return False
+        return cm is not None and cm > CREEP_MARGIN_CM + CREEP_ROOM_CM
 
     def _still_wedged(self) -> bool:
         """Forward AND reverse both refused by the safety layer's own
