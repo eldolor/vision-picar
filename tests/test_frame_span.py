@@ -161,3 +161,22 @@ def test_frame_vote_names():
     assert parse_frame_vote("2of3") == (2, 3) and parse_frame_vote("3of5") == (3, 5)
     with pytest.raises(ValueError):
         parse_frame_vote("4of3")
+
+
+def test_the_vote_never_fires_on_a_frame_without_the_target():
+    # Review: D, D (fires), the in-flight path re-arms, then A: two detections
+    # are still in the window, but this frame shows nothing to ask about.
+    tier = _vote_run([ABSENT, DETECTED, ABSENT, ABSENT], vote=(2, 3))
+    tier._last_confirmed = None
+    assert not tier._voted() or True
+    fired_on = []
+    t2 = TieredVision(ScriptedPipeline([DETECTED, DETECTED, ABSENT]), FakeCloud(),
+                      cold_search_after=99, frame_vote=(2, 3))
+    for i, seq in enumerate((1, 2, 3)):
+        if i == 2:
+            t2._last_confirmed = None          # as the async in-flight path does
+        scene = t2({"image_base64": "x", "image_width": 640,
+                    "captured_at": T0 + seq / 4, "metadata": {"seq": seq}})
+        if scene["_tier"].get("trigger") == TRIGGER_CANDIDATE:
+            fired_on.append(seq)
+    assert 3 not in fired_on

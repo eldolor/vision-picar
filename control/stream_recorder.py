@@ -41,9 +41,17 @@ from control.recording_routes import (MAX_STREAM_FRAMES, WalkFull, finish_walk_m
 logger = logging.getLogger(__name__)
 
 POLL_S = 0.25
-# How long a fetched frame may wait for the mission to decide past it before
-# it is filed as not perceived. Two ticks of a slow tiered step.
-SETTLE_S = 2.0
+# How long a fetched frame may wait for the mission to decide on it, or past
+# it, before it is filed as not perceived: the brain's hung-tick deadline
+# (B3.3's `tick_timeout_s`, 30 s), so no tick still running can be outwaited
+# (review: a vision tick's 2-3 s cloud call outlasted a 2 s wait, and an
+# arrival confirmation may take 8). Normally a frame settles one tick later.
+SETTLE_S = 31.0
+# More frames than this waiting (a mission stalled with the phone pushing)
+# are filed oldest first, unperceived, to bound memory.
+MAX_PENDING = 256
+# walk.jsonl rows appended together: an append on S3 rewrites the file.
+ROW_BATCH = 25
 
 
 def _jpeg_size(data: bytes):
@@ -65,6 +73,7 @@ class StreamRecorder:
         self.walk = walk
         self._fetch = fetch_frames
         self._runner = runner
+        self.runner = runner            # whose mission this walk records
         self._meta = dict(meta or {})
         self.poll_s = poll_s
         self.settle_s = settle_s
@@ -73,6 +82,7 @@ class StreamRecorder:
         self._after = 0
         self._boot_id = None
         self._pending: list = []        # (fetched_at, frame), oldest first
+        self._rows: list = []           # walk.jsonl lines not yet appended
         self._capture = None
         self.saved = 0
         self.perceived = 0
@@ -129,7 +139,11 @@ class StreamRecorder:
             # The robot server restarted: its seqs began again (review, A).
             logger.warning("stream recorder: the robot restarted; cursor reset")
             self._after = 0
-            got = self._fetch(0)
+            try:
+                got = self._fetch(0)
+            except Exception as e:  # noqa: BLE001 -- retried next poll (review)
+                logger.warning("stream recorder: fetch after a restart failed: %s", e)
+                return
         self._boot_id = got.get("boot_id")
         self.lost += int(got.get("lost") or 0)
         now = self._clock()
@@ -140,21 +154,31 @@ class StreamRecorder:
                 self._after = seq
 
     def _file(self, final: bool) -> None:
-        decided_past = self._runner.last_frame_seq
         now = self._clock()
         while self._pending:
             fetched_at, frame = self._pending[0]
-            seq = frame["metadata"]["seq"]
+            meta = frame["metadata"]
             settled = (final or now - fetched_at >= self.settle_s
-                       or (decided_past is not None and decided_past >= seq))
+                       or len(self._pending) > MAX_PENDING
+                       or self._runner.decided_past(meta["seq"], meta.get("boot_id")))
             if not settled:
                 break
             self._pending.pop(0)
             self._save(frame)
+        if self._rows and (final or len(self._rows) >= ROW_BATCH):
+            self._flush_rows()
+
+    def _flush_rows(self) -> None:
+        rows, self._rows = self._rows, []
+        try:
+            self.store.append_text(self.walk, "walk.jsonl", "".join(rows))
+        except Exception as e:  # noqa: BLE001 -- counted; the frames are stored
+            self.failed += len(rows)
+            logger.warning("stream recorder: %d walk.jsonl rows not saved: %s", len(rows), e)
 
     def _save(self, frame: dict) -> None:
         seq = frame["metadata"]["seq"]
-        decision = self._runner.decision_for(seq)
+        decision = self._runner.decision_for(seq, frame["metadata"].get("boot_id"))
         try:
             image = base64.b64decode(frame["image_base64"])
             if self._capture is None:
@@ -164,7 +188,7 @@ class StreamRecorder:
                         {"navigate": decision, "teleop_seq": seq,
                          "perceived": decision is not None,
                          "captured_at": frame.get("captured_at")},
-                        max_frames=self.max_frames, count=self.saved)
+                        max_frames=self.max_frames, count=self.saved, rows=self._rows)
         except WalkFull:
             self.over_cap += 1
             return
@@ -178,6 +202,8 @@ class StreamRecorder:
 
     def _finish(self) -> None:
         try:
+            if self._rows:
+                self._flush_rows()
             if self.saved:
                 finish_walk_meta(
                     self.store, self.walk, source="stream",

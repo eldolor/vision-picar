@@ -145,11 +145,20 @@ class TeleopRobot(RobotInterface):
                 # take the upload. Its own clock's, so two stamps' difference
                 # is the time between two frames (robot/interface.py).
                 "captured_at": time.time(),
-                "metadata": {"source": "teleop", "seq": self._seq},
+                "metadata": {"source": "teleop", "seq": self._seq,
+                             # 3.90 E: which life of this body numbered it, so
+                             # a decision is never joined across a restart.
+                             "boot_id": self.boot_id},
             }
             self._recent.append(self._frame)
         self._record(f"PUSH seq={seq}")
         return {"seq": seq}   # ...here and the return gave both pushes its number
+
+    def latest(self) -> dict:
+        """3.90 E: the newest seq and this body's life, without the frames
+        (review: a start fetched the whole buffer twice to read one number)."""
+        with self._lock:
+            return {"latest_seq": self._seq, "boot_id": self.boot_id}
 
     def frames_after(self, after_seq: int) -> dict:
         """3.90 E: every kept frame newer than `after_seq`, oldest first, for

@@ -156,6 +156,10 @@ class RemoteRobot(RobotInterface):
     def get_camera_frame(self) -> dict:
         return self._request("GET", "/frame")
 
+    def teleop_latest(self) -> dict:
+        """3.90 E: the teleop body's newest seq and boot_id, no frames."""
+        return self._request("GET", "/teleop/frames?latest_only=true")
+
     def teleop_frames(self, after: int) -> dict:
         """3.90 E: the teleop body's kept frames newer than `after`, for the
         brain's stream recorder. A body that keeps none answers 400, raised

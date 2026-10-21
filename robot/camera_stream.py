@@ -193,12 +193,12 @@ class CameraStream:
 
     def close(self) -> None:
         self._running = False
+        # A reader stuck in a hung camera's read keeps the device until the
+        # read returns. Releasing the capture from here, under that read, is
+        # not safe in OpenCV's V4L2 backend (review: it can crash the robot
+        # server), so the device stays held instead; the reader releases it
+        # when the read ends.
         self._thread.join(timeout=2.0)
-        if self._thread.is_alive():
-            # The reader is stuck in a read (a hung USB camera): release the
-            # device from here, or it stays busy for the process' life
-            # (review). Releasing under a blocked read is what unblocks it.
-            self._close_source()
 
 
 class OpenCvSource:

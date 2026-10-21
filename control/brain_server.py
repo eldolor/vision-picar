@@ -339,14 +339,16 @@ def _local_identity_fn(target: str, config: dict, secret: Optional[str]):
 
 
 def _frames_reader(robot):
-    """3.90 E: the body's kept-frames read -- `RemoteRobot.teleop_frames`
-    over HTTP, or `TeleopRobot.frames_after` in process. A body with
-    neither keeps no frames to record."""
+    """3.90 E: the body's kept-frames read and its latest-seq probe --
+    `RemoteRobot.teleop_frames` / `teleop_latest` over HTTP, or
+    `TeleopRobot.frames_after` / `latest` in process. A body with neither
+    keeps no frames to record."""
     fetch = getattr(robot, "teleop_frames", None) or getattr(robot, "frames_after", None)
-    if fetch is None:
+    latest = getattr(robot, "teleop_latest", None) or getattr(robot, "latest", None)
+    if fetch is None or latest is None:
         raise ValueError("record_walk records a teleop body's frame stream "
                          "(mode: teleop); this robot keeps no frames.")
-    return fetch
+    return fetch, latest
 
 
 def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
@@ -563,7 +565,7 @@ def create_app(
             if walks.walk_exists(req.record_walk):
                 raise ValueError(f"A walk named {req.record_walk!r} already exists.")
             # A body that keeps no frames (any mode but teleop) is a 400 here.
-            _frames_reader(robot)(0)
+            _frames_reader(robot)[1]()
         # Checked before the tiered clients are built, so a refused start
         # leaves none open (review, 2026-10-16).
         navigator = None
@@ -1025,6 +1027,22 @@ def create_app(
         # once it really exists (a refused start leaves the check alone) and
         # before it can move -- and the generation bump stops an old loop
         # still finishing from starting one for itself.
+        # 3.90 E: the stream's cursor, read before the mission can move (a
+        # failure here refuses the start instead of answering 500 over a
+        # running mission, review). One before the newest, so the frame the
+        # opening tick takes is filed too.
+        record_from = None
+        if req.record_walk is not None:
+            try:
+                record_from = max(0, int((await asyncio.to_thread(
+                    _frames_reader(robot())[1])).get("latest_seq", 0)) - 1)
+            except Exception as e:  # noqa: BLE001
+                discard = getattr(runner, "discard", None)
+                if callable(discard):
+                    await asyncio.to_thread(discard)
+                await put_back(lifted)
+                raise HTTPException(status_code=400,
+                                    detail=f"record_walk: the robot's frames could not be read: {e}")
         state["generation"] += 1
         cancel_reconfirm("a new mission started")
         state["tick_timeout_s"] = getattr(runner, "tick_timeout_s", state["tick_timeout_s"])
@@ -1032,17 +1050,19 @@ def create_app(
         state["fault"] = req.fault or drills.NONE
         state["runner"] = runner
         state["task"] = asyncio.create_task(mission_loop(runner, state["generation"]))
-        if req.record_walk is not None:
-            # 3.90 E: from the robot's latest frame on; ends with the mission.
-            if state["recorder"] is not None:
-                state["recorder"].stop()
-            fetch = _frames_reader(robot())
-            latest = (await asyncio.to_thread(fetch, 0)).get("latest_seq", 0)
+        if state["recorder"] is not None:
+            state["recorder"].stop()       # finishes when its runner has stopped
+        state["recorder"] = None
+        if record_from is not None:
+            # 3.90 E: from the frame the opening tick takes; ends with the
+            # mission. A frame waits up to the hung-tick deadline for its
+            # decision, so no tick still running is outwaited.
             state["recorder"] = StreamRecorder(
-                walks, req.record_walk, fetch, runner,
+                walks, req.record_walk, _frames_reader(robot())[0], runner,
                 meta={"target_object": req.target_object, "model_id": req.model_id,
                       "policy": req.policy, "frame_vote": req.frame_vote},
-            ).start(after=latest)
+                settle_s=float(state["tick_timeout_s"]) + 1.0,
+            ).start(after=record_from)
         if cloud_watch is not None and req.policy in VISION_POLICIES:
             cloud_watch.start()  # idempotent; probes only while such a mission runs
         return {"started": True, "status": {**runner.status(), "cloud": cloud_status()}}
@@ -1155,8 +1175,10 @@ def create_app(
         # class either way.
         recorder = state["recorder"]
         return {**runner.status(), "fault": state["fault"], "cloud": cloud_status(),
-                # 3.90 E: the brain's own recording of the frame stream.
-                "recording": recorder.status() if recorder is not None else None}
+                # 3.90 E: this mission's own recording of the frame stream
+                # (never an earlier mission's, review).
+                "recording": (recorder.status()
+                              if recorder is not None and recorder.runner is runner else None)}
 
     async def _proxy_recording(route: str, req: BaseModel) -> dict:
         # The routes this forwards touch no robot/runner state at all --

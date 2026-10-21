@@ -1653,7 +1653,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         return {"received": True, **push(req.image_base64, req.media_type)}
 
     @app.get(prefix + "/teleop/frames", dependencies=[Depends(require_secret)])
-    def teleop_frames(after: int = 0):
+    def teleop_frames(after: int = 0, latest_only: bool = False):
         """3.90 E: the pushed frames newer than `after`, for the brain's walk
         recorder -- every frame received, where `/frame` is only the newest.
         Duck-typed, as `/teleop/frame` is."""
@@ -1661,6 +1661,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         if frames_after is None:
             raise HTTPException(status_code=400,
                                 detail="This robot is not in teleop mode: it keeps no pushed frames.")
+        if latest_only:
+            return robot.latest()      # the newest seq and boot_id, no frames
         return frames_after(after)
 
     @app.get(prefix + "/health")

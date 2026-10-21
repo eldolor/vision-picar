@@ -825,6 +825,7 @@ class MissionRunner:
         # than this many decisions behind files the rest as not perceived.
         self._decisions: "collections.OrderedDict[int, dict]" = collections.OrderedDict()
         self._decisions_lock = threading.Lock()
+        self._last_decided = None          # (boot_id, seq) of the newest decision
         self._log: list = []
         self._camera_centred = False
 
@@ -974,11 +975,13 @@ class MissionRunner:
             # every backend that does not stamp one, which is honest: a
             # walk that cannot say which frame a decision saw should say so
             # rather than imply an alignment it does not have.
+            # The decision first, then the seq that says it exists (review:
+            # a recorder reading between the two filed it as unperceived).
+            self._note_decision(result)
             self._last_frame_seq = (
                 (result.frame or {}).get("metadata", {}).get("seq")
                 if isinstance(result.frame, dict) else None
             ) or self._last_frame_seq
-            self._note_decision(result)
             if result.action != "WAIT":
                 self._log_line(
                     f"step {result.step}: {result.action} "
@@ -1210,10 +1213,11 @@ class MissionRunner:
 
     def _note_decision(self, result) -> None:
         """3.90 E: what was decided on this tick's frame, kept by its seq."""
-        seq = ((result.frame or {}).get("metadata", {}).get("seq")
-               if isinstance(result.frame, dict) else None)
+        meta = ((result.frame or {}).get("metadata") or {}) if isinstance(result.frame, dict) else {}
+        seq = meta.get("seq")
         if not isinstance(seq, int):
             return
+        boot = meta.get("boot_id")
         perception = self._perception or {}
         decision = {"action": result.action,
                     "reasoning": self._last_reasoning,
@@ -1224,15 +1228,25 @@ class MissionRunner:
                                        "perception": self._perception,
                                        "tier_trigger": (self._tier or {}).get("trigger")}}
         with self._decisions_lock:
-            self._decisions[seq] = decision
+            self._decisions[(boot, seq)] = decision
+            self._last_decided = (boot, seq)
             while len(self._decisions) > self.DECISIONS_KEPT:
                 self._decisions.popitem(last=False)
 
-    def decision_for(self, seq: int) -> Optional[dict]:
-        """3.90 E: the decision taken on the robot's frame `seq`, or None if
-        no tick took that frame (or it has aged out)."""
+    def decision_for(self, seq: int, boot_id=None) -> Optional[dict]:
+        """3.90 E: the decision taken on the robot's frame `seq` of the
+        body's life `boot_id`, or None if no tick took that frame (or it has
+        aged out). Keyed by both, so a restarted body's seq 1 is never
+        another life's seq 1 (review)."""
         with self._decisions_lock:
-            return self._decisions.get(seq)
+            return self._decisions.get((boot_id, seq))
+
+    def decided_past(self, seq: int, boot_id=None) -> bool:
+        """3.90 E: has a tick decided on this frame, or a later one of the
+        same body's life? A frame never taken is then final."""
+        with self._decisions_lock:
+            last = self._last_decided
+        return last is not None and last[0] == boot_id and last[1] >= seq
 
     @property
     def last_frame_seq(self) -> Optional[int]:

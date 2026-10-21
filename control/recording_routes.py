@@ -121,11 +121,14 @@ class WalkFull(Exception):
 
 
 def store_frame(store, walk: str, seq: int, image: bytes, media_type: str, row: dict,
-                max_frames: int = MAX_FRAMES_PER_WALK, count: Optional[int] = None) -> dict:
+                max_frames: int = MAX_FRAMES_PER_WALK, count: Optional[int] = None,
+                rows: Optional[list] = None) -> dict:
     """Write one frame and its walk.jsonl row. The route's body, shared with
     the brain's stream recorder (3.90 E). `walk` must already match
     WALK_NAME. `count`, when the caller keeps it, saves listing the walk on
-    every frame (a stream walk holds thousands)."""
+    every frame (a stream walk holds thousands). `rows`, when given,
+    collects the walk.jsonl line instead of appending it, for the caller to
+    append in batches: on S3 an append rewrites the whole file (review)."""
     # The name is already sanitised; walk_store refuses a separator or a
     # `..` again on the way in, on either backend.
     store.create_walk(walk)
@@ -139,9 +142,11 @@ def store_frame(store, walk: str, seq: int, image: bytes, media_type: str, row: 
     suffix = FRAME_SUFFIX.get(media_type, ".jpg")
     name = f"frame-{seq:04d}{suffix}"
     store.write_bytes(walk, name, image)
-    store.append_text(walk, "walk.jsonl", json.dumps({
-        "seq": seq, "file": name, "media_type": media_type, **row,
-    }) + "\n")
+    line = json.dumps({"seq": seq, "file": name, "media_type": media_type, **row}) + "\n"
+    if rows is not None:
+        rows.append(line)
+    else:
+        store.append_text(walk, "walk.jsonl", line)
     return {"saved": name, "frames": count + 1, "dir": store.location(walk)}
 
 

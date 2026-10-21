@@ -4832,7 +4832,11 @@
     // 3.90 E: under Drive via brain the stream pushes the frames and the
     // brain records them; this tick captures nothing and records nothing.
     const streaming = isRobot && state.guidanceViaBrain && !!state.framePush;
-    const recSeq = (isRobot && state.recordWalkName && !streaming) ? state.recordSeq++ : null;
+    // A walk the brain records is never written from here, stream or not:
+    // "Resume searching" after the mission ended would number its frames
+    // from 0 over the brain's (review).
+    const pageRecords = isRobot && !streaming && !state.recordByBrain;
+    const recSeq = (pageRecords && state.recordWalkName) ? state.recordSeq++ : null;
     // Which WALK this frame belongs to, captured in the same synchronous
     // block as its seq. Compared on return -- see recordWalkFrame().
     const recEpoch = state.recordEpoch;
@@ -4885,8 +4889,8 @@
       // frame.
       // 3.76: null outside Drive via brain -- lastTeleopSeq outlives the
       // walk that set it, and a plain walk recorded after one carried it.
-      if (isRobot && !streaming) recordWalkFrame(base64, result, recSeq, recEpoch,
-                                                 state.guidanceViaBrain ? state.lastTeleopSeq : null);
+      if (pageRecords) recordWalkFrame(base64, result, recSeq, recEpoch,
+                                       state.guidanceViaBrain ? state.lastTeleopSeq : null);
 
       // Everything past here changes what the person sees or the loop
       // believes, so it must not run for an answer that has been overtaken
@@ -5300,6 +5304,7 @@
           prompt_variant: state.navigatePromptVariant || null,
         }, streamExtras));
         if (closed()) {
+          state.streamWalkName = null;   // this start's walk is not the next one's (review)
           // Closed while the brain was starting it: the Close's own
           // /mission/stop may have landed before the mission existed.
           brainApi("POST", "/mission/stop").catch(function () { /* best-effort */ });

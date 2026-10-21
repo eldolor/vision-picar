@@ -24,10 +24,13 @@ class FakeRunner:
     def is_running(self):
         return self.running.is_set()
 
-    def decision_for(self, seq):
+    def decision_for(self, seq, boot_id=None):
         if seq not in self.decided:
             return None
         return {"action": "FORWARD", "_missionStatus": {"last_frame_seq": seq}}
+
+    def decided_past(self, seq, boot_id=None):
+        return self.last_frame_seq is not None and self.last_frame_seq >= seq
 
 
 def _rows(store, walk):
@@ -124,7 +127,7 @@ def test_a_restarted_robot_starts_the_cursor_over(tmp_path):
     runner = FakeRunner()
     store = LocalWalkStore(tmp_path)
     rec = StreamRecorder(store, "w1", lambda after: body["robot"].frames_after(after),
-                         runner, poll_s=0.01).start(after=0)
+                         runner, poll_s=0.01, settle_s=0.05).start(after=0)
     assert _wait(lambda: rec.saved == 5)
     body["robot"] = second                        # the robot server restarted...
     for _ in range(7):
@@ -190,6 +193,45 @@ def test_a_teleop_mission_records_its_stream_and_reports_it(tmp_path):
         assert _wait(lambda: (client.get("/mission/status").json()["recording"] or {})
                      .get("finished"), timeout=10)
     rows = _rows(LocalWalkStore(tmp_path), "w1")
-    assert [r["teleop_seq"] for r in rows][:4] == [2, 3, 4, 5]     # not the pre-start frame
+    # From the newest frame at start (the one the opening tick takes) on.
+    assert [r["teleop_seq"] for r in rows][:5] == [1, 2, 3, 4, 5]
     meta = json.loads((tmp_path / "w1" / "meta.json").read_text())
     assert meta["source"] == "stream" and meta["policy"] == "frontier"
+
+
+def test_a_decision_slower_than_a_poll_still_lands_on_its_frame(tmp_path):
+    # Review: a vision tick's cloud call takes 2-3 s; its frame must wait for
+    # the decision, not be filed unperceived after a short settle.
+    robot = TeleopRobot()
+    runner = FakeRunner()
+    store, rec = _record(tmp_path, robot, runner)
+    robot.push_frame(JPEG)
+    robot.push_frame(JPEG)
+    import time
+    time.sleep(2.5)                               # the tick is still thinking (old settle: 2 s)
+    assert rec.saved == 0
+    runner.decided.add(1)
+    runner.last_frame_seq = 2                     # decided on 1; 2 never taken
+    assert _wait(lambda: rec.saved == 2)
+    runner.running.clear()
+    assert rec.finished.wait(5)
+    assert [r["perceived"] for r in _rows(store, "w1")] == [True, False]
+
+
+def test_a_restarted_body_never_borrows_the_old_lifes_decisions():
+    from control.mission_runner import MissionRunner
+
+    class R:
+        frame = {"metadata": {"seq": 7, "boot_id": "old"}}
+        action = "LEFT"
+
+    runner = MissionRunner.__new__(MissionRunner)
+    import collections
+    import threading as th
+    runner._decisions, runner._decisions_lock = collections.OrderedDict(), th.Lock()
+    runner._last_decided, runner._perception, runner._tier = None, None, None
+    runner._last_reasoning = ""
+    runner._note_decision(R())
+    assert runner.decision_for(7, "old") is not None
+    assert runner.decision_for(7, "new") is None
+    assert runner.decided_past(3, "old") and not runner.decided_past(3, "new")

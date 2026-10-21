@@ -1940,7 +1940,10 @@ class TieredVision:
             # The absent streak does not grow on tracking frames (review): a
             # cold search must not fire, paid, the moment tracking ends.
             return TRIGGER_TRACK
-        sighted = self._voted() if self.frame_vote else confirmed == DETECTED
+        # The vote never fires on a frame that does not itself show the target
+        # (review): the question and any steering need this frame's box.
+        sighted = (perception.status == DETECTED and self._voted()) if self.frame_vote \
+            else confirmed == DETECTED
         if sighted and self._last_confirmed != DETECTED:
             self._last_confirmed = DETECTED
             if self.frame_vote:
