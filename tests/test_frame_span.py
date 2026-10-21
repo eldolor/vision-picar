@@ -10,7 +10,7 @@ Unstamped frames (the simulator's) are counted exactly as before.
 
 import pytest
 
-from brain.arrival import ARRIVED, ArrivalCheck
+from brain.arrival import ARRIVED, SPAN_SLACK_S, ArrivalCheck
 from brain.perceive import ABSENT, DETECTED
 from brain.tiered import TRIGGER_CANDIDATE, TieredVision
 from tests.test_arrival import _FakeRobot, _scene
@@ -52,13 +52,13 @@ def _arrival_span(fps, stamped=True):
 @pytest.mark.parametrize("fps", [4.0, 9.0])
 def test_a_sighting_needs_the_same_time_at_any_frame_rate(fps):
     span, _ = _sighting_span(fps)
-    assert SPAN_S - 0.02 <= span <= SPAN_S + 1.0 / fps
+    assert SPAN_S - SPAN_SLACK_S <= span <= SPAN_S + 1.0 / fps
 
 
 @pytest.mark.parametrize("fps", [4.0, 9.0])
 def test_an_arrival_needs_the_same_time_at_any_frame_rate(fps):
     span, _ = _arrival_span(fps)
-    assert SPAN_S - 0.02 <= span <= SPAN_S + 1.0 / fps
+    assert SPAN_S - SPAN_SLACK_S <= span <= SPAN_S + 1.0 / fps
 
 
 def test_unstamped_frames_are_counted_as_before():
@@ -94,5 +94,30 @@ def test_a_break_in_the_run_restarts_the_clock():
         if scene["_tier"].get("trigger") == TRIGGER_CANDIDATE:
             fired = i
             break
-    # The run that counts starts at index 3; 0.25 s later is index 6 (0.333 s).
-    assert fired == 6
+    # The run that counts starts at index 3; 0.222 s later is index 5.
+    assert fired == 5
+
+
+def test_a_clock_step_back_counts_the_run_rather_than_holding_it():
+    statuses = [ABSENT, DETECTED, DETECTED]
+    tier = TieredVision(ScriptedPipeline(statuses), FakeCloud(), cold_search_after=99)
+    for stamp in (T0, T0 + 10.0, T0 + 10.05 - 3600):    # the second detected stamp jumped back
+        tier({"image_base64": "x", "image_width": 640, "captured_at": stamp})
+    assert tier.stats.triggers[TRIGGER_CANDIDATE] == 1
+    check, robot = ArrivalCheck(), _FakeRobot([0.2] * 360)
+    check.observe(_scene(0.0), robot, stamp=T0)
+    assert check.observe(_scene(0.0), robot, stamp=T0 - 3600)["state"] == ARRIVED
+
+
+def test_ticks_on_a_30fps_grid_still_confirm_on_the_second_frame():
+    # Review: the brain reads the newest 30 fps frame each 0.25 s tick, so
+    # stamps fall 0.217-0.283 s apart. Two ticks must stay two frames.
+    for gap in (0.217, 0.25, 0.283):
+        statuses = [ABSENT, DETECTED, DETECTED]
+        tier = TieredVision(ScriptedPipeline(statuses), FakeCloud(), cold_search_after=99)
+        for i, stamp in enumerate((T0, T0 + gap, T0 + 2 * gap)):
+            tier({"image_base64": "x", "image_width": 640, "captured_at": stamp})
+        assert tier.stats.triggers[TRIGGER_CANDIDATE] == 1, gap
+        check, robot = ArrivalCheck(), _FakeRobot([0.2] * 360)
+        check.observe(_scene(0.0), robot, stamp=T0)
+        assert check.observe(_scene(0.0), robot, stamp=T0 + gap)["state"] == ARRIVED, gap

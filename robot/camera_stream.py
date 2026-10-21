@@ -25,7 +25,10 @@ whose wheel loop and watchdog must not wait on a camera.
 
 Every frame carries `captured_at` (wall-clock seconds on this machine, when
 the reader got it). The brain times its counted rules by it (criterion 4):
-only differences between two of this camera's stamps are ever taken.
+only differences between two of this camera's stamps are ever taken, and a
+negative one (the clock stepped back) counts as unstamped. The stale check
+itself runs on the monotonic clock, so a clock step at boot (NTP) can never
+make a frozen camera's last frame look new.
 
 **Encoding is lazy.** A source yields either JPEG bytes (a UVC camera's own
 MJPEG, passed through untouched) or a picture that still needs encoding; the
@@ -63,19 +66,22 @@ class CameraStream:
     def __init__(self, open_source: Callable[[], object],
                  encode: Optional[Callable[[object], bytes]] = None,
                  stale_s: float = DEFAULT_STALE_S, reopen_s: float = DEFAULT_REOPEN_S,
-                 clock: Callable[[], float] = time.time, name: str = "camera"):
+                 clock: Callable[[], float] = time.time,
+                 monotonic: Callable[[], float] = time.monotonic, name: str = "camera"):
         self._open_source = open_source
         self._encode = encode
         self.stale_s = stale_s
         self.reopen_s = reopen_s
         self._clock = clock
+        self._monotonic = monotonic
         self.name = name
         self._lock = threading.Lock()
         self._raw = None              # the newest frame as the source gave it
         self._captured_at: Optional[float] = None
+        self._received_at: Optional[float] = None     # monotonic, for staleness
         self._seq = 0
-        self._jpeg_seq = 0            # which seq `_jpeg` encodes
-        self._jpeg: Optional[bytes] = None
+        self._b64_seq = 0             # which seq `_b64` encodes
+        self._b64: Optional[str] = None
         self._opens = 0
         self._failures = 0
         self._last_error: Optional[str] = None
@@ -108,18 +114,27 @@ class CameraStream:
                 # by the stale check on the read side, not here.
                 self._sleep(0.005)
                 continue
-            now = self._clock()
+            now, mono = self._clock(), self._monotonic()
             with self._lock:
+                if self._last_error is not None:
+                    logger.warning("%s: delivering again", self.name)
+                    self._last_error = None
                 self._raw = frame
                 self._captured_at = now
+                self._received_at = mono
                 self._seq += 1
         self._close_source()
 
     def _note_failure(self, why: str) -> None:
         with self._lock:
             self._failures += 1
+            repeat = why == self._last_error
             self._last_error = why
-        logger.warning("%s: %s", self.name, why)
+        # A camera that stays unplugged fails every `reopen_s`: said once per
+        # new reason, and the count is in `status()` (review: 7,200 lines an
+        # hour buried the safety log).
+        if not repeat:
+            logger.warning("%s: %s", self.name, why)
 
     def _close_source(self) -> None:
         source, self._source = self._source, None
@@ -141,19 +156,22 @@ class CameraStream:
             raw, captured_at, seq = self._raw, self._captured_at, self._seq
             if captured_at is None:
                 raise CameraStale(f"{self.name}: no frame yet ({self._last_error or 'opening'})")
-            age = self._clock() - captured_at
+            age = self._monotonic() - self._received_at
             if age > self.stale_s:
                 raise CameraStale(f"{self.name}: no new frame in {age:.1f}s "
                                   f"(limit {self.stale_s}s): {self._last_error or 'no error'}")
-            jpeg = self._jpeg if self._jpeg_seq == seq else None
-        if jpeg is None:
-            # Outside the lock: an encode must not hold up the reader.
+            b64 = self._b64 if self._b64_seq == seq else None
+        if b64 is None:
+            # Outside the lock: an encode must not hold up the reader. Two
+            # readers of one new frame may both encode it; the answer is the
+            # same, and the second finds it cached from then on.
             jpeg = raw if isinstance(raw, (bytes, bytearray)) else self._encode(raw)
+            b64 = base64.b64encode(jpeg).decode("ascii")
             with self._lock:
                 if self._seq == seq:
-                    self._jpeg, self._jpeg_seq = bytes(jpeg), seq
+                    self._b64, self._b64_seq = b64, seq
         return {
-            "image_base64": base64.b64encode(jpeg).decode("ascii"),
+            "image_base64": b64,
             "media_type": "image/jpeg",
             "room": "unknown",
             "captured_at": captured_at,
@@ -163,7 +181,8 @@ class CameraStream:
     def status(self) -> dict:
         """For `/health` -- description, never a verdict (control/health.py)."""
         with self._lock:
-            age = None if self._captured_at is None else round(self._clock() - self._captured_at, 3)
+            age = (None if self._received_at is None
+                   else round(self._monotonic() - self._received_at, 3))
             return {"frames": self._seq, "age_s": age, "opens": self._opens,
                     "failures": self._failures, "last_error": self._last_error,
                     # The reader's OS thread id, so a bench can read its own
@@ -195,16 +214,25 @@ class OpenCvSource:
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self._cap.set(cv2.CAP_PROP_FPS, fps)
-        self._passthrough = bool(self._cap.set(cv2.CAP_PROP_CONVERT_RGB, 0))
+        # Pass the camera's own JPEG through only when MJPG is what was
+        # actually negotiated: a camera that fell back to YUYV at this size
+        # would hand over raw bytes or a 2-channel array (review).
+        mjpg = int(self._cap.get(cv2.CAP_PROP_FOURCC)) == cv2.VideoWriter_fourcc(*"MJPG")
+        self._passthrough = mjpg and bool(self._cap.set(cv2.CAP_PROP_CONVERT_RGB, 0))
 
     def read(self):
         ok, frame = self._cap.read()
         if not ok:
             raise OSError("camera read failed")
-        if self._passthrough and frame.ndim == 2 and frame.shape[0] == 1:
-            return frame.tobytes()      # the camera's own JPEG
-        if self._passthrough and frame.ndim == 1:
-            return frame.tobytes()
+        if self._passthrough and (frame.ndim == 1 or (frame.ndim == 2 and frame.shape[0] == 1)):
+            data = frame.tobytes()
+            if data[:2] == b"\xff\xd8":
+                return data             # the camera's own JPEG
+            # Not MJPEG after all (a camera that fell back to YUYV at this
+            # size): raw bytes are no picture, so decode from now on.
+            self._passthrough = False
+            self._cap.set(self._cv2.CAP_PROP_CONVERT_RGB, 1)
+            return None
         return frame
 
     def close(self) -> None:

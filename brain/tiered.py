@@ -205,8 +205,6 @@ DEFAULT_CONSECUTIVE = 2
 # brain's 0.25 s tick. Counted in frames alone, the rule would shrink as the
 # camera got faster (R1c). Unstamped frames (the simulator's) count as before.
 DEFAULT_SIGHTING_SPAN_S = 0.25
-# Stamps jitter; a run this much short of the span still covers it.
-SPAN_SLACK_S = 0.02
 
 # How many consecutive `absent` frames before asking the cloud whether the
 # thing is even in this room. 2.4 gives no number; this one is a guess and
@@ -783,7 +781,8 @@ class TieredVision:
         # triggers' client, resolved at call time.
         self.confirm_vision_fn = confirm_vision_fn
         self.consecutive_frames = max(1, int(consecutive_frames))
-        self.sighting_span_s = sighting_span_s or None
+        # 0 (or None) is counted only; a negative span would time nothing.
+        self.sighting_span_s = max(0.0, float(sighting_span_s or 0)) or None
         self.cold_search_after = max(1, int(cold_search_after))
         # The distance rule, and the state it needs. `_odometry_at_call` is
         # the reading when the cloud last looked; None means "never looked
@@ -1801,10 +1800,9 @@ class TieredVision:
         """3.90 A: a run of stamped frames must also cover
         `sighting_span_s`, so the rule means the same time at any frame
         rate. Unstamped frames, or no span set: counted only, as before."""
-        if (self.sighting_span_s is None or self._frame_stamp is None
-                or self._run_since is None):
-            return True
-        return self._frame_stamp - self._run_since >= self.sighting_span_s - SPAN_SLACK_S
+        from brain.arrival import run_spans   # late, as arrival imports the tier late
+
+        return run_spans(self._run_since, self._frame_stamp, self.sighting_span_s)
 
     def _trigger_for(self, perception: Perception) -> Optional[str]:
         if not self._started:

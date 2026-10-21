@@ -215,6 +215,8 @@ brain:
   # the phone), the run must also span this many seconds -- today's two
   # frames at the 0.25 s tick -- so a faster camera does not shorten it (R1c).
   # 0: counted only. The simulator's frames are not stamped: counted as before.
+  # Arrival's own span is brain/arrival.py's ARRIVAL_SPAN_S (0.25 s), not this
+  # key; the band, out-of-vocabulary and cold-search counts stay in frames.
   tier_sighting_span_s: 0.25
   # How many consecutive "absent" frames before asking the cloud whether the
   # target is even in this room. Without it a target outside COCO's 80 never

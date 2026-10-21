@@ -56,7 +56,22 @@ ARRIVAL_FRAMES = 2
 # span this -- today's two frames at the brain's 0.25 s tick -- so a faster
 # camera does not shorten the rule (R1c). Unstamped frames count as before.
 ARRIVAL_SPAN_S = 0.25
-SPAN_SLACK_S = 0.02
+# Stamps fall on the camera's frame grid (33 ms at 30 fps) and the brain's
+# tick jitters, so two ticks 0.25 s apart read stamps 0.217-0.283 s apart: a
+# run this much short of the span still covers it, or most runs would wait a
+# third tick on the car (review).
+SPAN_SLACK_S = 0.05
+
+
+def run_spans(since: Optional[float], stamp: Optional[float],
+              span_s: Optional[float]) -> bool:
+    """3.90 A: does a run of frames stamped from `since` to `stamp` cover
+    `span_s`? Unstamped, no span set, or a negative span (the wall clock
+    stepped back): counted only, True. Shared by arrival and the tier's
+    `candidate_sighting` so the two rules time alike."""
+    if not span_s or since is None or stamp is None or stamp < since:
+        return True
+    return stamp - since >= span_s - SPAN_SLACK_S
 # Beams either side of the bearing, read as a median (see _range_at). Five
 # degrees at 40 cm is 3.5 cm of arc: any object worth finding covers it.
 ARRIVAL_BEAM_HALF_DEG = 2
@@ -208,8 +223,7 @@ class ArrivalCheck:
             self._local_at = self.clock()   # the streak's last counted frame (review)
         self.source = SOURCE_LOCAL if SOURCE_LOCAL in (source, self.source) else source
         readout["source"] = self.source
-        spans = (self.span_s is None or stamp is None or self._streak_since is None
-                 or stamp - self._streak_since >= self.span_s - SPAN_SLACK_S)
+        spans = run_spans(self._streak_since, stamp, self.span_s)
         state = ARRIVED if self.streak >= self.frames and spans else APPROACHING
         self._last = {"state": state, "streak": self.streak,
                       "reason": (f"target centred at {readout['range_m']} m, "

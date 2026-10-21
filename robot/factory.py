@@ -204,17 +204,27 @@ def _backend(config: dict) -> RobotInterface:
                                     secret=os.environ.get("APP_SHARED_SECRET", ""))
             lidar = _lidar(config)
             camera = _camera(config)
-            return HardwareRobot(sensors.board_path, sensors=sensors, track_scrub=1.0,
-                                 **({"lidar": lidar} if lidar else {}),
-                                 **({"camera": camera} if camera else {}))
+            try:
+                return HardwareRobot(sensors.board_path, sensors=sensors, track_scrub=1.0,
+                                     **({"lidar": lidar} if lidar else {}),
+                                     **({"camera": camera} if camera else {}))
+            except Exception:
+                if camera is not None:
+                    camera.close()
+                raise
         port = os.environ.get("ROBOT_SERIAL") or (config.get("hardware") or {}).get("serial_port")
         if not port:
             raise ValueError("mode: hardware needs ROBOT_SERIAL (or hardware.serial_port) "
                              "-- the ESP32 driver board's serial device")
         lidar = _lidar(config)
         camera = _camera(config)
-        return HardwareRobot(port, track_scrub=_track_scrub(config),
-                             **({"lidar": lidar} if lidar else {}),
-                             **({"camera": camera} if camera else {}))
+        try:
+            return HardwareRobot(port, track_scrub=_track_scrub(config),
+                                 **({"lidar": lidar} if lidar else {}),
+                                 **({"camera": camera} if camera else {}))
+        except Exception:
+            if camera is not None:
+                camera.close()      # its reader holds the device (review)
+            raise
 
     raise ValueError(f"Unknown robot mode in config: {mode!r}")

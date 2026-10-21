@@ -353,7 +353,7 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
     """
     kwargs = {
         "consecutive_frames": config["tier_consecutive_frames"],
-        "sighting_span_s": config["tier_sighting_span_s"] or None,
+        "sighting_span_s": config["tier_sighting_span_s"],
         "cold_search_after": config["tier_cold_search_after"],
         # 0 in config means "off"; the policy takes None for that, because
         # a 0cm bar would fire on every frame rather than never.
