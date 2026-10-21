@@ -580,8 +580,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   rows recorded no calls; `steer_check` scored on the wrong band;
   `spec_lint` gaps. The firmware patch is clean. **Waiting on the user:**
   nothing: the deploys and the env file done 2026-10-20, the decisions
-  made 2026-10-21; to build: M2.7 (distinct battery samples) and K5.3
-  (keepout marks cleared at a mission's end); M1.5-M1.11 a sim-honesty
+  made 2026-10-21; M2.7 built 2026-10-21 (a low battery read counts only
+  as a new board sample: a changed value, or the same one after
+  `BATTERY_SAMPLE_S` 12 s); to build: K5.3 (keepout marks cleared at a
+  mission's end); M1.5-M1.11 a sim-honesty
   section after the Rover's numbers. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
