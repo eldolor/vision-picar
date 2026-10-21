@@ -76,6 +76,7 @@ to decide on, unlike a flaky model response that might succeed on retry.
 """
 
 import collections
+import uuid
 import logging
 import threading
 import time
@@ -114,6 +115,9 @@ class TeleopRobot(RobotInterface):
         self._seq = 0
         self._last_pushed_at: Optional[float] = None
         self._recent = collections.deque(maxlen=FRAME_BUFFER)   # 3.90 E
+        # 3.90 E: this body's life. A recorder whose cursor came from another
+        # (the robot server restarted) must start over, whatever the seqs say.
+        self.boot_id = uuid.uuid4().hex[:12]
         # Bounded (3.76 M2, as GridWorld.log): every push and verb lands
         # here for the robot server's life, and only tests read it.
         self.log = collections.deque(maxlen=2000)
@@ -153,12 +157,22 @@ class TeleopRobot(RobotInterface):
         (`get_camera_frame()`), so a slow brain acts on the present. `lost`
         counts frames newer than `after_seq` that already fell out of the
         buffer: the recorder says so in its walk instead of thinning it
-        silently."""
+        silently. `reset` is true when `after_seq` is ahead of anything this
+        body has numbered -- the robot server restarted and its seq began
+        again -- and the frames returned are then every one it kept (review:
+        a recorder holding an old seq heard "nothing new" for good). A
+        restart that has already numbered past the cursor is seen only by
+        `boot_id`, which the recorder compares (review)."""
+        after_seq = max(0, int(after_seq))
         with self._lock:
+            reset = after_seq > self._seq
+            if reset:
+                after_seq = 0
             frames = [f for f in self._recent if f["metadata"]["seq"] > after_seq]
             oldest = self._recent[0]["metadata"]["seq"] if self._recent else self._seq + 1
             lost = max(0, oldest - after_seq - 1) if after_seq < self._seq else 0
-            return {"frames": frames, "latest_seq": self._seq, "lost": lost}
+            return {"frames": frames, "latest_seq": self._seq, "lost": lost, "reset": reset,
+                    "boot_id": self.boot_id}
 
     # ---------- sensing ----------
 

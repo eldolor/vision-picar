@@ -221,7 +221,7 @@ def test_protected_routes_require_secret_when_set(monkeypatch):
         bodies = {"/action": {"action": "STOP"}, "/teleop/frame": {"image_base64": "X"}}
         for method, path in [
             ("post", "/action"), ("post", "/stop"), ("get", "/distance"),
-            ("get", "/frame"), ("post", "/teleop/frame"),
+            ("get", "/frame"), ("post", "/teleop/frame"), ("get", "/teleop/frames"),
         ]:
             resp = getattr(client, method)(
                 path,

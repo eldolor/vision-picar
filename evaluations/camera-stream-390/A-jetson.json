@@ -1,0 +1,44 @@
+{
+  "seconds": 600.0,
+  "polls": 3000,
+  "stale_503": 0,
+  "age_ms": {
+    "p50": 38.5,
+    "p90": 46.1,
+    "max": 66.7
+  },
+  "reader_cpu_pct_of_one_core": 0.23,
+  "wheel_loop": {
+    "moving_ticks": 8673,
+    "late_ticks": 0,
+    "max_dt_s": 0.0844
+  },
+  "camera": {
+    "frames": 20603,
+    "age_s": 0.019,
+    "opens": 1,
+    "failures": 0,
+    "last_error": null,
+    "reader_tid": 1082136
+  },
+  "mission_ended": [
+    {
+      "after_s": 239.8,
+      "outcome": "exhausted"
+    },
+    {
+      "after_s": 579.8,
+      "outcome": "exhausted"
+    }
+  ],
+  "bars": {
+    "age_p90_ms": 100,
+    "late_ticks": 0,
+    "reader_cpu_pct": 10
+  },
+  "met": {
+    "criterion_1": true,
+    "criterion_3_late": true,
+    "criterion_3_cpu": true
+  }
+}

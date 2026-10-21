@@ -57,6 +57,17 @@ def _camera(config: dict):
     return CameraStream(lambda: OpenCvSource(device), encode=encode_jpeg, name="camera")
 
 
+def _close_all(*devices) -> None:
+    """A failed HardwareRobot leaves the camera and lidar readers it was
+    given holding their devices; close them, each on its own."""
+    for device in devices:
+        if device is not None and hasattr(device, "close"):
+            try:
+                device.close()
+            except Exception:  # noqa: BLE001 -- already failing; best-effort
+                pass
+
+
 def _track_scrub(config: dict) -> float:
     """3.35: the real chassis' effective/geometric track ratio. TRACK_SCRUB
     wins over `hardware.track_scrub`; 1.0 (no correction) when neither is
@@ -209,8 +220,7 @@ def _backend(config: dict) -> RobotInterface:
                                      **({"lidar": lidar} if lidar else {}),
                                      **({"camera": camera} if camera else {}))
             except Exception:
-                if camera is not None:
-                    camera.close()
+                _close_all(camera, lidar)
                 raise
         port = os.environ.get("ROBOT_SERIAL") or (config.get("hardware") or {}).get("serial_port")
         if not port:
@@ -223,8 +233,7 @@ def _backend(config: dict) -> RobotInterface:
                                  **({"lidar": lidar} if lidar else {}),
                                  **({"camera": camera} if camera else {}))
         except Exception:
-            if camera is not None:
-                camera.close()      # its reader holds the device (review)
+            _close_all(camera, lidar)     # their readers hold the devices (review)
             raise
 
     raise ValueError(f"Unknown robot mode in config: {mode!r}")

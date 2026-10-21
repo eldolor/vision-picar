@@ -46,6 +46,8 @@ logger = logging.getLogger(__name__)
 
 # A frame older than this is not served (criterion 2: 503 within 1.0 s).
 DEFAULT_STALE_S = 0.5
+# Non-JPEG buffers in a row before pass-through is given up for decoding.
+BAD_FRAMES = 5
 # Between attempts to open a source that is not answering (criterion 2:
 # delivering again within 3 s of a replug).
 DEFAULT_REOPEN_S = 0.5
@@ -116,13 +118,13 @@ class CameraStream:
                 continue
             now, mono = self._clock(), self._monotonic()
             with self._lock:
-                if self._last_error is not None:
-                    logger.warning("%s: delivering again", self.name)
-                    self._last_error = None
+                recovered, self._last_error = self._last_error is not None, None
                 self._raw = frame
                 self._captured_at = now
                 self._received_at = mono
                 self._seq += 1
+            if recovered:
+                logger.warning("%s: delivering again", self.name)   # outside the lock (review)
         self._close_source()
 
     def _note_failure(self, why: str) -> None:
@@ -192,6 +194,11 @@ class CameraStream:
     def close(self) -> None:
         self._running = False
         self._thread.join(timeout=2.0)
+        if self._thread.is_alive():
+            # The reader is stuck in a read (a hung USB camera): release the
+            # device from here, or it stays busy for the process' life
+            # (review). Releasing under a blocked read is what unblocks it.
+            self._close_source()
 
 
 class OpenCvSource:
@@ -219,6 +226,7 @@ class OpenCvSource:
         # would hand over raw bytes or a 2-channel array (review).
         mjpg = int(self._cap.get(cv2.CAP_PROP_FOURCC)) == cv2.VideoWriter_fourcc(*"MJPG")
         self._passthrough = mjpg and bool(self._cap.set(cv2.CAP_PROP_CONVERT_RGB, 0))
+        self._bad = 0
 
     def read(self):
         ok, frame = self._cap.read()
@@ -227,11 +235,17 @@ class OpenCvSource:
         if self._passthrough and (frame.ndim == 1 or (frame.ndim == 2 and frame.shape[0] == 1)):
             data = frame.tobytes()
             if data[:2] == b"\xff\xd8":
+                self._bad = 0
                 return data             # the camera's own JPEG
-            # Not MJPEG after all (a camera that fell back to YUYV at this
-            # size): raw bytes are no picture, so decode from now on.
-            self._passthrough = False
-            self._cap.set(self._cv2.CAP_PROP_CONVERT_RGB, 1)
+            # Not a JPEG: dropped. One is a cheap camera's truncated frame;
+            # BAD_FRAMES in a row is a camera that is not sending MJPEG, and
+            # its bytes are decoded from then on (review).
+            self._bad += 1
+            if self._bad >= BAD_FRAMES and self._cap.set(self._cv2.CAP_PROP_CONVERT_RGB, 1):
+                # Only if the backend took it (review): otherwise raw bytes
+                # keep being dropped, and the stream goes stale -- a 503,
+                # never noise served as a picture.
+                self._passthrough = False
             return None
         return frame
 

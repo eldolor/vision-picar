@@ -749,13 +749,15 @@ class HardwareRobot(RobotInterface):
         finally:
             self._running = False
             self._reader_thread.join(timeout=1.0)
-            os.close(self._fd)
             try:
-                if self.lidar is not None and hasattr(self.lidar, "close"):
-                    self.lidar.close()
+                os.close(self._fd)
             finally:
-                if self.camera is not None:
-                    self.camera.close()
+                try:
+                    if self.lidar is not None and hasattr(self.lidar, "close"):
+                        self.lidar.close()
+                finally:
+                    if self.camera is not None:
+                        self.camera.close()
 
     def __getattr__(self, name):
         # The sim's body extras (`world`, for the world model's truth) when

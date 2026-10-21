@@ -71,7 +71,9 @@ def run_spans(since: Optional[float], stamp: Optional[float],
     `candidate_sighting` so the two rules time alike."""
     if not span_s or since is None or stamp is None or stamp < since:
         return True
-    return stamp - since >= span_s - SPAN_SLACK_S
+    # The slack never more than a fifth of the span (review), so a short
+    # span cannot be met by one frame read twice.
+    return stamp - since >= span_s - min(SPAN_SLACK_S, 0.2 * span_s)
 # Beams either side of the bearing, read as a median (see _range_at). Five
 # degrees at 40 cm is 3.5 cm of arc: any object worth finding covers it.
 ARRIVAL_BEAM_HALF_DEG = 2

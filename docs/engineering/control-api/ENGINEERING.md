@@ -88,7 +88,8 @@ Goal routes answer **501** on a world without `set_goal` (anything but
 
 | Route | Secret | Behaviour |
 |---|---|---|
-| `POST /teleop/frame` | yes | `{"image_base64", "media_type"}` -> `{"received": true, "seq"}`; **400** if the body has no `push_frame` |
+| `POST /teleop/frame` | yes | `{"image_base64" (at most 4 MB as base64, 3.90 E), "media_type"}` -> `{"received": true, "seq"}`; **400** if the body has no `push_frame` |
+| `GET /teleop/frames?after=<seq>` | yes | 3.90 E: the teleop body's kept frames (the last 16) newer than `seq`, oldest first -> `{"frames", "latest_seq", "lost", "reset", "boot_id"}`. For the brain's walk recorder; decisions read `/frame`. `lost` counts frames that fell out of the buffer; `reset` and `boot_id` say the robot server restarted. **400** if the body keeps no frames |
 | `GET /sim/objects` | yes | `{"sim_time_s", "objects": [{"x", "y", "name", "mover"}]}`; **501** with no simulated house (searched through `.inner` up to 3 levels) |
 | `POST /sim/objects/move` | yes | `{"src": [x, y], "dst": [x, y]}`; 422 if not pairs, 409 if the move is illegal. Both sim routes answer with `GridWorld.describe_objects()`; under the fake board (3.36) they are forwarded to the body program's own `/sim/objects` routes through `RemoteGrid` |
 | `GET /`, `/app.js`, `/manifest.json`, `/icons/icon-192.png`, `/icons/icon-512.png`, `/icons/apple-touch-icon.png` | no | the twin. `app.js` is served `Cache-Control: no-cache` |

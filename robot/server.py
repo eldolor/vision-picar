@@ -162,7 +162,9 @@ class RelatchRequest(BaseModel):
 
 
 class TeleopFrameRequest(BaseModel):
-    image_base64: str
+    # 3.90 E: bounded, now that the body keeps 16 of them (review): the
+    # recording routes' own 4 MB a frame, as base64.
+    image_base64: str = Field(max_length=4 * 1024 * 1024 * 4 // 3 + 4)
     media_type: str = "image/jpeg"
 
 
