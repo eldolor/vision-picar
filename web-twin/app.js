@@ -3874,8 +3874,10 @@
     const status = await brainApi("GET", "/mission/status");
     if (state.recordByBrain && status && status.recording) {
       // Images stored so far; rows follow in batches (3.90 E).
-      state.recordSaved = status.recording.written || status.recording.saved || 0;
-      state.recordFailed = status.recording.failed || 0;
+      // Frames a replay can use: stored, with a row stored or to come.
+      state.recordSaved = ("usable" in status.recording ? status.recording.usable
+        : status.recording.saved) || 0;
+      state.recordFailed = (status.recording.failed || 0) + (status.recording.rows_failed || 0);
       state.recordLost = status.recording.lost || 0;
       renderRecordStatus();
     }

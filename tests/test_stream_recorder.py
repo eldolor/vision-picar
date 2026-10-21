@@ -295,9 +295,9 @@ def test_a_failed_append_is_counted_never_retried_and_the_walk_still_finishes(tm
     runner.running.clear()
     assert rec.finished.wait(5)
     assert len(calls) == 1                       # one attempt, no retry
-    assert rec.status()["saved"] == 0 and rec.status()["failed"] == 3
+    assert rec.status()["saved"] == 0 and rec.status()["rows_failed"] == 3
     meta = json.loads((tmp_path / "w1" / "meta.json").read_text())
-    assert meta["frames_failed"] == 3 and "finished_at" in meta
+    assert meta["frames_without_rows"] == 3 and "finished_at" in meta
 
 
 def test_a_failed_batch_mid_walk_never_overwrites_a_stored_frame(tmp_path, monkeypatch):
@@ -329,4 +329,27 @@ def test_a_failed_batch_mid_walk_never_overwrites_a_stored_frame(tmp_path, monke
     files = [r["file"] for r in rows]
     assert len(files) == len(set(files))                     # no name reused
     assert len(list((tmp_path / "w1").glob("frame-*"))) == 6  # every image kept
-    assert rec.status()["failed"] == 2 and rec.status()["saved"] == 4
+    assert rec.status()["rows_failed"] == 2 and rec.status()["saved"] == 4
+
+
+def test_a_lookup_that_raises_costs_one_decision_not_the_walk(tmp_path):
+    # Final review: a raising decided_past/decision_for ended the recorder,
+    # and its emergency finish then hit a TypeError, leaving no meta.
+    robot = TeleopRobot()
+    for _ in range(3):
+        robot.push_frame(JPEG)
+
+    class Broken(FakeRunner):
+        def decided_past(self, seq, boot_id=None):
+            raise RuntimeError("boom")
+
+        def decision_for(self, seq, boot_id=None):
+            raise RuntimeError("boom")
+
+    runner = Broken()
+    store = LocalWalkStore(tmp_path)
+    rec = StreamRecorder(store, "w1", robot.frames_after, runner, poll_s=0.01).start(after=0)
+    runner.running.clear()
+    assert rec.finished.wait(5)
+    assert len(_rows(store, "w1")) == 3
+    assert "finished_at" in json.loads((tmp_path / "w1" / "meta.json").read_text())

@@ -568,11 +568,10 @@ def create_app(
             # before any model is loaded (a RemoteRobot has the methods
             # whatever the server's mode, so it is asked, cheaply). Any
             # failure is the start's 400, never a bare 500 (review).
+            latest = _frames_reader(robot)[1]      # its own ValueError: not a teleop body
             try:
-                _frames_reader(robot)[1]()
-            except ValueError:
-                raise
-            except Exception as e:  # noqa: BLE001
+                latest()
+            except Exception as e:  # noqa: BLE001 -- a 200 that is not JSON is a ValueError too
                 raise ValueError(f"record_walk: the robot's frames could not be read: {e}")
         # Checked before the tiered clients are built, so a refused start
         # leaves none open (review, 2026-10-16).
