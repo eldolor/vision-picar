@@ -13,7 +13,11 @@ SELECT_EVERY iterations the greedy policy (highest score) is run on the
 selection houses; the best is written in `brain/explore_goal_net.json`'s
 format.
 
-    python evaluations/explore-365/train_net.py OUT.json
+    python evaluations/explore-365/train_net.py OUT.json [INIT.json]
+
+INIT.json (3.88 B's clone then PPO): start the linear part from its
+`weights` instead of `brain/explore_goal_weights.json`. `PPO_WORKERS` caps
+the worker processes.
 """
 import json
 import math
@@ -37,7 +41,7 @@ HOUSES, ROLLOUTS, ITERS, EPOCHS = 16, 8, 80, 4
 LR, CLIP, ENTROPY = 1e-3, 0.2, 0.01
 HIDDEN = 32
 SELECT_EVERY = 10
-WORKERS = max(1, (os.cpu_count() or 4) - 2)
+WORKERS = int(os.environ.get("PPO_WORKERS", max(1, (os.cpu_count() or 4) - 2)))
 
 
 class Net(torch.nn.Module):
@@ -85,7 +89,17 @@ class Sampler(NetGoalPolicy):
         return i
 
 
+def _yield() -> None:
+    """3.88 B: pause while another session's live run holds the heavy-run lock."""
+    here = os.path.join(os.path.dirname(__file__), "..", "goal-tap-388")
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    from oracle import yield_to_live_runs
+    yield_to_live_runs()
+
+
 def _rollout(args):
+    _yield()
     house, params, seed = args
     pol = Sampler(params, seed)
     row = run_house(house, policy=pol)
@@ -94,6 +108,7 @@ def _rollout(args):
 
 
 def _greedy(args):
+    _yield()
     house, params = args
     return run_house(house, policy=NetGoalPolicy(params["weights"],
                                                  [(l["W"], l["b"]) for l in params["layers"]]))
@@ -132,16 +147,23 @@ def ppo_update(net, opt, missions):
             "clipped": round(float(((ratio - 1).abs() > CLIP).float().mean()), 3)}
 
 
-def main(out: str) -> None:
+def main(out: str, init: str = None) -> None:
     torch.manual_seed(SEED)
     rng = random.Random(SEED)
     u = usable()
     train, select = u[300:570], u[100:200]
-    net = Net(LinearGoalPolicy.load().weights)
+    if init:
+        with open(init) as f:
+            data = json.load(f)
+        # clone.json keeps its weights at the top; dagger.json under `best`.
+        w_lin = data["weights"] if "weights" in data else data["best"]["weights"]
+    else:
+        w_lin = LinearGoalPolicy.load().weights
+    net = Net(w_lin)
     opt = torch.optim.Adam(net.parameters(), lr=LR)
     log = {"features": list(FEATURES), "seed": SEED, "houses": HOUSES, "rollouts": ROLLOUTS,
            "epochs": EPOCHS, "lr": LR, "clip": CLIP, "entropy": ENTROPY,
-           "iters": [], "selection": []}
+           "init": init or "brain/explore_goal_weights.json", "iters": [], "selection": []}
     best = None
     t0 = time.time()
     with ProcessPoolExecutor(max_workers=WORKERS) as ex:
@@ -184,4 +206,4 @@ def main(out: str) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(*sys.argv[1:3])

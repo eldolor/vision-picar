@@ -1,0 +1,512 @@
+{
+ "features": [
+  "path",
+  "turn",
+  "is_view",
+  "size",
+  "area",
+  "unknown_near",
+  "unseen_near",
+  "failed",
+  "reached",
+  "view_late"
+ ],
+ "rounds": [
+  {
+   "round": 1,
+   "driven": {
+    "n": 270,
+    "found": 261,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 8,
+    "median_metres_found": 27.9,
+    "mean_goals_found": 15.52,
+    "mean_reward": 0.0716
+   },
+   "new_choices": 4324,
+   "choices": 5144,
+   "weights": [
+    -0.26071,
+    -0.22382,
+    -0.41863,
+    2.18343,
+    0.07206,
+    3.36414,
+    0.46365,
+    0.0,
+    -0.11466,
+    0.27471
+   ],
+   "selection": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7,
+    "median_metres_found": 30.6,
+    "mean_goals_found": 8.56,
+    "mean_reward": 0.2418
+   },
+   "held_out_agreement": {
+    "n": 296,
+    "strict": 0.2568,
+    "tie_aware": 0.2804,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   }
+  },
+  {
+   "round": 2,
+   "driven": {
+    "n": 270,
+    "found": 267,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6,
+    "median_metres_found": 32.8,
+    "mean_goals_found": 9.04,
+    "mean_reward": 0.1948
+   },
+   "new_choices": 2318,
+   "choices": 7462,
+   "weights": [
+    -0.22038,
+    -0.10204,
+    -0.32168,
+    2.43097,
+    0.06704,
+    3.17584,
+    0.55648,
+    0.0,
+    0.05772,
+    0.30805
+   ],
+   "selection": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.5,
+    "median_metres_found": 36.9,
+    "mean_goals_found": 8.3,
+    "mean_reward": 0.3074
+   },
+   "held_out_agreement": {
+    "n": 296,
+    "strict": 0.2432,
+    "tie_aware": 0.2669,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   }
+  },
+  {
+   "round": 3,
+   "driven": {
+    "n": 270,
+    "found": 268,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7.0,
+    "median_metres_found": 38.25,
+    "mean_goals_found": 10.48,
+    "mean_reward": 0.0647
+   },
+   "new_choices": 2700,
+   "choices": 10162,
+   "weights": [
+    -0.11989,
+    -0.04698,
+    -0.34697,
+    2.59526,
+    0.10665,
+    3.01037,
+    0.6017,
+    -0.01239,
+    0.12014,
+    0.36855
+   ],
+   "selection": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 33.75,
+    "mean_goals_found": 8.2,
+    "mean_reward": 0.3063
+   },
+   "held_out_agreement": {
+    "n": 296,
+    "strict": 0.2399,
+    "tie_aware": 0.2635,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   }
+  },
+  {
+   "round": 4,
+   "driven": {
+    "n": 270,
+    "found": 264,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 35.7,
+    "mean_goals_found": 9.42,
+    "mean_reward": 0.0287
+   },
+   "new_choices": 2575,
+   "choices": 12737,
+   "weights": [
+    -0.06775,
+    -0.02726,
+    -0.40399,
+    2.66202,
+    0.11066,
+    2.89647,
+    0.6426,
+    -0.00808,
+    0.22575,
+    0.43497
+   ],
+   "selection": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 33.3,
+    "mean_goals_found": 8.16,
+    "mean_reward": 0.299
+   },
+   "held_out_agreement": {
+    "n": 296,
+    "strict": 0.2432,
+    "tie_aware": 0.2669,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   }
+  },
+  {
+   "round": 5,
+   "driven": {
+    "n": 270,
+    "found": 266,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 37.650000000000006,
+    "mean_goals_found": 9.82,
+    "mean_reward": 0.0054
+   },
+   "new_choices": 2544,
+   "choices": 15281,
+   "weights": [
+    -0.05309,
+    -0.00225,
+    -0.38886,
+    2.71386,
+    0.11806,
+    2.78984,
+    0.65121,
+    -0.00754,
+    0.27833,
+    0.34654
+   ],
+   "selection": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 33.15,
+    "mean_goals_found": 7.74,
+    "mean_reward": 0.328
+   },
+   "held_out_agreement": {
+    "n": 296,
+    "strict": 0.2432,
+    "tie_aware": 0.2703,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   }
+  },
+  {
+   "round": 6,
+   "driven": {
+    "n": 270,
+    "found": 264,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 38.25,
+    "mean_goals_found": 9.5,
+    "mean_reward": 0.0125
+   },
+   "new_choices": 2508,
+   "choices": 17789,
+   "weights": [
+    -0.04066,
+    0.01229,
+    -0.38627,
+    2.74501,
+    0.10815,
+    2.70512,
+    0.67791,
+    -0.00658,
+    0.33634,
+    0.35584
+   ],
+   "selection": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 33.15,
+    "mean_goals_found": 7.96,
+    "mean_reward": 0.2997
+   },
+   "held_out_agreement": {
+    "n": 296,
+    "strict": 0.2432,
+    "tie_aware": 0.2703,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   }
+  },
+  {
+   "round": 7,
+   "driven": {
+    "n": 270,
+    "found": 265,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7,
+    "median_metres_found": 40.8,
+    "mean_goals_found": 9.56,
+    "mean_reward": 0.0097
+   },
+   "new_choices": 2489,
+   "choices": 20278,
+   "weights": [
+    -0.0276,
+    0.02498,
+    -0.38059,
+    2.76862,
+    0.09952,
+    2.67114,
+    0.68035,
+    -0.0049,
+    0.35906,
+    0.36333
+   ],
+   "selection": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 33.15,
+    "mean_goals_found": 8.03,
+    "mean_reward": 0.2938
+   },
+   "held_out_agreement": {
+    "n": 296,
+    "strict": 0.2432,
+    "tie_aware": 0.2703,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   }
+  },
+  {
+   "round": 8,
+   "driven": {
+    "n": 270,
+    "found": 264,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7.0,
+    "median_metres_found": 41.45,
+    "mean_goals_found": 10.02,
+    "mean_reward": -0.0887
+   },
+   "new_choices": 2654,
+   "choices": 22932,
+   "weights": [
+    -0.02081,
+    0.03671,
+    -0.37987,
+    2.7844,
+    0.09254,
+    2.62623,
+    0.67646,
+    -0.00535,
+    0.35908,
+    0.38661
+   ],
+   "selection": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 33.75,
+    "mean_goals_found": 8.14,
+    "mean_reward": 0.2609
+   },
+   "held_out_agreement": {
+    "n": 296,
+    "strict": 0.2399,
+    "tie_aware": 0.2669,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   }
+  },
+  {
+   "round": 9,
+   "driven": {
+    "n": 270,
+    "found": 265,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7,
+    "median_metres_found": 42.1,
+    "mean_goals_found": 10.24,
+    "mean_reward": -0.0966
+   },
+   "new_choices": 2670,
+   "choices": 25602,
+   "weights": [
+    -0.01325,
+    0.03905,
+    -0.38345,
+    2.80825,
+    0.08376,
+    2.57644,
+    0.68116,
+    -0.00371,
+    0.35719,
+    0.40639
+   ],
+   "selection": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 33.75,
+    "mean_goals_found": 8,
+    "mean_reward": 0.2867
+   },
+   "held_out_agreement": {
+    "n": 296,
+    "strict": 0.2432,
+    "tie_aware": 0.2703,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   }
+  },
+  {
+   "round": 10,
+   "driven": {
+    "n": 270,
+    "found": 263,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7,
+    "median_metres_found": 42.3,
+    "mean_goals_found": 9.7,
+    "mean_reward": -0.0998
+   },
+   "new_choices": 2641,
+   "choices": 28243,
+   "weights": [
+    -0.00948,
+    0.04021,
+    -0.38681,
+    2.82289,
+    0.07942,
+    2.53724,
+    0.68328,
+    -0.00365,
+    0.34562,
+    0.41305
+   ],
+   "selection": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 33.75,
+    "mean_goals_found": 8.07,
+    "mean_reward": 0.2693
+   },
+   "held_out_agreement": {
+    "n": 296,
+    "strict": 0.2432,
+    "tie_aware": 0.2703,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   }
+  }
+ ],
+ "best": {
+  "round": 5,
+  "driven": {
+   "n": 270,
+   "found": 266,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 6.0,
+   "median_metres_found": 37.650000000000006,
+   "mean_goals_found": 9.82,
+   "mean_reward": 0.0054
+  },
+  "new_choices": 2544,
+  "choices": 15281,
+  "weights": [
+   -0.05309,
+   -0.00225,
+   -0.38886,
+   2.71386,
+   0.11806,
+   2.78984,
+   0.65121,
+   -0.00754,
+   0.27833,
+   0.34654
+  ],
+  "selection": {
+   "n": 100,
+   "found": 100,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 6.0,
+   "median_metres_found": 33.15,
+   "mean_goals_found": 7.74,
+   "mean_reward": 0.328
+  },
+  "held_out_agreement": {
+   "n": 296,
+   "strict": 0.2432,
+   "tie_aware": 0.2703,
+   "rule_strict": 0.152,
+   "rule_tie_aware": 0.152
+  },
+  "features": [
+   "path",
+   "turn",
+   "is_view",
+   "size",
+   "area",
+   "unknown_near",
+   "unseen_near",
+   "failed",
+   "reached",
+   "view_late"
+  ]
+ }
+}

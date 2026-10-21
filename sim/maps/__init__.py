@@ -27,7 +27,7 @@ def build_world(name: str = "starter_house"):
         world = build()
         world.map_name = name
         return world
-    raise ValueError(f"unknown SIM_MAP {name!r} (starter_house | scaled_house | home_first_floor | complex_house | complex_house_hazards | procthor:val:<0-999> | procthor:test:<0-999>)")
+    raise ValueError(f"unknown SIM_MAP {name!r} (starter_house | scaled_house | home_first_floor | complex_house | complex_house_hazards | procthor:val:<0-999> | procthor:test:<0-999> | procthor:train:<0-999>)")
 
 
 def build_movers(house: str, scenario: str):

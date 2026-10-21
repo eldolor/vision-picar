@@ -608,8 +608,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   numbers the goals; a tap is a pick, never `/world/goal` (UI test pinned).
   Live 1 of 2 found, 0 contacts, 0.0 cm moved in pauses; run 2 failed on
   `dev`'s escape creep outliving `RemoteRobot`'s 10 s timeout under
-  `drive: ros` (fixed by 3.89, below). Up to 71 candidates a choice. B (oracle,
-  cloning, DAgger) next on the same branch; C (the user's taps) only if B passes.
+  `drive: ros` (fixed by 3.89, below). Up to 71 candidates a choice.
+  **B (an oracle as the expert) FAILED, merged 2026-10-21; C and D dropped.**
+  The oracle (shortest true floor path to the target) is the ceiling: median
+  3 goals vs the rule's 9 on 600 fresh houses (`procthor:train:<i>`, the
+  first 1,000 of ProcTHOR's `train` split, 615 usable). Cloning it into the
+  ten weights agrees 29% (bar 60%; it underfits); DAgger did not help; clone
+  then PPO won selection and on the fresh houses cut median goals 22% (bar
+  20%) but found 590 vs 596 (bar 590.04, the user's strict reading) with
+  +8% metres. Default stays `rule`. Reopen with richer features, not more
+  labels. `evaluations/goal-tap-388/`.
 * **The escape creep inside the brain's timeout (3.89), merged 2026-10-21.**
   Under `drive: ros` nav2's `collision_monitor` (`PolygonSlow`, 13-33 cm
   ahead, ratio 0.5) halves a forward twist, so the escape's creep FORWARD
