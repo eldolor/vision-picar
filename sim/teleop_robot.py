@@ -90,6 +90,10 @@ logger = logging.getLogger("teleop_robot")
 NO_SENSOR_CM = _NO_SENSOR_CM
 
 DEFAULT_STALL_TIMEOUT_S = 15.0
+# 3.90 E: pushed frames kept for a recorder draining them by seq, off the
+# decision path (`frames_after()`). 16 is 4 s at 4 fps; a recorder further
+# behind loses frames and is told how many.
+FRAME_BUFFER = 16
 
 
 class TeleopStall(RuntimeError):
@@ -109,6 +113,7 @@ class TeleopRobot(RobotInterface):
         self._frame: Optional[dict] = None
         self._seq = 0
         self._last_pushed_at: Optional[float] = None
+        self._recent = collections.deque(maxlen=FRAME_BUFFER)   # 3.90 E
         # Bounded (3.76 M2, as GridWorld.log): every push and verb lands
         # here for the robot server's life, and only tests read it.
         self.log = collections.deque(maxlen=2000)
@@ -138,8 +143,22 @@ class TeleopRobot(RobotInterface):
                 "captured_at": time.time(),
                 "metadata": {"source": "teleop", "seq": self._seq},
             }
+            self._recent.append(self._frame)
         self._record(f"PUSH seq={seq}")
         return {"seq": seq}   # ...here and the return gave both pushes its number
+
+    def frames_after(self, after_seq: int) -> dict:
+        """3.90 E: every kept frame newer than `after_seq`, oldest first, for
+        a recorder. Decisions never read this -- they take the newest frame
+        (`get_camera_frame()`), so a slow brain acts on the present. `lost`
+        counts frames newer than `after_seq` that already fell out of the
+        buffer: the recorder says so in its walk instead of thinning it
+        silently."""
+        with self._lock:
+            frames = [f for f in self._recent if f["metadata"]["seq"] > after_seq]
+            oldest = self._recent[0]["metadata"]["seq"] if self._recent else self._seq + 1
+            lost = max(0, oldest - after_seq - 1) if after_seq < self._seq else 0
+            return {"frames": frames, "latest_seq": self._seq, "lost": lost}
 
     # ---------- sensing ----------
 

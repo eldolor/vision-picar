@@ -22,6 +22,9 @@ Endpoints:
     POST /stop     always-available stop
     GET  /distance
     GET  /frame
+    GET  /teleop/frames?after=<seq>   3.90 E: the kept pushed frames newer
+                   than seq, for the brain's walk recorder (`lost` counts
+                   any that fell out of the buffer)
     POST /teleop/frame   {"image_base64": "...", "media_type": "image/jpeg"}
                    only meaningful when config/robot.yaml's mode is
                    "teleop" (PLAN-teleop-robot.md) -- pushes a live phone
@@ -1646,6 +1649,17 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 "frame would otherwise have nothing to read it.",
             )
         return {"received": True, **push(req.image_base64, req.media_type)}
+
+    @app.get(prefix + "/teleop/frames", dependencies=[Depends(require_secret)])
+    def teleop_frames(after: int = 0):
+        """3.90 E: the pushed frames newer than `after`, for the brain's walk
+        recorder -- every frame received, where `/frame` is only the newest.
+        Duck-typed, as `/teleop/frame` is."""
+        frames_after = getattr(robot, "frames_after", None)
+        if frames_after is None:
+            raise HTTPException(status_code=400,
+                                detail="This robot is not in teleop mode: it keeps no pushed frames.")
+        return frames_after(after)
 
     @app.get(prefix + "/health")
     def health():
