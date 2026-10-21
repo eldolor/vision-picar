@@ -104,7 +104,7 @@ def test_scenes_carry_no_answers_so_a_discarded_scene_loses_none():
     tier.close()
 
 
-def test_a_failed_call_is_recorded_once_with_its_address_cut_out():
+def test_a_failed_call_is_recorded_once_by_its_type_never_its_text():
     tier = TieredVision(ScriptedPipeline([ABSENT] * 10), FailingCloud(),
                         async_cloud=True)
     tier(_frame(1))
@@ -117,9 +117,7 @@ def test_a_failed_call_is_recorded_once_with_its_address_cut_out():
             raised += 1
     assert raised == 1                           # B3.2 still sees the failure
     (error,) = tier.take_cloud_answers()
-    assert error["asked_seq"] == 1
-    assert error["error"].startswith("RuntimeError: bedrock said no")
-    assert "bedrock.example" not in error["error"] and "<address>" in error["error"]
+    assert error == {"trigger": "mission_start", "asked_seq": 1, "error": "RuntimeError"}
     tier.close()
 
 
@@ -206,14 +204,15 @@ def test_answers_after_the_last_decision_go_to_the_walks_meta(tmp_path):
     assert meta["cloud_answers_after_last_frame"] == [{"asked_seq": 9, "verdict": "no_claim"}]
 
 
-def test_a_frame_with_no_number_leaves_the_answers_queued():
-    """Review round 2: taken before the seq check, they were filed nowhere."""
+def test_a_frame_with_no_number_drops_the_answers():
+    """Review round 3: no frame number means no row and no stream recorder
+    (only a numbering body has one); kept, they grew for the whole mission."""
     policy = _Policy()
     runner = _runner(policy)
     policy.queue = [{"asked_seq": 1}]
     MissionRunner._note_decision(runner, SimpleNamespace(
         frame={"image_base64": "x"}, scene={}, action="LEFT"))
-    assert policy.queue == [{"asked_seq": 1}]
+    assert policy.queue == []
 
 
 def test_a_frame_decided_again_keeps_its_answers_and_takes_no_new_ones():
@@ -235,17 +234,21 @@ def test_a_frame_decided_again_keeps_its_answers_and_takes_no_new_ones():
     assert tick(2)["cloud_answers"] == [{"asked_seq": 2}]
 
 
-def test_the_last_take_collects_an_answer_no_frame_collected():
+def test_the_final_take_notes_a_landed_call_without_applying_it():
     """Review round 2: a call that landed after the last frame was lost when
-    `close()` dropped it."""
+    `close()` dropped it. Round 3: collected at the end, it was applied from
+    the Stop's thread beside a tick mid-frame, before the motors stopped."""
     cloud = NumberedCloud()
     tier = TieredVision(ScriptedPipeline([ABSENT] * 3), cloud, async_cloud=True)
     tier(_frame(1))
-    fut = tier._inflight
-    fut.result(timeout=5)                        # landed; nothing collected it
+    tier._inflight.result(timeout=5)             # landed; nothing collected it
     assert tier.take_cloud_answers() == []
-    (answer,) = tier.take_cloud_answers(collect=True)
+    (answer,) = tier.take_cloud_answers(final=True)
     assert answer["asked_seq"] == 1
+    assert tier._last_cloud_scene is None          # noted, not applied
+    tier(_frame(2))                                # a tick collects it after all
+    assert tier._last_cloud_scene is not None
+    assert tier.take_cloud_answers() == []         # and does not note it twice
     tier.close()
 
 
@@ -265,13 +268,46 @@ def test_an_async_local_first_question_the_cloud_answered_is_the_clouds():
     tier.close()
 
 
-def test_an_http_clients_error_loses_its_host_and_path():
+def test_an_http_error_keeps_its_status_and_not_its_host():
     class Unreachable:
         def __call__(self, frame):
-            raise ConnectionError("HTTPSConnectionPool(host='secret.ngrok.app', port=443): "
-                                  "Max retries exceeded with url: /brain/navigate?k=1")
+            raise RuntimeError("HTTP 502 from https://secret.ngrok.app/brain/navigate: "
+                               "endpoint secret.ngrok.app is offline")
     tier = TieredVision(ScriptedPipeline([ABSENT] * 3), Unreachable(),
                         cloud_errors_fatal=False)
     tier(_frame(1))
     (error,) = tier.take_cloud_answers()
-    assert "secret.ngrok.app" not in error["error"] and "/brain" not in error["error"]
+    assert error == {"trigger": "mission_start", "asked_seq": 1,
+                     "error": "RuntimeError", "status": 502}
+
+
+def test_the_synchronous_local_first_answer_is_tagged_the_clouds():
+    def absent(frame, box=False):
+        raise LocalVLMAbsent("down")
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 3), NumberedCloud(),
+                        local_sighting_fn=absent)
+    tier(_frame(4))
+    (answer,) = tier.take_cloud_answers()
+    assert answer["via_local_tier"] is True and answer["action"] == "REVERSE"
+
+
+def test_the_queue_is_bounded_when_nobody_takes_it():
+    from brain.tiered import CLOUD_ANSWERS_KEPT
+    tier = TieredVision(ScriptedPipeline([DETECTED] * 3), NumberedCloud())
+    for seq in range(CLOUD_ANSWERS_KEPT + 5):
+        tier._note_cloud_answer("t", seq)
+    kept = tier.take_cloud_answers()
+    assert len(kept) == CLOUD_ANSWERS_KEPT and kept[0]["asked_seq"] == 5
+    assert tier._cloud_answers_dropped == 5
+
+
+def test_a_take_that_raises_a_cancelled_error_cannot_stop_the_stop():
+    """Review round 3: `_finish` takes before the stop, and a cancelled
+    future's CancelledError is a BaseException."""
+    import concurrent.futures
+
+    class Cancelled:
+        def take_cloud_answers(self, final=False):
+            raise concurrent.futures.CancelledError()
+    runner = _runner(Cancelled())
+    assert MissionRunner._take_cloud_answers(runner, final=True) == []

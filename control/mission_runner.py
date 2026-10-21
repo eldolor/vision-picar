@@ -1233,15 +1233,17 @@ class MissionRunner:
 
     DECISIONS_KEPT = 256
 
-    def _take_cloud_answers(self, collect: bool = False) -> list:
+    def _take_cloud_answers(self, final: bool = False) -> list:
         """3.91 A: the cloud answers the tiered policy holds, taken once.
         Any other policy has none."""
         take = getattr(self.vision_fn, "take_cloud_answers", None)
         if take is None:
             return []
         try:
-            return list((take(collect=True) if collect else take()) or [])
-        except Exception as e:  # noqa: BLE001 -- a record never costs a tick
+            return list((take(final=True) if final else take()) or [])
+        except BaseException as e:  # noqa: BLE001 -- a record never costs a tick, nor
+            # the stop `_finish` runs it before (3.55); a cancelled future's
+            # CancelledError is a BaseException (review round 3)
             logger.warning("reading the cloud answers failed: %s", e)
             return []
 
@@ -1254,16 +1256,12 @@ class MissionRunner:
         meta = ((result.frame or {}).get("metadata") or {}) if isinstance(result.frame, dict) else {}
         seq = meta.get("seq")
         if not isinstance(seq, int):
-            # Left queued: with no frame number there is no row to file on,
-            # and `_finish` takes what is left (review round 2).
+            # No frame number, no row and no stream recorder (only a body
+            # that numbers its frames has one): taken and dropped, so the
+            # queue never grows for a record nobody files (review round 3).
+            self._take_cloud_answers()
             return
         boot = meta.get("boot_id")
-        with self._decisions_lock:
-            repeat = (boot, seq) in self._decisions
-        # A frame decided on again (the newest frame is taken, so a phone
-        # that stalls repeats it) may already be filed by the recorder:
-        # answers since then wait for the next new frame (review round 2).
-        answers = [] if repeat else self._take_cloud_answers()
         perception = self._perception or {}
         decision = {"action": result.action,
                     "reasoning": self._last_reasoning,
@@ -1274,9 +1272,16 @@ class MissionRunner:
                                        "perception": self._perception,
                                        "tier_trigger": (self._tier or {}).get("trigger")}}
         with self._decisions_lock:
-            earlier = (self._decisions.get((boot, seq)) or {}).get("cloud_answers")
-            if earlier or answers:
-                decision["cloud_answers"] = earlier or answers
+            # A frame decided on again (the newest frame is taken, so a phone
+            # that stalls repeats it) may already be filed by the recorder:
+            # it keeps its first answers, and later ones wait for the next new
+            # frame (review round 2). Taken once the row is built, so nothing
+            # between take and store raises.
+            earlier = self._decisions.get((boot, seq))
+            answers = (earlier.get("cloud_answers") if earlier is not None
+                       else self._take_cloud_answers())
+            if answers:
+                decision["cloud_answers"] = answers
             self._decisions[(boot, seq)] = decision
             self._last_decided = (boot, seq)
             while len(self._decisions) > self.DECISIONS_KEPT:
@@ -1720,7 +1725,7 @@ class MissionRunner:
             # 3.91 A: answers that landed after the last decision was noted
             # (an arrival's wait, the last frame's call). Taken before the
             # end is visible, so the stream recorder's finish can read them.
-            self.unfiled_cloud_answers = self._take_cloud_answers(collect=True)
+            self.unfiled_cloud_answers = self._take_cloud_answers(final=True)
             self._running = False
             self._outcome = outcome
             self._end_reason = note

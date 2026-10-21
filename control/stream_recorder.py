@@ -281,7 +281,8 @@ class StreamRecorder:
                     frames_lookup_failed=self.lookup_failed or None, capture=self._capture,
                     # 3.91 A: answers that landed after the last decision.
                     cloud_answers_after_last_frame=(
-                        getattr(self.runner, "unfiled_cloud_answers", None) or None),
+                        list(getattr(self.runner, "unfiled_cloud_answers", None) or [])
+                        or None),
                     **{k: v for k, v in self._meta.items() if v is not None})
         except Exception:  # noqa: BLE001
             logger.exception("stream recorder: finishing %s failed", self.walk)

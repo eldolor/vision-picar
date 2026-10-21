@@ -181,20 +181,21 @@ and `__call__` puts every question to the local tier first:
 
 * **What the cloud said is kept (3.91 A).** Every cloud answer that
   lands, async (`_collect_inflight()`, whichever thread collects it; noted
-  even if `_annotate` raises) or synchronous (the main path and the
-  local-first path's cloud fallback), and every failed call, is summarised
-  by `_note_cloud_answer()` (`CLOUD_ANSWER_KEYS`, text cut to
-  `CLOUD_TEXT_CHARS`, the robot seq it was asked on from `_dispatch()`,
-  `via_local_tier` for a local-first job the cloud answered; a failure as
-  `error`, its type and text with `_ADDRESS` cut out, `CLOUD_ERROR_CHARS`)
-  into `_cloud_answers` under `_collect_lock`; synchronous answers through
-  `_annotate_noted()`.
-  Scenes never carry them: `take_cloud_answers()` hands each out once, to
-  `MissionRunner._note_decision()` (a frame's first decision only, after
-  its seq check, so one left by a halted tick or a repeated frame rides on
-  the next new frame) and to `_finish` before the end is visible
-  (`take_cloud_answers(collect=True)`, `unfiled_cloud_answers`). `reset_epoch()` drops what was not
-  taken. Read-only: nothing decides on it.
+  even if `_annotate` raises) or synchronous (`_annotate_noted()`, on the
+  main path and the local-first path's cloud fallback), and every failed
+  call, is summarised by `_note_cloud_answer()` into `_cloud_answers` under
+  `_collect_lock`: `CLOUD_ANSWER_KEYS` (text cut to `CLOUD_TEXT_CHARS`), the
+  robot seq it was asked on (`_dispatch()`), `via_local_tier` when the cloud
+  answered a local-first question; a failure as its type and HTTP status
+  (`_http_status`), never its text. At most `CLOUD_ANSWERS_KEPT` (64) wait;
+  older ones go, counted. Scenes never carry them: `take_cloud_answers()`
+  hands each out once, to `MissionRunner._note_decision()` (a frame's first
+  decision only, after its seq check -- a frame with no number drops them,
+  there being no row or recorder) and to `_finish` before the end is
+  visible (`final=True`: a call that landed but that no frame collected is
+  noted and NOT applied -- it runs on the Stop's thread before the motors
+  stop -- and a later collect does not note it again; `unfiled_cloud_answers`).
+  `reset_epoch()` drops what was not taken. Read-only: nothing decides on it.
 * `_apply_local()` (on landing; a different epoch is ignored): yes (>= 0.5)
   and no (<= `local_no_below`) reset `_frame_unable` and the pacing counts
   as a landed cloud answer does. A yes whose reply has `box_frac` gives a
