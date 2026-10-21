@@ -178,6 +178,17 @@ and `__call__` puts every question to the local tier first:
   cloud's scene about the same frame (cloud counted with its trigger, under
   `_stats_lock`, cap checked; a Stop since dispatch returns None and pays
   nothing). A cloud scene lands as before and drops `_local_held`.
+
+* **What the cloud said is carried out (3.91 A).** Every cloud answer that
+  lands, async (`_collect_inflight()`, whichever thread collects it) or
+  synchronous, and every failed call, is summarised by `_note_cloud_answer()`
+  (`CLOUD_ANSWER_KEYS`, text cut to `CLOUD_TEXT_CHARS`, the robot seq it was
+  asked on from `_dispatch()`) into `_cloud_answers` under `_collect_lock`.
+  `__call__` (now `_decide()` plus this) takes the list after the decision
+  and puts it on the returned scene as `_tier.cloud_answers`; a frame that
+  raises leaves it for the next. `MissionRunner._note_decision()` copies it
+  from that tick's own scene, never the held `_tier`, onto the decision a
+  stream walk files. Read-only: nothing decides on it.
 * `_apply_local()` (on landing; a different epoch is ignored): yes (>= 0.5)
   and no (<= `local_no_below`) reset `_frame_unable` and the pacing counts
   as a landed cloud answer does. A yes whose reply has `box_frac` gives a

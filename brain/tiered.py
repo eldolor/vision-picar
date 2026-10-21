@@ -384,6 +384,18 @@ DEFAULT_CORROBORATION_P = 0.5
 CORROBORATED = "corroborated"
 UNCLEAR = "unclear"
 NO_CLAIM = "no_claim"            # the cloud says the target is not visible
+
+# 3.91 A: the cloud answer's fields a walk row keeps, and how much text.
+CLOUD_ANSWER_KEYS = ("action", "safest_direction", "target_visible",
+                     "target_direction", "target_reached", "obstacle_ahead",
+                     "reasoning", "model_id")
+CLOUD_TEXT_CHARS = 500
+
+
+def _frame_seq(frame) -> Optional[int]:
+    """The robot's own number for a frame (3.90's `metadata.seq`), or None."""
+    seq = ((frame or {}).get("metadata") or {}).get("seq") if isinstance(frame, dict) else None
+    return seq if isinstance(seq, int) else None
 CORROBORATION_UNAVAILABLE = "unavailable"   # the local tier could not tell
 CORROBORATION_VERDICTS = (CORROBORATED, UNCLEAR, NO_CLAIM,
                           CORROBORATION_UNAVAILABLE)
@@ -928,6 +940,12 @@ class TieredVision:
         # rule `_local_scene` already enforces is that a stale verdict must
         # never read as this frame's.
         self._landed_corroboration: Optional[dict] = None
+        # 3.91 A: every cloud answer (or failure) that landed, as a summary,
+        # until the frame that returns next carries it out in `_tier`.
+        # Appended and taken under `_collect_lock`, so an answer collected by
+        # the runner's wait thread is neither lost nor shown twice.
+        self._cloud_answers: list = []
+        self._inflight_seq = None
         self._pending_error: Optional[BaseException] = None
         self.stats = TierStats()
         # 6.3 asks for **the detector's own name** on screen, not just its
@@ -978,6 +996,21 @@ class TieredVision:
     # -- the vision_fn contract ------------------------------------------
 
     def __call__(self, frame: dict) -> dict:
+        scene = self._decide(frame)
+        # 3.91 A: the answers that landed up to this frame's decision ride
+        # out on it, once. A frame that raised keeps them for the next one.
+        with self._collect_lock:
+            answers, self._cloud_answers = self._cloud_answers, []
+        if answers:
+            tier = scene.get("_tier")
+            if isinstance(tier, dict):
+                scene["_tier"] = {**tier, "cloud_answers": answers}
+            else:
+                with self._collect_lock:
+                    self._cloud_answers[:0] = answers
+        return scene
+
+    def _decide(self, frame: dict) -> dict:
         # 3.76: the mission this frame belongs to. A Stop closes the policy
         # from another thread, often while this frame is in perception; the
         # call this frame would fire must then not go out (it was billed,
@@ -1072,6 +1105,7 @@ class TieredVision:
         try:
             scene = self.cloud_vision_fn(frame)
         except Exception as exc:  # noqa: BLE001 -- raised for B3.2 unless 3.80.G says not
+            self._note_cloud_answer(trigger, _frame_seq(frame), error=exc)
             if self.cloud_errors_fatal:
                 raise
             self._count_cloud_error(exc)
@@ -1086,7 +1120,10 @@ class TieredVision:
         self._local_held_why = None
         self._local_turn = None     # 3.80.D: this answer is newer
         self._frame_unable = 0
-        return self._annotate(scene, perception, trigger)
+        out = self._annotate(scene, perception, trigger)
+        self._note_cloud_answer(trigger, _frame_seq(frame), scene=scene,
+                                verdict=(out["_tier"].get("corroboration") or {}).get("verdict"))
+        return out
 
     # -- 3.80.D: a frame's question, to the local tier first --------------
 
@@ -1664,6 +1701,7 @@ class TieredVision:
             # LOCAL evidence from the same frame. Async breaks that pairing
             # unless the perception is carried along with the call, so it is.
             self._inflight_perception = self._perception_this_frame
+            self._inflight_seq = _frame_seq(frame)
             self._inflight = (self._executor.submit(job) if job is not None
                               else self._executor.submit(self._call_cloud, frame, epoch))
         return True
@@ -1706,6 +1744,7 @@ class TieredVision:
             self._inflight_tier = None
             self._inflight_question = None
             perception, self._inflight_perception = self._inflight_perception, None
+            asked_seq, self._inflight_seq = self._inflight_seq, None
         if fut.exception() is None and isinstance(fut.result(), _LocalAnswer):
             # 3.80.D: the local tier's answer; its own rules reset the pacing.
             self._apply_local(fut.result())
@@ -1728,6 +1767,7 @@ class TieredVision:
             # already charged this call when its wait timed out
             # (`abandon_inflight`). Decided under the lock, against it.
             logger.warning("async cloud call failed: %s", exc)
+            self._note_cloud_answer(trigger, asked_seq, error=exc)
             with self._collect_lock:
                 if fut is not self._charged:
                     self._pending_error = exc
@@ -1747,9 +1787,13 @@ class TieredVision:
         # The annotated scene itself is not returned: the decision for this
         # frame belongs to this frame's pixels, and what carries forward is
         # the goal, not the whole answer.
+        verdict = None
         if perception is not None:
             annotated = self._annotate(scene, perception, trigger or "", executed=False)
             verdict = (annotated.get("_tier") or {}).get("corroboration")
+        self._note_cloud_answer(trigger, asked_seq, scene=scene,
+                                verdict=(verdict or {}).get("verdict"))
+        if perception is not None:
             if verdict:
                 # Marked `landed_late`, and carrying the trigger it belongs
                 # to, so a reader can never take it for a verdict about the
@@ -1773,6 +1817,7 @@ class TieredVision:
             self._inflight_tier = None
             self._inflight_question = None
             self._inflight_perception = None
+            self._inflight_seq = None
         self._landed_corroboration = None
         self._local_turn = None
         self._local_landed = None
@@ -1805,6 +1850,26 @@ class TieredVision:
             if self._executor is not None:
                 self._executor.shutdown(wait=False, cancel_futures=True)
                 self._executor = None
+
+    def _note_cloud_answer(self, trigger, asked_seq, scene: Optional[dict] = None,
+                           verdict: Optional[str] = None,
+                           error: Optional[BaseException] = None) -> None:
+        """3.91 A: what the cloud said, kept for the walk's rows. Recorded
+        whatever the answer does next, so a reader can tell a held REVERSE
+        that meant "too close" from one that meant "not the target"."""
+        if error is not None:
+            entry = {"trigger": trigger, "asked_seq": asked_seq,
+                     "cloud_error": str(error)[:CLOUD_TEXT_CHARS]}
+        else:
+            scene = scene or {}
+            entry = {"trigger": trigger, "asked_seq": asked_seq, "verdict": verdict}
+            for key in CLOUD_ANSWER_KEYS:
+                if key in scene:
+                    value = scene[key]
+                    entry[key] = (value[:CLOUD_TEXT_CHARS]
+                                  if isinstance(value, str) else value)
+        with self._collect_lock:
+            self._cloud_answers.append(entry)
 
     def _held_direction(self) -> Optional[str]:
         """The last direction the cloud gave, if there is one.

@@ -1247,6 +1247,14 @@ class MissionRunner:
                                        "last_action": result.action,
                                        "perception": self._perception,
                                        "tier_trigger": (self._tier or {}).get("trigger")}}
+        # 3.91 A: the cloud answers that landed on this tick, read from this
+        # tick's own scene -- never the held `_tier`, which outlives a frame
+        # and would copy one answer onto later rows.
+        scene = getattr(result, "scene", None)
+        scene = scene if isinstance(scene, dict) else {}
+        answers = (scene.get("_tier") or {}).get("cloud_answers")
+        if answers:
+            decision["cloud_answers"] = answers
         with self._decisions_lock:
             self._decisions[(boot, seq)] = decision
             self._last_decided = (boot, seq)
