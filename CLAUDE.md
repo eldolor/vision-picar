@@ -713,6 +713,21 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   corridor's wedge, not the band). Known gap: the band's blind range
   (a creep or pivot can carry a sock inside 14 cm). C (hazard class,
   steering) and D (perception data) to go.
+* **The camera as a stream (3.90 A, E), merged 2026-10-21; twin NOT
+  YET DEPLOYED.** A: `robot/camera_stream.py` reads the car's camera
+  (`ROBOT_CAMERA`; `SIM_CAMERA=fake` for benches) on a thread, newest frame
+  only, stale -> 503 on the monotonic clock; frames from a real camera or
+  the phone carry `captured_at`, and with stamps `candidate_sighting` and
+  arrival runs must also span 0.25 s (less 0.05 s slack). Jetson, beside the
+  stack: frame age p90 46 ms, 0 late ticks, reader 0.23% of a core. E: under
+  Drive via brain the twin streams at 2/4/8 fps on its own timer (newest
+  wins), "Combine frames" (`tier_frame_vote`, off by default) votes k of n,
+  and with Record on the BRAIN records every frame received
+  (`control/stream_recorder.py`, `record_walk`), marked `perceived`; laptop:
+  5-min walk 1,195 rows / 1,192 pushed, paid calls 19.0/min at 2 and 8 fps.
+  The laptop brain perceives ~2.6 fps whatever the phone sends. Open: the
+  twin deploy (the user's yes), criterion 11 through the tunnel, B (the
+  vote on rig walks), C/D on the Rover.
 * **Raising nav2's speed** (6.9's high end) now has its speed-dependent
   stop, but waits on measured braking (6.9 (d)) and 3.42's relayed-scan
   time stamp; read `HANDOFF-2026-10-07-lidar-and-speed.md` first.
