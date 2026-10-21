@@ -73,6 +73,15 @@ MIN_TURNS_FOR_OSCILLATION = 6  # fewer turns than this and the reversal rate is 
 MIN_STUCK_WINDOW = 3         # moves of history before "it may be stuck" is fair
 
 
+def decided_entries(entries: list) -> list:
+    """3.90 E: the rows a decision was taken on. A walk the brain records
+    from a stream files every frame received, and marks the ones perception
+    never took `perceived: false` (no decision, `navigate` null). Scored as
+    rows they would read as long runs of frames without a move. Every older
+    walk has no such key, and keeps every row."""
+    return [e for e in entries if e.get("perceived", True) is not False]
+
+
 def _entry_actions(entries: list) -> list:
     return [(e.get("navigate") or {}).get("action") for e in entries]
 

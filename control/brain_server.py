@@ -89,7 +89,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from brain.navigate import MAX_TARGET_CHARS, vision_fn_for
 from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
                             DEFAULT_MATCH_PROBABILITY, PerceptionUnavailable)
-from brain.tiered import tiered_vision_fn_for
+from brain.tiered import parse_frame_vote, tiered_vision_fn_for
 from brain.choice_log import ChoiceLog
 from control import drills
 from control.brain_config import load_brain_config
@@ -106,6 +106,8 @@ from control.recording_routes import (  # noqa: F401 -- re-exported, see above
     mount_recording_routes,
 )
 from control.remote_robot import DEFAULT_DRIVER, RemoteRobot
+from control.stream_recorder import StreamRecorder
+from control.walk_store import METRICS_PREFIX
 from control.remote_navigator import RemoteNavigator
 from control.remote_world import RemoteWorld
 from control.walk_store import walk_store_from_config
@@ -176,6 +178,13 @@ class MissionStartRequest(BaseModel):
     # 3.88 A: ask mode for this mission (explore's search only), over the
     # config's `explore_ask`. Omitted follows the config.
     explore_ask: Optional[bool] = None
+    # 3.90 E: "combine frames" for this mission (policy: tiered only): "off",
+    # "2of3" or "3of5", over the config's `tier_frame_vote`.
+    frame_vote: Optional[str] = None
+    # 3.90 E: record this mission's frame stream as a walk of this name (the
+    # twin's "Record this walk" under Drive via brain). The brain drains the
+    # teleop body's frames itself, so the phone uploads each frame once.
+    record_walk: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -329,6 +338,17 @@ def _local_identity_fn(target: str, config: dict, secret: Optional[str]):
                           deadline_s=config["tier_local_timeout_s"])
 
 
+def _frames_reader(robot):
+    """3.90 E: the body's kept-frames read -- `RemoteRobot.teleop_frames`
+    over HTTP, or `TeleopRobot.frames_after` in process. A body with
+    neither keeps no frames to record."""
+    fetch = getattr(robot, "teleop_frames", None) or getattr(robot, "frames_after", None)
+    if fetch is None:
+        raise ValueError("record_walk records a teleop body's frame stream "
+                         "(mode: teleop); this robot keeps no frames.")
+    return fetch
+
+
 def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
                       simulated: bool = False, confirm_vision_fn=None,
                       local_secret: Optional[str] = None):
@@ -354,6 +374,7 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
     kwargs = {
         "consecutive_frames": config["tier_consecutive_frames"],
         "sighting_span_s": config["tier_sighting_span_s"],
+        "frame_vote": parse_frame_vote(config["tier_frame_vote"]),
         "cold_search_after": config["tier_cold_search_after"],
         # 0 in config means "off"; the policy takes None for that, because
         # a 0cm bar would fire on every frame rather than never.
@@ -488,6 +509,7 @@ def create_app(
     # that flipping the flag needs no restart-time reasoning about which
     # half of the config was read; a store is inert until something writes.
     store = store if store is not None else walk_store_from_config(config)
+    walks = store   # 3.90 E: by another name, as the runner factory has a `store` of its own
 
     def default_robot_factory() -> RobotInterface:
         return RemoteRobot(
@@ -525,6 +547,23 @@ def create_app(
         )
 
     def default_runner_factory(robot: RobotInterface, req: MissionStartRequest) -> MissionRunner:
+        # 3.90 E: "combine frames" changes the tier's candidate rule; any
+        # other policy has none, and an unknown name is refused, not ignored.
+        parse_frame_vote(req.frame_vote)
+        if req.frame_vote not in (None, "off") and req.policy != "tiered":
+            raise ValueError("frame_vote combines the tiered policy's frames: it needs "
+                             "policy 'tiered'.")
+        if req.record_walk is not None:
+            if not WALK_NAME.match(req.record_walk) or req.record_walk.startswith(METRICS_PREFIX):
+                raise ValueError("record_walk must be 1-64 letters, digits, dot, dash or "
+                                 f"underscore, not starting with {METRICS_PREFIX!r}.")
+            if not config["allow_recording"]:
+                raise ValueError("record_walk needs a brain that stores walks "
+                                 "(brain.allow_recording).")
+            if walks.walk_exists(req.record_walk):
+                raise ValueError(f"A walk named {req.record_walk!r} already exists.")
+            # A body that keeps no frames (any mode but teleop) is a 400 here.
+            _frames_reader(robot)(0)
         # Checked before the tiered clients are built, so a refused start
         # leaves none open (review, 2026-10-16).
         navigator = None
@@ -641,7 +680,8 @@ def create_app(
                         prompt_variant=prompt_variant,
                     )
                     vision_fn = _tiered_vision_fn(
-                        req.target_object, vision_fn, config,
+                        req.target_object, vision_fn,
+                        {**config, "tier_frame_vote": req.frame_vote or config["tier_frame_vote"]},
                         simulated=_frames_are_simulated(robot), confirm_vision_fn=confirm_fn,
                         local_secret=_local_vlm_secret(config, secret))
 
@@ -738,13 +778,16 @@ def create_app(
                 "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
                 "tier_local_direction", "tier_steer_on_candidate", "tier_search",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",
-                "tier_spin_guard_after", "tier_consecutive_frames", "tier_sighting_span_s",
+                "tier_spin_guard_after", "tier_consecutive_frames", "tier_sighting_span_s", "tier_frame_vote",
                 "perception_floor_mask", "perception_crop_path",
                 "navigate_model_id", "navigate_prompt_variant",
                 "explore_goal_policy",
             ) if k in config},
             "explore_ask": asks,
         }
+        if req.policy == "tiered":
+            # The mission's own vote, not only the config's (3.90 E).
+            runner.metrics_config["tier_frame_vote"] = req.frame_vote or config["tier_frame_vote"]
         return runner
 
     make_robot = robot_factory or default_robot_factory
@@ -756,6 +799,7 @@ def create_app(
     # mission has ever run.
     state: dict = {
         "robot": None, "world": None, "runner": None, "task": None, "building": None,
+        "recorder": None,   # 3.90 E: the stream recorder of the last record_walk mission
         "fault": drills.NONE, "tick_timeout_s": config["tick_timeout_s"],
         # 3.53: the late confirmation of the last mission, if one is waiting,
         # and a generation bumped by every start and stop, so a mission loop
@@ -988,6 +1032,17 @@ def create_app(
         state["fault"] = req.fault or drills.NONE
         state["runner"] = runner
         state["task"] = asyncio.create_task(mission_loop(runner, state["generation"]))
+        if req.record_walk is not None:
+            # 3.90 E: from the robot's latest frame on; ends with the mission.
+            if state["recorder"] is not None:
+                state["recorder"].stop()
+            fetch = _frames_reader(robot())
+            latest = (await asyncio.to_thread(fetch, 0)).get("latest_seq", 0)
+            state["recorder"] = StreamRecorder(
+                walks, req.record_walk, fetch, runner,
+                meta={"target_object": req.target_object, "model_id": req.model_id,
+                      "policy": req.policy, "frame_vote": req.frame_vote},
+            ).start(after=latest)
         if cloud_watch is not None and req.policy in VISION_POLICIES:
             cloud_watch.start()  # idempotent; probes only while such a mission runs
         return {"started": True, "status": {**runner.status(), "cloud": cloud_status()}}
@@ -1098,7 +1153,10 @@ def create_app(
         # `fault` belongs to the request, not the mission -- the runner has
         # no idea it is a drill, which is the point of running the same
         # class either way.
-        return {**runner.status(), "fault": state["fault"], "cloud": cloud_status()}
+        recorder = state["recorder"]
+        return {**runner.status(), "fault": state["fault"], "cloud": cloud_status(),
+                # 3.90 E: the brain's own recording of the frame stream.
+                "recording": recorder.status() if recorder is not None else None}
 
     async def _proxy_recording(route: str, req: BaseModel) -> dict:
         # The routes this forwards touch no robot/runner state at all --
@@ -1210,6 +1268,7 @@ def create_app(
             "perception_floor_mask": bool(config["perception_floor_mask"]),
             "tier_consecutive_frames": config["tier_consecutive_frames"],
             "tier_sighting_span_s": config["tier_sighting_span_s"],
+            "tier_frame_vote": config["tier_frame_vote"],
             "tier_cold_search_after": config["tier_cold_search_after"],
             # 3.80.P: the pace a mission with a local tier asks it at (the
             # cloud keeps the bar above); the live bar is the policy's own

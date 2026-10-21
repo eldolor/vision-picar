@@ -104,6 +104,9 @@ DEFAULTS = {
     # capture stamps (the car's camera, the phone): today's two frames at the
     # 0.25 s tick. 0: counted only. Unstamped (sim) frames are counted only.
     "tier_sighting_span_s": 0.25,
+    # 3.90 E: "combine frames" -- "off", "2of3" or "3of5". Off: today's
+    # consecutive rule. A switch for comparing walks, not adopted.
+    "tier_frame_vote": "off",
     # How many consecutive `absent` frames before asking the cloud whether
     # the target is even in this room. brain/tiered.py's own note says this
     # number is a guess and is the first thing to tune against a real walk.

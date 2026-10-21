@@ -82,6 +82,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+from brain.arrival import run_spans
 from brain.goal_pose import GoalPose, OdomTracker, Pose, _wrap
 from brain.perceive import (ABSENT, DEFAULT_MATCH_PROBABILITY, DETECTED, UNAVAILABLE,
                             Perception)
@@ -205,6 +206,21 @@ DEFAULT_CONSECUTIVE = 2
 # brain's 0.25 s tick. Counted in frames alone, the rule would shrink as the
 # camera got faster (R1c). Unstamped frames (the simulator's) count as before.
 DEFAULT_SIGHTING_SPAN_S = 0.25
+# 3.90 E: "combine frames" -- `candidate_sighting` fires on k detected of the
+# last n frames perception took, inside n ticks of time, instead of
+# `consecutive_frames` in a row. Off by default: a switch for walks to
+# compare, adopted only on the Rover's data (3.90 C, D).
+FRAME_VOTES = {"off": None, "2of3": (2, 3), "3of5": (3, 5)}
+VOTE_TICK_S = 0.25
+
+
+def parse_frame_vote(value) -> Optional[tuple]:
+    """"off" / "2of3" / "3of5" (or None, "") -> None or (k, n)."""
+    if value in (None, ""):
+        return None
+    if value not in FRAME_VOTES:
+        raise ValueError(f"frame_vote must be one of {sorted(FRAME_VOTES)}, got {value!r}")
+    return FRAME_VOTES[value]
 
 # How many consecutive `absent` frames before asking the cloud whether the
 # thing is even in this room. 2.4 gives no number; this one is a guess and
@@ -530,6 +546,11 @@ class TierStats:
 
     frames: int = 0
     cloud_calls: int = 0
+    # 3.90 E: frames the robot had that perception never took (gaps in the
+    # robot's frame seq: it was busy with an earlier one), and the vote's
+    # last tally, when one is set.
+    frames_skipped: int = 0
+    vote: Optional[dict] = None
     triggers: dict = field(default_factory=dict)
     perception: dict = field(default_factory=dict)
     # 1.11a's own list of what it still needs: *"the counter in 6.3 should
@@ -628,6 +649,8 @@ class TierStats:
             "candidate_steers": self.candidate_steers,
             "cloud_errors": self.cloud_errors,
             "frames": self.frames,
+            "frames_skipped": self.frames_skipped,
+            "vote": dict(self.vote) if self.vote else None,
             "cloud_calls": self.cloud_calls,
             "claims": self.claims,
             "corroborated": self.corroborated,
@@ -699,6 +722,7 @@ class TieredVision:
         *,
         consecutive_frames: int = DEFAULT_CONSECUTIVE,
         sighting_span_s: Optional[float] = DEFAULT_SIGHTING_SPAN_S,
+        frame_vote: Optional[tuple] = None,
         cold_search_after: int = DEFAULT_COLD_SEARCH_AFTER,
         cold_search_after_cm: Optional[float] = DEFAULT_COLD_SEARCH_AFTER_CM,
         stale_after: int = DEFAULT_STALE_AFTER,
@@ -783,6 +807,7 @@ class TieredVision:
         self.consecutive_frames = max(1, int(consecutive_frames))
         # 0 (or None) is counted only; a negative span would time nothing.
         self.sighting_span_s = max(0.0, float(sighting_span_s or 0)) or None
+        self.frame_vote = tuple(frame_vote) if frame_vote else None
         self.cold_search_after = max(1, int(cold_search_after))
         # The distance rule, and the state it needs. `_odometry_at_call` is
         # the reading when the cloud last looked; None means "never looked
@@ -937,6 +962,14 @@ class TieredVision:
         # of the frame being judged.
         self._run_since: Optional[float] = None
         self._frame_stamp: Optional[float] = None
+        # 3.90 E: the vote's window -- (stamp, detected) of the last n frames
+        # perception took -- and the robot's seq of the last frame taken.
+        self._votes: list = []
+        self._last_seq: Optional[int] = None
+        self._repeat_frame = False
+        if self.frame_vote:
+            self.stats.vote = {"k": self.frame_vote[0], "n": self.frame_vote[1],
+                               "detected": 0, "fired": 0}
         self._absent_streak = 0
         self._last_confirmed = ABSENT
         self._since_call = 0
@@ -974,6 +1007,7 @@ class TieredVision:
             self._count_cloud_error(err)
 
         self._frame_stamp = frame.get("captured_at")
+        self._count_skipped(frame)
         trigger = self._trigger_for(perception)
         if trigger is None:
             self._since_call += 1
@@ -1787,6 +1821,40 @@ class TieredVision:
 
     # -- the trigger policy ----------------------------------------------
 
+    def _count_skipped(self, frame: dict) -> None:
+        """3.90 E: frames the robot had between two that perception took
+        (its seq jumped) were skipped -- perception was busy. Decisions take
+        the newest frame on purpose; this says how many it passed over."""
+        seq = (frame.get("metadata") or {}).get("seq")
+        self._repeat_frame = isinstance(seq, int) and seq == self._last_seq
+        if not isinstance(seq, int):
+            return
+        if self._last_seq is not None and seq > self._last_seq + 1:
+            self.stats.frames_skipped += seq - self._last_seq - 1
+        self._last_seq = seq
+
+    def _note_vote(self, status: str) -> None:
+        """3.90 E: every frame perception took enters the vote's window --
+        tracking and start frames too (review) -- except the same frame read
+        a second time, which is one look, not two."""
+        if not self.frame_vote or getattr(self, "_repeat_frame", False):
+            return
+        self._votes.append((self._frame_stamp, status == DETECTED))
+        del self._votes[:-self.frame_vote[1]]
+
+    def _voted(self) -> bool:
+        """3.90 E: k detected of the last n frames perception took, all of
+        them inside n ticks of time when stamped (a skipped frame neither
+        votes nor breaks the window)."""
+        k, n = self.frame_vote
+        window = self._votes
+        if self._frame_stamp is not None:
+            window = [v for v in window
+                      if v[0] is not None and 0 <= self._frame_stamp - v[0] <= n * VOTE_TICK_S]
+        detected = sum(1 for _, d in window if d)
+        self.stats.vote["detected"] = detected
+        return detected >= k
+
     def _note_run(self, status: str) -> None:
         """One frame into the run of recent statuses (`consecutive_frames`
         long), and when the current same-status run began (3.90 A)."""
@@ -1800,11 +1868,11 @@ class TieredVision:
         """3.90 A: a run of stamped frames must also cover
         `sighting_span_s`, so the rule means the same time at any frame
         rate. Unstamped frames, or no span set: counted only, as before."""
-        from brain.arrival import run_spans   # late, as arrival imports the tier late
-
         return run_spans(self._run_since, self._frame_stamp, self.sighting_span_s)
 
     def _trigger_for(self, perception: Perception) -> Optional[str]:
+        if perception.status != UNAVAILABLE:
+            self._note_vote(perception.status)
         if not self._started:
             self._started = True
             # **The opening call is also the first frame's confirmation.**
@@ -1827,6 +1895,7 @@ class TieredVision:
         if perception.status == UNAVAILABLE:
             self._run.clear()
             self._run_since = None
+            self._votes.clear()
             self._band_run = 0          # 3.80.D: any other frame breaks a band run
             self._band_asked = False
             self._candidate_rejected = False
@@ -1871,8 +1940,11 @@ class TieredVision:
             # The absent streak does not grow on tracking frames (review): a
             # cold search must not fire, paid, the moment tracking ends.
             return TRIGGER_TRACK
-        if confirmed == DETECTED and self._last_confirmed != DETECTED:
+        sighted = self._voted() if self.frame_vote else confirmed == DETECTED
+        if sighted and self._last_confirmed != DETECTED:
             self._last_confirmed = DETECTED
+            if self.frame_vote:
+                self.stats.vote["fired"] += 1
             return TRIGGER_CANDIDATE
         if confirmed == ABSENT:
             self._last_confirmed = ABSENT

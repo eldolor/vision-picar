@@ -121,3 +121,43 @@ def test_ticks_on_a_30fps_grid_still_confirm_on_the_second_frame():
         check, robot = ArrivalCheck(), _FakeRobot([0.2] * 360)
         check.observe(_scene(0.0), robot, stamp=T0)
         assert check.observe(_scene(0.0), robot, stamp=T0 + gap)["state"] == ARRIVED, gap
+
+
+def _vote_run(statuses, seqs=None, vote=(2, 3), fps=4.0):
+    tier = TieredVision(ScriptedPipeline(statuses), FakeCloud(), cold_search_after=99,
+                        frame_vote=vote)
+    for i in range(len(statuses)):
+        seq = seqs[i] if seqs else i + 1
+        tier({"image_base64": "x", "image_width": 640, "captured_at": T0 + seq / fps,
+              "metadata": {"seq": seq}})
+    return tier
+
+
+def test_two_of_three_fires_through_one_missed_frame():
+    tier = _vote_run([ABSENT, DETECTED, ABSENT, DETECTED])
+    assert tier.stats.triggers.get(TRIGGER_CANDIDATE) == 1
+    off = TieredVision(ScriptedPipeline([ABSENT, DETECTED, ABSENT, DETECTED]), FakeCloud(),
+                       cold_search_after=99)
+    for i in range(4):
+        off({"image_base64": "x", "image_width": 640})
+    assert TRIGGER_CANDIDATE not in off.stats.triggers   # off: today's rule, no fire
+
+
+def test_one_frame_read_twice_is_one_vote():
+    # Review: the same seq read twice must not make 2 of 3 out of one look.
+    tier = _vote_run([ABSENT, DETECTED, DETECTED], seqs=[1, 2, 2])
+    assert TRIGGER_CANDIDATE not in tier.stats.triggers
+    assert tier.stats.vote["detected"] == 1
+
+
+def test_skipped_frames_are_counted():
+    tier = _vote_run([ABSENT, ABSENT, ABSENT], seqs=[1, 4, 5])
+    assert tier.stats.frames_skipped == 2
+
+
+def test_frame_vote_names():
+    from brain.tiered import parse_frame_vote
+    assert parse_frame_vote("off") is None and parse_frame_vote(None) is None
+    assert parse_frame_vote("2of3") == (2, 3) and parse_frame_vote("3of5") == (3, 5)
+    with pytest.raises(ValueError):
+        parse_frame_vote("4of3")

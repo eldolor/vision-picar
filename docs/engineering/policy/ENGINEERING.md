@@ -320,6 +320,7 @@ with `close()`, `reset_epoch()`, `set_searched_rooms()`, `confirm_arrival(frame)
 |---|---|---|---|
 | `tier_consecutive_frames` | 2 | frames | 6.1: 1 frame gives 2.8x fewer calls than frames, 2 gives 4.1x, 3 gives 4.5x for a frame of lag |
 | `tier_sighting_span_s` | 0.25 | seconds | 3.90 A: when frames carry `captured_at` (the car's camera stream, the phone), that run must also span this -- today's two frames at the 0.25 s tick -- so a faster camera does not shorten it (R1c). 0: counted only. Unstamped (sim) frames are counted only |
+| `tier_frame_vote` | `off` | `off`, `2of3`, `3of5` | 3.90 E: `candidate_sighting` on k detected of the last n frames perception took, all inside n x 0.25 s when stamped, instead of `tier_consecutive_frames` in a row. A frame read twice (same seq) votes once. Per mission `frame_vote` on `/mission/start` overrides. A switch for comparing walks; adoption waits on 3.90 C's Rover data. Status: `tier.stats.vote`, and `frames_skipped` (gaps in the robot's frame seq: frames perception never took) |
 | `tier_cold_search_after` | 6 | absent frames | measured 2026-09-12 with async on: 2, 3, 4 and 6 all covered 14 of 15 visible spans; 2 cost 41 more calls; env `TIER_COLD_SEARCH_AFTER` (3.80.P). A cloud-only mission's pace |
 | `tier_local_cold_search_after` | 1 | absent frames | 3.80.P: the pace while the local VLM tier takes the question (its questions are free); a question the cloud answers -- the local tier absent, or unable `tier_local_max_unable` times -- still waits `tier_cold_search_after`'s bar (`TieredVision._cloud_cold_search_bar`), so a dead VLM never brings this pace to the paid cloud; the Jetson at pace 1: perception p90 171 ms, `MemAvailable` min 823 MB, 0 OOM; env `TIER_LOCAL_COLD_SEARCH_AFTER` |
 | `tier_cold_search_after_cm` | 0 (off) | cm | needs odometry; no real-pixels backend has it yet |
@@ -360,7 +361,7 @@ decision, and its value and evidence are kept in one place,
 | `ARRIVAL_RADIUS_M` | 0.40 | `brain/arrival.py` | the scan reads 0.465 m one move out and 0.165 m at the collar |
 | `ARRIVAL_CENTRE_DEG` | 3.0 | `brain/arrival.py` | duplicates `STEER_BAND_DEG`; a test pins them equal |
 | `ARRIVAL_FRAMES` | 2 | `brain/arrival.py` | one bad frame never ends a mission |
-| `ARRIVAL_SPAN_S` | 0.25 s | `brain/arrival.py` | 3.90 A: with stamped frames the `ARRIVAL_FRAMES` run must also span this, at any frame rate; `SPAN_SLACK_S` 0.02 s absorbs stamp jitter (the same in `brain/tiered.py`) |
+| `ARRIVAL_SPAN_S` | 0.25 s | `brain/arrival.py` | 3.90 A: with stamped frames the `ARRIVAL_FRAMES` run must also span this, at any frame rate. `run_spans()` (shared with the tier's `candidate_sighting`) allows `SPAN_SLACK_S` 0.05 s short of it, at most a fifth of the span: a 30 fps camera read at the 0.25 s tick gives stamps 0.217-0.283 s apart. A negative span (the wall clock stepped back) counts as unstamped |
 | `ARRIVAL_BEAM_HALF_DEG` | 2 | `brain/arrival.py` | median of 5 beams; the first version used the nearest and declared `found` 95 cm out |
 | `ARRIVAL_EDGE_M` | 0.10 | `brain/arrival.py` | 3.32: a jamb window is refused |
 

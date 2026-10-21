@@ -39,7 +39,7 @@ def test_nothing_new_is_nothing_lost():
     out = robot.frames_after(3)
     assert out["frames"] == [] and out["lost"] == 0
     empty = TeleopRobot().frames_after(0)
-    assert empty == {"frames": [], "latest_seq": 0, "lost": 0}
+    assert {k: v for k, v in empty.items() if k != "boot_id"} == {"frames": [], "latest_seq": 0, "lost": 0, "reset": False}
 
 
 def test_the_route_serves_them_and_refuses_a_body_without_them(tmp_path):
@@ -55,3 +55,31 @@ def test_the_route_serves_them_and_refuses_a_body_without_them(tmp_path):
         assert [f["metadata"]["seq"] for f in r.json()["frames"]] == [2, 3]
     with make_client() as client:
         assert client.get("/teleop/frames").status_code == 400
+
+
+def test_a_restarted_robot_says_so_rather_than_nothing_new():
+    robot = TeleopRobot()
+    _push(robot, 3)
+    out = robot.frames_after(500)              # a recorder from before a restart
+    assert out["reset"] is True
+    assert [f["metadata"]["seq"] for f in out["frames"]] == [1, 2, 3]
+    assert out["lost"] == 0
+
+
+def test_a_negative_after_is_not_a_loss():
+    robot = TeleopRobot()
+    _push(robot, 3)
+    out = robot.frames_after(-5)
+    assert out["lost"] == 0 and out["reset"] is False and len(out["frames"]) == 3
+
+
+def test_walk_eval_scores_only_the_perceived_rows_of_a_stream_walk():
+    from control.walk_eval import compute_metrics, decided_entries
+
+    rows = [{"seq": 0, "navigate": {"action": "FORWARD"}, "perceived": True},
+            {"seq": 1, "navigate": None, "perceived": False},
+            {"seq": 2, "navigate": None, "perceived": False},
+            {"seq": 3, "navigate": {"action": "FORWARD"}, "perceived": True}]
+    assert compute_metrics(decided_entries(rows))["frames"] == 2
+    old_walk = [{"seq": 0, "navigate": {"action": "LEFT"}}]
+    assert decided_entries(old_walk) == old_walk

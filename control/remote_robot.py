@@ -156,6 +156,12 @@ class RemoteRobot(RobotInterface):
     def get_camera_frame(self) -> dict:
         return self._request("GET", "/frame")
 
+    def teleop_frames(self, after: int) -> dict:
+        """3.90 E: the teleop body's kept frames newer than `after`, for the
+        brain's stream recorder. A body that keeps none answers 400, raised
+        here as ValueError."""
+        return self._request("GET", f"/teleop/frames?after={int(after)}")
+
     def get_distance(self) -> float:
         return float(self._request("GET", "/distance")["distance_cm"])
 

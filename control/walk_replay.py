@@ -41,6 +41,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from control.walk_eval import decided_entries
 logger = logging.getLogger(__name__)
 
 # The vision service is the bottleneck (~2-3s per frame), so this sets how
@@ -82,6 +83,10 @@ def replay_walk(entries, frame_bytes_for, target_object, post_navigate,
     original with no special-casing, plus a per-frame diff against what was
     recorded at the time.
     """
+    # 3.90 E: a stream walk's frames that perception never took have no
+    # decision to compare against; replaying them would be a paid call each
+    # (a 5-minute walk at 4 fps holds ~1,200). Old walks keep every row.
+    entries = decided_entries(entries)
     if not entries:
         return {"model_id": model_id, "prompt_variant": prompt_variant, "frames": 0,
                 "entries": [], "diff": [], "errors": 0, "agreement": None}

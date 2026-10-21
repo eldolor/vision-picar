@@ -573,7 +573,8 @@ def create_app(config_path=None, store=None) -> FastAPI:
         """Compute and persist one walk's scorecard. Synchronous and
         blocking (the judge is several Bedrock calls), so routes run it in a
         worker thread rather than on the event loop."""
-        entries = _walk_entries(store, walk_name)
+        # 3.90 E: a stream walk's unperceived frames carry no decision.
+        entries = walk_eval.decided_entries(_walk_entries(store, walk_name))
         metrics = walk_eval.compute_metrics(entries)
 
         def frame_bytes_for(entry):

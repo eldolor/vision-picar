@@ -58,6 +58,9 @@ from control.walk_store import METRICS_PREFIX, WalkStoreError
 WALK_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 MAX_FRAME_BYTES = 4 * 1024 * 1024
 MAX_FRAMES_PER_WALK = 500
+# 3.90 E: a walk the brain records from a stream (control/stream_recorder.py)
+# -- 20 minutes at 4 fps. A walk the phone posts frame by frame keeps 500.
+MAX_STREAM_FRAMES = 5000
 FRAME_SUFFIX = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 
 
@@ -111,6 +114,46 @@ class FinishWalkRequest(BaseModel):
     # cannot see.
     capture_width: Optional[int] = None
     capture_height: Optional[int] = None
+
+
+class WalkFull(Exception):
+    """The walk already holds its cap of frames."""
+
+
+def store_frame(store, walk: str, seq: int, image: bytes, media_type: str, row: dict,
+                max_frames: int = MAX_FRAMES_PER_WALK, count: Optional[int] = None) -> dict:
+    """Write one frame and its walk.jsonl row. The route's body, shared with
+    the brain's stream recorder (3.90 E). `walk` must already match
+    WALK_NAME. `count`, when the caller keeps it, saves listing the walk on
+    every frame (a stream walk holds thousands)."""
+    # The name is already sanitised; walk_store refuses a separator or a
+    # `..` again on the way in, on either backend.
+    store.create_walk(walk)
+    # "starts with frame-", not "isn't walk.jsonl": control/admin_server.py
+    # can leave a tags.json sidecar beside these, which a suffix-exclusion
+    # check would miscount as a frame.
+    if count is None:
+        count = len(store.list_names(walk, prefix="frame-"))
+    if count >= max_frames:
+        raise WalkFull(f"This walk already has {max_frames} frames.")
+    suffix = FRAME_SUFFIX.get(media_type, ".jpg")
+    name = f"frame-{seq:04d}{suffix}"
+    store.write_bytes(walk, name, image)
+    store.append_text(walk, "walk.jsonl", json.dumps({
+        "seq": seq, "file": name, "media_type": media_type, **row,
+    }) + "\n")
+    return {"saved": name, "frames": count + 1, "dir": store.location(walk)}
+
+
+def finish_walk_meta(store, walk: str, **fields) -> dict:
+    """Write meta.json's finish marker. The route's body, shared with the
+    stream recorder; None fields are left out."""
+    meta = store.read_json(walk, "meta.json") or {}
+    meta["finished_at"] = time.time()
+    meta["frames"] = len(store.list_names(walk, prefix="frame-"))
+    meta.update({k: v for k, v in fields.items() if v is not None})
+    store.write_json(walk, "meta.json", meta)
+    return meta
 
 
 def mount_recording_routes(
@@ -168,34 +211,14 @@ def mount_recording_routes(
         except (binascii.Error, ValueError):
             raise HTTPException(status_code=400, detail="image_base64 is not valid base64.")
 
-        # The name is already sanitised; walk_store refuses a separator or
-        # a `..` again on the way in, on either backend.
         try:
-            store.create_walk(req.walk)
+            saved = store_frame(store, req.walk, req.seq, image, req.media_type,
+                                {"navigate": req.navigate, "teleop_seq": req.teleop_seq})
         except WalkStoreError:
             raise HTTPException(status_code=400, detail="Bad walk name.")
-
-        # "starts with frame-", not "isn't walk.jsonl": control/admin_server.py
-        # can leave a tags.json sidecar beside these, which a suffix-exclusion
-        # check would miscount as a frame.
-        existing = store.list_names(req.walk, prefix="frame-")
-        if len(existing) >= MAX_FRAMES_PER_WALK:
-            raise HTTPException(
-                status_code=409,
-                detail=f"This walk already has {MAX_FRAMES_PER_WALK} frames.",
-            )
-
-        suffix = FRAME_SUFFIX.get(req.media_type, ".jpg")
-        name = f"frame-{req.seq:04d}{suffix}"
-        store.write_bytes(req.walk, name, image)
-        store.append_text(req.walk, "walk.jsonl", json.dumps({
-            "seq": req.seq, "file": name, "media_type": req.media_type,
-            "navigate": req.navigate,
-            "teleop_seq": req.teleop_seq,
-        }) + "\n")
-
-        return {"saved": name, "walk": req.walk, "frames": len(existing) + 1,
-                "dir": store.location(req.walk)}
+        except WalkFull as e:
+            raise HTTPException(status_code=409, detail=str(e))
+        return {**saved, "walk": req.walk}
 
     @app.post(prefix + "/recording/finish", dependencies=deps)
     async def finish_walk(req: FinishWalkRequest):
@@ -220,15 +243,9 @@ def mount_recording_routes(
         except WalkStoreError:
             raise HTTPException(status_code=400, detail="Bad walk name.")
 
-        meta = store.read_json(req.walk, "meta.json") or {}
-        meta["finished_at"] = time.time()
-        meta["frames"] = len(store.list_names(req.walk, prefix="frame-"))
-        if req.model_id:
-            meta["model_id"] = req.model_id
-        if req.target_object:
-            meta["target_object"] = req.target_object
-        if req.capture_width and req.capture_height:
-            meta["capture"] = {"width": req.capture_width,
-                               "height": req.capture_height}
-        store.write_json(req.walk, "meta.json", meta)
+        meta = finish_walk_meta(
+            store, req.walk, model_id=req.model_id or None,
+            target_object=req.target_object or None,
+            capture=({"width": req.capture_width, "height": req.capture_height}
+                     if req.capture_width and req.capture_height else None))
         return {"walk": req.walk, "meta": meta}

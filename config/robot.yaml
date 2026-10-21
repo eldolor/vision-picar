@@ -218,6 +218,11 @@ brain:
   # Arrival's own span is brain/arrival.py's ARRIVAL_SPAN_S (0.25 s), not this
   # key; the band, out-of-vocabulary and cold-search counts stay in frames.
   tier_sighting_span_s: 0.25
+  # 3.90 E: "combine frames": candidate_sighting on k detected of the last n
+  # frames perception took ("2of3", "3of5") instead of tier_consecutive_frames
+  # in a row. "off" (shipped) is today's rule. Per mission: /mission/start's
+  # frame_vote. A switch for comparing walks; adoption waits on 3.90 C.
+  tier_frame_vote: "off"
   # How many consecutive "absent" frames before asking the cloud whether the
   # target is even in this room. Without it a target outside COCO's 80 never
   # fires anything at all. The number is a guess; tune it on a real walk.

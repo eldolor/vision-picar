@@ -46,6 +46,7 @@ import functools
 import logging
 import math
 import re
+import collections
 import threading
 import time
 from typing import Callable, Optional, Tuple
@@ -818,6 +819,12 @@ class MissionRunner:
         # streak -- copied from the scene like the two above.
         self._arrival: Optional[dict] = None
         self._last_frame_seq: Optional[int] = None
+        # 3.90 E: the decision taken on each recent frame, by the robot's
+        # frame seq, for the stream recorder (control/stream_recorder.py) to
+        # file beside the frame it was taken on. Bounded: a recorder more
+        # than this many decisions behind files the rest as not perceived.
+        self._decisions: "collections.OrderedDict[int, dict]" = collections.OrderedDict()
+        self._decisions_lock = threading.Lock()
         self._log: list = []
         self._camera_centred = False
 
@@ -971,6 +978,7 @@ class MissionRunner:
                 (result.frame or {}).get("metadata", {}).get("seq")
                 if isinstance(result.frame, dict) else None
             ) or self._last_frame_seq
+            self._note_decision(result)
             if result.action != "WAIT":
                 self._log_line(
                     f"step {result.step}: {result.action} "
@@ -1197,6 +1205,38 @@ class MissionRunner:
         return self._running
 
     # ---------- reporting ----------
+
+    DECISIONS_KEPT = 256
+
+    def _note_decision(self, result) -> None:
+        """3.90 E: what was decided on this tick's frame, kept by its seq."""
+        seq = ((result.frame or {}).get("metadata", {}).get("seq")
+               if isinstance(result.frame, dict) else None)
+        if not isinstance(seq, int):
+            return
+        perception = self._perception or {}
+        decision = {"action": result.action,
+                    "reasoning": self._last_reasoning,
+                    "target_visible": (perception.get("status") == "detected"
+                                       if perception else None),
+                    "_missionStatus": {"last_frame_seq": seq,
+                                       "last_action": result.action,
+                                       "perception": self._perception,
+                                       "tier_trigger": (self._tier or {}).get("trigger")}}
+        with self._decisions_lock:
+            self._decisions[seq] = decision
+            while len(self._decisions) > self.DECISIONS_KEPT:
+                self._decisions.popitem(last=False)
+
+    def decision_for(self, seq: int) -> Optional[dict]:
+        """3.90 E: the decision taken on the robot's frame `seq`, or None if
+        no tick took that frame (or it has aged out)."""
+        with self._decisions_lock:
+            return self._decisions.get(seq)
+
+    @property
+    def last_frame_seq(self) -> Optional[int]:
+        return self._last_frame_seq
 
     def status(self) -> dict:
         with self._lock:
