@@ -55,7 +55,7 @@ from brain.goal_policy import FEATURES as GOAL_FEATURES
 from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
 from brain.memory import MissionMemory
-from robot.interface import ZONE_UNUSABLE, Preempted, RobotInterface
+from robot.interface import VERB_MAX_REASON, ZONE_UNUSABLE, Preempted, RobotInterface
 from robot.safety import CREEP_MARGIN_CM, FOOTPRINT_LENGTH_M, SafetyViolation, verb_speed_m_s
 from world.bridge_faults import fault_from_headers, response_detail, setup_fault_message
 
@@ -1376,8 +1376,11 @@ class ExploreAgent(MissionAgent):
             # floor band had something ahead just before -- the car's numbers
             # decide whether the band's blind range needs closing (a forward
             # creep can carry a sock inside it). A record, no behaviour.
+            # 3.89: cut by the body's VERB_MAX_S, by its reason -- the real
+            # board also ends 'timeout' when a verb runs out its own periods.
             cut = (out[0] != "WAIT" and out[1] and isinstance(out[2], dict)
-                   and out[2].get("stopped_short") == "timeout")
+                   and out[2].get("stopped_short") == "timeout"
+                   and out[2].get("reason") == VERB_MAX_REASON)
             self._event("creep", way=ends[0], executed=bool(out[1]),
                         waited=out[0] == "WAIT", piece=piece, cut_by_time=cut, **seen)
             if out[0] == "WAIT":

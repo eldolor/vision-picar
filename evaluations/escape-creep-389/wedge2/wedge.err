@@ -1,0 +1,10 @@
+skip (25.5, 35.5): goal rejected
+skip (24.5, 35.5): goal rejected
+skip (29.5, 34.5): goal rejected
+skip (29.5, 37.5): goal aborted
+skip (27.5, 38.5): goal timeout
+skip (28.5, 38.5): goal timeout
+skip (29.5, 33.5): goal aborted
+skip (26.5, 37.5): goal timeout
+skip (28.5, 33.5): goal aborted
+skip (24.5, 36.5): goal timeout

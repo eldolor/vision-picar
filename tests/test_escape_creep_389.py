@@ -22,7 +22,7 @@ import robot.ros_drive as ros_drive
 from brain.explore import CREEP_PIECES, ExploreAgent
 from brain.memory import MissionMemory
 from control.remote_robot import DEFAULT_TIMEOUT_S
-from robot.interface import VERB_MAX_S
+from robot.interface import VERB_MAX_REASON, VERB_MAX_S
 from robot.safety import LIDAR_X_M, SafetyController, SafetyViolation
 from sim.maps import build_world
 from sim.mock_robot import MockRobot
@@ -184,7 +184,8 @@ def _agent(results):
 
 
 def test_the_escape_creeps_on_after_a_creep_cut_by_time():
-    cut = {"action": "drive_forward", "moved_m": 0.10, "stopped_short": "timeout"}
+    cut = {"action": "drive_forward", "moved_m": 0.10, "stopped_short": "timeout",
+           "reason": VERB_MAX_REASON}
     agent, asked = _agent([dict(cut), {"action": "drive_forward", "moved_m": 0.06}])
     agent.safety.forward_clearance = lambda *a, **k: (9.0, "scan_footprint")   # room past the line
     agent._pending = [("CREEP", ["FORWARD", "REVERSE"]), ("OPEN",)]
@@ -203,7 +204,8 @@ def test_a_creep_that_ends_at_the_line_is_not_repeated():
 
 
 def test_the_creep_pieces_are_bounded():
-    cut = {"action": "drive_forward", "moved_m": 0.05, "stopped_short": "timeout"}
+    cut = {"action": "drive_forward", "moved_m": 0.05, "stopped_short": "timeout",
+           "reason": VERB_MAX_REASON}
     agent, asked = _agent([dict(cut) for _ in range(10)])
     agent.safety.forward_clearance = lambda *a, **k: (15.0, "scan_footprint")
     agent._pending = [("CREEP", ["FORWARD"]), ("OPEN",)]
@@ -226,11 +228,26 @@ def test_only_a_cut_by_time_creeps_on(stopped):
     assert agent._pending == [("OPEN",)]
 
 
+def test_a_timeout_that_is_not_the_cap_does_not_creep_on():
+    """Review (round 3): the real board's `carry_out_verb` also ends
+    'timeout' when a verb runs out its own periods (reason None); only the
+    VERB_MAX_S cut is a creep its time stopped short, as on ROS."""
+    out_of_periods = {"action": "drive_forward", "moved_m": 0.10, "stopped_short": "timeout",
+                      "reason": None}
+    agent, asked = _agent([out_of_periods])
+    agent.safety.forward_clearance = lambda *a, **k: (9.0, "scan_footprint")
+    agent._pending = [("CREEP", ["FORWARD"]), ("OPEN",)]
+    agent._do_pending()
+    assert asked == [("FORWARD", 5)]
+    assert agent._pending == [("OPEN",)]
+
+
 def test_a_creep_cut_at_the_line_does_not_creep_on(monkeypatch):
     """Review (both reviewers' race): a creep that reached the line just
     before the cut reads as cut; with no room left past the line, no second
     piece is sent into the wall."""
-    cut = {"action": "drive_forward", "moved_m": 0.16, "stopped_short": "timeout"}
+    cut = {"action": "drive_forward", "moved_m": 0.16, "stopped_short": "timeout",
+           "reason": VERB_MAX_REASON}
     agent, asked = _agent([dict(cut)])
     monkeypatch.setattr(agent.safety, "forward_clearance", lambda *a, **k: (3.6, "scan_footprint"))
     agent._pending = [("CREEP", ["FORWARD"]), ("OPEN",)]

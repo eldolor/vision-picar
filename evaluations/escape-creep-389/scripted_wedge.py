@@ -63,10 +63,12 @@ def go(nav, x_m, y_m, timeout_s=90):
 
 def face(robot, x_m, y_m):
     t = robot.get("/world/pose").json()
-    want = math.degrees(math.atan2(y_m - t["y_m"], x_m - t["x_m"]))
+    # compass heading, 0 = -y, 90 = +x (world/interface.py); RIGHT adds to it
+    want = math.degrees(math.atan2(x_m - t["x_m"], -(y_m - t["y_m"])))
     d = (want - t["heading_deg"] + 180) % 360 - 180
     if abs(d) > 5:
-        act(robot, {"action": "LEFT" if d > 0 else "RIGHT", "angle": int(round(abs(d)))})
+        act(robot, {"action": "RIGHT" if d > 0 else "LEFT", "angle": int(round(abs(d)))})
+    return want
 
 
 def main():
@@ -85,15 +87,18 @@ def main():
                 break
             state = go(nav, x * 0.3, y * 0.3)
             if state != "succeeded":
+                print(f"skip {x, y}: goal {state}", file=sys.stderr, flush=True)
                 continue
             # toward the table, a little to one side: its legs and chairs
-            face(robot, cx * 0.3 + rng.uniform(-0.4, 0.4), cy * 0.3 + rng.uniform(-0.4, 0.4))
+            want = face(robot, cx * 0.3 + rng.uniform(-0.4, 0.4), cy * 0.3 + rng.uniform(-0.4, 0.4))
             rows = []
             refusal = to_bar(robot, "FORWARD", truth, rows.append, done)
             if refusal is None or "error" in refusal:
+                print(f"skip {x, y}: no refusal {refusal}", file=sys.stderr, flush=True)
                 continue
             room = room_cm(robot, "FORWARD", refusal)
             if room is None or room < 15:
+                print(f"skip {x, y}: room {room} ({refusal.get('detail')})", file=sys.stderr, flush=True)
                 continue
             agent = ExploreAgent(brain_robot, MissionMemory(mission="m", target_object="x"),
                                  navigator=nav, world=RemoteWorld(url))
@@ -118,7 +123,7 @@ def main():
                               "out": out[2] if isinstance(out[2], dict) else str(out[2])})
             gap, inside = truth(robot)
             print(json.dumps({"trial": done, "start": [round(x * 0.3, 2), round(y * 0.3, 2)],
-                              "room_cm": room, "rear_cm": rev_cm, "full_escape": wedged,
+                              "room_cm": room, "rear_cm": rev_cm, "table_bearing_deg": round(want, 1), "full_escape": wedged,
                               "verbs": verbs,
                               "creeps": [e for e in agent.events if e["event"] == "creep"],
                               "error": error, "gap_cm": gap, "inside": inside,
