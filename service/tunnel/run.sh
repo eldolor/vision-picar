@@ -182,9 +182,12 @@ echo "Restarting this kills any mission in flight, and the phone reports it"
 echo "as a bare \"Load failed\" -- Safari's words for a fetch that never"
 echo "reached anything. Press Start again once this line reappears."
 echo
-echo "Warm the perception models once before a rig walk -- the first tiered"
-echo "mission downloads yolo11s.pt (18MB) inside POST /mission/start:"
-echo "  python -c 'from brain.perceive import pipeline_for; pipeline_for(\"red backpack\")'"
+echo "Warm the perception models once before a rig walk, with one frame: the"
+echo "first tiered start downloads YOLOE (27 MB) and its first frame MobileCLIP"
+echo "(600 MB), past the 60 s perception guard (3.90, 2026-10-21):"
+echo "  python -c 'from brain.perceive import pipeline_for; import base64, io; from PIL import Image;"
+echo "b = io.BytesIO(); Image.new(\"RGB\", (64, 48)).save(b, \"JPEG\");"
+echo "pipeline_for(\"red backpack\").perceive({\"image_base64\": base64.b64encode(b.getvalue()).decode()})'"
 # 3.71: any one of them ending ends them all (the EXIT trap), so a crash is
 # seen. A bare `wait` waited on the others: under systemd the service stayed
 # "active" with the robot server dead, and was never restarted (measured on
