@@ -67,3 +67,11 @@ def test_an_oracle_mission_records_its_choices_and_finds():
     for c in row["choices"]:
         assert len(c["feats"]) == len(c["costs"]) >= 2
         assert c["pick"] == c["oracle"]
+
+
+def test_a_pool_the_oracle_cannot_rank_is_never_a_tie_aware_match():
+    """Review: two unreachable candidates (inf == inf) must not count as a
+    match; the pool is counted as unranked instead."""
+    c = {"feats": [[0.0] * 10, [1.0] + [0.0] * 9], "costs": [None, None], "oracle": 0, "pick": 0}
+    a = agreement([c], [-1.0] + [0.0] * 9)
+    assert a["unranked"] == 1 and a["tie_aware"] == 0 and a["rule_tie_aware"] == 0

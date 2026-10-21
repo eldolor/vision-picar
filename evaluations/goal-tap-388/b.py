@@ -117,21 +117,27 @@ def nll(choices: list, w) -> float:
 
 
 def agreement(choices: list, w) -> dict:
-    """Criterion 5: strict (the oracle's own index), tie-aware (same cost)
-    and the rule's (index 0), over choices of two or more candidates."""
+    """Criterion 5: strict (the oracle's own index), tie-aware (same finite
+    cost) and the rule's (index 0), over choices of two or more candidates.
+    A pool the oracle cannot rank (every cost infinite) is counted in `n`
+    and `unranked`, and never as a tie-aware match."""
     w = np.asarray(w)
-    strict = tie = rule = rule_tie = 0
+    strict = tie = rule = rule_tie = unranked = 0
     for c in choices:
         s = np.asarray(c["feats"]) @ w
         i = int(np.argmax(s))          # first of equals: the pool's order
         costs = [np.inf if x is None else x for x in c["costs"]]
         o = c["oracle"]
         strict += i == o
-        tie += costs[i] == costs[o]
         rule += o == 0
+        if costs[o] == np.inf:
+            unranked += 1
+            continue
+        tie += costs[i] == costs[o]
         rule_tie += costs[0] == costs[o]
     n = len(choices)
-    return {"n": n, "strict": round(strict / n, 4), "tie_aware": round(tie / n, 4),
+    return {"n": n, "unranked": unranked, "strict": round(strict / n, 4),
+            "tie_aware": round(tie / n, 4),
             "rule_strict": round(rule / n, 4), "rule_tie_aware": round(rule_tie / n, 4)}
 
 
@@ -207,12 +213,12 @@ def spec_of(name: str):
     if name in ("rule", "oracle"):
         return name
     data = json.load(open(name))
-    if "net" in data.get("best", {}):          # train_net.py's output
-        return ("net", data["best"]["net"])
-    for key in ("best",):
-        if key in data and "weights" in data[key] and "layers" not in data.get(key, {}):
-            return ("weights", data[key]["weights"])
-    return ("weights", data["weights"])
+    best = data.get("best", {})
+    if "net" in best:                          # train_net.py's output
+        return ("net", best["net"])
+    if "weights" in best:                      # dagger.json
+        return ("weights", best["weights"])
+    return ("weights", data["weights"])        # clone.json
 
 
 def cmd_sweep(which: str, names: list, ex) -> None:

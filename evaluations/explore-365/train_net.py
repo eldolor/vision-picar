@@ -91,7 +91,9 @@ class Sampler(NetGoalPolicy):
 
 def _yield() -> None:
     """3.88 B: pause while another session's live run holds the heavy-run lock."""
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "goal-tap-388"))
+    here = os.path.join(os.path.dirname(__file__), "..", "goal-tap-388")
+    if here not in sys.path:
+        sys.path.insert(0, here)
     from oracle import yield_to_live_runs
     yield_to_live_runs()
 
@@ -150,7 +152,14 @@ def main(out: str, init: str = None) -> None:
     rng = random.Random(SEED)
     u = usable()
     train, select = u[300:570], u[100:200]
-    net = Net(json.load(open(init))["weights"] if init else LinearGoalPolicy.load().weights)
+    if init:
+        with open(init) as f:
+            data = json.load(f)
+        # clone.json keeps its weights at the top; dagger.json under `best`.
+        w_lin = data["weights"] if "weights" in data else data["best"]["weights"]
+    else:
+        w_lin = LinearGoalPolicy.load().weights
+    net = Net(w_lin)
     opt = torch.optim.Adam(net.parameters(), lr=LR)
     log = {"features": list(FEATURES), "seed": SEED, "houses": HOUSES, "rollouts": ROLLOUTS,
            "epochs": EPOCHS, "lr": LR, "clip": CLIP, "entropy": ENTROPY,

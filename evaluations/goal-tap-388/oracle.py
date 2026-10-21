@@ -40,14 +40,26 @@ from tests.test_explore import CELL                                # noqa: E402
 INF = math.inf
 
 
+_LOCK_PATH = None
+
+
+def _lock_path() -> str:
+    """The heavy-run lock's path, as `tests/demo_explore.heavy_lock` makes
+    it (the same "/tmp" fallback), resolved once a process."""
+    global _LOCK_PATH
+    if _LOCK_PATH is None:
+        common = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=ROOT,
+                                capture_output=True, text=True).stdout.strip() or "/tmp"
+        _LOCK_PATH = os.path.join(os.path.abspath(os.path.join(ROOT, common)), "heavy-run.lock")
+    return _LOCK_PATH
+
+
 def yield_to_live_runs() -> None:
     """Wait while another session's live run holds the heavy-run lock
     (`tests/demo_explore.heavy_lock`), so a sweep never shares the laptop
     with one. A shared lock is taken and dropped at once: it never makes the
     live run wait more than an instant."""
-    common = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=ROOT,
-                            capture_output=True, text=True).stdout.strip()
-    lock = os.path.join(os.path.abspath(os.path.join(ROOT, common)), "heavy-run.lock")
+    lock = _lock_path()
     if not os.path.exists(lock):
         return
     with open(lock) as f:
@@ -121,8 +133,10 @@ class Chooser:
             else:
                 chooser.singles += 1
             kind, c, rank = pool[i]
-            return self._send_pooled(kind, c, rank, now, len(pool), skipped,
-                                     learned=round(-costs[i], 3) if costs[i] != INF else None)
+            info = {"oracle_cost": None if costs[i] == INF else costs[i]}
+            if chooser.learner is not None:
+                info["learned"] = round(chooser.learner.score(feats[i]), 3)
+            return self._send_pooled(kind, c, rank, now, len(pool), skipped, **info)
 
         agent._learned_goal = types.MethodType(_learned_goal, agent)
 
