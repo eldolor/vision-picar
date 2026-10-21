@@ -604,8 +604,22 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   numbers the goals; a tap is a pick, never `/world/goal` (UI test pinned).
   Live 1 of 2 found, 0 contacts, 0.0 cm moved in pauses; run 2 failed on
   `dev`'s escape creep outliving `RemoteRobot`'s 10 s timeout under
-  `drive: ros` (open for the user). Up to 71 candidates a choice. B (oracle,
+  `drive: ros` (fixed by 3.89, below). Up to 71 candidates a choice. B (oracle,
   cloning, DAgger) next on the same branch; C (the user's taps) only if B passes.
+* **The escape creep inside the brain's timeout (3.89), merged 2026-10-21.**
+  Under `drive: ros` nav2's `collision_monitor` (`PolygonSlow`, 13-33 cm
+  ahead, ratio 0.5) halves a forward twist, so the escape's creep FORWARD
+  from the 20 cm bar took 11.07 s median (max 12.70) and outlived
+  `RemoteRobot`'s 10 s. Now every wall-clock verb (ROS and the real board)
+  ends at `VERB_MAX_S` (7 s) with `VERB_MAX_TAG` in its reason, and explore
+  sends a creep cut that way again, up to `CREEP_PIECES` (3), while more
+  than 1 cm is left past the 3 cm line. RemoteRobot's 10 s (B3.2's guard)
+  is unchanged; no safety bar moved. Live: 47 creeps, longest reply 7.23 s,
+  0 timeouts, gain 16.9 cm (dev 17.0); 3/3 explore missions `found`; 8
+  scripted wedges under the dining table, each finished, 0 timeouts; escape
+  sweep and ProcTHOR pin (99) unchanged. Known limits: a slow bridge adds to
+  the bound, and a ROS verb planned over 4/3 s now reads `timeout` to
+  `SHORT_MOVES` if cut (no policy sends one).
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
