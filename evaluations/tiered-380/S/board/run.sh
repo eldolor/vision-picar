@@ -4,7 +4,7 @@
 # NF4 on :8006 in Florence's place, $PG_SPEC, under ~/bench-380T's venv);
 # $3 the output tag (default $1, or $1-ve / $1-both / $1-paligemma). MemAvailable every second from before the first server
 # starts (and before the runner loads YOLOE + CLIP) to the end, in
-# ~/out-380S/$TAG.mem.
+# ~/out-380S/$TAG.mem. $REC (3.80.U) names another walks directory.
 set -u
 RES=$1; SECOND=${2:-florence}; OUT=~/out-380S; V=~/vp-380R; mkdir -p $OUT
 case $SECOND in florence) TAG=${3:-$RES};; *) TAG=${3:-$RES-$SECOND};; esac
@@ -52,7 +52,7 @@ fi
 if [ -z "$ok" ]; then
   echo "$(date +%T) $TAG server never healthy"; kill $SAMP; stop; exit 1
 fi
-cd $V && .venv/bin/python evaluations/tiered-380/S/run_gated.py $RES --second $SECOND --recordings ~/vision-picar/recordings \
+cd $V && .venv/bin/python evaluations/tiered-380/S/run_gated.py $RES --second $SECOND --recordings ${REC:-$HOME/vision-picar/recordings} \
   --out $OUT/$TAG.jsonl > $OUT/$TAG.run.log 2>&1
 rc=$?
 alive=

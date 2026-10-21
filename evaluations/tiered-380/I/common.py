@@ -3,21 +3,25 @@
 import base64
 import io
 import json
+import os
 from pathlib import Path
 
 from PIL import Image, ImageOps
 
 HERE = Path(__file__).parent
-RECORDINGS = Path("/Users/anshugaind/vision-picar/recordings")
+# 3.80.U: another frame set (the Rover's) is a directory holding its own
+# sets.json and labels-s1.json, and its walks may live elsewhere.
+SETS = Path(os.environ.get("PICAR_380_SETS", HERE))
+RECORDINGS = Path(os.environ.get("PICAR_380_RECORDINGS", "/Users/anshugaind/vision-picar/recordings"))
 SWAP = {"LEFT": "RIGHT", "RIGHT": "LEFT", "FORWARD": "FORWARD", None: None}
 
 
 def sets() -> dict:
-    return json.loads((HERE / "sets.json").read_text())
+    return json.loads((SETS / "sets.json").read_text())
 
 
 def labels_s1() -> list:
-    return json.loads((HERE / "labels-s1.json").read_text())["rows"]
+    return json.loads((SETS / "labels-s1.json").read_text())["rows"]
 
 
 def items():
@@ -27,8 +31,8 @@ def items():
         yield "S1", f"{r['walk']}/{r['frame']}", RECORDINGS / r["walk"] / r["frame"], r["target"], r["truth"]
     for r in s["S2"]:
         yield "S2", f"{r['walk']}/{r['frame']}", RECORDINGS / r["walk"] / r["frame"], r["target"], None
-    for r in s["S3"]:
-        yield "S3", r["image"], HERE / r["image"], r["target"], r["truth"]
+    for r in s.get("S3", []):
+        yield "S3", r["image"], SETS / r["image"], r["target"], r["truth"]
 
 
 def mirrored(jpeg: bytes) -> bytes:
