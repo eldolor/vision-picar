@@ -420,7 +420,18 @@ class RobotInterface(ABC):
              "media_type": "image/jpeg",     # or whatever it really is
              "room": str,                    # MissionMemory reads this
              "metadata": {...},              # provenance; policies ignore it
+             "captured_at": float,           # optional (3.90): when the
+                                             #   pixels were taken, wall-clock
+                                             #   seconds on the robot's machine
              ...}                            # backend-specific extras
+
+        `captured_at` is part of the contract, not an extra: a backend whose
+        frames come from a real camera stamps them, and the brain times its
+        counted rules by the difference between two stamps (3.90 criterion
+        4: a two-frame rule means the same span at any frame rate). Only
+        differences are taken, so the two machines' clocks never meet. A
+        backend that cannot say leaves it out, and the rules count frames
+        as before (the simulator's frames are not stamped).
 
         The image keys are the contract. They exist because the whole
         design rests on this interface not changing when hardware lands

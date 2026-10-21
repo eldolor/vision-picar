@@ -26,6 +26,7 @@ the same commit that changes it.
 | `sim/teleop_robot.py` | `TeleopRobot`: the latest frame pushed through `POST /teleop/frame`; verbs are acks; `TeleopStall` once the last push is older than the stall timeout |
 | `robot/hardware_robot.py` | `HardwareRobot`: the motors over the ESP32 board's serial line (protocol: [motor-board engineering](../motor-board/ENGINEERING.md)). Sensing comes from an optional `sensors` body; without one, the defaults (and `get_distance()` 0.0). An optional `lidar` (3.42) is THE scan when present; `sensor_age_s()` is the older of the lidar's and the sensors' ages, and `turn_since_scan()` the encoder heading change since the scan's oldest point. With a lidar the safety cone reads its forward beams, so the 0.0 scalar no longer vetoes every forward move |
 | `robot/lidar_ld19.py` | 3.42: the D500 (LDROBOT STL-19P). The LD19 protocol from LDROBOT's MIT driver (47-byte packets, CRC-8 table), `Parser` (resync, split reads, CRC drops counted), `Assembler` (revolutions at the 360 wrap; a list past `MAX_REVOLUTION_POINTS`, 1,800, that never wrapped is dropped and counted in `revolutions_dropped`, 3.76 B5), `bin_scan()` (1-degree body bins, nearest return, mounting yaw `LIDAR_YAW_DEG` -90 `[CAD]`; a bin with no data carries the previous revolution's value or its neighbours', never reads as clear; more than 18 uncovered bins is no scan), `Ld19Scanner` (each packet stamped by its own `timestamp_ms` behind the read's last packet, clamped to the time since the previous read, 3.76 B4; age = oldest point; unusable after `STALE_S` 0.3 s without packets or revolutions) and `Ld19Lidar` (a serial reader thread at 230,400 baud; it ends, with `link_error`, on a read error or an empty read from a hung-up line, 3.76 B3) |
+| `robot/camera_stream.py` | 3.90 A: `CameraStream`, the car's camera as a stream. A reader thread keeps only the newest frame (newest wins, nothing queues), stamps it `captured_at` (wall-clock seconds), and reopens the source every `reopen_s` after an open or read error. `get_camera_frame()` raises `CameraStale` (the server's 503) once the newest frame is older than `stale_s`, never serving an old one. A JPEG from the source is passed through; any other picture is encoded only when read, once per frame. `OpenCvSource` asks V4L2 for MJPEG and passes the camera's own bytes through where the backend allows (cv2 imported there only). `status()` is `/health`'s `camera` (description) |
 | `robot/ros_drive.py` | `RosDriveRobot`: wraps any backend under `drive: ros`. Verbs become `POST /cmd_vel` twists closed on the wrapped body's encoders; reads go to the wrapped body. Marks itself `drives_by_velocity = True`. `stop()` is described below |
 | `control/mission_runner.py` | `_HaltGate`: wraps the mission's body and raises `MissionHalted` on any motion once the mission has ended. Owned by [mission](../../mission/ARCHITECTURE.md) and listed here because the conformance suite runs it |
 | `tests/conftest.py` | `RecordingRobot`, a test double, and the `robot_over_asgi` fixture (a `RemoteRobot` over an in-process robot server) |
@@ -146,7 +147,7 @@ default shown.
 | `turn_left(angle)` / `turn_right(angle)` | dict with `action` | abstract |
 | `look_left()` / `look_right()` / `look_center()` | dict with `action` | abstract |
 | `stop()` | dict; zeroes any standing wheel command and increments `stop_count` where the backend keeps one | abstract |
-| `get_camera_frame()` | `{"image_base64", "media_type", "room", "metadata", ...}`; may raise | abstract |
+| `get_camera_frame()` | `{"image_base64", "media_type", "room", "metadata", ...}`, plus `captured_at` where the pixels come from a real camera (3.90); may raise | abstract |
 | `get_distance()` | float, cm | abstract |
 | `get_depth_grid()` | `{"rows", "cols", "fov_deg"?, "pan_deg"?, "zones": [{"status", "distance_cm"}]}`, row-major | `unusable_grid()`: 1 x 8, all `unusable`, no `fov_deg` |
 | `get_odometry()` | `{"usable", "distance_m", "heading_deg"}`. Path length, never decreasing. Heading is degrees turned since start, clockwise-positive, in [0, 360), on every body that measures it (handoff 2d, 2026-10-03; `MockRobot` used to report its compass bearing). `tests/test_robot_contract.py` pins it on all six backends: 0 at start, 90 after a RIGHT 90 | `unusable_odometry()` |
@@ -208,6 +209,7 @@ above raises `RobotTransportError`. Sensing routes catch only `HTTP 404`.
 | `teleop.stall_timeout_s` | 15.0 s | Teleop staleness window |
 | `ROBOT_SERIAL` / `hardware.serial_port` | none (required) | The board's serial device under `mode: hardware` |
 | `ROBOT_LIDAR` / `hardware.lidar_port` | none | The D500's serial device under `mode: hardware` (3.42); without it the scan stays the `sensors`' (or unusable) |
+| `ROBOT_CAMERA` / `hardware.camera_device` | none | The camera the brain sees, under `mode: hardware` (3.90 A): a udev name or V4L2 index, read by `robot/camera_stream.py`. Without it the frame stays the `sensors'` (or raises) |
 | `LIDAR_YAW_DEG` | -90 | The lidar's mounting yaw (`[CAD]`, verify on the car: a box dead ahead must read 0 +/- 2 deg). Set but empty is unset (3.76 N1), as for `TRACK_SCRUB` |
 | `SIM_LIDAR=fake` | unset | `service/tunnel/run.sh` starts `sim/fake_lidar.py` and points `ROBOT_LIDAR` at its pty |
 | `TRACK_SCRUB` / `hardware.track_scrub` | 1.0 | Skid steer's effective/geometric track for a real board (3.35); ignored for the fake board. Set the env var for the ROS container too. `[PLACEHOLDER]` |
@@ -227,6 +229,8 @@ above raises `RobotTransportError`. Sensing routes catch only `HTTP 404`.
 | `DEFAULT_CELL_M` / `MOVE_M` | 0.30 m | same | One move. Every step budget is in these |
 | `DEFAULT_TIMEOUT_S` | 10.0 s | `control/remote_robot.py` | Per-request timeout |
 | `DEFAULT_STALL_TIMEOUT_S` | 15.0 s | `sim/teleop_robot.py` | Teleop staleness |
+| `DEFAULT_STALE_S` | 0.5 s | `robot/camera_stream.py` | Newest frame older than this is not served: 3.90 criterion 2 (503 within 1.0 s), with margin |
+| `DEFAULT_REOPEN_S` | 0.5 s | `robot/camera_stream.py` | Between attempts to open a camera that is not answering: criterion 2 (frames again within 3 s of a replug) |
 | Hardware verb turn rate | 1.2 rad/s body | `robot/hardware_robot.py` | Same as `TURN_RATE_RAD_S` in `robot/ros_drive.py` |
 | `VERB_STALL_S` | 0.6 s | `robot/interface.py` | No encoder progress this long while commanded: the verb has stalled. Shared by direct mode and `robot/ros_drive.py` (3.35). `[PLACEHOLDER]` until the board's low-speed deadband is measured |
 | `HEARTBEAT_MS` | 1500 ms | `robot/hardware_robot.py` | Board-side deadman, above the server's 1.0 s watchdog |
@@ -345,16 +349,15 @@ did not measure.
 
 ## Known gaps
 
-- **No camera, lidar or depth driver on the car yet.** `HardwareRobot`
-  without `sensors` raises on `get_camera_frame()` and answers 0.0 for
-  `get_distance()`. What the car may then do is the lidar-less driving rule
-  in [safety engineering](../safety/ENGINEERING.md) ("Driving without a
-  lidar"). The lidar driver is placed in the robot process by
-  [ros](../../ros/ARCHITECTURE.md) (D3) and not ported. The plan: port the
-  D500's serial protocol out of its ROS node into a `sensors` body for
-  `HardwareRobot`, plus a fake lidar on a pseudo-terminal like
-  `sim/fake_esp32.py`, with criteria the user approves
-  (`PLAN-ros-alignment.md` 6, question 5).
+- **The camera driver is untried on a real camera.** `robot/camera_stream.py`
+  (3.90 A) is measured on a fake source; its CPU cost and the MJPEG
+  pass-through wait for the Rover's camera (3.90 C). `ROBOT_CAMERA` unset
+  leaves the frame as before.
+- **No depth driver on the car yet.** `HardwareRobot` without `sensors`
+  answers 0.0 for `get_distance()`. What the car may then do is the
+  lidar-less driving rule in [safety engineering](../safety/ENGINEERING.md)
+  ("Driving without a lidar"). The lidar has its driver
+  (`robot/lidar_ld19.py`, 3.42) and the camera its stream (3.90 A).
 - **Wheel slip is not modelled**: sim encoders count what the body
   achieved (`PLAN-ros-alignment.md` section 4).
 - **Pan is three positions**, and the sim's depth grid swings with it

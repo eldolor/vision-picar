@@ -100,6 +100,10 @@ DEFAULTS = {
     # 6.1's hysteresis, in frames. 1 reproduces the naive trigger count
     # (2.8x); 2 is the measured 4.1x. Not tuning -- see brain/tiered.py.
     "tier_consecutive_frames": 2,
+    # 3.90 A: the span in seconds that run must also cover when frames carry
+    # capture stamps (the car's camera, the phone): today's two frames at the
+    # 0.25 s tick. 0: counted only. Unstamped (sim) frames are counted only.
+    "tier_sighting_span_s": 0.25,
     # How many consecutive `absent` frames before asking the cloud whether
     # the target is even in this room. brain/tiered.py's own note says this
     # number is a guess and is the first thing to tune against a real walk.

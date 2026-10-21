@@ -140,7 +140,7 @@ def _fork_keys(frame: dict):
 
 class HardwareRobot(RobotInterface):
     def __init__(self, port: str, sensors: Optional[RobotInterface] = None,
-                 baud: int = 115200, track_scrub: float = 1.0, lidar=None):
+                 baud: int = 115200, track_scrub: float = 1.0, lidar=None, camera=None):
         if not track_scrub > 0:
             raise ValueError(f"track_scrub must be positive, got {track_scrub!r}")
         self.port = port
@@ -149,6 +149,9 @@ class HardwareRobot(RobotInterface):
         # when present it is THE scan, for the safety layer and for ROS
         # through the bridge alike. Without one the scan stays `sensors`'.
         self.lidar = lidar
+        # 3.90 A: the camera as a stream (`robot/camera_stream.py`). When
+        # present it is THE frame; without one the frame stays `sensors'`.
+        self.camera = camera
         # 3.42: (monotonic time, CCW heading in radians) per board frame, so
         # the turn since the lidar's scan was taken is the ENCODERS' answer,
         # not a rate times an age (which undercounts right after a turn slows).
@@ -677,8 +680,11 @@ class HardwareRobot(RobotInterface):
         return self.sensors.look_center() if self.sensors else {"pan": None}
 
     def get_camera_frame(self) -> dict:
+        if self.camera is not None:
+            return self.camera.get_camera_frame()
         if self.sensors is None:
-            raise RuntimeError("no camera driver yet -- the board is only the motors")
+            raise RuntimeError("no camera driver -- set ROBOT_CAMERA (3.90 A); "
+                               "the board is only the motors")
         return self.sensors.get_camera_frame()
 
     def get_distance(self) -> float:
@@ -733,6 +739,10 @@ class HardwareRobot(RobotInterface):
         """The lidar link, for `/health` -- description, never a verdict."""
         return self.lidar.status() if self.lidar is not None else None
 
+    def camera_status(self) -> Optional[dict]:
+        """The camera stream, for `/health` -- description, never a verdict."""
+        return self.camera.status() if self.camera is not None else None
+
     def close(self) -> None:
         try:
             self.stop()
@@ -742,6 +752,8 @@ class HardwareRobot(RobotInterface):
             os.close(self._fd)
             if self.lidar is not None and hasattr(self.lidar, "close"):
                 self.lidar.close()
+            if self.camera is not None:
+                self.camera.close()
 
     def __getattr__(self, name):
         # The sim's body extras (`world`, for the world model's truth) when

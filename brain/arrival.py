@@ -52,6 +52,11 @@ ARRIVAL_RADIUS_M = 0.40
 # the two together.
 ARRIVAL_CENTRE_DEG = 3.0
 ARRIVAL_FRAMES = 2
+# 3.90 A: when frames carry capture stamps, the ARRIVAL_FRAMES run must also
+# span this -- today's two frames at the brain's 0.25 s tick -- so a faster
+# camera does not shorten the rule (R1c). Unstamped frames count as before.
+ARRIVAL_SPAN_S = 0.25
+SPAN_SLACK_S = 0.02
 # Beams either side of the bearing, read as a median (see _range_at). Five
 # degrees at 40 cm is 3.5 cm of arc: any object worth finding covers it.
 ARRIVAL_BEAM_HALF_DEG = 2
@@ -91,11 +96,16 @@ class ArrivalCheck:
     def __init__(self, radius_m: float = ARRIVAL_RADIUS_M,
                  centre_deg: float = ARRIVAL_CENTRE_DEG,
                  frames: int = ARRIVAL_FRAMES,
-                 clock=None, local_fresh_s: float = LOCAL_FRESH_S):
+                 clock=None, local_fresh_s: float = LOCAL_FRESH_S,
+                 span_s: Optional[float] = ARRIVAL_SPAN_S):
         self.radius_m = radius_m
         self.centre_deg = centre_deg
         self.frames = frames
+        self.span_s = span_s
         self.streak = 0
+        # 3.90 A: the capture stamp of the streak's first frame (None:
+        # unstamped, so the streak is counted only).
+        self._streak_since: Optional[float] = None
         # 3.80.O: a clock turns the local tier's located yes into a source of
         # the bearing; without one (every policy but explore's tiered search)
         # the rule reads perception alone, as before.
@@ -131,9 +141,10 @@ class ArrivalCheck:
                 and self.source == SOURCE_LOCAL and self._last is not None
                 and self.clock() - self._local_at <= self.local_fresh_s)
 
-    def observe(self, scene: dict, robot) -> dict:
+    def observe(self, scene: dict, robot, stamp: Optional[float] = None) -> dict:
         """Judge one frame. Returns the readout; `state` is ARRIVED only on
-        the frame that completes the streak and every frame after it."""
+        the frame that completes the streak and every frame after it.
+        `stamp` is the frame's `captured_at`, when it has one (3.90 A)."""
         perception = scene.get("_perception")
         if not perception:
             return self._not_judged("no local perception on this policy")
@@ -191,11 +202,15 @@ class ArrivalCheck:
                    else "an edge at the bearing, not one surface")
             return {"state": APPROACHING, "streak": 0, "reason": why, **readout}
         self.streak += 1
+        if self.streak == 1 or stamp is None:
+            self._streak_since = stamp
         if self.clock is not None:
             self._local_at = self.clock()   # the streak's last counted frame (review)
         self.source = SOURCE_LOCAL if SOURCE_LOCAL in (source, self.source) else source
         readout["source"] = self.source
-        state = ARRIVED if self.streak >= self.frames else APPROACHING
+        spans = (self.span_s is None or stamp is None or self._streak_since is None
+                 or stamp - self._streak_since >= self.span_s - SPAN_SLACK_S)
+        state = ARRIVED if self.streak >= self.frames and spans else APPROACHING
         self._last = {"state": state, "streak": self.streak,
                       "reason": (f"target centred at {readout['range_m']} m, "
                                  f"{self.streak} frame(s) running"), **readout}

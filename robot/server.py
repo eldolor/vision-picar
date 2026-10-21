@@ -1682,6 +1682,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # failures, revolutions, age. Description only, like the board.
             "lidar": (robot.lidar_status()
                       if callable(getattr(robot, "lidar_status", None)) else None),
+            # 3.90 A: the camera stream -- frames, age, reopens. Description
+            # only, like the lidar: an unplugged camera is not the release's.
+            "camera": (robot.camera_status()
+                       if callable(getattr(robot, "camera_status", None)) else None),
             # The single source of truth for the safety threshold this
             # server actually enforces -- see web-twin/index.html's
             # renderWatchdog(), which reads this into state.minDistanceCm

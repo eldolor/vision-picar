@@ -132,6 +132,10 @@ class TeleopRobot(RobotInterface):
                 # MissionMemory reads this; a live phone frame carries no
                 # room label, same honest answer replay_robot.py gives.
                 "room": "unknown",
+                # 3.90: when it arrived here -- the phone's capture, give or
+                # take the upload. Its own clock's, so two stamps' difference
+                # is the time between two frames (robot/interface.py).
+                "captured_at": time.time(),
                 "metadata": {"source": "teleop", "seq": self._seq},
             }
         self._record(f"PUSH seq={seq}")

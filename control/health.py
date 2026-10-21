@@ -140,6 +140,8 @@ def check_robot(url: str, secret=None, timeout=DEFAULT_TIMEOUT_S) -> dict:
             # cable, a flat battery), and the body already refuses to drive
             # without it -- `no_feedback` in last_refusal says so.
             "motor_board": body.get("motor_board"),
+            # 3.90 A: the camera stream. Description, for the board's reason.
+            "camera": body.get("camera"),
             # Drive mode and ROS liveness; ros_up false under drive: ros is
             # also a verdict input above.
             "drive": body.get("drive"),

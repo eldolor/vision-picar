@@ -414,7 +414,7 @@ class MissionAgent(ConstrainedAgent):
     def _review_scene(self, scene: dict, frame: dict) -> dict:
         if not self.memory.target_object or self.memory.is_complete():
             return scene
-        readout = self.arrival.observe(scene, self.robot)
+        readout = self.arrival.observe(scene, self.robot, stamp=frame.get("captured_at"))
         if readout["state"] == NOT_JUDGED and not scene.get("_perception"):
             return scene  # a policy with no local perception: nothing to say
         self._confirmed_this_frame = False

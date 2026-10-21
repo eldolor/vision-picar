@@ -200,6 +200,13 @@ DEFAULT_STALE_AFTER = 8
 # believed. One reproduces the naive count; three buys 4.5x against 4.1x,
 # at the cost of a frame's lag on a real sighting.
 DEFAULT_CONSECUTIVE = 2
+# 3.90 A: the span in seconds a `consecutive_frames` run must also cover when
+# its frames carry capture stamps (`captured_at`): today's two frames at the
+# brain's 0.25 s tick. Counted in frames alone, the rule would shrink as the
+# camera got faster (R1c). Unstamped frames (the simulator's) count as before.
+DEFAULT_SIGHTING_SPAN_S = 0.25
+# Stamps jitter; a run this much short of the span still covers it.
+SPAN_SLACK_S = 0.02
 
 # How many consecutive `absent` frames before asking the cloud whether the
 # thing is even in this room. 2.4 gives no number; this one is a guess and
@@ -693,6 +700,7 @@ class TieredVision:
         cloud_vision_fn: Callable[[dict], dict],
         *,
         consecutive_frames: int = DEFAULT_CONSECUTIVE,
+        sighting_span_s: Optional[float] = DEFAULT_SIGHTING_SPAN_S,
         cold_search_after: int = DEFAULT_COLD_SEARCH_AFTER,
         cold_search_after_cm: Optional[float] = DEFAULT_COLD_SEARCH_AFTER_CM,
         stale_after: int = DEFAULT_STALE_AFTER,
@@ -775,6 +783,7 @@ class TieredVision:
         # triggers' client, resolved at call time.
         self.confirm_vision_fn = confirm_vision_fn
         self.consecutive_frames = max(1, int(consecutive_frames))
+        self.sighting_span_s = sighting_span_s or None
         self.cold_search_after = max(1, int(cold_search_after))
         # The distance rule, and the state it needs. `_odometry_at_call` is
         # the reading when the cloud last looked; None means "never looked
@@ -924,6 +933,11 @@ class TieredVision:
 
         self._started = False
         self._run: list = []          # the recent status history
+        # 3.90 A: the capture stamp of the first frame of the current
+        # same-status run (None: unstamped, so the run is counted only), and
+        # of the frame being judged.
+        self._run_since: Optional[float] = None
+        self._frame_stamp: Optional[float] = None
         self._absent_streak = 0
         self._last_confirmed = ABSENT
         self._since_call = 0
@@ -960,6 +974,7 @@ class TieredVision:
                 raise err
             self._count_cloud_error(err)
 
+        self._frame_stamp = frame.get("captured_at")
         trigger = self._trigger_for(perception)
         if trigger is None:
             self._since_call += 1
@@ -1773,6 +1788,24 @@ class TieredVision:
 
     # -- the trigger policy ----------------------------------------------
 
+    def _note_run(self, status: str) -> None:
+        """One frame into the run of recent statuses (`consecutive_frames`
+        long), and when the current same-status run began (3.90 A)."""
+        if not self._run or self._run[-1] != status or self._frame_stamp is None:
+            self._run_since = self._frame_stamp
+        self._run.append(status)
+        if len(self._run) > self.consecutive_frames:
+            self._run.pop(0)
+
+    def _run_spans(self) -> bool:
+        """3.90 A: a run of stamped frames must also cover
+        `sighting_span_s`, so the rule means the same time at any frame
+        rate. Unstamped frames, or no span set: counted only, as before."""
+        if (self.sighting_span_s is None or self._frame_stamp is None
+                or self._run_since is None):
+            return True
+        return self._frame_stamp - self._run_since >= self.sighting_span_s - SPAN_SLACK_S
+
     def _trigger_for(self, perception: Perception) -> Optional[str]:
         if not self._started:
             self._started = True
@@ -1785,7 +1818,7 @@ class TieredVision:
             # and it is the difference between 2 calls and 1 on a mission
             # that begins pointed at the backpack.
             if perception.status in (DETECTED, ABSENT):
-                self._run.append(perception.status)
+                self._note_run(perception.status)
                 self._last_confirmed = perception.status
             return TRIGGER_START
 
@@ -1795,6 +1828,7 @@ class TieredVision:
         # cloud call every few frames and look like a search.
         if perception.status == UNAVAILABLE:
             self._run.clear()
+            self._run_since = None
             self._band_run = 0          # 3.80.D: any other frame breaks a band run
             self._band_asked = False
             self._candidate_rejected = False
@@ -1817,14 +1851,13 @@ class TieredVision:
             self._band_asked = False
             self._candidate_rejected = False
 
-        self._run.append(perception.status)
-        if len(self._run) > self.consecutive_frames:
-            self._run.pop(0)
+        self._note_run(perception.status)
 
         confirmed = (
             perception.status
             if (len(self._run) >= self.consecutive_frames
-                and len(set(self._run)) == 1)
+                and len(set(self._run)) == 1
+                and self._run_spans())
             else None
         )
 

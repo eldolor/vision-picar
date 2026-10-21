@@ -81,6 +81,11 @@ hardware:
   # set it for both. Never applied to the fake board (its sim body does not
   # scrub). [PLACEHOLDER] 1.0 until measured on the Rover.
   track_scrub: 1.0
+  # 3.90 A: the camera the brain sees (the pan-tilt USB camera), read as a
+  # stream by robot/camera_stream.py. A udev name or a V4L2 index; env
+  # ROBOT_CAMERA wins. Unset: no camera driver. [PLACEHOLDER] until the
+  # Rover's udev names exist (HARDWARE-READINESS.md section 5).
+  # camera_device: /dev/picar-camera
 
 # World state -- the map and the robot's pose on it (PLAN-mapping.md N1).
 # Read by world/factory.py, which is robot/factory.py's sibling.
@@ -206,6 +211,11 @@ brain:
   # trigger discipline work at all, because target_visible flips on 24% of
   # frames.
   tier_consecutive_frames: 2
+  # 3.90 A: and, when frames carry capture stamps (the car's camera stream,
+  # the phone), the run must also span this many seconds -- today's two
+  # frames at the 0.25 s tick -- so a faster camera does not shorten it (R1c).
+  # 0: counted only. The simulator's frames are not stamped: counted as before.
+  tier_sighting_span_s: 0.25
   # How many consecutive "absent" frames before asking the cloud whether the
   # target is even in this room. Without it a target outside COCO's 80 never
   # fires anything at all. The number is a guess; tune it on a real walk.

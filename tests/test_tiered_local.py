@@ -222,7 +222,7 @@ def test_c6_the_agent_ends_the_arrival_when_the_rule_stops_holding():
     ended = []
     agent = MissionAgent.__new__(MissionAgent)
     agent.memory = type("M", (), {"target_object": TARGET, "is_complete": lambda s: False})()
-    agent.arrival = type("A", (), {"observe": lambda s, scene, robot: {"state": "approaching"}})()
+    agent.arrival = type("A", (), {"observe": lambda s, scene, robot, stamp=None: {"state": "approaching"}})()
     agent.robot = None
     agent.vision_fn = type("V", (), {"arrival_ended": lambda s: ended.append(1)})()
     agent._identity_refused = True

@@ -1,0 +1,98 @@
+"""3.90 A criterion 4: the counted rules keep their time.
+
+`candidate_sighting` (`tier_consecutive_frames`) and arrival
+(`ARRIVAL_FRAMES`) are counted in frames. At the brain's 0.25 s tick two
+frames span 0.25 s; at a camera's 9 fps they would span 0.111 s, so the rule
+would quietly get shorter (R1c). With capture stamps, a run must also cover
+0.25 s: at least that, and no more than one frame interval beyond it.
+Unstamped frames (the simulator's) are counted exactly as before.
+"""
+
+import pytest
+
+from brain.arrival import ARRIVED, ArrivalCheck
+from brain.perceive import ABSENT, DETECTED
+from brain.tiered import TRIGGER_CANDIDATE, TieredVision
+from tests.test_arrival import _FakeRobot, _scene
+from tests.test_tiered import FakeCloud, ScriptedPipeline
+
+SPAN_S = 0.25          # today's two frames at the 0.25 s tick
+T0 = 1_700_000_000.0
+
+
+def _sighting_span(fps, stamped=True):
+    """Seconds from the first `detected` frame to the frame that fires
+    `candidate_sighting`, and that frame's index."""
+    statuses = [ABSENT, ABSENT] + [DETECTED] * 12
+    tier = TieredVision(ScriptedPipeline(statuses), FakeCloud(), cold_search_after=99)
+    first = None
+    for i in range(len(statuses)):
+        t = T0 + i / fps
+        frame = {"image_base64": "x", "image_width": 640}
+        if stamped:
+            frame["captured_at"] = t
+        scene = tier(frame)
+        if statuses[i] == DETECTED and first is None:
+            first = t
+        if scene["_tier"].get("trigger") == TRIGGER_CANDIDATE:
+            return t - first, i
+    raise AssertionError("candidate_sighting never fired")
+
+
+def _arrival_span(fps, stamped=True):
+    check, robot = ArrivalCheck(), _FakeRobot([0.2] * 360)
+    for i in range(20):
+        t = T0 + i / fps
+        readout = check.observe(_scene(0.0), robot, stamp=t if stamped else None)
+        if readout["state"] == ARRIVED:
+            return t - T0, i
+    raise AssertionError("never arrived")
+
+
+@pytest.mark.parametrize("fps", [4.0, 9.0])
+def test_a_sighting_needs_the_same_time_at_any_frame_rate(fps):
+    span, _ = _sighting_span(fps)
+    assert SPAN_S - 0.02 <= span <= SPAN_S + 1.0 / fps
+
+
+@pytest.mark.parametrize("fps", [4.0, 9.0])
+def test_an_arrival_needs_the_same_time_at_any_frame_rate(fps):
+    span, _ = _arrival_span(fps)
+    assert SPAN_S - 0.02 <= span <= SPAN_S + 1.0 / fps
+
+
+def test_unstamped_frames_are_counted_as_before():
+    # Two frames, whatever the (unknown) time between them: the simulator's
+    # sweeps and every pinned tiered number stay where they are.
+    _, sighting_frame = _sighting_span(9.0, stamped=False)
+    _, arrival_frame = _arrival_span(9.0, stamped=False)
+    assert sighting_frame == 3          # the 2nd detected frame (index 2, 3)
+    assert arrival_frame == 1           # the 2nd frame
+
+
+def test_a_slow_camera_still_needs_two_frames():
+    # At 2 fps two frames already span 0.5 s: the count, not the time, binds.
+    span, frame = _sighting_span(2.0)
+    assert frame == 3 and span == pytest.approx(0.5)
+
+
+def test_a_span_of_zero_counts_frames_only():
+    statuses = [ABSENT, DETECTED, DETECTED, ABSENT]
+    tier = TieredVision(ScriptedPipeline(statuses), FakeCloud(), cold_search_after=99,
+                        sighting_span_s=0)
+    for i in range(len(statuses)):
+        tier({"image_base64": "x", "image_width": 640, "captured_at": T0 + i / 30})
+    assert tier.stats.triggers[TRIGGER_CANDIDATE] == 1
+
+
+def test_a_break_in_the_run_restarts_the_clock():
+    statuses = [ABSENT, DETECTED, ABSENT] + [DETECTED] * 6
+    tier = TieredVision(ScriptedPipeline(statuses), FakeCloud(), cold_search_after=99)
+    fired = None
+    for i in range(len(statuses)):
+        scene = tier({"image_base64": "x", "image_width": 640, "captured_at": T0 + i / 9})
+        if scene["_tier"].get("trigger") == TRIGGER_CANDIDATE:
+            fired = i
+            break
+    # The run that counts starts at index 3; 0.25 s later is index 6 (0.333 s).
+    assert fired == 6

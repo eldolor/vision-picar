@@ -353,6 +353,7 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
     """
     kwargs = {
         "consecutive_frames": config["tier_consecutive_frames"],
+        "sighting_span_s": config["tier_sighting_span_s"] or None,
         "cold_search_after": config["tier_cold_search_after"],
         # 0 in config means "off"; the policy takes None for that, because
         # a 0cm bar would fire on every frame rather than never.
@@ -737,7 +738,7 @@ def create_app(
                 "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
                 "tier_local_direction", "tier_steer_on_candidate", "tier_search",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",
-                "tier_spin_guard_after", "tier_consecutive_frames",
+                "tier_spin_guard_after", "tier_consecutive_frames", "tier_sighting_span_s",
                 "perception_floor_mask", "perception_crop_path",
                 "navigate_model_id", "navigate_prompt_variant",
                 "explore_goal_policy",
@@ -1208,6 +1209,7 @@ def create_app(
             "perception_crop_path": config["perception_crop_path"],
             "perception_floor_mask": bool(config["perception_floor_mask"]),
             "tier_consecutive_frames": config["tier_consecutive_frames"],
+            "tier_sighting_span_s": config["tier_sighting_span_s"],
             "tier_cold_search_after": config["tier_cold_search_after"],
             # 3.80.P: the pace a mission with a local tier asks it at (the
             # cloud keeps the bar above); the live bar is the policy's own

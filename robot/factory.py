@@ -35,6 +35,28 @@ def _lidar(config: dict):
     return Ld19Lidar(port, yaw_deg=yaw)
 
 
+def _camera(config: dict):
+    """3.90 A: the car's camera as a stream (`robot/camera_stream.py`). On
+    the car `ROBOT_CAMERA` (or `hardware.camera_device`) is its device, a
+    udev name or an index. None: no camera driver, and the frame stays
+    whatever the body supplies (the sim's, or the board's honest refusal).
+    `SIM_CAMERA=fake` stands sim/fake_camera.py in for the camera."""
+    from robot.camera_stream import CameraStream, OpenCvSource, encode_jpeg
+
+    if os.environ.get("SIM_CAMERA") == "fake":
+        # 3.90 A: a 30 fps stand-in (sim/fake_camera.py), for the stream's
+        # own measurements. Its pictures are noise: a mission sees nothing.
+        from sim.fake_camera import DEFAULT_FPS, FakeCameraSource
+
+        fps = float(os.environ.get("SIM_CAMERA_FPS") or DEFAULT_FPS)
+        return CameraStream(lambda: FakeCameraSource(fps), name="camera")
+    device = os.environ.get("ROBOT_CAMERA") or (config.get("hardware") or {}).get("camera_device")
+    if not device:
+        return None
+
+    return CameraStream(lambda: OpenCvSource(device), encode=encode_jpeg, name="camera")
+
+
 def _track_scrub(config: dict) -> float:
     """3.35: the real chassis' effective/geometric track ratio. TRACK_SCRUB
     wins over `hardware.track_scrub`; 1.0 (no correction) when neither is
@@ -181,14 +203,18 @@ def _backend(config: dict) -> RobotInterface:
             sensors = SimBodyClient(body_url, sensors_url,
                                     secret=os.environ.get("APP_SHARED_SECRET", ""))
             lidar = _lidar(config)
+            camera = _camera(config)
             return HardwareRobot(sensors.board_path, sensors=sensors, track_scrub=1.0,
-                                 **({"lidar": lidar} if lidar else {}))
+                                 **({"lidar": lidar} if lidar else {}),
+                                 **({"camera": camera} if camera else {}))
         port = os.environ.get("ROBOT_SERIAL") or (config.get("hardware") or {}).get("serial_port")
         if not port:
             raise ValueError("mode: hardware needs ROBOT_SERIAL (or hardware.serial_port) "
                              "-- the ESP32 driver board's serial device")
         lidar = _lidar(config)
+        camera = _camera(config)
         return HardwareRobot(port, track_scrub=_track_scrub(config),
-                             **({"lidar": lidar} if lidar else {}))
+                             **({"lidar": lidar} if lidar else {}),
+                             **({"camera": camera} if camera else {}))
 
     raise ValueError(f"Unknown robot mode in config: {mode!r}")
