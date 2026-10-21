@@ -579,8 +579,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   truthfully; `run_matrix.sh` never ran as committed; `pacing_sweep`'s async
   rows recorded no calls; `steer_check` scored on the wrong band;
   `spec_lint` gaps. The firmware patch is clean. **Waiting on the user:**
-  the plan's closing list (six decisions; the deploys and the env file
-  done 2026-10-20). Handoff:
+  nothing: the deploys and the env file done 2026-10-20, the decisions
+  made 2026-10-21; to build: M2.7 (distinct battery samples) and K5.3
+  (keepout marks cleared at a mission's end); M1.5-M1.11 a sim-honesty
+  section after the Rover's numbers. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
