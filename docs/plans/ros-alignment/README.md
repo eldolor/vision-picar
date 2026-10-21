@@ -95,4 +95,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.87](3.87-map-reply-off-loop.md) | The robot server's map reply, encoded off the event loop the wheel loop runs on |
 | [3.88](3.88-goal-tap-learning.md) | Explore learns its goal choice from a person's taps |
 | [3.90](3.90-camera-stream.md) | The camera as a stream, and frames combined over time |
+| [3.89](3.89-escape-creep-timeout.md) | Explore's escape creep outlives RemoteRobot's 10 s timeout under drive: ros |
 <!-- /sections -->
