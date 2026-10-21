@@ -566,8 +566,14 @@ def create_app(
                 raise ValueError(f"A walk named {req.record_walk!r} already exists.")
             # A body that keeps no frames (any mode but teleop) is a 400 here,
             # before any model is loaded (a RemoteRobot has the methods
-            # whatever the server's mode, so it is asked, cheaply).
-            _frames_reader(robot)[1]()
+            # whatever the server's mode, so it is asked, cheaply). Any
+            # failure is the start's 400, never a bare 500 (review).
+            try:
+                _frames_reader(robot)[1]()
+            except ValueError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                raise ValueError(f"record_walk: the robot's frames could not be read: {e}")
         # Checked before the tiered clients are built, so a refused start
         # leaves none open (review, 2026-10-16).
         navigator = None
@@ -1019,9 +1025,7 @@ def create_app(
                 # K2): a start in this await passed the 409 check, and its
                 # wait for the last close read the OLD runner -- two
                 # perception pipelines at once (3.81.E).
-                discard = getattr(runner, "discard", None)
-                if discard is not None:
-                    await asyncio.to_thread(discard)
+                await _discard_quietly(runner)
                 raise HTTPException(status_code=409,
                                     detail="Stopped while the mission was being set up.")
             # 3.90 E: the stream's cursor, read while this start still holds

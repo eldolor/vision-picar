@@ -48,7 +48,10 @@ POLL_S = 0.25
 SETTLE_S = 31.0
 # More frames than this waiting (a mission stalled with the phone pushing)
 # are filed oldest first, unperceived, to bound memory.
-MAX_PENDING = 256           # 32 s at 8 fps: outlasts SETTLE_S; ~50 MB of base64 at most
+# Bounded by bytes, not frames (review: the right count depends on the
+# phone's rate and the tick deadline): 32 MB of base64 is ~160 frames,
+# 40 s at 4 fps; past it the oldest are filed, unperceived.
+MAX_PENDING_BYTES = 32 * 1024 * 1024
 # walk.jsonl rows appended together: an append on S3 rewrites the file.
 ROW_BATCH = 25
 
@@ -84,7 +87,8 @@ class StreamRecorder:
         self._after = 0
         self._boot_id = None
         self._pending: list = []        # (fetched_at, frame), oldest first
-        self._rows: list = []           # walk.jsonl lines not yet appended
+        self._pending_bytes = 0
+        self._rows: list = []           # (walk.jsonl line, perceived) not yet appended
         self._capture = None
         self.saved = 0
         self.written = 0                # images stored, whatever became of their rows
@@ -108,7 +112,10 @@ class StreamRecorder:
         self._stop.set()
 
     def status(self) -> dict:
-        return {"walk": self.walk, "saved": self.saved, "perceived": self.perceived,
+        # `written`: images stored so far; `saved`: rows appended (behind it
+        # by up to a batch until the walk ends).
+        return {"walk": self.walk, "written": self.written, "saved": self.saved,
+                "perceived": self.perceived,
                 "lost": self.lost, "over_cap": self.over_cap, "failed": self.failed,
                 "finished": self.finished.is_set()}
 
@@ -154,6 +161,7 @@ class StreamRecorder:
             seq = frame["metadata"]["seq"]
             if seq > self._after:
                 self._pending.append((now, frame))
+                self._pending_bytes += len(frame.get("image_base64") or "")
                 self._after = seq
 
     def _file(self, final: bool) -> None:
@@ -162,16 +170,17 @@ class StreamRecorder:
             fetched_at, frame = self._pending[0]
             meta = frame["metadata"]
             settled = (final or now - fetched_at >= self.settle_s
-                       or len(self._pending) > MAX_PENDING
+                       or self._pending_bytes > MAX_PENDING_BYTES
                        or self.runner.decided_past(meta["seq"], meta.get("boot_id")))
             if not settled:
                 break
             self._pending.pop(0)
+            self._pending_bytes -= len(frame.get("image_base64") or "")
             self._save(frame)
         if self._rows and (final or len(self._rows) >= ROW_BATCH):
-            self._flush_rows(final=final)
+            self._flush_rows()
 
-    def _flush_rows(self, final: bool = False) -> None:
+    def _flush_rows(self) -> None:
         """Append the held rows, once. A failed append is never retried: on
         S3 an append that raised may still have landed, and a retry would
         file the rows twice (review: a wrong walk is worse than a short
@@ -180,11 +189,13 @@ class StreamRecorder:
         ROW_BATCH - 1 images without rows."""
         rows, self._rows = self._rows, []
         try:
-            self.store.append_text(self.walk, "walk.jsonl", "".join(rows))
+            self.store.append_text(self.walk, "walk.jsonl", "".join(line for line, _ in rows))
         except Exception as e:  # noqa: BLE001
             self.failed += len(rows)
-            self.saved -= len(rows)
             logger.warning("stream recorder: %d walk.jsonl rows not saved: %s", len(rows), e)
+            return
+        self.saved += len(rows)
+        self.perceived += sum(1 for _, perceived in rows if perceived)
 
     def _save(self, frame: dict) -> None:
         seq = frame["metadata"]["seq"]
@@ -193,12 +204,16 @@ class StreamRecorder:
             image = base64.b64decode(frame["image_base64"])
             if self._capture is None:
                 self._capture = _jpeg_size(image)
-            store_frame(self.store, self.walk, self.saved, image,
+            # Numbered by images written, which never goes back (review: a
+            # count lowered by a failed batch made later frames overwrite
+            # stored ones under the same name).
+            held = []
+            store_frame(self.store, self.walk, self.written, image,
                         frame.get("media_type", "image/jpeg"),
                         {"navigate": decision, "teleop_seq": seq,
                          "perceived": decision is not None,
                          "captured_at": frame.get("captured_at")},
-                        max_frames=self.max_frames, count=self.saved, rows=self._rows)
+                        max_frames=self.max_frames, count=self.written, rows=held)
         except WalkFull:
             self.over_cap += 1
             return
@@ -207,9 +222,8 @@ class StreamRecorder:
             if self.failed == 1:
                 logger.warning("stream recorder: a frame was not saved: %s", e)
             return
-        self.saved += 1
         self.written += 1
-        self.perceived += decision is not None
+        self._rows.extend((line, decision is not None) for line in held)
 
     def _finish(self) -> None:
         try:

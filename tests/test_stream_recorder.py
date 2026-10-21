@@ -98,10 +98,10 @@ def test_a_frame_waits_for_the_mission_to_decide_past_it(tmp_path):
     store, rec = _record(tmp_path, robot, runner, settle_s=30)
     import time
     time.sleep(0.2)
-    assert rec.saved == 0                         # held: the tick may yet take it
+    assert rec.written == 0                         # held: the tick may yet take it
     runner.decided.add(1)
     runner.last_frame_seq = 1
-    assert _wait(lambda: rec.saved == 1)
+    assert _wait(lambda: rec.written == 1)
     runner.running.clear()
     assert rec.finished.wait(5)
     assert _rows(store, "w1")[0]["perceived"] is True
@@ -128,11 +128,11 @@ def test_a_restarted_robot_starts_the_cursor_over(tmp_path):
     store = LocalWalkStore(tmp_path)
     rec = StreamRecorder(store, "w1", lambda after: body["robot"].frames_after(after),
                          runner, poll_s=0.01, settle_s=0.05).start(after=0)
-    assert _wait(lambda: rec.saved == 5)
+    assert _wait(lambda: rec.written == 5)
     body["robot"] = second                        # the robot server restarted...
     for _ in range(7):
         second.push_frame(JPEG)                   # ...and numbered past nothing yet
-    assert _wait(lambda: rec.saved == 12)
+    assert _wait(lambda: rec.written == 12)
     runner.running.clear()
     assert rec.finished.wait(5)
     assert [r["teleop_seq"] for r in _rows(store, "w1")] == [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6, 7]
@@ -188,7 +188,7 @@ def test_a_teleop_mission_records_its_stream_and_reports_it(tmp_path):
         for _ in range(4):
             robot.push_frame(JPEG)
         assert _wait(lambda: (client.get("/mission/status").json().get("recording") or {})
-                     .get("saved", 0) >= 4, timeout=10)
+                     .get("written", 0) >= 4, timeout=10)
         client.post("/mission/stop")
         assert _wait(lambda: (client.get("/mission/status").json()["recording"] or {})
                      .get("finished"), timeout=10)
@@ -209,10 +209,10 @@ def test_a_decision_slower_than_a_poll_still_lands_on_its_frame(tmp_path):
     robot.push_frame(JPEG)
     import time
     time.sleep(2.5)                               # the tick is still thinking (old settle: 2 s)
-    assert rec.saved == 0
+    assert rec.written == 0
     runner.decided.add(1)
     runner.last_frame_seq = 2                     # decided on 1; 2 never taken
-    assert _wait(lambda: rec.saved == 2)
+    assert _wait(lambda: rec.written == 2)
     runner.running.clear()
     assert rec.finished.wait(5)
     assert [r["perceived"] for r in _rows(store, "w1")] == [True, False]
@@ -298,3 +298,35 @@ def test_a_failed_append_is_counted_never_retried_and_the_walk_still_finishes(tm
     assert rec.status()["saved"] == 0 and rec.status()["failed"] == 3
     meta = json.loads((tmp_path / "w1" / "meta.json").read_text())
     assert meta["frames_failed"] == 3 and "finished_at" in meta
+
+
+def test_a_failed_batch_mid_walk_never_overwrites_a_stored_frame(tmp_path, monkeypatch):
+    # Review (final round, both reviewers): a count lowered by a failed batch
+    # was also the next frame's number, so later frames overwrote stored ones.
+    import control.stream_recorder as sr
+
+    monkeypatch.setattr(sr, "ROW_BATCH", 2)
+    robot = TeleopRobot()
+    store = LocalWalkStore(tmp_path)
+    real_append, calls = store.append_text, []
+
+    def flaky(walk, name, text):
+        calls.append(text)
+        if len(calls) == 1:
+            raise OSError("throttled")
+        return real_append(walk, name, text)
+
+    store.append_text = flaky
+    runner = FakeRunner()
+    rec = StreamRecorder(store, "w1", robot.frames_after, runner, poll_s=0.01,
+                         settle_s=0.0).start(after=0)
+    for _ in range(6):
+        robot.push_frame(JPEG)
+        _wait(lambda: rec.written >= robot.latest()["latest_seq"])
+    runner.running.clear()
+    assert rec.finished.wait(5)
+    rows = _rows(store, "w1")
+    files = [r["file"] for r in rows]
+    assert len(files) == len(set(files))                     # no name reused
+    assert len(list((tmp_path / "w1").glob("frame-*"))) == 6  # every image kept
+    assert rec.status()["failed"] == 2 and rec.status()["saved"] == 4

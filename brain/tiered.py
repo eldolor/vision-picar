@@ -1900,6 +1900,9 @@ class TieredVision:
             self._run.clear()
             self._run_since = None
             self._votes.clear()
+            self._vote_ok = False
+            if self.stats.vote:
+                self.stats.vote["detected"] = 0
             self._band_run = 0          # 3.80.D: any other frame breaks a band run
             self._band_asked = False
             self._candidate_rejected = False

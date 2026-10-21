@@ -3873,7 +3873,8 @@
     if (base64) await pushTeleopFrame(base64);
     const status = await brainApi("GET", "/mission/status");
     if (state.recordByBrain && status && status.recording) {
-      state.recordSaved = status.recording.saved || 0;
+      // Images stored so far; rows follow in batches (3.90 E).
+      state.recordSaved = status.recording.written || status.recording.saved || 0;
       state.recordFailed = status.recording.failed || 0;
       state.recordLost = status.recording.lost || 0;
       renderRecordStatus();
@@ -5293,8 +5294,8 @@
           // An older brain has no such field and would refuse record_walk
           // (or, if it ignored it, record nothing): only a yes is a yes.
           if (h.records_streams !== true) {
-            throw new Error("this brain only forwards recordings, so it cannot record a " +
-              "Drive-via-brain walk -- turn Record this walk off, or use a brain that stores walks");
+            throw new Error("this brain cannot record a Drive-via-brain walk itself (it " +
+              "stores no walks, or predates 3.90) -- update it, or turn Record this walk off");
           }
           state.streamWalkName = newWalkName();
         }
