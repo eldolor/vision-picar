@@ -531,21 +531,22 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   dead loop; the ROS world ignored `drive.bridge_url`; an empty
   `LIDAR_YAW_DEG`/`TRACK_SCRUB` stopped the robot server; `identity_eval`
   counted never-asked frames as cloud misses; the pose heading comment
-  pointed south. **N2 (the consoles), merged 2026-10-18, NOT YET
-  DEPLOYED:** 14 fixed, one a security bug -- a frame's stored token counts
+  pointed south. **N2 (the consoles), merged 2026-10-18, deployed
+  2026-10-20:** 14 fixed, one a security bug -- a frame's stored token counts
   went into the admin page's `innerHTML` (script beside the walks secret,
   posted under the brain's). Also: rebuilt rows forgot what was out (a
   second paid replay or judge run one click away), bulk delete stayed armed,
   a Refresh mid-scoring lost every score, Download on S3 was a CORS request
   the bucket refuses (now `?link=1` on the walks route), and the slideshow
-  and metrics loads raced. **For the user:** deploy the consoles
-  (`sync.sh`) and the walks Lambda (`?link=1`) from the laptop. **O (the
-  twin's page), merged 2026-10-18, NOT YET DEPLOYED:** 10 fixed -- toasts
+  and metrics loads raced. Consoles (`sync.sh`) and the walks Lambda (`?link=1`, verified) deployed
+  2026-10-20. **O (the
+  twin's page), merged 2026-10-18, deployed 2026-10-20:** 10 fixed -- toasts
   sat under Guide's fullscreen (a recorded walk's "Frame not saved" was
   never seen), the env banner scrolled every tab 2 px sideways, iOS
   capitalised a hand-typed secret, the reduced-motion countdown, the
   portrait action badge over the telemetry (and, in round 1, the chevron),
-  home-screen insets. Deploy with the same `sync.sh`. **P1 (the Jetson
+  home-screen insets (parity checked, phone screenshots
+  `docs/evaluations/deployed-*-2026-10-20.png`). **P1 (the Jetson
   tools), merged 2026-10-18:** 12 fixed -- `bench_local_vlm.sh` installed,
   then DELETED, the production `picar-local-vlm` unit and rewrote its env
   file (now its own `picar-local-vlm-bench`); README's G4 left `picar-ros`
@@ -554,8 +555,9 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   identity harness's perception p90 outside its window; secrets redacted
   from the committed memory samples. No recorded number moved. `tegrastats`
   on JetPack 6 prints no throttling: "no throttling" rests on temperature.
-  **For the user:** check `~/.vision-picar-local-vlm.env` on the board
-  before 3.80 E (the old bench may have left its driver-log path there).
+  The board's `~/.vision-picar-local-vlm.env` checked 2026-10-20: the old
+  bench's `LOCAL_VLM_DRIVER_LOG` removed (backup `.bak-20261020`); it holds
+  only the three keys the unit reads; the unit still disabled.
   **P2 (the evaluation tools), merged 2026-10-18:** 11 fixed -- Ctrl-C in
   the inventory judge still sent and billed every queued frame (now stops,
   saves, keeps what was out); two recorded numbers corrected in place, no
@@ -570,8 +572,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   truthfully; `run_matrix.sh` never ran as committed; `pacing_sweep`'s async
   rows recorded no calls; `steer_check` scored on the wrong band;
   `spec_lint` gaps. The firmware patch is clean. **Waiting on the user:**
-  the plan's closing list (deploys of N2 and O, the board's VLM env file,
-  six decisions). Handoff:
+  the plan's closing list (six decisions; the deploys and the env file
+  done 2026-10-20). Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
   3.81's G3: explore fetches `/world/map` every tick, and the robot server
@@ -582,7 +584,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   (141 ms a map version; now numpy, 11 ms, cell-for-cell the old loop).
   H3: 0 late in 18,273 (max 99 ms, a thin margin). A sync route returning
   a big dict blocks the wheel loop: return a built `JSONResponse`.
-* **Explore asks a person (3.88 A), merged 2026-10-20, NOT YET DEPLOYED.**
+* **Explore asks a person (3.88 A), merged 2026-10-20; the twin deployed
+  2026-10-20 (with N2/O), the board's brain not yet updated.**
   `explore_ask` (default off; plain `explore` only, 400 for tiered): explore
   pauses at each goal choice and publishes 3.65's candidate pool
   (`status.explore.ask`); `POST /mission/explore/pick` names one by id (409
