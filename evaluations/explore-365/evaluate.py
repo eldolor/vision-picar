@@ -2,7 +2,7 @@
 evaluations/explore-365/evaluate.py -- 3.65 phase 2: run the rule or a set of
 weights over usable houses [lo, hi), one JSON row per house.
 
-    python evaluations/explore-365/evaluate.py LO HI rule|learned|network|WEIGHTS.json OUT.json [val|test]
+    python evaluations/explore-365/evaluate.py LO HI rule|learned|network|WEIGHTS.json OUT.json [val|test|train]
 
 LO HI index the split's usable list; `test` is amendment 3's fresh houses.
 """
