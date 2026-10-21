@@ -702,7 +702,9 @@ CLOUD_ANSWER_KEYS = ("action", "safest_direction", "target_visible",
                      "reasoning", "model_id")
 CLOUD_TEXT_CHARS = 500
 CLOUD_ERROR_CHARS = 200
-_URL = re.compile(r"\w+://\S+")
+# A URL, or the host and path an HTTP client error names without a scheme
+# (`HTTPSConnectionPool(host='x', ...)`, `with url: /path`).
+_ADDRESS = re.compile(r"[\w+.-]+://\S+|host='[^']*'|host=\"[^\"]*\"|url: \S+")
 
 
 def _frame_seq(frame) -> Optional[int]:
@@ -999,13 +1001,19 @@ class TieredVision:
 
     # -- the vision_fn contract ------------------------------------------
 
-    def take_cloud_answers(self) -> list:
+    def take_cloud_answers(self, collect: bool = False) -> list:
         """3.91 A: every cloud answer (or failure) that landed since the
         last take, oldest first, each handed out once. Taken by the one
         reader that files rows (`MissionRunner._note_decision`) when it files
         a decision, not by `__call__`: a frame's scene can be thrown away (a
         guard that gave up on it, a halt before the decision is noted), and
-        an answer taken into it would be lost."""
+        an answer taken into it would be lost.
+
+        `collect`: first collect a call that has landed but that no frame
+        has collected yet (`_collect_inflight()` never waits) -- the
+        runner's last take, before `close()` would drop it."""
+        if collect:
+            self._collect_inflight()
         with self._collect_lock:
             answers, self._cloud_answers = self._cloud_answers, []
         return answers
@@ -1120,10 +1128,7 @@ class TieredVision:
         self._local_held_why = None
         self._local_turn = None     # 3.80.D: this answer is newer
         self._frame_unable = 0
-        out = self._annotate(scene, perception, trigger)
-        self._note_cloud_answer(trigger, _frame_seq(frame), scene=scene,
-                                verdict=(out["_tier"].get("corroboration") or {}).get("verdict"))
-        return out
+        return self._annotate_noted(scene, perception, trigger, frame)
 
     # -- 3.80.D: a frame's question, to the local tier first --------------
 
@@ -1228,10 +1233,7 @@ class TieredVision:
         self._local_held_why = None
         self._local_turn = None
         self._frame_unable = 0
-        out = self._annotate(got, perception, trigger)
-        self._note_cloud_answer(trigger, _frame_seq(frame), scene=got,
-                                verdict=(out["_tier"].get("corroboration") or {}).get("verdict"))
-        return out
+        return self._annotate_noted(got, perception, trigger, frame)
 
     def _ask_tiers(self, frame: dict, q: "_Question", fn):
         """Runs on the worker (or inline, synchronously). The local answer,
@@ -1745,8 +1747,11 @@ class TieredVision:
             self._inflight = None
             self._last_taken = fut
             trigger, self._inflight_trigger = self._inflight_trigger, None
-            # 3.91 A: kept, so a local job's fault is not filed as the cloud's.
-            job_tier, self._inflight_tier = self._inflight_tier, None
+            # 3.91 A: a local-first job hands back the local answer (applied
+            # below, never noted) or the cloud's, asked when the local tier was
+            # absent; only the cloud's call raises out of it (`_ask_tiers`).
+            via_local = self._inflight_tier == "local"
+            self._inflight_tier = None
             self._inflight_question = None
             perception, self._inflight_perception = self._inflight_perception, None
             asked_seq, self._inflight_seq = self._inflight_seq, None
@@ -1772,7 +1777,7 @@ class TieredVision:
             # already charged this call when its wait timed out
             # (`abandon_inflight`). Decided under the lock, against it.
             logger.warning("async cloud call failed: %s", exc)
-            self._note_cloud_answer(trigger, asked_seq, error=exc, tier=job_tier)
+            self._note_cloud_answer(trigger, asked_seq, error=exc, via_local=via_local)
             with self._collect_lock:
                 if fut is not self._charged:
                     self._pending_error = exc
@@ -1800,7 +1805,7 @@ class TieredVision:
         finally:
             # Noted even if the annotation raised: the answer did land.
             self._note_cloud_answer(trigger, asked_seq, scene=scene,
-                                    verdict=(verdict or {}).get("verdict"), tier=job_tier)
+                                    verdict=(verdict or {}).get("verdict"), via_local=via_local)
         if perception is not None:
             if verdict:
                 # Marked `landed_late`, and carrying the trigger it belongs
@@ -1862,28 +1867,41 @@ class TieredVision:
                 self._executor.shutdown(wait=False, cancel_futures=True)
                 self._executor = None
 
+    def _annotate_noted(self, scene: dict, perception: Perception, trigger: str,
+                        frame: dict) -> dict:
+        """A synchronous answer, annotated for this frame and noted even if
+        the annotation raises -- the answer landed either way."""
+        verdict = None
+        try:
+            out = self._annotate(scene, perception, trigger)
+            verdict = (out["_tier"].get("corroboration") or {}).get("verdict")
+            return out
+        finally:
+            self._note_cloud_answer(trigger, _frame_seq(frame), scene=scene, verdict=verdict)
+
     def _note_cloud_answer(self, trigger, asked_seq, scene: Optional[dict] = None,
                            verdict: Optional[str] = None,
                            error: Optional[BaseException] = None,
-                           tier: Optional[str] = "cloud") -> None:
+                           via_local: bool = False) -> None:
         """3.91 A: what the cloud said, kept for the walk's rows. Recorded
         whatever the answer does next, so a reader can tell a held REVERSE
         that meant "too close" from one that meant "not the target"."""
         if error is not None:
             # Stored in walk rows that go to S3: addresses are cut out of
             # the text (an HTTP error can quote the endpoint).
-            text = _URL.sub("<url>", f"{type(error).__name__}: {error}")
-            entry = {"trigger": trigger, "asked_seq": asked_seq, "tier": tier,
+            text = _ADDRESS.sub("<address>", f"{type(error).__name__}: {error}")
+            entry = {"trigger": trigger, "asked_seq": asked_seq,
                      "error": text[:CLOUD_ERROR_CHARS]}
         else:
             scene = scene or {}
-            entry = {"trigger": trigger, "asked_seq": asked_seq, "tier": tier,
-                     "verdict": verdict}
+            entry = {"trigger": trigger, "asked_seq": asked_seq, "verdict": verdict}
             for key in CLOUD_ANSWER_KEYS:
                 if key in scene:
                     value = scene[key]
                     entry[key] = (value[:CLOUD_TEXT_CHARS]
                                   if isinstance(value, str) else value)
+        if via_local:
+            entry["via_local_tier"] = True     # asked because the local tier was absent
         with self._collect_lock:
             self._cloud_answers.append(entry)
 
