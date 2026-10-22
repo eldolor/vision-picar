@@ -308,17 +308,24 @@ bring-up that precedes it is the platform domain's procedure
   command line says so, so a reused pid is never taken for a hold.
 * **The board-side check.** `board_lock_check.sh` is sourced by
   `headroom_identity.sh`, `headroom_mission.sh` and `bench_local_vlm.sh`.
-  It exits 75 under another session's hold, or under a token whose `until`
-  has passed, and exits 1 if the check itself fails. In every other case
-  the bench holds the lock on its fd 9 for as long as it runs:
-  * **On a free board,** the bench takes the lock.
-  * **Under the caller's own token,** a watcher takes the lock over when
-    that hold ends.
+  It exits 75 under another session's hold, or under a token whose
+  `until` has passed. The holder writes `until` on the board's clock, so
+  the two clocks never meet. If the check itself fails, it exits 1.
+  Otherwise it forks a detached keeper that holds the lock while the
+  bench's pid lives, and neither a zombie nor an orphaned child counts as
+  the bench:
+  * **On a free board,** the keeper takes the lock at once.
+  * **Under the caller's own token,** the keeper blocks on the lock, so the
+    kernel hands it over the moment that hold ends, ahead of another
+    session's polling acquirer.
 
   So a bench that outlives its session (Ctrl-C on the laptop leaves a
   remote `bash` running, since there is no tty and so no SIGHUP) still
-  keeps the board. Processes it leaves behind inherit fd 9, and keep the
-  lock until they end.
+  keeps the board.
+* **Sessions.** The holder's ssh and `run`'s command each run in their
+  own session. A Ctrl-C or `timeout` sent to the group reaches the
+  command once, through `run`, and the hold outlasts the command's
+  teardown.
 
 ## Verification
 
@@ -326,7 +333,7 @@ bring-up that precedes it is the platform domain's procedure
 |---|---|
 | `tests/test_serverless_routes.py` | Every public route crosses both the CloudFront behaviour and the API Gateway route to the right function; the vision zip's flat layout imports (6 tests) |
 | `tests/test_static_assets.py` | Every file `web-twin/index.html` and `control/admin.html` reference is in `service/static/assets.json`, plus the PWA manifest's icons, the manifest's keys and cache policies, and that `sync.sh` reads the same manifest (10 tests). `control/metrics.html` is not checked |
-| `tests/test_board_lock.py` | 3.93: a second hold is refused with the owner's line, by hand or by the tool; the lock frees on SIGKILL, on a silent heartbeat and at `--max`; the board-side check refuses a missing, wrong or expired token; review fixes: unreachable is not busy, SIGTERM ends the command first, a waiting or abandoned `hold` never takes the board later, a reused pid is not a hold, a bench keeps the board on its own and after its session's hold ends (20 tests, ~55 s, a local shell for ssh; on `SLOW_FILES`) |
+| `tests/test_board_lock.py` | 3.93: a second hold is refused with the owner's line, by hand or by the tool; the lock frees on SIGKILL, on a silent heartbeat and at `--max`; the board-side check refuses a missing, wrong or expired token; review fixes: unreachable is not busy, SIGTERM ends the command first, a waiting or abandoned `hold` never takes the board later, a reused pid is not a hold, a bench keeps the board on its own, after its session's hold ends and against a waiting session, an orphan of the bench holds nothing, a Ctrl-C reaches the command once (24 tests, ~80 s, a local shell for ssh; on `SLOW_FILES`) |
 | `tests/test_alb_routes.py` | The same check against the deleted ECS templates. History, still green |
 | `tests/test_tunnel_proxy.py` | The proxy's prefix routing and header handling, no network (8 tests) |
 | `tests/test_health.py` | Non-zero exit when either half is unreachable or broken, and the verdict's silence for a parked robot, an idle robot and a recorded veto (15 tests) |

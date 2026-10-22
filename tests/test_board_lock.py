@@ -1,7 +1,7 @@
 """3.93 criteria 1-5: the board lock, with the board stood in for by a local
 shell (PICAR_BOARD_SSH="sh -c") and the lock in a temporary directory. The
 holder is the same code that runs on the board. On SLOW_FILES: real waits
-for the silence limit and the maximum (~55 s)."""
+for the silence limit and the maximum (~80 s)."""
 
 import fcntl
 import os
