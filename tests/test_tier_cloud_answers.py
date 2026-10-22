@@ -351,15 +351,15 @@ def test_a_stray_unnumbered_frame_on_a_numbering_body_keeps_the_answers():
     assert policy.queue == [{"asked_seq": 1}]
 
 
-@pytest.mark.parametrize("scene", [{"safest_direction": "LEFT", "_navigate": "reasoning"},
-                                   {"safest_direction": "LEFT", "_navigate": ["x"]},
-                                   "not a scene"])
-def test_an_odd_scene_is_noted_without_raising(scene):
+@pytest.mark.parametrize("scene, action, reply", [
+    ({"safest_direction": "LEFT", "_navigate": "reasoning"}, "LEFT", "reasoning"),
+    ({"safest_direction": "LEFT", "_navigate": ["x"]}, "LEFT", ["x"]),
+    ("not a scene", None, None)])
+def test_an_odd_scene_is_noted_without_raising(scene, action, reply):
     tier = TieredVision(ScriptedPipeline([ABSENT] * 3), NumberedCloud())
     tier._note_cloud_answer("t", 1, scene=scene)
     (entry,) = tier.take_cloud_answers()
-    assert entry["asked_seq"] == 1 and entry["action"] in (None, "LEFT")
-    assert entry["reply"] in (None, "reasoning", ["x"])
+    assert (entry["asked_seq"], entry["action"], entry["reply"]) == (1, action, reply)
 
 
 def test_a_coerced_action_is_told_apart_from_the_models():
@@ -372,7 +372,7 @@ def test_a_coerced_action_is_told_apart_from_the_models():
     odd, missing, null = tier.take_cloud_answers()
     assert odd["action"] == "STOP" and odd["reply"]["reply_action"] == "APPROACH"
     assert missing["action"] == "STOP" and "reply_action" not in missing["reply"]
-    assert "reply_action" not in null["reply"]
+    assert null["reply"]["reply_action"] is None         # sent null, not omitted
 
 
 def test_a_reply_cannot_write_the_records_own_keys_or_grow_it_without_bound():
@@ -391,3 +391,24 @@ def test_a_reply_cannot_write_the_records_own_keys_or_grow_it_without_bound():
     assert len(reply) == 16 and reply["nan"] is None
     assert reply["box"] == {"x": [1, 2, "dict"]}         # three levels kept
     json.dumps(entry, allow_nan=False)
+
+
+def test_a_reply_is_bounded_in_total_and_keeps_its_own_action_first():
+    """Code review: 16 x 16 x 16 strings of 500 was ~2 MB an answer; and
+    the fields `to_scene` adds last were the first cut."""
+    import numpy as np
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 3), NumberedCloud())
+    nav = {**{f"k{i}": [["y" * 500] * 16] * 16 for i in range(20)},
+           "flag": np.bool_(True), "n": np.int64(3),
+           "reply_action": "APPROACH", "model_id": "m"}
+    tier._note_cloud_answer("t", 1, scene={"safest_direction": "STOP", "_navigate": nav})
+    (entry,) = tier.take_cloud_answers()
+    reply = entry["reply"]
+    assert reply["reply_action"] == "APPROACH" and reply["model_id"] == "m"
+    assert len(json.dumps(entry)) < 20_000
+    assert _json_safe_value({"a": np.bool_(True), "b": np.int64(3)}) == {"a": True, "b": 3}
+
+
+def _json_safe_value(v):
+    from brain.tiered import _json_safe
+    return _json_safe(v)

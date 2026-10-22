@@ -76,6 +76,7 @@ import functools
 import logging
 import threading
 import math
+import numbers
 import random
 import re
 import time
@@ -707,25 +708,46 @@ CLOUD_TEXT_CHARS = 500
 CLOUD_FIELDS_KEPT = 16
 
 
-def _json_safe(value, depth: int = 0):
+# Per answer: every string in the stored reply together.
+CLOUD_REPLY_CHARS = 4000
+# Kept first when a reply has more fields than CLOUD_FIELDS_KEPT.
+_REPLY_FIRST = ("reply_action", "model_id", "target_visible", "target_reached",
+                "target_direction", "reasoning")
+
+
+def _json_safe(value, depth: int = 0, budget: Optional[list] = None):
     """A copy that stores as strict JSON and stays small: strings cut to
-    CLOUD_TEXT_CHARS, at most CLOUD_FIELDS_KEPT items a level, three levels,
-    non-finite numbers as None, anything else by its type name."""
+    CLOUD_TEXT_CHARS and, together, to CLOUD_REPLY_CHARS; at most
+    CLOUD_FIELDS_KEPT items a level (`_REPLY_FIRST` first), three levels;
+    non-finite numbers as None; numpy scalars by value; anything else by its
+    type name."""
+    if budget is None:
+        budget = [CLOUD_REPLY_CHARS]
+    if hasattr(value, "item") and not isinstance(value, (list, tuple, dict, str)):
+        try:
+            value = value.item()          # a numpy scalar
+        except Exception:  # noqa: BLE001 -- not one; falls through to its name
+            pass
     if value is None or isinstance(value, bool):
         return value
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
+    if isinstance(value, numbers.Integral):
+        return int(value)
+    if isinstance(value, numbers.Real):
+        value = float(value)
         return value if math.isfinite(value) else None
     if isinstance(value, str):
-        return value[:CLOUD_TEXT_CHARS]
+        cut = value[:min(CLOUD_TEXT_CHARS, max(budget[0], 0))]
+        budget[0] -= len(cut)
+        return cut
     if depth >= 3:
         return type(value).__name__
     if isinstance(value, dict):
-        return {str(k)[:64]: _json_safe(v, depth + 1)
-                for k, v in list(value.items())[:CLOUD_FIELDS_KEPT]}
+        keys = ([k for k in _REPLY_FIRST if k in value] if depth == 0 else []) + \
+               [k for k in value if not (depth == 0 and k in _REPLY_FIRST)]
+        return {str(k)[:64]: _json_safe(value[k], depth + 1, budget)
+                for k in keys[:CLOUD_FIELDS_KEPT]}
     if isinstance(value, (list, tuple)):
-        return [_json_safe(v, depth + 1) for v in list(value)[:CLOUD_FIELDS_KEPT]]
+        return [_json_safe(v, depth + 1, budget) for v in list(value)[:CLOUD_FIELDS_KEPT]]
     return type(value).__name__
 # Held for the runner to take; more than this untaken (no one filing) and the
 # oldest go.

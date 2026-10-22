@@ -240,11 +240,12 @@ def to_scene(result: dict, target_object: str) -> dict:
             ),
             "reasoning": result.get("reasoning", ""),
             # 3.91 A: what the reply itself said, kept for the walk's record
-            # (no policy reads them): the action before the coercion above,
-            # absent if it sent none, and the model that answered. Short
-            # strings, as they ride in every copy of the scene.
-            **({"reply_action": str(result["action"])[:40]}
-               if result.get("action") is not None else {}),
+            # (no policy reads them): the action before the coercion above
+            # (null if it sent null, absent if it sent none) and the model
+            # that answered. Short, as they ride in every copy of the scene.
+            **({"reply_action": (None if result["action"] is None
+                                 else str(result["action"])[:40])}
+               if "action" in result else {}),
             **({"model_id": str(result["model_id"])[:100]}
                if result.get("model_id") else {}),
         },
