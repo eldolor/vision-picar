@@ -33,9 +33,16 @@ STATUSES = (SUCCESS, FAILURE, RUNNING)
 class Node:
     kind = "node"
 
-    def __init__(self, name: str, settings: Optional[dict] = None):
+    def __init__(self, name: str, settings=None):
         self.name = name
-        self.settings = dict(settings or {})
+        # A dict, or a function returning one (read when printed, so a
+        # setting changed after construction is shown as it is now).
+        self._settings = settings
+
+    @property
+    def settings(self) -> dict:
+        s = self._settings() if callable(self._settings) else self._settings
+        return dict(s or {})
 
     def tick(self, bb: Any) -> str:
         raise NotImplementedError
@@ -68,7 +75,7 @@ def _checked(node: Node, status) -> str:
 
 
 class Composite(Node):
-    def __init__(self, name: str, children: Iterable[Node], settings: Optional[dict] = None):
+    def __init__(self, name: str, children: Iterable[Node], settings=None):
         super().__init__(name, settings)
         self._children = list(children)
         if not self._children:
@@ -103,7 +110,7 @@ class Fallback(Composite):
 class Condition(Node):
     kind = "condition"
 
-    def __init__(self, name: str, test: Callable[[Any], bool], settings: Optional[dict] = None):
+    def __init__(self, name: str, test: Callable[[Any], bool], settings=None):
         super().__init__(name, settings)
         self.test = test
 
@@ -115,7 +122,7 @@ class Action(Node):
     """`act(bb)` returns a status, or a bool (True SUCCESS, False FAILURE)."""
     kind = "action"
 
-    def __init__(self, name: str, act: Callable[[Any], Any], settings: Optional[dict] = None):
+    def __init__(self, name: str, act: Callable[[Any], Any], settings=None):
         super().__init__(name, settings)
         self.act = act
 
@@ -133,7 +140,7 @@ class Decorator(Node):
     kind = "decorator"
 
     def __init__(self, name: str, child: Node, wrap: Callable[[Any, Node], str],
-                 settings: Optional[dict] = None):
+                 settings=None):
         super().__init__(name, settings)
         self.child = child
         self.wrap = wrap

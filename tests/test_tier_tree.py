@@ -65,6 +65,9 @@ def test_describe_prints_the_tree_with_its_settings():
 class _Pipe:
     hfov_deg = 66.0
 
+    def __init__(self, match_probability=None):
+        self.match_probability = match_probability
+
     def perceive(self, frame):
         raise AssertionError("not called: _local_scene is driven directly")
 
@@ -94,7 +97,8 @@ def _perception(rng):
 
 
 def _config(rng):
-    return dict(steer_on_sight=rng.random() < 0.85, steer_on_candidate=rng.random() < 0.6,
+    return dict(match_probability=rng.choice([None, None, 0.7, 0.9]),
+                steer_on_sight=rng.random() < 0.85, steer_on_candidate=rng.random() < 0.6,
                 hold_goal=rng.random() < 0.8, hold_bearing=rng.random() < 0.5,
                 hold_bearing_max_m=rng.choice([0.5, 1.0, 3.0]),
                 spin_guard_after=rng.choice([0, 1, 2, 8]),
@@ -123,9 +127,9 @@ def _set_state(tier, rng):
             tier._read_odometry({"odometry": _odo(d, h, usable)})
     r = rng.random()
     tier._local_turn = (None if r < 0.5 else
-                        (rng.choice(["LEFT", "RIGHT"]), rng.randint(5, 90)) if r < 0.8 else
-                        ("FORWARD", None))
-    tier._local_held = rng.choice([None, None, "FORWARD", "LEFT"])
+                        (rng.choice(["LEFT", "RIGHT"]), rng.randint(5, 90)) if r < 0.75 else
+                        ("FORWARD", rng.choice([None, 12])))
+    tier._local_held = rng.choice([None, None, "FORWARD", "LEFT", "RIGHT", "REVERSE"])
     tier._local_held_why = rng.choice([None, "located", "direction"]) if tier._local_held else None
     tier._last_cloud_scene = rng.choice(
         [None, {"safest_direction": rng.choice(["LEFT", "RIGHT", "FORWARD", "REVERSE"])}])
@@ -145,7 +149,8 @@ STATE_KEYS = ("_consecutive_turn_deg", "_local_turn", "_dead_reckoned", "_steer_
 def _state(tier):
     goal = tier._goal
     return ({k: getattr(tier, k, None) for k in STATE_KEYS},
-            (goal.held, goal.sightings, goal._seen_at, getattr(goal, "_bearing_world", None)),
+            (goal.held, goal.sightings, goal._seen_at, goal.direction_deg, goal.x, goal.y,
+             goal.range_m),
             tier.stats.as_dict())
 
 
@@ -153,8 +158,9 @@ def _pair(seed):
     rng = random.Random(seed)
     cfg = _config(rng)
     tiers = []
+    mp = cfg.pop("match_probability")
     for cls in (ReferenceTieredVision, TieredVision):
-        t = cls(_Pipe(), lambda f: {}, **cfg)
+        t = cls(_Pipe(mp), lambda f: {}, **cfg)
         _set_state(t, random.Random(seed * 7919 + 1))
         tiers.append(t)
     return tiers, rng
@@ -168,8 +174,13 @@ def test_criterion_2a_the_tree_decides_exactly_as_the_code_it_replaced():
         for i in range(frames):
             p_seed = seed * 31 + i
             note = rng.choice(["", "dispatched", "call cap reached"])
-            a = ref._local_scene(_perception(random.Random(p_seed)), note=note)
-            b = new._local_scene(_perception(random.Random(p_seed)), note=note)
+            kw = rng.choice([{}, {}, {"dispatched": "cold_search"}, {"local_asked": "uncertain_band"}])
+            if i and rng.random() < 0.5:        # the robot moved between frames
+                odo = _odo(rng.uniform(0, 3), rng.uniform(-180, 180), rng.random() < 0.9)
+                ref._read_odometry({"odometry": odo})
+                new._read_odometry({"odometry": odo})
+            a = ref._local_scene(_perception(random.Random(p_seed)), note=note, **kw)
+            b = new._local_scene(_perception(random.Random(p_seed)), note=note, **kw)
             if a != b or _state(ref) != _state(new):
                 differences.append((seed, i, a.get("safest_direction"), b.get("safest_direction"),
                                     a["_navigate"]["reasoning"], b["_navigate"]["reasoning"]))
@@ -195,3 +206,17 @@ def test_criterion_4_the_tree_costs_under_a_millisecond_a_frame():
             times[name].append((time.perf_counter() - t0) * 1000)
     p90 = {k: statistics.quantiles(v, n=10)[-1] for k, v in times.items()}
     assert p90["tree"] <= 1.0, p90
+
+
+def test_describe_reads_the_settings_live():
+    tier = TieredVision(_Pipe(), lambda f: {})
+    tier.spin_guard_after = 3
+    assert "decorator spin guard after_quarter_turns=3" in tier.describe_tree()
+
+
+def test_a_ladder_that_chooses_nothing_is_an_error():
+    tier = TieredVision(_Pipe(), lambda f: {})
+    tier._rung_scan = lambda bb: False             # as if the default rung were missing
+    tier._what_tree = tier._build_what_tree()
+    with pytest.raises(RuntimeError, match="chose no direction"):
+        tier._local_scene(Perception(status=ABSENT))

@@ -86,7 +86,7 @@ from typing import Callable, Optional
 
 from brain.arrival import run_spans
 from brain.goal_pose import GoalPose, OdomTracker, Pose, _wrap
-from brain.tree import Action, Decorator, Fallback, Node, Sequence
+from brain.tree import SUCCESS, Action, Decorator, Fallback, Node, Sequence
 from brain.perceive import (ABSENT, DEFAULT_MATCH_PROBABILITY, DETECTED, UNAVAILABLE,
                             Perception)
 
@@ -780,6 +780,13 @@ class _LocalAnswer:
     # 3.80.F: the direction question's reply, when one was asked after a
     # search question's sighting answer was not a yes.
     direction: Optional[dict] = None
+
+
+# 3.94: the rungs that act on a bearing measured or located on THIS frame
+# are exempt from the spin guard; those and dead reckoning size their turn.
+RUNG_STEER, RUNG_LOCATED, RUNG_RECKONED = "steer", "located", "reckoned"
+RUNG_CANDIDATE, RUNG_HELD, RUNG_SCAN, RUNG_SPIN_GUARD = "candidate", "held", "scan", "spin_guard"
+RUNGS_THIS_FRAME = (RUNG_STEER, RUNG_LOCATED, RUNG_CANDIDATE)
 
 
 @dataclass
@@ -2424,20 +2431,22 @@ class TieredVision:
         """
         rungs = Fallback("rungs, best evidence first", [
             Action("steer on this frame's bearing", self._rung_steer,
-                   {"steer_on_sight": self.steer_on_sight, "band_deg": STEER_BAND_DEG}),
+                   lambda: {"steer_on_sight": self.steer_on_sight, "band_deg": STEER_BAND_DEG}),
             Action("turn to the local VLM's located yes", self._rung_located),
             Action("dead-reckon to a sighting", self._rung_reckoned,
-                   {"hold_bearing": self.hold_bearing, "max_m": self.hold_bearing_max_m}),
+                   lambda: {"hold_bearing": self.hold_bearing, "max_m": self.hold_bearing_max_m}),
             Action("steer on an uncertain candidate", self._rung_candidate,
-                   {"steer_on_candidate": self.steer_on_candidate,
-                    "band_low": self.local_band_low, "gate": self.match_probability}),
-            Action("hold the last goal", self._rung_held, {"hold_goal": self.hold_goal}),
+                   lambda: {"steer_on_candidate": self.steer_on_candidate,
+                            "band_low": self.local_band_low, "gate": self.match_probability}),
+            Action("hold the last goal", self._rung_held, lambda: {"hold_goal": self.hold_goal}),
             Action("scan", self._rung_scan, {"action": SCAN_ACTION}),
         ])
+        # Settings given as a function are read when printed, so `describe`
+        # shows the values the rungs act on now, not those at construction.
         return Sequence("what to do this frame", [
             Action("take this frame's evidence", self._take_evidence),
             Decorator("spin guard", rungs, self._spin_guard,
-                      {"after_quarter_turns": self.spin_guard_after}),
+                      lambda: {"after_quarter_turns": self.spin_guard_after}),
             Action("size the turn", self._size_turn,
                    {"min_deg": MIN_TURN_DEG, "max_deg": MAX_TURN_DEG, "scan_deg": SCAN_TURN_DEG}),
             Action("count the turn", self._count_turn),
@@ -2464,19 +2473,19 @@ class TieredVision:
     def _rung_steer(self, bb: "_FrameDecision") -> bool:
         steer = self._steer_to(bb.perception)
         return bool(steer) and self._choose(
-            bb, "steer", steer, f"steering on local sighting ({_direction_for(bb.perception)})",
+            bb, RUNG_STEER, steer, f"steering on local sighting ({_direction_for(bb.perception)})",
             self._steer_turn_deg)
 
     def _rung_located(self, bb: "_FrameDecision") -> bool:
         located = bb.located_turn[0] if bb.located_turn else None
         return bool(located) and self._choose(
-            bb, "located", located, "turning to where the local VLM saw the target",
+            bb, RUNG_LOCATED, located, "turning to where the local VLM saw the target",
             bb.located_turn[1])
 
     def _rung_reckoned(self, bb: "_FrameDecision") -> bool:
         reckoned = self._dead_reckoned_direction()
         return bool(reckoned) and self._choose(
-            bb, "reckoned", reckoned,
+            bb, RUNG_RECKONED, reckoned,
             f"dead-reckoning to a sighting {self._goal.sightings} detection(s) ago",
             self._reckoned_turn_deg)
 
@@ -2487,7 +2496,7 @@ class TieredVision:
         with self._stats_lock:
             self.stats.candidate_steers += 1
         best = max(float(c.probability) for c in bb.perception.candidates)
-        return self._choose(bb, "candidate", candidate,
+        return self._choose(bb, RUNG_CANDIDATE, candidate,
                             f"steering on an uncertain candidate (P {best:.2f})",
                             self._steer_turn_deg)
 
@@ -2496,26 +2505,31 @@ class TieredVision:
             return False
         why = (f"holding the local VLM's {self._local_held_why or 'answer'} {bb.held}"
                if self._local_held else f"holding last cloud goal {bb.held}")
-        return self._choose(bb, "held", bb.held, why)
+        return self._choose(bb, RUNG_HELD, bb.held, why)
 
     def _rung_scan(self, bb: "_FrameDecision") -> bool:
-        return self._choose(bb, "scan", SCAN_ACTION, "")
+        return self._choose(bb, RUNG_SCAN, SCAN_ACTION, "")
 
     def _spin_guard(self, bb: "_FrameDecision", child: Node) -> str:
         """The spin floor. Counted over what the robot was actually TOLD to
         do, cloud steps included, because a spin does not care which tier
         caused it. Never over a bearing measured or located on this frame."""
-        status = child.tick(bb)
+        child.tick(bb)
+        if bb.direction is None:
+            # The scan rung always chooses; a ladder that ends without one
+            # would skip the turn's size and the guard's count below.
+            raise RuntimeError("the rungs chose no direction")
         if (self.spin_guard_after
                 and bb.direction in TURN_ACTIONS
-                and bb.rung not in ("steer", "located", "candidate")
+                and bb.rung not in RUNGS_THIS_FRAME
                 and bb.perception.status != DETECTED
                 and self._consecutive_turn_deg >= self.spin_guard_after * 90):
-            bb.direction, bb.rung = "FORWARD", "spin_guard"
+            bb.direction, bb.rung = "FORWARD", RUNG_SPIN_GUARD
             self._consecutive_turn_deg = 0.0
             bb.why = (f"{bb.why} -- spin guard: {self.spin_guard_after * 90} degrees "
                       "of turning without a detection, forcing FORWARD")
-        return status
+            bb.rung_turn_deg = None
+        return SUCCESS
 
     def _size_turn(self, bb: "_FrameDecision") -> bool:
         """R1: how FAR to turn, when a measured or dead-reckoned bearing
@@ -2524,10 +2538,9 @@ class TieredVision:
         the field of view (SCAN_TURN_DEG)."""
         bb.turn_deg = None
         if bb.direction in TURN_ACTIONS:
-            if bb.rung in ("steer", "located", "reckoned", "candidate"):
-                bb.turn_deg = bb.rung_turn_deg
-            if bb.turn_deg is None:
-                bb.turn_deg = SCAN_TURN_DEG
+            # Only a bearing rung hands one over (`_choose`); a held goal, a
+            # scan or a spin-guard FORWARD leave it None.
+            bb.turn_deg = SCAN_TURN_DEG if bb.rung_turn_deg is None else bb.rung_turn_deg
         return True
 
     def _count_turn(self, bb: "_FrameDecision") -> bool:
