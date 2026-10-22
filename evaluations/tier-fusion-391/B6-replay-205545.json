@@ -1,0 +1,1772 @@
+{
+ "walk": "red-backpack-gpt-6-astra-20261021-205545",
+ "target": "red backpack",
+ "config": {
+  "tier_async_cloud": false,
+  "tier_cold_search_after": 6,
+  "tier_cold_search_after_cm": 0,
+  "tier_consecutive_frames": 2,
+  "tier_corroboration_bar": 0.5,
+  "tier_frame_vote": "off",
+  "tier_hold_bearing": false,
+  "tier_hold_bearing_max_m": 1.0,
+  "tier_hold_goal": true,
+  "tier_local_band_low": 0.5,
+  "tier_local_cold_search_after": 1,
+  "tier_local_direction": false,
+  "tier_local_max_unable": 2,
+  "tier_local_no_below": 0.1,
+  "tier_local_timeout_s": 3.0,
+  "tier_local_vlm_url": "http://127.0.0.1:8005",
+  "tier_max_calls": 0,
+  "tier_search": "cloud",
+  "tier_sighting_span_s": 0.25,
+  "tier_spin_guard_after": 8,
+  "tier_stale_after": 8,
+  "tier_steer_on_candidate": true,
+  "tier_steer_on_sight": true
+ },
+ "summary": {
+  "frames": 89,
+  "local_answers": {
+   "no": 13,
+   "yes": 20
+  },
+  "local_on_detected": {
+   "no": 2,
+   "yes": 7
+  },
+  "cloud_recorded": 0,
+  "cloud_would_have_asked": 0,
+  "cloud_recorded_error": 0,
+  "live_dispatched": 9,
+  "reversals": 0,
+  "live_reversals": 0,
+  "local_ms_median": 2158.5,
+  "local_ms_p90": 2189,
+  "mem_available_min_mb": 737,
+  "probes": {
+   "no": 1,
+   "yes": 4
+  }
+ },
+ "stats": {
+  "cloud_ms": null,
+  "perception_ms": {
+   "n": 89,
+   "p50": 169,
+   "p90": 237,
+   "p99": 334,
+   "max": 1618,
+   "mean": 186
+  },
+  "local_ms": null,
+  "local_calls": 0,
+  "local": {},
+  "escalations": 0,
+  "guarded": 0,
+  "local_triggers": {
+   "mission_start": 1,
+   "candidate_sighting": 3,
+   "staleness": 6,
+   "cold_search": 17,
+   "uncertain_band": 6
+  },
+  "local_frame": {
+   "no": 13,
+   "yes": 20
+  },
+  "local_frame_calls": 33,
+  "local_frame_ms": {
+   "n": 33,
+   "p50": 2158,
+   "p90": 2189,
+   "p99": 2278,
+   "max": 2278,
+   "mean": 1725
+  },
+  "frame_escalations": {},
+  "local_direction": {},
+  "local_direction_ms": null,
+  "candidate_steers": 1,
+  "cloud_errors": 0,
+  "cloud_answers_dropped": 0,
+  "frames": 89,
+  "frames_skipped": 164,
+  "vote": null,
+  "cloud_calls": 0,
+  "claims": 0,
+  "corroborated": 0,
+  "verdicts": {},
+  "frames_per_call": null,
+  "triggers": {},
+  "perception": {
+   "absent": 24,
+   "detected": 65
+  }
+ },
+ "probes": [
+  {
+   "seq": 19,
+   "status": "answered",
+   "score": 0.0025521053149912833,
+   "box_frac": null,
+   "ms": 1095.6
+  },
+  {
+   "seq": 60,
+   "status": "answered",
+   "score": 0.9956622208519503,
+   "box_frac": [
+    0.4976190476190476,
+    0.06473214285714286,
+    1.0,
+    0.6339285714285714
+   ],
+   "ms": 2287.5
+  },
+  {
+   "seq": 94,
+   "status": "answered",
+   "score": 0.9943404456488192,
+   "box_frac": [
+    0.0,
+    0.0,
+    1.0,
+    0.7991071428571429
+   ],
+   "ms": 2250.2
+  },
+  {
+   "seq": 131,
+   "status": "answered",
+   "score": 0.9968671593048913,
+   "box_frac": [
+    0.0,
+    0.0,
+    0.9321428571428572,
+    1.0
+   ],
+   "ms": 2251.3
+  },
+  {
+   "seq": 167,
+   "status": "answered",
+   "score": 0.9978769476547212,
+   "box_frac": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "ms": 2250.7
+  }
+ ],
+ "frames": [
+  {
+   "seq": 0,
+   "teleop_seq": 3,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "mission_start",
+   "local": [
+    {
+     "seq": 3,
+     "status": "answered",
+     "score": 0.002235336645680261,
+     "box_frac": null,
+     "ms": 1105.8
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 5,
+   "reasoning": "[reactive tier, local question: mission_start] asked the local tier -- steering on an uncertain candidate (P 0.61)",
+   "live_action": "RIGHT",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 6,
+   "teleop_seq": 9,
+   "perception": "detected",
+   "probability": 0.9498,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 9,
+   "teleop_seq": 12,
+   "perception": "detected",
+   "probability": 0.9866,
+   "trigger": "candidate_sighting",
+   "local": [
+    {
+     "seq": 12,
+     "status": "answered",
+     "score": 0.9985265260890303,
+     "box_frac": [
+      0.44285714285714284,
+      0.34375,
+      0.6226190476190476,
+      0.5133928571428571
+     ],
+     "ms": 2278.4
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: candidate_sighting] asked the local tier -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 13,
+   "teleop_seq": 16,
+   "perception": "detected",
+   "probability": 0.9665,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 16,
+   "teleop_seq": 19,
+   "perception": "detected",
+   "probability": 0.9605,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 19,
+   "teleop_seq": 22,
+   "perception": "detected",
+   "probability": 0.9737,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 22,
+   "teleop_seq": 25,
+   "perception": "detected",
+   "probability": 0.9921,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 25,
+   "teleop_seq": 28,
+   "perception": "detected",
+   "probability": 0.9933,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 28,
+   "teleop_seq": 31,
+   "perception": "detected",
+   "probability": 0.9956,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 31,
+   "teleop_seq": 34,
+   "perception": "detected",
+   "probability": 0.992,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 34,
+   "teleop_seq": 37,
+   "perception": "detected",
+   "probability": 0.9991,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 37,
+   "teleop_seq": 40,
+   "perception": "detected",
+   "probability": 0.9946,
+   "trigger": "staleness",
+   "local": [
+    {
+     "seq": 40,
+     "status": "answered",
+     "score": 0.994660718124911,
+     "box_frac": [
+      0.19642857142857142,
+      0.15401785714285715,
+      0.544047619047619,
+      0.45535714285714285
+     ],
+     "ms": 2244.5
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: staleness] asked the local tier -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 40,
+   "teleop_seq": 43,
+   "perception": "detected",
+   "probability": 0.999,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 5,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 43,
+   "teleop_seq": 46,
+   "perception": "detected",
+   "probability": 0.9994,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 5,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 47,
+   "teleop_seq": 50,
+   "perception": "detected",
+   "probability": 0.9989,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 51,
+   "teleop_seq": 54,
+   "perception": "detected",
+   "probability": 0.9952,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 14,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (right)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 53,
+   "teleop_seq": 56,
+   "perception": "detected",
+   "probability": 0.9986,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 23,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (right)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 57,
+   "teleop_seq": 60,
+   "perception": "detected",
+   "probability": 0.9959,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 22,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (right)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 59,
+   "teleop_seq": 62,
+   "perception": "detected",
+   "probability": 0.9943,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 13,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (right)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 61,
+   "teleop_seq": 64,
+   "perception": "detected",
+   "probability": 0.9927,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 65,
+   "teleop_seq": 68,
+   "perception": "detected",
+   "probability": 0.9998,
+   "trigger": "staleness",
+   "local": [
+    {
+     "seq": 68,
+     "status": "answered",
+     "score": 0.9963487423420722,
+     "box_frac": [
+      0.0,
+      0.05803571428571429,
+      0.6023809523809524,
+      0.6004464285714286
+     ],
+     "ms": 2189.4
+    }
+   ],
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 18,
+   "reasoning": "[reactive tier, local question: staleness] asked the local tier -- steering on local sighting (left)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 68,
+   "teleop_seq": 71,
+   "perception": "detected",
+   "probability": 0.9275,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 15,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (left)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 71,
+   "teleop_seq": 74,
+   "perception": "detected",
+   "probability": 0.9985,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 19,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (left)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 74,
+   "teleop_seq": 77,
+   "perception": "detected",
+   "probability": 0.9997,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 13,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (left)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 76,
+   "teleop_seq": 79,
+   "perception": "detected",
+   "probability": 0.9994,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 5,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 80,
+   "teleop_seq": 83,
+   "perception": "detected",
+   "probability": 0.9984,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 10,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 83,
+   "teleop_seq": 86,
+   "perception": "detected",
+   "probability": 0.9977,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 18,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (right)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 86,
+   "teleop_seq": 89,
+   "perception": "detected",
+   "probability": 0.9979,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 20,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (right)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 88,
+   "teleop_seq": 91,
+   "perception": "detected",
+   "probability": 0.9985,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 18,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (right)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 91,
+   "teleop_seq": 94,
+   "perception": "detected",
+   "probability": 0.9993,
+   "trigger": "staleness",
+   "local": [
+    {
+     "seq": 94,
+     "status": "answered",
+     "score": 0.9943404456488192,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      0.7991071428571429
+     ],
+     "ms": 2158.5
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 6,
+   "reasoning": "[reactive tier, local question: staleness] asked the local tier -- steering on local sighting (center)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 94,
+   "teleop_seq": 97,
+   "perception": "detected",
+   "probability": 0.9998,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 17,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (left)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 97,
+   "teleop_seq": 100,
+   "perception": "detected",
+   "probability": 0.9983,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 24,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (left)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 100,
+   "teleop_seq": 103,
+   "perception": "detected",
+   "probability": 0.9757,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 13,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (left)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 103,
+   "teleop_seq": 106,
+   "perception": "detected",
+   "probability": 0.9565,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 8,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 105,
+   "teleop_seq": 108,
+   "perception": "detected",
+   "probability": 0.9876,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 15,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (right)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 108,
+   "teleop_seq": 111,
+   "perception": "detected",
+   "probability": 0.9997,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 111,
+   "teleop_seq": 114,
+   "perception": "detected",
+   "probability": 0.9995,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 17,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (right)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 114,
+   "teleop_seq": 117,
+   "perception": "detected",
+   "probability": 0.9989,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 6,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 117,
+   "teleop_seq": 120,
+   "perception": "detected",
+   "probability": 0.9992,
+   "trigger": "staleness",
+   "local": [
+    {
+     "seq": 120,
+     "status": "answered",
+     "score": 0.9961078782586431,
+     "box_frac": [
+      0.05476190476190476,
+      0.0,
+      1.0,
+      0.84375
+     ],
+     "ms": 2193.9
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: staleness] asked the local tier -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 120,
+   "teleop_seq": 123,
+   "perception": "detected",
+   "probability": 0.9996,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 19,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (left)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 123,
+   "teleop_seq": 126,
+   "perception": "detected",
+   "probability": 0.9914,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 11,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (left)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 126,
+   "teleop_seq": 129,
+   "perception": "detected",
+   "probability": 0.981,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 6,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 128,
+   "teleop_seq": 131,
+   "perception": "detected",
+   "probability": 0.9793,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 131,
+   "teleop_seq": 134,
+   "perception": "detected",
+   "probability": 0.9994,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 5,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 134,
+   "teleop_seq": 137,
+   "perception": "detected",
+   "probability": 0.998,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 9,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "RIGHT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 137,
+   "teleop_seq": 140,
+   "perception": "detected",
+   "probability": 0.999,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 139,
+   "teleop_seq": 142,
+   "perception": "detected",
+   "probability": 0.9781,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 142,
+   "teleop_seq": 145,
+   "perception": "detected",
+   "probability": 0.9243,
+   "trigger": "staleness",
+   "local": [
+    {
+     "seq": 145,
+     "status": "answered",
+     "score": 0.9939000939547524,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      0.8125
+     ],
+     "ms": 2169.7
+    }
+   ],
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 5,
+   "reasoning": "[reactive tier, local question: staleness] asked the local tier -- steering on local sighting (center)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 145,
+   "teleop_seq": 148,
+   "perception": "detected",
+   "probability": 0.9907,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 147,
+   "teleop_seq": 150,
+   "perception": "detected",
+   "probability": 0.9626,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 150,
+   "teleop_seq": 153,
+   "perception": "detected",
+   "probability": 0.9726,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 153,
+   "teleop_seq": 156,
+   "perception": "detected",
+   "probability": 0.8897,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 156,
+   "teleop_seq": 159,
+   "perception": "detected",
+   "probability": 0.903,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 158,
+   "teleop_seq": 161,
+   "perception": "detected",
+   "probability": 0.9104,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 161,
+   "teleop_seq": 164,
+   "perception": "detected",
+   "probability": 0.9927,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 164,
+   "teleop_seq": 167,
+   "perception": "detected",
+   "probability": 0.8076,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 167,
+   "teleop_seq": 170,
+   "perception": "detected",
+   "probability": 0.8063,
+   "trigger": "staleness",
+   "local": [
+    {
+     "seq": 170,
+     "status": "answered",
+     "score": 0.548791201609877,
+     "box_frac": null,
+     "ms": 1134.1
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: staleness] asked the local tier -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 169,
+   "teleop_seq": 172,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 172,
+     "status": "answered",
+     "score": 0.9961748726314568,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2159.7
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 172,
+   "teleop_seq": 175,
+   "perception": "detected",
+   "probability": 0.9449,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "LEFT",
+   "turn_deg": 5,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "LEFT",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 175,
+   "teleop_seq": 178,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 178,
+     "status": "answered",
+     "score": 0.00318513395417431,
+     "box_frac": null,
+     "ms": 1097.2
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 45,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 177,
+   "teleop_seq": 180,
+   "perception": "detected",
+   "probability": 0.9179,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 180,
+   "teleop_seq": 183,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 183,
+     "status": "answered",
+     "score": 0.997946951557638,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2163.9
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 182,
+   "teleop_seq": 185,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "uncertain_band",
+   "local": [
+    {
+     "seq": 185,
+     "status": "answered",
+     "score": 0.9930504841580361,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2172.0
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: uncertain_band] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 184,
+   "teleop_seq": 187,
+   "perception": "detected",
+   "probability": 0.8046,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 187,
+   "teleop_seq": 190,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 190,
+     "status": "answered",
+     "score": 0.0018954870416771285,
+     "box_frac": null,
+     "ms": 1090.0
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 45,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 189,
+   "teleop_seq": 192,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "uncertain_band",
+   "local": [
+    {
+     "seq": 192,
+     "status": "answered",
+     "score": 0.0036400358590245015,
+     "box_frac": null,
+     "ms": 1100.7
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 45,
+   "reasoning": "[reactive tier, local question: uncertain_band] asked the local tier",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 192,
+   "teleop_seq": 195,
+   "perception": "detected",
+   "probability": 0.8229,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 195,
+   "teleop_seq": 198,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 198,
+     "status": "answered",
+     "score": 0.9904643746343221,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2158.5
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 197,
+   "teleop_seq": 200,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "uncertain_band",
+   "local": [
+    {
+     "seq": 200,
+     "status": "answered",
+     "score": 0.002982824434817768,
+     "box_frac": null,
+     "ms": 1108.8
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 45,
+   "reasoning": "[reactive tier, local question: uncertain_band] asked the local tier",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 200,
+   "teleop_seq": 203,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 203,
+     "status": "answered",
+     "score": 0.9887254345989703,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2165.0
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 203,
+   "teleop_seq": 206,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 206,
+     "status": "answered",
+     "score": 0.9892556275280819,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2174.0
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "RIGHT",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 205,
+   "teleop_seq": 208,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 208,
+     "status": "answered",
+     "score": 0.0022013936909442465,
+     "box_frac": null,
+     "ms": 1119.9
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 45,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 207,
+   "teleop_seq": 210,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 210,
+     "status": "answered",
+     "score": 0.9947339992683119,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2170.1
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 210,
+   "teleop_seq": 213,
+   "perception": "detected",
+   "probability": 0.9064,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 213,
+   "teleop_seq": 216,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 216,
+     "status": "answered",
+     "score": 0.9874916792984693,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2162.8
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 216,
+   "teleop_seq": 219,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 219,
+     "status": "answered",
+     "score": 0.9936617993574423,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2187.1
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 218,
+   "teleop_seq": 221,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "uncertain_band",
+   "local": [
+    {
+     "seq": 221,
+     "status": "answered",
+     "score": 0.0030049178292214773,
+     "box_frac": null,
+     "ms": 1119.1
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 45,
+   "reasoning": "[reactive tier, local question: uncertain_band] asked the local tier",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 221,
+   "teleop_seq": 224,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 224,
+     "status": "answered",
+     "score": 0.0025323121904528715,
+     "box_frac": null,
+     "ms": 1107.1
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 45,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier",
+   "live_action": "RIGHT",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 224,
+   "teleop_seq": 227,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 227,
+     "status": "answered",
+     "score": 0.9883996258347617,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2165.9
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 226,
+   "teleop_seq": 229,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 229,
+     "status": "answered",
+     "score": 0.001859217607147194,
+     "box_frac": null,
+     "ms": 1115.1
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 45,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 229,
+   "teleop_seq": 232,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 232,
+     "status": "answered",
+     "score": 0.0022017274022521787,
+     "box_frac": null,
+     "ms": 1107.3
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 45,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 232,
+   "teleop_seq": 235,
+   "perception": "detected",
+   "probability": 0.8593,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 234,
+   "teleop_seq": 237,
+   "perception": "detected",
+   "probability": 0.8244,
+   "trigger": "candidate_sighting",
+   "local": [
+    {
+     "seq": 237,
+     "status": "answered",
+     "score": 0.002523962600619758,
+     "box_frac": null,
+     "ms": 1096.6
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: candidate_sighting] asked the local tier -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 238,
+   "teleop_seq": 241,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 241,
+     "status": "answered",
+     "score": 0.9883970141651176,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2164.2
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 240,
+   "teleop_seq": 243,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "uncertain_band",
+   "local": [
+    {
+     "seq": 243,
+     "status": "answered",
+     "score": 0.0025066992620696523,
+     "box_frac": null,
+     "ms": 1104.3
+    }
+   ],
+   "cloud": null,
+   "action": "RIGHT",
+   "turn_deg": 45,
+   "reasoning": "[reactive tier, local question: uncertain_band] asked the local tier",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 243,
+   "teleop_seq": 246,
+   "perception": "detected",
+   "probability": 0.9159,
+   "trigger": null,
+   "local": null,
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, no cloud call] no trigger (detected) -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 246,
+   "teleop_seq": 249,
+   "perception": "detected",
+   "probability": 0.8891,
+   "trigger": "candidate_sighting",
+   "local": [
+    {
+     "seq": 249,
+     "status": "answered",
+     "score": 0.0028137676758394287,
+     "box_frac": null,
+     "ms": 1111.3
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: candidate_sighting] asked the local tier -- steering on local sighting (center)",
+   "live_action": "FORWARD",
+   "live_perception": "detected"
+  },
+  {
+   "seq": 249,
+   "teleop_seq": 252,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "cold_search",
+   "local": [
+    {
+     "seq": 252,
+     "status": "answered",
+     "score": 0.9907855265810591,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2163.8
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: cold_search] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  },
+  {
+   "seq": 252,
+   "teleop_seq": 255,
+   "perception": "absent",
+   "probability": null,
+   "trigger": "uncertain_band",
+   "local": [
+    {
+     "seq": 255,
+     "status": "answered",
+     "score": 0.9913555085934816,
+     "box_frac": [
+      0.0,
+      0.0,
+      1.0,
+      1.0
+     ],
+     "ms": 2153.9
+    }
+   ],
+   "cloud": null,
+   "action": "FORWARD",
+   "turn_deg": null,
+   "reasoning": "[reactive tier, local question: uncertain_band] asked the local tier -- turning to where the local VLM saw the target",
+   "live_action": "STOP",
+   "live_perception": "absent"
+  }
+ ]
+}
