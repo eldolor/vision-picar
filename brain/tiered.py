@@ -704,6 +704,29 @@ class _Question:
 # `safest_direction` and the rest of the reply under `_navigate`, all of
 # which is kept (a hand-kept list of its fields drifted once already).
 CLOUD_TEXT_CHARS = 500
+CLOUD_FIELDS_KEPT = 16
+
+
+def _json_safe(value, depth: int = 0):
+    """A copy that stores as strict JSON and stays small: strings cut to
+    CLOUD_TEXT_CHARS, at most CLOUD_FIELDS_KEPT items a level, three levels,
+    non-finite numbers as None, anything else by its type name."""
+    if value is None or isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, str):
+        return value[:CLOUD_TEXT_CHARS]
+    if depth >= 3:
+        return type(value).__name__
+    if isinstance(value, dict):
+        return {str(k)[:64]: _json_safe(v, depth + 1)
+                for k, v in list(value.items())[:CLOUD_FIELDS_KEPT]}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v, depth + 1) for v in list(value)[:CLOUD_FIELDS_KEPT]]
+    return type(value).__name__
 # Held for the runner to take; more than this untaken (no one filing) and the
 # oldest go.
 CLOUD_ANSWERS_KEPT = 64
@@ -1946,14 +1969,13 @@ class TieredVision:
             # Shapes are checked, not assumed: this runs inside `finally`
             # blocks, where raising would replace the call's own outcome.
             scene = scene if isinstance(scene, dict) else {}
-            entry = {"trigger": trigger, "asked_seq": asked_seq, "verdict": verdict}
-            if "safest_direction" in scene:
-                entry["action"] = scene["safest_direction"]
-            reply = scene.get("_navigate")
-            for key, value in (reply.items() if isinstance(reply, dict) else ()):
-                if isinstance(value, (str, int, float, bool)) or value is None:
-                    entry.setdefault(key, value[:CLOUD_TEXT_CHARS]
-                                     if isinstance(value, str) else value)
+            # `action` is what the brain acts on; `reply` is the rest of the
+            # answer as the scene carries it, made safe to store whole: under
+            # its own key so it can never write the entry's fields, and kept
+            # whole so no field is lost to a hand-kept list (review).
+            entry = {"trigger": trigger, "asked_seq": asked_seq, "verdict": verdict,
+                     "action": scene.get("safest_direction"),
+                     "reply": _json_safe(scene.get("_navigate"))}
         if via_local:
             entry["via_local_tier"] = True     # asked because the local tier was absent
         with self._collect_lock:

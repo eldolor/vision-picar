@@ -85,15 +85,16 @@ def test_every_async_answer_is_taken_once_with_the_frame_it_was_asked_on():
     assert tier.take_cloud_answers() == []                    # taken once
     calls = cloud.calls
     assert calls >= 3 and len(got) == calls, (len(got), calls)
-    numbers = [int(a["reasoning"].split()[1]) for a in got]
+    numbers = [int(a["reply"]["reasoning"].split()[1]) for a in got]
     assert sorted(numbers) == list(range(1, calls + 1))        # none doubled
     assert [a["asked_seq"] for a in got] == asked
     first = got[0]
-    assert first["action"] == "REVERSE" and first["target_visible"] is False
-    assert first["target_direction"] == "not_visible" and first["obstacle_ahead"] is True
-    assert first["room_guess"] == "bedroom" and first["model_id"] == "stub"
-    assert first["reply_action"] == "REVERSE"
-    assert len(first["reasoning"]) == 500
+    reply = first["reply"]
+    assert first["action"] == "REVERSE" and reply["target_visible"] is False
+    assert reply["target_direction"] == "not_visible" and reply["obstacle_ahead"] is True
+    assert reply["room_guess"] == "bedroom" and reply["model_id"] == "stub"
+    assert reply["reply_action"] == "REVERSE"
+    assert len(reply["reasoning"]) == 500
     assert first["trigger"] == "mission_start" and "via_local_tier" not in first
     tier.close()
 
@@ -357,7 +358,8 @@ def test_an_odd_scene_is_noted_without_raising(scene):
     tier = TieredVision(ScriptedPipeline([ABSENT] * 3), NumberedCloud())
     tier._note_cloud_answer("t", 1, scene=scene)
     (entry,) = tier.take_cloud_answers()
-    assert entry["asked_seq"] == 1 and "reasoning" not in entry
+    assert entry["asked_seq"] == 1 and entry["action"] in (None, "LEFT")
+    assert entry["reply"] in (None, "reasoning", ["x"])
 
 
 def test_a_coerced_action_is_told_apart_from_the_models():
@@ -366,6 +368,26 @@ def test_a_coerced_action_is_told_apart_from_the_models():
     tier = TieredVision(ScriptedPipeline([ABSENT] * 3), NumberedCloud())
     tier._note_cloud_answer("t", 1, scene=to_scene({"action": "APPROACH"}, "bag"))
     tier._note_cloud_answer("t", 2, scene=to_scene({}, "bag"))
-    odd, missing = tier.take_cloud_answers()
-    assert odd["action"] == "STOP" and odd["reply_action"] == "APPROACH"
-    assert missing["action"] == "STOP" and "reply_action" not in missing
+    tier._note_cloud_answer("t", 3, scene=to_scene({"action": None}, "bag"))
+    odd, missing, null = tier.take_cloud_answers()
+    assert odd["action"] == "STOP" and odd["reply"]["reply_action"] == "APPROACH"
+    assert missing["action"] == "STOP" and "reply_action" not in missing["reply"]
+    assert "reply_action" not in null["reply"]
+
+
+def test_a_reply_cannot_write_the_records_own_keys_or_grow_it_without_bound():
+    """Code review: copied field by field, a reply's `error`, `verdict` or
+    `via_local_tier` could pose as the entry's own; NaN broke strict JSON."""
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 3), NumberedCloud())
+    nav = {"error": "x", "verdict": "x", "via_local_tier": True, "nan": float("nan"),
+           "box": {"x": [1, 2, {"deep": {"deeper": 1}}]},
+           **{f"k{i}": i for i in range(40)}}
+    tier._note_cloud_answer("t", 1, scene={"safest_direction": "LEFT", "_navigate": nav},
+                            verdict="no_claim")
+    (entry,) = tier.take_cloud_answers()
+    assert set(entry) == {"trigger", "asked_seq", "verdict", "action", "reply"}
+    assert entry["verdict"] == "no_claim" and entry["action"] == "LEFT"
+    reply = entry["reply"]
+    assert len(reply) == 16 and reply["nan"] is None
+    assert reply["box"] == {"x": [1, 2, "dict"]}         # three levels kept
+    json.dumps(entry, allow_nan=False)
