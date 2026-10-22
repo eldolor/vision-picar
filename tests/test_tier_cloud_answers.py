@@ -53,7 +53,8 @@ class NumberedCloud:
         return to_scene({"action": "REVERSE", "target_visible": False,
                          "target_direction": "not_visible", "target_reached": False,
                          "obstacle_ahead": True, "room_guess": "bedroom",
-                         "reasoning": f"answer {n} " + "x" * 600}, "red backpack")
+                         "reasoning": f"answer {n} " + "x" * 600,
+                         "model_id": "stub"}, "red backpack")
 
 
 class FailingCloud:
@@ -90,7 +91,8 @@ def test_every_async_answer_is_taken_once_with_the_frame_it_was_asked_on():
     first = got[0]
     assert first["action"] == "REVERSE" and first["target_visible"] is False
     assert first["target_direction"] == "not_visible" and first["obstacle_ahead"] is True
-    assert first["room_guess"] == "bedroom"
+    assert first["room_guess"] == "bedroom" and first["model_id"] == "stub"
+    assert first["reply_action"] == "REVERSE"
     assert len(first["reasoning"]) == 500
     assert first["trigger"] == "mission_start" and "via_local_tier" not in first
     tier.close()
@@ -346,3 +348,24 @@ def test_a_stray_unnumbered_frame_on_a_numbering_body_keeps_the_answers():
     MissionRunner._note_decision(runner, SimpleNamespace(
         frame={"image_base64": "x"}, scene={}, action="LEFT"))
     assert policy.queue == [{"asked_seq": 1}]
+
+
+@pytest.mark.parametrize("scene", [{"safest_direction": "LEFT", "_navigate": "reasoning"},
+                                   {"safest_direction": "LEFT", "_navigate": ["x"]},
+                                   "not a scene"])
+def test_an_odd_scene_is_noted_without_raising(scene):
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 3), NumberedCloud())
+    tier._note_cloud_answer("t", 1, scene=scene)
+    (entry,) = tier.take_cloud_answers()
+    assert entry["asked_seq"] == 1 and "reasoning" not in entry
+
+
+def test_a_coerced_action_is_told_apart_from_the_models():
+    """Code review: `to_scene` makes an unknown or missing action STOP; the
+    record keeps what the reply said."""
+    tier = TieredVision(ScriptedPipeline([ABSENT] * 3), NumberedCloud())
+    tier._note_cloud_answer("t", 1, scene=to_scene({"action": "APPROACH"}, "bag"))
+    tier._note_cloud_answer("t", 2, scene=to_scene({}, "bag"))
+    odd, missing = tier.take_cloud_answers()
+    assert odd["action"] == "STOP" and odd["reply_action"] == "APPROACH"
+    assert missing["action"] == "STOP" and "reply_action" not in missing

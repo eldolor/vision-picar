@@ -239,6 +239,11 @@ def to_scene(result: dict, target_object: str) -> dict:
                 else "unknown"
             ),
             "reasoning": result.get("reasoning", ""),
+            # 3.91 A: what the reply itself said, for the walk's record only
+            # (nothing decides on these): the action before the coercion
+            # above, absent if it sent none, and the model that answered.
+            **({"reply_action": result["action"]} if "action" in result else {}),
+            **({"model_id": result["model_id"]} if result.get("model_id") else {}),
         },
     }
 

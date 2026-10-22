@@ -699,12 +699,10 @@ class _Question:
     local_done: threading.Event = field(default_factory=threading.Event)
 
 
-# 3.91 A: the cloud answer's fields a walk row keeps, and how much text.
-# A cloud scene (`brain/navigate.py` `to_scene`) carries /navigate's action as
-# `safest_direction` and the rest of its reply under `_navigate`.
-CLOUD_ANSWER_KEYS = ("target_visible", "target_direction", "target_reached",
-                     "obstacle_ahead", "room_guess", "distance_estimate",
-                     "reasoning")
+# 3.91 A: how much of a cloud answer's text a walk row keeps. A cloud scene
+# (`brain/navigate.py` `to_scene`) carries the action it acts on as
+# `safest_direction` and the rest of the reply under `_navigate`, all of
+# which is kept (a hand-kept list of its fields drifted once already).
 CLOUD_TEXT_CHARS = 500
 # Held for the runner to take; more than this untaken (no one filing) and the
 # oldest go.
@@ -1945,15 +1943,17 @@ class TieredVision:
             if status is not None:
                 entry["status"] = status
         else:
-            scene = scene or {}
-            entry = {"trigger": trigger, "asked_seq": asked_seq, "verdict": verdict,
-                     "action": scene.get("safest_direction")}
-            reply = scene.get("_navigate") or {}
-            for key in CLOUD_ANSWER_KEYS:
-                if key in reply:
-                    value = reply[key]
-                    entry[key] = (value[:CLOUD_TEXT_CHARS]
-                                  if isinstance(value, str) else value)
+            # Shapes are checked, not assumed: this runs inside `finally`
+            # blocks, where raising would replace the call's own outcome.
+            scene = scene if isinstance(scene, dict) else {}
+            entry = {"trigger": trigger, "asked_seq": asked_seq, "verdict": verdict}
+            if "safest_direction" in scene:
+                entry["action"] = scene["safest_direction"]
+            reply = scene.get("_navigate")
+            for key, value in (reply.items() if isinstance(reply, dict) else ()):
+                if isinstance(value, (str, int, float, bool)) or value is None:
+                    entry.setdefault(key, value[:CLOUD_TEXT_CHARS]
+                                     if isinstance(value, str) else value)
         if via_local:
             entry["via_local_tier"] = True     # asked because the local tier was absent
         with self._collect_lock:
