@@ -1488,13 +1488,13 @@ def test_a_live_sighting_still_outranks_a_dead_reckoned_one():
     better evidence than one carried from an older frame, so adding a rung
     must not displace the top one -- `_dead_reckoned_direction` is only
     consulted when `_steer_to` returns None."""
-    import inspect
-    src = inspect.getsource(TieredVision._local_scene)
-
-    assert "steer = self._steer_to(perception)" in src
-    # 3.80.D added a rung between them (a local VLM's located yes): still
-    # below the live sighting, still above dead reckoning.
-    assert "reckoned = None if (steer or located) else self._dead_reckoned_direction()" in src
-    # 3.80.F added YOLOE + CLIP's uncertain candidate: below every
-    # sighting, above a held goal.
-    assert "direction = steer or located or reckoned or candidate or held or SCAN_ACTION" in src
+    # 3.94 (amendment 1): the ladder is a tree; the precedence is its rung
+    # order. 3.80.D's located yes sits below the live sighting and above dead
+    # reckoning; 3.80.F's uncertain candidate below every sighting and above
+    # a held goal.
+    tier = TieredVision(ScriptedPipeline([ABSENT]), FakeCloud())
+    rungs = tier._what_tree.find("rungs, best evidence first")
+    assert [c.name for c in rungs.children()] == [
+        "steer on this frame's bearing", "turn to the local VLM's located yes",
+        "dead-reckon to a sighting", "steer on an uncertain candidate",
+        "hold the last goal", "scan"]

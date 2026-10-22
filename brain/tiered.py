@@ -86,6 +86,7 @@ from typing import Callable, Optional
 
 from brain.arrival import run_spans
 from brain.goal_pose import GoalPose, OdomTracker, Pose, _wrap
+from brain.tree import Action, Decorator, Fallback, Node, Sequence
 from brain.perceive import (ABSENT, DEFAULT_MATCH_PROBABILITY, DETECTED, UNAVAILABLE,
                             Perception)
 
@@ -781,6 +782,19 @@ class _LocalAnswer:
     direction: Optional[dict] = None
 
 
+@dataclass
+class _FrameDecision:
+    """3.94: the blackboard of the "what to do this frame" tree."""
+    perception: Perception
+    why: str
+    direction: Optional[str] = None
+    rung: Optional[str] = None
+    rung_turn_deg: Optional[int] = None
+    turn_deg: Optional[int] = None
+    located_turn: Optional[tuple] = None
+    held: Optional[str] = None
+
+
 class TieredVision:
     """Perception locally, deliberation on a trigger.
 
@@ -1057,6 +1071,7 @@ class TieredVision:
         self._absent_streak = 0
         self._last_confirmed = ABSENT
         self._since_call = 0
+        self._what_tree = self._build_what_tree()
 
     # -- the vision_fn contract ------------------------------------------
 
@@ -2309,83 +2324,14 @@ class TieredVision:
         landed, self._landed_corroboration = self._landed_corroboration, None
         local_landed, self._local_landed = self._local_landed, None
         # Set by the two rungs that have a real bearing in hand (R1), read
-        # below once the final direction is known.
+        # once the final direction is known.
         self._steer_turn_deg = self._reckoned_turn_deg = None
-        # Phase G, and it takes precedence over the held goal: a bearing
-        # measured on THIS frame is better evidence about where to go than
-        # a direction the cloud gave several seconds ago.
-        steer = self._steer_to(perception)
-        # 3.80.D: a local VLM's located yes, used once, after perception's
-        # own bearing (measured on THIS frame) and before anything older.
-        located_turn, self._local_turn = self._local_turn, None
-        if steer:
-            located_turn = None
-        located = located_turn[0] if located_turn else None
-        # P25 sits BETWEEN the two: a bearing dead-reckoned from a sighting
-        # this mission actually made is worse evidence than one measured on
-        # this frame, and better than a direction the cloud gave several
-        # seconds and several turns ago.
-        reckoned = None if (steer or located) else self._dead_reckoned_direction()
-        # 3.80.F: YOLOE + CLIP's own weaker evidence -- a crop in the
-        # uncertain band, measured on this frame -- after any sighting.
-        candidate = (None if (steer or located or reckoned)
-                     else self._steer_to_candidate(perception))
-        held = (self._held_direction()
-                if (self.hold_goal or self._inflight is not None) else None)
-        direction = steer or located or reckoned or candidate or held or SCAN_ACTION
-        if steer:
-            why = (f"{why} -- steering on local sighting "
-                   f"({_direction_for(perception)})")
-        elif located:
-            why = f"{why} -- turning to where the local VLM saw the target"
-        elif reckoned:
-            why = (f"{why} -- dead-reckoning to a sighting "
-                   f"{self._goal.sightings} detection(s) ago")
-        elif candidate:
-            why = (f"{why} -- steering on an uncertain candidate (P "
-                   f"{max(float(c.probability) for c in perception.candidates):.2f})")
-            with self._stats_lock:
-                self.stats.candidate_steers += 1
-        elif held and self._local_held:
-            why = (f"{why} -- holding the local VLM's "
-                   f"{self._local_held_why or 'answer'} {held}")
-        elif held:
-            why = f"{why} -- holding last cloud goal {held}"
-        # The spin floor. Counted over what the robot was actually TOLD to
-        # do, cloud steps included, because a spin does not care which tier
-        # caused it.
-        if (self.spin_guard_after
-                and direction in TURN_ACTIONS
-                and steer is None
-                and located is None
-                and candidate is None
-                and perception.status != DETECTED
-                and self._consecutive_turn_deg >= self.spin_guard_after * 90):
-            direction = "FORWARD"
-            self._consecutive_turn_deg = 0.0
-            why = (f"{why} -- spin guard: {self.spin_guard_after * 90} degrees "
-                   "of turning without a detection, forcing FORWARD")
-        # R1: how FAR to turn, when a measured or dead-reckoned bearing chose
-        # the turn. Absent otherwise -- a scan, a held cloud goal or a
-        # spin-guard override has no bearing behind it, and the executor's
-        # default quarter turn is the honest answer for those.
-        turn_deg = None
-        if direction in TURN_ACTIONS:
-            if steer == direction:
-                turn_deg = self._steer_turn_deg
-            elif located == direction:
-                turn_deg = located_turn[1]
-            elif reckoned == direction:
-                turn_deg = self._reckoned_turn_deg
-            elif candidate == direction:
-                turn_deg = self._steer_turn_deg
-            # R1b: a turn with no bearing behind it is a SEARCH, and a search
-            # step must be smaller than the field of view or it skips part of
-            # the circle -- see SCAN_TURN_DEG.
-            if turn_deg is None:
-                turn_deg = SCAN_TURN_DEG
-        # Counted AFTER the size is known -- the guard is in degrees (R1c).
-        self._note_action(direction, turn_deg)
+        # 3.94: what to do this frame is a tree (`_build_what_tree`): the
+        # rungs in order of evidence, the spin guard over them, then the
+        # turn's size. `tests/tiered_reference.py` holds the code it replaced.
+        bb = _FrameDecision(perception=perception, why=why)
+        self._what_tree.tick(bb)
+        direction, turn_deg, why, held = bb.direction, bb.turn_deg, bb.why, bb.held
         return {
             "obstacles_ahead": [],
             "turn_deg": turn_deg,
@@ -2462,6 +2408,132 @@ class TieredVision:
                       "pacing": self._pacing_readout(),
                       "stats": self.stats.as_dict()},
         }
+
+    # -- 3.94: what to do this frame, as a tree ---------------------------
+
+    def _build_what_tree(self) -> Node:
+        """The precedence ladder of `_local_scene`, drawn as a tree:
+
+        * this frame's located yes is taken (used at most once, even when a
+          better rung wins), and the held goal read;
+        * the rungs, best evidence first -- a bearing measured on THIS frame,
+          the local VLM's located yes, a dead-reckoned sighting, YOLOE +
+          CLIP's uncertain candidate, the held goal, and the scan;
+        * the spin guard over them;
+        * the turn's size, and the turn counted for the guard.
+        """
+        rungs = Fallback("rungs, best evidence first", [
+            Action("steer on this frame's bearing", self._rung_steer,
+                   {"steer_on_sight": self.steer_on_sight, "band_deg": STEER_BAND_DEG}),
+            Action("turn to the local VLM's located yes", self._rung_located),
+            Action("dead-reckon to a sighting", self._rung_reckoned,
+                   {"hold_bearing": self.hold_bearing, "max_m": self.hold_bearing_max_m}),
+            Action("steer on an uncertain candidate", self._rung_candidate,
+                   {"steer_on_candidate": self.steer_on_candidate,
+                    "band_low": self.local_band_low, "gate": self.match_probability}),
+            Action("hold the last goal", self._rung_held, {"hold_goal": self.hold_goal}),
+            Action("scan", self._rung_scan, {"action": SCAN_ACTION}),
+        ])
+        return Sequence("what to do this frame", [
+            Action("take this frame's evidence", self._take_evidence),
+            Decorator("spin guard", rungs, self._spin_guard,
+                      {"after_quarter_turns": self.spin_guard_after}),
+            Action("size the turn", self._size_turn,
+                   {"min_deg": MIN_TURN_DEG, "max_deg": MAX_TURN_DEG, "scan_deg": SCAN_TURN_DEG}),
+            Action("count the turn", self._count_turn),
+        ])
+
+    def describe_tree(self) -> str:
+        return "\n".join(self._what_tree.describe())
+
+    def _take_evidence(self, bb: "_FrameDecision") -> bool:
+        # A located yes is used once, after this frame's own bearing and
+        # before anything older -- and spent even when a better rung wins.
+        bb.located_turn, self._local_turn = self._local_turn, None
+        bb.held = (self._held_direction()
+                   if (self.hold_goal or self._inflight is not None) else None)
+        return True
+
+    def _choose(self, bb: "_FrameDecision", rung: str, direction: str, why: str,
+                turn_deg=None) -> bool:
+        bb.rung, bb.direction, bb.rung_turn_deg = rung, direction, turn_deg
+        if why:
+            bb.why = f"{bb.why} -- {why}"
+        return True
+
+    def _rung_steer(self, bb: "_FrameDecision") -> bool:
+        steer = self._steer_to(bb.perception)
+        return bool(steer) and self._choose(
+            bb, "steer", steer, f"steering on local sighting ({_direction_for(bb.perception)})",
+            self._steer_turn_deg)
+
+    def _rung_located(self, bb: "_FrameDecision") -> bool:
+        located = bb.located_turn[0] if bb.located_turn else None
+        return bool(located) and self._choose(
+            bb, "located", located, "turning to where the local VLM saw the target",
+            bb.located_turn[1])
+
+    def _rung_reckoned(self, bb: "_FrameDecision") -> bool:
+        reckoned = self._dead_reckoned_direction()
+        return bool(reckoned) and self._choose(
+            bb, "reckoned", reckoned,
+            f"dead-reckoning to a sighting {self._goal.sightings} detection(s) ago",
+            self._reckoned_turn_deg)
+
+    def _rung_candidate(self, bb: "_FrameDecision") -> bool:
+        candidate = self._steer_to_candidate(bb.perception)
+        if not candidate:
+            return False
+        with self._stats_lock:
+            self.stats.candidate_steers += 1
+        best = max(float(c.probability) for c in bb.perception.candidates)
+        return self._choose(bb, "candidate", candidate,
+                            f"steering on an uncertain candidate (P {best:.2f})",
+                            self._steer_turn_deg)
+
+    def _rung_held(self, bb: "_FrameDecision") -> bool:
+        if not bb.held:
+            return False
+        why = (f"holding the local VLM's {self._local_held_why or 'answer'} {bb.held}"
+               if self._local_held else f"holding last cloud goal {bb.held}")
+        return self._choose(bb, "held", bb.held, why)
+
+    def _rung_scan(self, bb: "_FrameDecision") -> bool:
+        return self._choose(bb, "scan", SCAN_ACTION, "")
+
+    def _spin_guard(self, bb: "_FrameDecision", child: Node) -> str:
+        """The spin floor. Counted over what the robot was actually TOLD to
+        do, cloud steps included, because a spin does not care which tier
+        caused it. Never over a bearing measured or located on this frame."""
+        status = child.tick(bb)
+        if (self.spin_guard_after
+                and bb.direction in TURN_ACTIONS
+                and bb.rung not in ("steer", "located", "candidate")
+                and bb.perception.status != DETECTED
+                and self._consecutive_turn_deg >= self.spin_guard_after * 90):
+            bb.direction, bb.rung = "FORWARD", "spin_guard"
+            self._consecutive_turn_deg = 0.0
+            bb.why = (f"{bb.why} -- spin guard: {self.spin_guard_after * 90} degrees "
+                      "of turning without a detection, forcing FORWARD")
+        return status
+
+    def _size_turn(self, bb: "_FrameDecision") -> bool:
+        """R1: how FAR to turn, when a measured or dead-reckoned bearing
+        chose the turn. A scan, a held goal or a spin-guard override has no
+        bearing behind it; R1b: such a turn is a SEARCH step, smaller than
+        the field of view (SCAN_TURN_DEG)."""
+        bb.turn_deg = None
+        if bb.direction in TURN_ACTIONS:
+            if bb.rung in ("steer", "located", "reckoned", "candidate"):
+                bb.turn_deg = bb.rung_turn_deg
+            if bb.turn_deg is None:
+                bb.turn_deg = SCAN_TURN_DEG
+        return True
+
+    def _count_turn(self, bb: "_FrameDecision") -> bool:
+        # Counted AFTER the size is known -- the guard is in degrees (R1c).
+        self._note_action(bb.direction, bb.turn_deg)
+        return True
 
     def _steer_to(self, perception) -> Optional[str]:
         """An action from the local tier's own bearing, or None.
