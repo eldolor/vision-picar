@@ -339,3 +339,62 @@ def test_an_expired_token_is_refused(env):
 def test_a_broken_check_is_not_busy(env, tmp_path):
     r = check({**env, "PICAR_BOARD_LOCK_DIR": str(tmp_path / "missing")})
     assert r.returncode == 1 and "ran" not in r.stdout
+
+
+# -- review round 2 ------------------------------------------------------------
+
+def test_a_bench_keeps_the_board_against_a_waiting_session(env):
+    """The takeover blocks on the lock, so a session already waiting with
+    --wait does not slip in when the bench's own session lets go."""
+    assert tool(env, "hold").returncode == 0
+    token = tool(env, "env").stdout.strip().split("=", 1)[1]
+    b = bench(env, token=token, seconds=6)
+    assert b.stdout.readline().strip() == "ran"
+    waiter = subprocess.Popen([sys.executable, TOOL, "run", "--wait", "30", "--", "true"],
+                              env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    time.sleep(1.0)
+    t_release = time.monotonic()
+    assert tool(env, "release").returncode == 0
+    waiter.wait(timeout=40)
+    assert waiter.returncode == 0
+    b.wait(timeout=20)
+    # The waiter got the board only once the bench had ended.
+    assert time.monotonic() - t_release >= 4
+
+
+def test_a_process_the_bench_leaves_behind_does_not_hold_the_board(env):
+    b = subprocess.Popen(["bash", "-c", f'source "{CHECK}"; sleep 60 & echo ran'],
+                         env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        assert b.stdout.readline().strip() == "ran"
+        b.wait(timeout=20)
+        wait_free(env, 3)
+    finally:
+        subprocess.run(["pkill", "-f", "^sleep 60$"], capture_output=True)
+
+
+def test_ctrl_c_reaches_the_command_once_and_the_hold_outlasts_it(env, tmp_path):
+    """SIGINT to the whole foreground group (a Ctrl-C): the command gets it
+    once, from run, and the board stays held through its teardown."""
+    hits = tmp_path / "hits"
+    cmd = ("sh", "-c", f'trap "echo INT >> {hits}; sleep 2; exit 0" INT; '
+                       'while :; do sleep 0.1; done')
+    p = subprocess.Popen([sys.executable, TOOL, "run", "--", *cmd], env=env,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                         start_new_session=True)
+    end = time.monotonic() + 15
+    while not ("token " in owner(env) and not lock_free(env)) and time.monotonic() < end:
+        time.sleep(0.1)
+    time.sleep(0.5)
+    os.killpg(p.pid, signal.SIGINT)
+    time.sleep(1.0)
+    assert not lock_free(env)                   # held through the teardown
+    p.wait(timeout=20)
+    assert hits.read_text().count("INT") == 1
+    wait_free(env, 5)
+
+
+def test_a_command_that_cannot_start_releases_the_hold(env):
+    r = tool(env, "run", "--", "/no/such/bench")
+    assert r.returncode == 127 and "released" in r.stderr
+    wait_free(env, 5)

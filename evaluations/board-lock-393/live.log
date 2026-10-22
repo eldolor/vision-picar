@@ -1,0 +1,9 @@
+board lock held: plan/3.93-board-lock pid 5846 (Mac): 3.93 criterion 6, since 2026-10-22T18:12:21-05:00, until 2026-10-22T22:12:21-05:00, token e52bff248cbdc4f3
+status from a second process: HELD plan/3.93-board-lock pid 5846 (Mac): 3.93 criterion 6, since 2026-10-22T18:12:21-05:00, until 2026-10-22T22:12:21-05:00, token e52bff248cbdc4f3
+wrong token: 75 the board is held by another session: plan/3.93-board-lock pid 5846 (Mac): 3.93 criterion 6, since 2026-10-22T18:12:21-05:00, until 2026-10-22T22:12:21-05:00, token e52bff248cbdc4f3
+holder's token: 0 ran 
+board lock released
+board lock held: plan/3.93-board-lock pid 5858 (Mac): 3.93 kill test, since 2026-10-22T18:12:25-05:00, until 2026-10-22T22:12:26-05:00, token 1c8bd69bd887d620
+after run: FREE
+SIGKILL -> FREE in 0.4 s (bar 5 s)
+criterion 6: met

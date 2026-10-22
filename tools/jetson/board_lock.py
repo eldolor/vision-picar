@@ -57,12 +57,14 @@ SSH = ("ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 "
 # acquirer retries this long before it calls the board busy.
 GRACE_S = 1.5
 
-# Runs on the board (python3 -c). argv: lock, owner, line, wait_s, max_s, silence_s.
+# Runs on the board (python3 -c). argv: lock, owner, base line, token, wait_s,
+# max_s, silence_s. The line's `until` is written here, on the board's clock,
+# because the bench check compares it with the board's clock.
 HOLDER = r"""
-import fcntl, os, select, sys, time
+import datetime, fcntl, os, select, sys, time
 lock, owner = (os.path.expanduser(a) for a in sys.argv[1:3])
-line = sys.argv[3]
-wait_s, max_s, silence_s = (float(a) for a in sys.argv[4:7])
+base, token = sys.argv[3], sys.argv[4]
+wait_s, max_s, silence_s = (float(a) for a in sys.argv[5:8])
 fd = sys.stdin.fileno()
 f = open(lock, "a")
 
@@ -88,11 +90,13 @@ while True:
         r, _, _ = select.select([fd], [], [], 0.2)
         if r and not os.read(fd, 4096):
             sys.exit(0)                       # given up while waiting
+until = datetime.datetime.fromtimestamp(time.time() + max_s).astimezone()
+line = f"{base}, until {until.isoformat(timespec='seconds')}, token {token}"
 tmp = owner + ".tmp"
 with open(tmp, "w") as o:
     o.write(line + "\n")
 os.replace(tmp, owner)
-print("HELD", flush=True)
+print("HELD " + line, flush=True)
 deadline = time.monotonic() + max_s
 last, why = time.monotonic(), "max"
 while True:
@@ -161,13 +165,11 @@ def who() -> str:
     return f"{branch or 'session'} pid {os.getpid()}"
 
 
-def owner_line(why: str, max_s: float, token: str) -> str:
-    """The other session's by-hand format, with the end and the token after it.
-    `board_lock_check.sh` reads `until` and `token` back."""
+def owner_line(why: str) -> str:
+    """The other session's by-hand format. The holder adds `until` (on the
+    board's clock) and the token, which `board_lock_check.sh` reads back."""
     host = "Mac" if platform.system() == "Darwin" else socket.gethostname().split(".")[0]
-    now = time.time()
-    return (f"{who()} ({host}): {why}, since {iso(now)}, until {iso(now + max_s)}, "
-            f"token {token}").replace("\n", " ")
+    return f"{who()} ({host}): {why}, since {iso(time.time())}".replace("\n", " ")
 
 
 class Hold:
@@ -175,11 +177,15 @@ class Hold:
 
     def __init__(self, why: str, wait_s: float, max_s: float):
         self.token = secrets.token_hex(8)
-        self.line = owner_line(why, max_s, self.token)
+        self.line = owner_line(why)       # the board's full line once HELD
         lock, owner = paths()
         silence = float(os.environ.get("PICAR_BOARD_SILENCE_S", 90))
-        self.proc = subprocess.Popen(remote(HOLDER, lock, owner, self.line, wait_s, max_s, silence),
-                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        # Its own session: a Ctrl-C, a closed terminal or `timeout` signalling
+        # the foreground group must not end the hold before the command.
+        self.proc = subprocess.Popen(
+            remote(HOLDER, lock, owner, self.line, self.token, wait_s, max_s, silence),
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, start_new_session=True)
+        self._reader = None
         self.busy_line = ""
         self.unreachable = ""
         self.released_why = None
@@ -190,9 +196,11 @@ class Hold:
         (False; `busy_line` or `unreachable` says which)."""
         for raw in self.proc.stdout:
             msg = raw.rstrip("\n")
-            if msg == "HELD":
+            if msg.startswith("HELD "):
+                self.line = msg[5:]
                 self._start_heartbeat()
-                threading.Thread(target=self._read_rest, daemon=True).start()
+                self._reader = threading.Thread(target=self._read_rest, daemon=True)
+                self._reader.start()
                 return True
             if msg.startswith("WAITING "):
                 print(f"board busy, waiting: {msg[8:]}", file=sys.stderr, flush=True)
@@ -225,13 +233,21 @@ class Hold:
         self._beat = stop
         threading.Thread(target=beat, daemon=True).start()
 
-    def release(self):
+    def release(self, wait: bool = True):
+        """Close the holder's stdin (it lets go at EOF). `wait=False` is for a
+        signal handler: no blocking wait there, the local ssh is killed."""
         if self._beat:
             self._beat.set()
         try:
             self.proc.stdin.close()
-        except (BrokenPipeError, OSError):
+        except (BrokenPipeError, OSError, ValueError):
             pass
+        if not wait:
+            try:
+                self.proc.kill()
+            except OSError:
+                pass
+            return
         try:
             self.proc.wait(timeout=15)
         except subprocess.TimeoutExpired:
@@ -241,6 +257,8 @@ class Hold:
         return self.proc.poll() is None
 
     def lost(self) -> str:
+        if self._reader is not None:
+            self._reader.join(timeout=2)   # its RELEASED line names the cause
         return f"the board lock was lost ({self.released_why or 'the holder ended'})"
 
 
@@ -276,8 +294,9 @@ def write_state(d: dict) -> None:
 
 
 def is_keeper(pid) -> bool:
-    """A live `_keep` of this tool -- not just any process that reused the pid
-    of one that died without removing its state (a reboot, SIGKILL)."""
+    """A live `_keep` of this tool for THIS state file -- not any process that
+    reused the pid of one that died without removing its state (a reboot,
+    SIGKILL), nor another worktree's keeper."""
     if not isinstance(pid, int) or pid <= 0:
         return False
     try:
@@ -289,16 +308,22 @@ def is_keeper(pid) -> bool:
                              text=True, timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
         return False
-    return "board_lock.py" in cmd and "_keep" in cmd
+    return "board_lock.py" in cmd and "_keep" in cmd and f"--state {state_path()}" in cmd
 
 
-def stop_keeper(pid: int) -> None:
+def stop_keeper(pid: int) -> bool:
+    """True once no keeper of ours runs under `pid`."""
     if not is_keeper(pid):
-        return
+        return True
     os.kill(pid, signal.SIGTERM)
     end = time.monotonic() + 20
-    while is_keeper(pid) and time.monotonic() < end:
+    while time.monotonic() < end:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return True
         time.sleep(0.2)
+    return not is_keeper(pid)
 
 
 def cmd_status(_):
@@ -329,13 +354,20 @@ def cmd_run(a):
         print(f"board busy: {h.busy_line}", file=sys.stderr)
         return BUSY
     print(f"board lock held: {h.line}", file=sys.stderr, flush=True)
-    child = subprocess.Popen(a.cmd, env={**os.environ, "PICAR_BOARD_TOKEN": h.token})
+    try:
+        # Its own session too: every signal reaches it once, from forward().
+        child = subprocess.Popen(a.cmd, env={**os.environ, "PICAR_BOARD_TOKEN": h.token},
+                                 start_new_session=True)
+    except OSError as e:
+        h.release()
+        print(f"run: {e}; board lock released", file=sys.stderr)
+        return 127
 
-    # SIGTERM / SIGHUP end the command first and THEN the hold, as Ctrl-C does.
+    # Ctrl-C, SIGTERM, SIGHUP: to the command, which ends first; THEN the hold.
     def forward(signum, _frame):
         if child.poll() is None:
             child.send_signal(signum)
-    old = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP)}
+    old = {s: signal.signal(s, forward) for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     warned = False
     try:
         while True:
@@ -344,8 +376,6 @@ def cmd_run(a):
                 break
             except subprocess.TimeoutExpired:
                 pass
-            except KeyboardInterrupt:
-                child.send_signal(signal.SIGINT)
             if not warned and not h.alive():
                 # At --max or the silence limit. A board-side bench keeps the
                 # board itself (board_lock_check.sh); anything else is now
@@ -368,7 +398,7 @@ def cmd_keep(a):
 
     def on_term(*_):
         stop.set()
-        h.release()                # also ends an acquire still waiting
+        h.release(wait=False)      # also ends an acquire still waiting
     signal.signal(signal.SIGTERM, on_term)
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     write_state({"pid": os.getpid(), "waiting": True})
@@ -379,6 +409,9 @@ def cmd_keep(a):
         return BUSY if h.busy_line else UNREACHABLE
     if stop.is_set():
         h.release()
+        cur = read_state()
+        if cur and cur.get("pid") == os.getpid():
+            os.remove(state_path())
         return 0
     write_state({"pid": os.getpid(), "token": h.token, "line": h.line})
     while not stop.wait(1.0) and h.alive():
@@ -405,7 +438,7 @@ def cmd_hold(a):
     if os.path.exists(path):
         os.remove(path)
     args = [sys.executable, os.path.abspath(__file__), "_keep", "--why", a.why,
-            "--wait", str(a.wait), "--max", str(a.max)]
+            "--wait", str(a.wait), "--max", str(a.max), "--state", path]
     log = open(path + ".log", "w")
     keeper = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                               start_new_session=True,
@@ -424,7 +457,10 @@ def cmd_hold(a):
                     return BUSY
                 print(f"board unreachable: {cur['unreachable']}", file=sys.stderr)
                 return UNREACHABLE
-            if keeper.poll() is not None and not (cur and cur.get("token")):
+            if keeper.poll() is not None:
+                cur = read_state()          # it may have written busy just now
+                if cur and (cur.get("token") or "busy" in cur or "unreachable" in cur):
+                    continue
                 print(f"hold: the keeper exited {keeper.returncode} (see {path}.log)",
                       file=sys.stderr)
                 return UNREACHABLE
@@ -476,6 +512,8 @@ def main(argv=None):
         s.add_argument("--max", type=float, default=4 * 3600.0, help="the hold ends by itself after this")
         if name == "run":
             s.add_argument("cmd", nargs=argparse.REMAINDER)
+        if name == "_keep":
+            s.add_argument("--state", required=True)
     sub.add_parser("release")
     sub.add_parser("env")
     a = p.parse_args(argv)
