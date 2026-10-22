@@ -76,6 +76,15 @@ class RemoteNavigator:
         r.raise_for_status()
         return r.json()
 
+    def clear_keepout(self) -> dict:
+        """3.76 K5.3: the mission ended; its keepout marks go with it. A
+        server that predates the route (404/405) has none to clear."""
+        r = self._client.request("DELETE", "/world/keepout", headers=self.headers)
+        if r.status_code in (404, 405, 501):
+            return {"cleared": 0, "reason": "unsupported"}
+        r.raise_for_status()
+        return r.json()
+
     def close(self) -> None:
         """One client per explore mission: closed at its end (3.76), or a
         long-lived brain gathers sockets. An injected client is the

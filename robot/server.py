@@ -489,6 +489,11 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # Held across the send: the bridge replaces its whole set on each
             # post, so two marks sent out of order would drop the newer spot.
             with spot_lock:
+                # K5.3: read again under the lock -- a mission that ended
+                # while this pose was read has cleared its marks, and this
+                # one, made under its finished goal, must not outlive them.
+                if goal_in_progress() is None:
+                    return
                 spots = spot_book.add(time.monotonic(), x, y, session=map_id)
                 if spots is None:
                     return          # 3.83: this spot is already marked
@@ -1489,6 +1494,30 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     @app.delete(prefix + "/world/goal", dependencies=[Depends(require_secret)])
     def world_goal_cancel():
         return _bridge_call(_goals().cancel_goal)
+
+    @app.delete(prefix + "/world/keepout", dependencies=[Depends(require_secret)])
+    def world_keepout_clear():
+        """3.76 K5.3 (the user, 2026-10-21): a mission's keepout marks end
+        with it -- the brain asks once its own goal is ended, so the next
+        mission starts on a clean map. The book is emptied whatever the
+        bridge answers: the bridge replaces its whole set on every post, so
+        a send lost here is mended by the next mark (and the 300 s expiry
+        bounds it). A world with no keepout has nothing to clear."""
+        with spot_lock:
+            live = spot_book.live(time.monotonic())
+            session = spot_book.session
+            spot_book.spots, spot_book._before = [], None
+            if not live or not hasattr(world_model, "set_keepout"):
+                return {"cleared": 0, "sent": False}
+            try:
+                reply = world_model.set_keepout([], map_id=session)
+            except Exception as e:  # noqa: BLE001 -- see the docstring
+                logger.warning(f"keepout: clearing not sent ({e})")
+                return {"cleared": len(live), "sent": False, "detail": str(e)}
+        sent = bool(reply.get("accepted"))
+        logger.info(f"keepout: {len(live)} mark(s) cleared at a mission's end"
+                    f"{'' if sent else ' (not sent: ' + str(reply.get('reason')) + ')'}")
+        return {"cleared": len(live), "sent": sent}
 
     @app.get(prefix + "/world/error", dependencies=[Depends(require_secret)])
     def world_error():

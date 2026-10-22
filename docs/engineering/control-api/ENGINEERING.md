@@ -80,6 +80,7 @@ Actions: `FORWARD`, `REVERSE`, `LEFT`, `RIGHT`, `STOP`, `LOOK_LEFT`,
 | `GET /world/error` | `{"usable", "source", "position_error_m", "heading_error_deg", "odom_position_error_m", "odom_heading_error_deg", "truth"}` |
 | `POST /world/goal` | `{"x_m", "y_m"}` -> the world's `set_goal()`, or `{"accepted": false, "executed": false, "reason": "preempted", ...}`. Arbitrated as driver `ros`  A non-finite coordinate is a 422 (3.76 M1). |
 | `GET` / `DELETE /world/goal` | `get_goal()` / `cancel_goal()` |
+| `DELETE /world/keepout` | 3.76 K5.3: empties the server's `SpotBook` and, when it held a live spot, sends the bridge an empty set. `{"cleared": n, "sent": bool, "detail"?}`; `{"cleared": 0, "sent": false}` with nothing marked or on a world with no keepout. The brain calls it at every mission end, after its own goal |
 
 Goal routes answer **501** on a world without `set_goal` (anything but
 `WORLD_MODE=ros`).
@@ -164,7 +165,11 @@ H1-12). It logs one
 failure, including a reply with `accepted: false`. Marks from one server
 are sent one at a time (`spot_lock` is held across the post), so a slow
 bridge cannot receive an older set after a newer one. It moves nothing and
-changes no vetting. nav2's global costmap lists the `KeepoutFilter` since
+changes no vetting. A mission's end clears the book (`DELETE /world/keepout`,
+3.76 K5.3): the book is emptied whatever the bridge answers, since the next
+mark's whole-set post mends a lost clear; `mark_wedge` re-reads
+`goal_in_progress()` under `spot_lock`, so a mark whose pose was read as the
+mission's goal ended is dropped rather than outliving the clear. nav2's global costmap lists the `KeepoutFilter` since
 3.83 (`nav2.yaml`); backing out of a wedge is the brain's (explore's
 `STALL_S` cut).
 
