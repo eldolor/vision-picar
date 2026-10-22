@@ -30,6 +30,8 @@
 # summary reports MemAvailable's dip around each switch. SWITCH=release
 # closes the previous pipeline's policy first, as the brain does (3.81.E).
 set -uo pipefail
+# 3.93: not under another session's hold on the board
+source "$(dirname "${BASH_SOURCE[0]}")/board_lock_check.sh"
 OUT="${1:?out dir}"; mkdir -p "$OUT"
 IMAGE="${IMAGE:-vision-picar-ros:plan-3.58}"
 NAME="${NAME:-picar-ros-358}"

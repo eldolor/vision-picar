@@ -99,6 +99,13 @@ browser, they ERROR rather than skip (seen in the Python 3.10 run).
 
 ## 4. G4 and headroom
 
+**Take the board lock first** (3.93): sessions share this board.
+`python tools/jetson/board_lock.py status` says who holds it.
+`board_lock.py hold --why "<what>"` (or `run -- <command>`) takes it. The
+benches here refuse to run under another session's hold
+(`board_lock_check.sh`); pass your `PICAR_BOARD_TOKEN` to them
+(`docs/guides/PARALLEL-SESSIONS.md` rule 7).
+
 **Stop the services first** (section 5): `picar-stack` holds :8000, :8001
 and :8080 from boot and restarts itself when killed, so it would race the
 bench's own stack for the ports.

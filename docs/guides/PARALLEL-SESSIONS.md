@@ -129,6 +129,26 @@ Continuing an existing section: work in its worktree
    laptop skew each other. Long runs can go to the Jetson instead
    (`tools/jetson/README.md`). `PICAR_HEAVY_LOCK=0` skips the lock, for
    in-process work only.
+   **The Jetson has its own lock, held on the board** (3.93). Take it before
+   anything that changes the board's state or measures it: a bench, a
+   service stop or start, an install, a memory or latency number.
+   ```bash
+   python tools/jetson/board_lock.py status                  # FREE, or who holds it and why
+   python tools/jetson/board_lock.py run --why "<what>" -- <command>
+   python tools/jetson/board_lock.py hold --why "<what>"     # multi-step work, then
+   eval "$(python tools/jetson/board_lock.py env)"           # PICAR_BOARD_TOKEN
+   python tools/jetson/board_lock.py release
+   ```
+   * Busy: the tool exits 75 and prints the holder's line (`--wait S` waits
+     instead). A hold ends by itself when its session dies, when the network
+     goes silent for 90 s, or at its `--max` (default 4 h).
+   * Board-side benches (`headroom_identity.sh`, `headroom_mission.sh`,
+     `bench_local_vlm.sh`) refuse to run under another session's hold. Pass
+     your token to them:
+     `ssh picar-jetson "PICAR_BOARD_TOKEN=$PICAR_BOARD_TOKEN bash ..."`.
+   * A hold taken by hand counts too: `flock ~/.picar-board.lock` with a line
+     in `~/.picar-board.owner`, `"<session> (<host>): <why>, since <iso>"`.
+   * Read-only checks (`systemctl is-active`, `free`, `status`) need no lock.
 8. **Claim a step before working on it** (3.75). A section's discrete
    steps are rows of a `## Steps` table in its own file:
 

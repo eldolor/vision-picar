@@ -15,6 +15,8 @@
 # production unit is now only stopped for the run and started again after
 # if it was running. picar-stack's unit is not touched from a branch.
 set -uo pipefail
+# 3.93: not under another session's hold on the board
+source "$(dirname "${BASH_SOURCE[0]}")/board_lock_check.sh"
 OUT="${1:?out dir}"; mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"   # absolute: systemd needs it
 HERE="$(pwd)"
 ENGINES="${ENGINES:-$HOME/bench-378/ws91/q25VE/engines}"

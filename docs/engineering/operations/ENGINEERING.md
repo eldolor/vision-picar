@@ -281,12 +281,34 @@ anything that moves on its own. There is no `deploy` directory yet. The
 bring-up that precedes it is the platform domain's procedure
 (`tools/jetson/README.md`).
 
+**One session on the board at a time (3.93).**
+* **The lock.** `tools/jetson/board_lock.py` holds `flock(2)` on the
+  board's `~/.picar-board.lock` through a small Python holder kept on
+  the far side of `ssh picar-jetson`. It writes the owner's line,
+  `"<who> (<host>): <why>, since <iso>, until <iso>, token <hex>"`, to
+  `~/.picar-board.owner`, the same format as a hold taken by hand.
+* **A hold ends by itself.** The holder lets go when:
+  * its stdin closes;
+  * no heartbeat byte arrives for `PICAR_BOARD_SILENCE_S` (90 s; the
+    local side writes one every 20 s);
+  * its `--max` passes (4 h).
+* **Commands.**
+  * `run` holds the lock for one command and gives it
+    `PICAR_BOARD_TOKEN`.
+  * `hold` / `release` keep a detached holder whose state lives in the
+    worktree's git dir (`picar-board-hold.json`).
+  * Busy is exit 75.
+* **The board-side check.** `board_lock_check.sh` is sourced by
+  `headroom_identity.sh`, `headroom_mission.sh` and `bench_local_vlm.sh`.
+  It exits 75 under a hold whose token is not `PICAR_BOARD_TOKEN`.
+
 ## Verification
 
 | Test | What it proves |
 |---|---|
 | `tests/test_serverless_routes.py` | Every public route crosses both the CloudFront behaviour and the API Gateway route to the right function; the vision zip's flat layout imports (6 tests) |
 | `tests/test_static_assets.py` | Every file `web-twin/index.html` and `control/admin.html` reference is in `service/static/assets.json`, plus the PWA manifest's icons, the manifest's keys and cache policies, and that `sync.sh` reads the same manifest (10 tests). `control/metrics.html` is not checked |
+| `tests/test_board_lock.py` | 3.93: a second hold is refused with the owner's line, by hand or by the tool; the lock frees on SIGKILL, on a silent heartbeat and at `--max`; the board-side check refuses a missing or wrong token (10 tests, a local shell for ssh; on `SLOW_FILES`) |
 | `tests/test_alb_routes.py` | The same check against the deleted ECS templates. History, still green |
 | `tests/test_tunnel_proxy.py` | The proxy's prefix routing and header handling, no network (8 tests) |
 | `tests/test_health.py` | Non-zero exit when either half is unreachable or broken, and the verdict's silence for a parked robot, an idle robot and a recorded veto (15 tests) |

@@ -49,6 +49,8 @@
 # Edge-LLM tree). The twin's systemd units (3.71) are stopped after the
 # multi-user isolate, which would otherwise start them (3.78's deviation).
 set -uo pipefail
+# 3.93: not under another session's hold on the board
+source "$(dirname "${BASH_SOURCE[0]}")/board_lock_check.sh"
 OUT="${1:?out dir}"; mkdir -p "$OUT"
 IMAGE="${IMAGE:-vision-picar-ros:plan-3.58}"
 NAME="${NAME:-picar-ros-358}"
