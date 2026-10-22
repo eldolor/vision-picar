@@ -700,9 +700,11 @@ class _Question:
 
 
 # 3.91 A: the cloud answer's fields a walk row keeps, and how much text.
-CLOUD_ANSWER_KEYS = ("action", "safest_direction", "target_visible",
-                     "target_direction", "target_reached", "obstacle_ahead",
-                     "reasoning", "model_id")
+# A cloud scene (`brain/navigate.py` `to_scene`) carries /navigate's action as
+# `safest_direction` and the rest of its reply under `_navigate`.
+CLOUD_ANSWER_KEYS = ("target_visible", "target_direction", "target_reached",
+                     "obstacle_ahead", "room_guess", "distance_estimate",
+                     "reasoning")
 CLOUD_TEXT_CHARS = 500
 # Held for the runner to take; more than this untaken (no one filing) and the
 # oldest go.
@@ -1944,10 +1946,12 @@ class TieredVision:
                 entry["status"] = status
         else:
             scene = scene or {}
-            entry = {"trigger": trigger, "asked_seq": asked_seq, "verdict": verdict}
+            entry = {"trigger": trigger, "asked_seq": asked_seq, "verdict": verdict,
+                     "action": scene.get("safest_direction")}
+            reply = scene.get("_navigate") or {}
             for key in CLOUD_ANSWER_KEYS:
-                if key in scene:
-                    value = scene[key]
+                if key in reply:
+                    value = reply[key]
                     entry[key] = (value[:CLOUD_TEXT_CHARS]
                                   if isinstance(value, str) else value)
         if via_local:

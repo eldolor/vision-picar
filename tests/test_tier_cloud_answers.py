@@ -28,6 +28,7 @@ from types import SimpleNamespace
 import pytest
 
 from brain.local_vlm import LocalVLMAbsent
+from brain.navigate import to_scene
 from brain.perceive import ABSENT, DETECTED
 from brain.tiered import TieredVision
 from control.mission_runner import MissionRunner
@@ -47,11 +48,12 @@ class NumberedCloud:
             self.calls += 1
             n = self.calls
         time.sleep(self.delay)
-        return {"action": "REVERSE", "safest_direction": "REVERSE",
-                "target_visible": False, "target_direction": None,
-                "reasoning": f"answer {n} " + "x" * 600, "model_id": "stub",
-                "obstacles_ahead": [], "free_space": "blocked",
-                "doorway_visible": False, "important_objects": []}
+        # The real shape: /navigate's reply through `to_scene` (review: a flat
+        # stub passed while the real scene's fields went unrecorded).
+        return to_scene({"action": "REVERSE", "target_visible": False,
+                         "target_direction": "not_visible", "target_reached": False,
+                         "obstacle_ahead": True, "room_guess": "bedroom",
+                         "reasoning": f"answer {n} " + "x" * 600}, "red backpack")
 
 
 class FailingCloud:
@@ -86,8 +88,9 @@ def test_every_async_answer_is_taken_once_with_the_frame_it_was_asked_on():
     assert sorted(numbers) == list(range(1, calls + 1))        # none doubled
     assert [a["asked_seq"] for a in got] == asked
     first = got[0]
-    assert first["safest_direction"] == "REVERSE" and first["action"] == "REVERSE"
-    assert first["model_id"] == "stub" and first["target_visible"] is False
+    assert first["action"] == "REVERSE" and first["target_visible"] is False
+    assert first["target_direction"] == "not_visible" and first["obstacle_ahead"] is True
+    assert first["room_guess"] == "bedroom"
     assert len(first["reasoning"]) == 500
     assert first["trigger"] == "mission_start" and "via_local_tier" not in first
     tier.close()
