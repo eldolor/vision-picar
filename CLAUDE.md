@@ -262,6 +262,19 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   * Open: a person's D-pad Stop during a local-led arrival's cloud confirm
     can still end `found` (the brain cannot read 3.84's latch); 3.80.H
     criterion 4; 3.80.E. `vision-picar-ros:latest` rebuilt from `dev` 778846d on 2026-10-18.
+* **Calibrating the tiers (3.92), merged 2026-10-22; nothing changed in
+  the code.** VE and YOLOE + CLIP on all 2,261 labelled frames (free):
+  * The raw scores are already calibrated on average (VE ECE 0.034), but
+    not per object (shoes 0.13).
+  * VE's frame question is 94.9% precise there (97.2% on 3.48's 299), and
+    it is almost never unable (6 of 2,261). So the cloud's "2 unable"
+    trigger rarely fires.
+  * A learned "is Qwen wrong" router FAILED (AUROC 0.70). The tiers'
+    disagreement catches the same 43 of 77 errors while flagging 5.4% of
+    frames.
+  * Perception is silent on 20.4% of in-view frames, and VE covers 56% of
+    those, so no Astra replay is proposed (re-read on Rover frames).
+  * Inputs to 3.91.C and the behavior-tree work.
 * **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
   (67%); few-shot on the user's own rooms meets accuracy on three rooms
   (81%, within 1.1 points of the cloud) but not laptop-CPU cost. Not wired
