@@ -34,7 +34,7 @@ def obj(target: str) -> str:
 
 
 def load(name):
-    return {r["key"]: r for r in map(json.loads, (HERE / name).read_text().splitlines()) if r}
+    return {r["key"]: r for r in (json.loads(l) for l in (HERE / name).read_text().splitlines() if l.strip())}
 
 
 def logit(p):
@@ -212,7 +212,8 @@ def main():
     ans = ~np.isnan(ve)
     yes, no = ans & (ve >= YES_AT), ans & (ve <= NO_BELOW)
     s["c3"] = {"per_object": per,
-               "all": {"yes": int(yes.sum()), "yes_precision": rnd((yes & (y == 1)).sum() / yes.sum()),
+               "all": {"yes": int(yes.sum()),
+                       "yes_precision": rnd((yes & (y == 1)).sum() / yes.sum()) if yes.sum() else None,
                        "yes_recall": rnd((yes & (y == 1)).sum() / y.sum()),
                        "missed_by_no": rnd((no & (y == 1)).sum() / y.sum()),
                        "unable_share": rnd((~(yes | no)).sum() / len(y))}}
