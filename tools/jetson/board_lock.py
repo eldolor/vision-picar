@@ -11,7 +11,8 @@ A small holder runs on the board and keeps the lock while its ssh stdin is
 open. It lets go when stdin closes (the local process ended or was killed),
 when no heartbeat byte has come for the silence limit (a dropped network),
 or at the hold's declared maximum -- so a dead session cannot keep the
-board.
+board. A board-side bench (`board_lock_check.sh`) holds the lock itself for
+as long as it runs, so a bench outliving its session still keeps the board.
 
     python tools/jetson/board_lock.py status
     python tools/jetson/board_lock.py run --why "3.92 VE run" -- <command...>
@@ -19,16 +20,19 @@ board.
     eval "$(python tools/jetson/board_lock.py env)"    # PICAR_BOARD_TOKEN
     python tools/jetson/board_lock.py release
 
-`run` and `hold` exit 75 when the board is busy (printing its owner's line),
-or wait up to `--wait` seconds. The command under `run`, and anything that
-reads `env` after `hold`, gets PICAR_BOARD_TOKEN; pass it to board-side
-scripts (`ssh picar-jetson "PICAR_BOARD_TOKEN=$PICAR_BOARD_TOKEN bash ..."`),
-whose `board_lock_check.sh` refuses to run under another session's hold.
+Exit codes: 75 when another session holds the board (its owner's line is
+printed; `--wait S` waits instead), 1 when the board could not be reached.
+The command under `run`, and anything that reads `env` after `hold`, gets
+PICAR_BOARD_TOKEN; pass it to board-side scripts
+(`ssh picar-jetson "PICAR_BOARD_TOKEN=$PICAR_BOARD_TOKEN bash ..."`), whose
+`board_lock_check.sh` refuses to run under another session's hold.
 
-Env (tests): PICAR_BOARD_SSH (default ssh to picar-jetson), PICAR_BOARD_LOCK_DIR
-(default `~` on the board), PICAR_BOARD_PYTHON (python3), PICAR_BOARD_HEARTBEAT_S
-(20; 0 sends none), PICAR_BOARD_SILENCE_S (90), PICAR_BOARD_WHO, PICAR_BOARD_STATE
-(the hold's local state file; default in this worktree's git dir).
+Env, for tests: PICAR_BOARD_SSH (default ssh to picar-jetson),
+PICAR_BOARD_LOCK_DIR (default `~` on the board), PICAR_BOARD_PYTHON
+(python3), PICAR_BOARD_HEARTBEAT_S (20; 0 sends none, so a hold ends at the
+silence limit), PICAR_BOARD_SILENCE_S (90), PICAR_BOARD_WHO,
+PICAR_BOARD_STATE (the hold's local state file; default in the git dir of
+the checkout this file is in).
 """
 
 import argparse
@@ -46,7 +50,12 @@ import threading
 import time
 
 BUSY = 75
-SSH = "ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 picar-jetson"
+UNREACHABLE = 1
+SSH = ("ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 "
+       "-o ServerAliveCountMax=4 picar-jetson")
+# A probe (`status`, the bench check) takes the lock for microseconds: an
+# acquirer retries this long before it calls the board busy.
+GRACE_S = 1.5
 
 # Runs on the board (python3 -c). argv: lock, owner, line, wait_s, max_s, silence_s.
 HOLDER = r"""
@@ -64,7 +73,7 @@ def who():
     except OSError:
         return ""
 
-end, said = time.monotonic() + wait_s, False
+end, said = time.monotonic() + max(wait_s, %(grace)r), False
 while True:
     try:
         fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -73,10 +82,10 @@ while True:
         if time.monotonic() >= end:
             print("BUSY " + (who() or "held, no owner line"), flush=True)
             sys.exit(75)
-        if not said:
+        if wait_s > %(grace)r and not said:
             print("WAITING " + (who() or "held, no owner line"), flush=True)
             said = True
-        r, _, _ = select.select([fd], [], [], 2.0)
+        r, _, _ = select.select([fd], [], [], 0.2)
         if r and not os.read(fd, 4096):
             sys.exit(0)                       # given up while waiting
 tmp = owner + ".tmp"
@@ -106,7 +115,7 @@ try:
     print("RELEASED " + why, flush=True)
 except Exception:
     pass
-"""
+""" % {"grace": GRACE_S}
 
 # Runs on the board: FREE, or HELD and the owner's line.
 STATUS = r"""
@@ -144,7 +153,8 @@ def who() -> str:
     if os.environ.get("PICAR_BOARD_WHO"):
         return os.environ["PICAR_BOARD_WHO"]
     try:
-        branch = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True,
+        branch = subprocess.run(["git", "-C", os.path.dirname(os.path.abspath(__file__)),
+                                 "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True,
                                 text=True, timeout=5).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         branch = ""
@@ -152,7 +162,8 @@ def who() -> str:
 
 
 def owner_line(why: str, max_s: float, token: str) -> str:
-    """The other session's by-hand format, with the end and the token after it."""
+    """The other session's by-hand format, with the end and the token after it.
+    `board_lock_check.sh` reads `until` and `token` back."""
     host = "Mac" if platform.system() == "Darwin" else socket.gethostname().split(".")[0]
     now = time.time()
     return (f"{who()} ({host}): {why}, since {iso(now)}, until {iso(now + max_s)}, "
@@ -169,17 +180,19 @@ class Hold:
         silence = float(os.environ.get("PICAR_BOARD_SILENCE_S", 90))
         self.proc = subprocess.Popen(remote(HOLDER, lock, owner, self.line, wait_s, max_s, silence),
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-        self.state = None
         self.busy_line = ""
+        self.unreachable = ""
+        self.released_why = None
         self._beat = None
 
     def acquire(self) -> bool:
-        """Blocks until HELD (True) or BUSY / a holder that died (False)."""
+        """Blocks until HELD (True), or BUSY / a holder that never answered
+        (False; `busy_line` or `unreachable` says which)."""
         for raw in self.proc.stdout:
             msg = raw.rstrip("\n")
             if msg == "HELD":
-                self.state = "held"
                 self._start_heartbeat()
+                threading.Thread(target=self._read_rest, daemon=True).start()
                 return True
             if msg.startswith("WAITING "):
                 print(f"board busy, waiting: {msg[8:]}", file=sys.stderr, flush=True)
@@ -188,8 +201,13 @@ class Hold:
                 break
         self.proc.wait()
         if not self.busy_line:
-            self.busy_line = f"holder exited {self.proc.returncode} (ssh failed?)"
+            self.unreachable = f"the board's holder exited {self.proc.returncode} (ssh failed?)"
         return False
+
+    def _read_rest(self):
+        for raw in self.proc.stdout:
+            if raw.startswith("RELEASED "):
+                self.released_why = raw.split(" ", 1)[1].strip()
 
     def _start_heartbeat(self):
         every = float(os.environ.get("PICAR_BOARD_HEARTBEAT_S", 20))
@@ -222,13 +240,18 @@ class Hold:
     def alive(self) -> bool:
         return self.proc.poll() is None
 
+    def lost(self) -> str:
+        return f"the board lock was lost ({self.released_why or 'the holder ended'})"
+
 
 def state_path() -> str:
-    """Per worktree (its own git dir), so one session never releases another's hold."""
+    """Per checkout: the git dir of the worktree this file is in, whatever the
+    cwd -- one session's `release` never finds another's hold."""
     if os.environ.get("PICAR_BOARD_STATE"):
         return os.environ["PICAR_BOARD_STATE"]
     try:
-        gd = subprocess.run(["git", "rev-parse", "--absolute-git-dir"], capture_output=True,
+        gd = subprocess.run(["git", "-C", os.path.dirname(os.path.abspath(__file__)),
+                             "rev-parse", "--absolute-git-dir"], capture_output=True,
                             text=True, timeout=5).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         gd = ""
@@ -245,20 +268,48 @@ def read_state():
         return None
 
 
-def pid_alive(pid: int) -> bool:
+def write_state(d: dict) -> None:
+    path = state_path()
+    with open(path + ".tmp", "w") as f:
+        json.dump(d, f)
+    os.replace(path + ".tmp", path)
+
+
+def is_keeper(pid) -> bool:
+    """A live `_keep` of this tool -- not just any process that reused the pid
+    of one that died without removing its state (a reboot, SIGKILL)."""
+    if not isinstance(pid, int) or pid <= 0:
+        return False
     try:
         os.kill(pid, 0)
-        return True
     except OSError:
         return False
+    try:
+        cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True,
+                             text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "board_lock.py" in cmd and "_keep" in cmd
+
+
+def stop_keeper(pid: int) -> None:
+    if not is_keeper(pid):
+        return
+    os.kill(pid, signal.SIGTERM)
+    end = time.monotonic() + 20
+    while is_keeper(pid) and time.monotonic() < end:
+        time.sleep(0.2)
 
 
 def cmd_status(_):
     lock, owner = paths()
-    r = subprocess.run(remote(STATUS, lock, owner), capture_output=True, text=True, timeout=30)
-    out = r.stdout.strip() or f"status failed: {r.stderr.strip()}"
+    try:
+        r = subprocess.run(remote(STATUS, lock, owner), capture_output=True, text=True, timeout=30)
+        out = r.stdout.strip() or f"status failed: {r.stderr.strip()}"
+    except subprocess.TimeoutExpired:
+        out = "status failed: the board did not answer in 30 s"
     print(out)
-    return 0 if out == "FREE" else BUSY if out.startswith("HELD") else 1
+    return 0 if out == "FREE" else BUSY if out.startswith("HELD") else UNREACHABLE
 
 
 def cmd_run(a):
@@ -266,69 +317,126 @@ def cmd_run(a):
         print("run: give a command after --", file=sys.stderr)
         return 2
     h = Hold(a.why, a.wait, a.max)
-    if not h.acquire():
+    try:
+        held = h.acquire()
+    except KeyboardInterrupt:
+        h.release()
+        return 130
+    if not held:
+        if h.unreachable:
+            print(f"board unreachable: {h.unreachable}", file=sys.stderr)
+            return UNREACHABLE
         print(f"board busy: {h.busy_line}", file=sys.stderr)
         return BUSY
     print(f"board lock held: {h.line}", file=sys.stderr, flush=True)
+    child = subprocess.Popen(a.cmd, env={**os.environ, "PICAR_BOARD_TOKEN": h.token})
+
+    # SIGTERM / SIGHUP end the command first and THEN the hold, as Ctrl-C does.
+    def forward(signum, _frame):
+        if child.poll() is None:
+            child.send_signal(signum)
+    old = {s: signal.signal(s, forward) for s in (signal.SIGTERM, signal.SIGHUP)}
+    warned = False
     try:
-        return subprocess.call(a.cmd, env={**os.environ, "PICAR_BOARD_TOKEN": h.token})
+        while True:
+            try:
+                rc = child.wait(timeout=1.0)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            except KeyboardInterrupt:
+                child.send_signal(signal.SIGINT)
+            if not warned and not h.alive():
+                # At --max or the silence limit. A board-side bench keeps the
+                # board itself (board_lock_check.sh); anything else is now
+                # unprotected, so say so loudly rather than kill it mid-run.
+                print(f"WARNING: {h.lost()} while the command runs; another "
+                      "session may now take the board", file=sys.stderr, flush=True)
+                warned = True
     finally:
+        for s, f in old.items():
+            signal.signal(s, f)
         h.release()
         print("board lock released", file=sys.stderr)
+    return rc
 
 
 def cmd_keep(a):
     """The detached child behind `hold`: holds until SIGTERM or the holder ends."""
     h = Hold(a.why, a.wait, a.max)
     stop = threading.Event()
-    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+
+    def on_term(*_):
+        stop.set()
+        h.release()                # also ends an acquire still waiting
+    signal.signal(signal.SIGTERM, on_term)
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
-    path = a.state
+    write_state({"pid": os.getpid(), "waiting": True})
     if not h.acquire():
-        with open(path + ".tmp", "w") as f:
-            json.dump({"busy": h.busy_line}, f)
-        os.replace(path + ".tmp", path)
-        return BUSY
-    with open(path + ".tmp", "w") as f:
-        json.dump({"pid": os.getpid(), "token": h.token, "line": h.line}, f)
-    os.replace(path + ".tmp", path)
+        if not stop.is_set():
+            write_state({"pid": os.getpid(), "busy": h.busy_line,
+                         "unreachable": h.unreachable})
+        return BUSY if h.busy_line else UNREACHABLE
+    if stop.is_set():
+        h.release()
+        return 0
+    write_state({"pid": os.getpid(), "token": h.token, "line": h.line})
     while not stop.wait(1.0) and h.alive():
         pass
     h.release()
-    try:
-        cur = read_state()
-        if cur and cur.get("pid") == os.getpid():
-            os.remove(path)
-    except OSError:
-        pass
+    cur = read_state()
+    if cur and cur.get("pid") == os.getpid():
+        if stop.is_set():
+            os.remove(state_path())
+        else:
+            # The hold ended on its own (max, silence): say so to `env` / `hold`.
+            write_state({"pid": os.getpid(), "lost": h.lost()})
     return 0
 
 
 def cmd_hold(a):
-    path = state_path()
     cur = read_state()
-    if cur and cur.get("pid") and pid_alive(cur["pid"]):
+    if cur and cur.get("token") and is_keeper(cur.get("pid")):
         print(f"this worktree already holds the board: {cur['line']}", file=sys.stderr)
         return 0
+    if cur and is_keeper(cur.get("pid")):
+        stop_keeper(cur["pid"])            # a keeper still waiting from an earlier hold
+    path = state_path()
     if os.path.exists(path):
         os.remove(path)
     args = [sys.executable, os.path.abspath(__file__), "_keep", "--why", a.why,
-            "--wait", str(a.wait), "--max", str(a.max), "--state", path]
+            "--wait", str(a.wait), "--max", str(a.max)]
     log = open(path + ".log", "w")
-    subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
+    keeper = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                              start_new_session=True,
+                              env={**os.environ, "PICAR_BOARD_STATE": path})
     end = time.monotonic() + a.wait + 60
-    while time.monotonic() < end:
-        cur = read_state()
-        if cur:
-            if "busy" in cur:
+    try:
+        while time.monotonic() < end:
+            cur = read_state()
+            if cur and cur.get("token"):
+                print(f"board lock held: {cur['line']}", file=sys.stderr)
+                return 0
+            if cur and ("busy" in cur or "unreachable" in cur):
                 os.remove(path)
-                print(f"board busy: {cur['busy']}", file=sys.stderr)
-                return BUSY
-            print(f"board lock held: {cur['line']}", file=sys.stderr)
-            return 0
-        time.sleep(0.2)
-    print(f"hold: no answer from the board (see {path}.log)", file=sys.stderr)
-    return 1
+                if cur.get("busy"):
+                    print(f"board busy: {cur['busy']}", file=sys.stderr)
+                    return BUSY
+                print(f"board unreachable: {cur['unreachable']}", file=sys.stderr)
+                return UNREACHABLE
+            if keeper.poll() is not None and not (cur and cur.get("token")):
+                print(f"hold: the keeper exited {keeper.returncode} (see {path}.log)",
+                      file=sys.stderr)
+                return UNREACHABLE
+            time.sleep(0.2)
+        print(f"hold: no answer from the board (see {path}.log)", file=sys.stderr)
+    except KeyboardInterrupt:
+        pass
+    # Given up: the keeper must not take the board later behind our back.
+    stop_keeper(keeper.pid)
+    if os.path.exists(path):
+        os.remove(path)
+    return UNREACHABLE
 
 
 def cmd_release(_):
@@ -336,11 +444,9 @@ def cmd_release(_):
     if not cur or not cur.get("pid"):
         print("this worktree holds no board lock", file=sys.stderr)
         return 0
-    if pid_alive(cur["pid"]):
-        os.kill(cur["pid"], signal.SIGTERM)
-        end = time.monotonic() + 20
-        while pid_alive(cur["pid"]) and time.monotonic() < end:
-            time.sleep(0.2)
+    if cur.get("lost"):
+        print(f"note: {cur['lost']} before this release", file=sys.stderr)
+    stop_keeper(cur["pid"])
     if os.path.exists(state_path()):
         os.remove(state_path())
     print("board lock released", file=sys.stderr)
@@ -349,7 +455,10 @@ def cmd_release(_):
 
 def cmd_env(_):
     cur = read_state()
-    if not cur or not cur.get("token") or not pid_alive(cur.get("pid", -1)):
+    if cur and cur.get("lost"):
+        print(f"this worktree's hold is gone: {cur['lost']}", file=sys.stderr)
+        return 1
+    if not cur or not cur.get("token") or not is_keeper(cur.get("pid")):
         print("this worktree holds no board lock (take one with `hold`)", file=sys.stderr)
         return 1
     print(f"export PICAR_BOARD_TOKEN={cur['token']}")
@@ -367,8 +476,6 @@ def main(argv=None):
         s.add_argument("--max", type=float, default=4 * 3600.0, help="the hold ends by itself after this")
         if name == "run":
             s.add_argument("cmd", nargs=argparse.REMAINDER)
-        if name == "_keep":
-            s.add_argument("--state", required=True)
     sub.add_parser("release")
     sub.add_parser("env")
     a = p.parse_args(argv)

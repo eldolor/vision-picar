@@ -1,7 +1,7 @@
 """3.93 criteria 1-5: the board lock, with the board stood in for by a local
 shell (PICAR_BOARD_SSH="sh -c") and the lock in a temporary directory. The
 holder is the same code that runs on the board. On SLOW_FILES: real waits
-for the silence limit and the maximum (~20 s)."""
+for the silence limit and the maximum (~55 s)."""
 
 import fcntl
 import os
@@ -202,3 +202,140 @@ def test_criterion_5_a_hold_taken_by_hand(env):
         assert b.returncode == 75 and "session_X (Mac): by hand" in b.stderr
     finally:
         hand.kill()
+
+
+# -- the review fixes (code-review + Thermos, 2026-10-22) --------------------
+
+def test_unreachable_board_is_not_busy(env):
+    e = {**env, "PICAR_BOARD_SSH": "false"}
+    r = tool(e, "run", "--", "true")
+    assert r.returncode == 1 and "unreachable" in r.stderr
+    h = tool(e, "hold")
+    assert h.returncode == 1 and "unreachable" in h.stderr
+    assert tool(e, "status").returncode == 1
+
+
+def test_sigterm_ends_the_command_before_the_hold(env, tmp_path):
+    pidfile = tmp_path / "child.pid"
+    a = start_run(env, cmd=("sh", "-c", f"echo $$ > {pidfile}; exec sleep 60"))
+    end = time.monotonic() + 5
+    while not pidfile.exists() and time.monotonic() < end:
+        time.sleep(0.05)
+    child = int(pidfile.read_text())
+    a.send_signal(signal.SIGTERM)
+    a.wait(timeout=20)
+    wait_free(env, 5)
+    with pytest.raises(OSError):
+        os.kill(child, 0)                       # no orphan left running unlocked
+
+
+def test_run_warns_when_its_hold_ends_under_it(env):
+    a = subprocess.run([sys.executable, TOOL, "run", "--max", "1.5", "--", "sleep", "5"],
+                       env=env, capture_output=True, text=True, timeout=30)
+    assert a.returncode == 0
+    assert "WARNING: the board lock was lost (max)" in a.stderr
+
+
+def hand_hold(env, line="session_X (Mac): by hand, since now"):
+    d = Path(env["PICAR_BOARD_LOCK_DIR"])
+    (d / ".picar-board.owner").write_text(line + "\n")
+    p = subprocess.Popen([sys.executable, "-c",
+                          "import fcntl,sys,time;f=open(sys.argv[1],'a');"
+                          "fcntl.flock(f,fcntl.LOCK_EX);print('x',flush=True);time.sleep(120)",
+                          str(d / ".picar-board.lock")], stdout=subprocess.PIPE, text=True)
+    p.stdout.readline()
+    return p
+
+
+def test_release_stops_a_hold_still_waiting(env):
+    hand = hand_hold(env)
+    h = subprocess.Popen([sys.executable, TOOL, "hold", "--wait", "60"], env=env,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        end = time.monotonic() + 10
+        while not (Path(env["PICAR_BOARD_STATE"]).exists()) and time.monotonic() < end:
+            time.sleep(0.1)
+        assert tool(env, "release").returncode == 0
+        h.kill()
+        hand.kill()
+        hand.wait()
+        time.sleep(3)
+        assert lock_free(env)                   # the keeper did not take it later
+    finally:
+        h.kill()
+        hand.kill()
+
+
+def test_hold_that_gives_up_leaves_no_keeper(env):
+    hand = hand_hold(env)
+    h = subprocess.Popen([sys.executable, TOOL, "hold", "--wait", "60"], env=env,
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        time.sleep(2)
+        h.send_signal(signal.SIGINT)            # Ctrl-C on `hold` while it waits
+        h.wait(timeout=30)
+        hand.kill()
+        hand.wait()
+        time.sleep(3)
+        assert lock_free(env)
+    finally:
+        h.kill()
+        hand.kill()
+
+
+def test_a_reused_pid_is_not_a_hold(env):
+    other = subprocess.Popen(["sleep", "60"])
+    try:
+        Path(env["PICAR_BOARD_STATE"]).write_text(
+            f'{{"pid": {other.pid}, "token": "abc", "line": "x"}}')
+        assert tool(env, "env").returncode == 1
+        assert tool(env, "release").returncode == 0
+        assert other.poll() is None             # not signalled
+    finally:
+        other.kill()
+
+
+def bench(env, token=None, seconds=0.0):
+    e = {**env}
+    e.pop("PICAR_BOARD_TOKEN", None)
+    if token:
+        e["PICAR_BOARD_TOKEN"] = token
+    return subprocess.Popen(["bash", "-c", f'source "{CHECK}"; echo ran; sleep {seconds}'],
+                            env=e, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+def test_a_bench_on_a_free_board_holds_it_while_it_runs(env):
+    b = bench(env, seconds=4)
+    assert b.stdout.readline().strip() == "ran"
+    r = tool(env, "run", "--", "true")
+    assert r.returncode == 75 and "bench on the board" in r.stderr
+    b.wait(timeout=20)
+    wait_free(env, 5)
+
+
+def test_a_bench_keeps_the_board_after_its_sessions_hold_ends(env):
+    assert tool(env, "hold").returncode == 0
+    token = tool(env, "env").stdout.strip().split("=", 1)[1]
+    b = bench(env, token=token, seconds=6)
+    assert b.stdout.readline().strip() == "ran"
+    assert tool(env, "release").returncode == 0
+    time.sleep(2.5)
+    assert not lock_free(env)                   # taken over by the bench
+    assert "kept after its session's hold ended" in owner(env)
+    b.wait(timeout=20)
+    wait_free(env, 5)
+
+
+def test_an_expired_token_is_refused(env):
+    hand = hand_hold(env, "s (Mac): x, since 2026-01-01T00:00:00+00:00, "
+                          "until 2026-01-01T01:00:00+00:00, token deadbeefdeadbeef")
+    try:
+        r = check(env, "deadbeefdeadbeef")
+        assert r.returncode == 75
+    finally:
+        hand.kill()
+
+
+def test_a_broken_check_is_not_busy(env, tmp_path):
+    r = check({**env, "PICAR_BOARD_LOCK_DIR": str(tmp_path / "missing")})
+    assert r.returncode == 1 and "ran" not in r.stdout

@@ -140,12 +140,15 @@ Continuing an existing section: work in its worktree
    python tools/jetson/board_lock.py release
    ```
    * Busy: the tool exits 75 and prints the holder's line (`--wait S` waits
-     instead). A hold ends by itself when its session dies, when the network
-     goes silent for 90 s, or at its `--max` (default 4 h).
+     instead). Exit 1 means the board could not be reached. A hold ends by
+     itself when its session dies, when the network goes silent for 90 s,
+     or at its `--max` (default 4 h).
    * Board-side benches (`headroom_identity.sh`, `headroom_mission.sh`,
      `bench_local_vlm.sh`) refuse to run under another session's hold. Pass
      your token to them:
      `ssh picar-jetson "PICAR_BOARD_TOKEN=$PICAR_BOARD_TOKEN bash ..."`.
+     A bench then keeps the lock for itself as long as it runs, even after
+     your session's hold ends.
    * A hold taken by hand counts too: `flock ~/.picar-board.lock` with a line
      in `~/.picar-board.owner`, `"<session> (<host>): <why>, since <iso>"`.
    * Read-only checks (`systemctl is-active`, `free`, `status`) need no lock.
