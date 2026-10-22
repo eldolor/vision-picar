@@ -862,6 +862,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     deleted by anyone, one with work not in `dev` only on the user's word
     (the user, 2026-10-15). `PARALLEL-SESSIONS.md` rule 11.
   * One heavy live run at a time (a lock in `tests/demo_explore.stack()`).
+  * **One session on the Jetson at a time (3.93):**
+    `python tools/jetson/board_lock.py status | run --why ... -- <cmd> | hold | release`.
+    Take it before anything that changes or measures the board. The lock
+    lives on the board (`~/.picar-board.lock`, the same file a by-hand
+    `flock` uses). Board benches refuse under another session's hold and
+    keep the board for as long as they run.
   * CLAUDE.md section 3b and other shared status are updated at merge, not
     on a branch.
 

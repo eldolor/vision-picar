@@ -333,7 +333,10 @@ bring-up that precedes it is the platform domain's procedure
 
   Known limits:
   * A SIGINT sent to `run` alone is not forwarded (from a tty it would
-    arrive twice).
+    arrive twice). `Ctrl-\` is treated as Ctrl-C, and an inherited
+    SIG_IGN (`nohup`) stays ignored.
+  * SIGKILL of `run` alone (a `kill -9`, the OOM killer) frees the board
+    while the command runs on unprotected.
   * Grandchildren are reached only through the command.
   * Ctrl-Z stops the heartbeat. Past 90 s the hold ends, and `run` warns.
   * Under the caller's own token, a bench keeper's blocking takeover beats
@@ -347,7 +350,7 @@ bring-up that precedes it is the platform domain's procedure
 |---|---|
 | `tests/test_serverless_routes.py` | Every public route crosses both the CloudFront behaviour and the API Gateway route to the right function; the vision zip's flat layout imports (6 tests) |
 | `tests/test_static_assets.py` | Every file `web-twin/index.html` and `control/admin.html` reference is in `service/static/assets.json`, plus the PWA manifest's icons, the manifest's keys and cache policies, and that `sync.sh` reads the same manifest (10 tests). `control/metrics.html` is not checked |
-| `tests/test_board_lock.py` | 3.93: a second hold is refused with the owner's line, by hand or by the tool; the lock frees on SIGKILL, on a silent heartbeat and at `--max`; the board-side check refuses a missing, wrong or expired token; review fixes: unreachable is not busy, SIGTERM ends the command first, a waiting or abandoned `hold` never takes the board later, a reused pid is not a hold, a bench keeps the board on its own, after its session's hold ends and against a waiting session, an orphan of the bench holds nothing, a Ctrl-C or SIGTERM reaches the command once and the hold outlasts its teardown, `run` never leaves its group, `release` reports a keeper that did not stop (29 tests, ~70 s, a local shell for ssh; on `SLOW_FILES`) |
+| `tests/test_board_lock.py` | 3.93: a second hold is refused with the owner's line, by hand or by the tool; the lock frees on SIGKILL, on a silent heartbeat and at `--max`; the board-side check refuses a missing, wrong or expired token; review fixes: unreachable is not busy, SIGTERM ends the command first, a waiting or abandoned `hold` never takes the board later, a reused pid is not a hold, a bench keeps the board on its own, after its session's hold ends and against a waiting session, an orphan of the bench holds nothing, a Ctrl-C or SIGTERM reaches the command once and the hold outlasts its teardown, `run` never leaves its group, `release` reports a keeper that did not stop (30 tests, ~70 s, a local shell for ssh; on `SLOW_FILES`) |
 | `tests/test_alb_routes.py` | The same check against the deleted ECS templates. History, still green |
 | `tests/test_tunnel_proxy.py` | The proxy's prefix routing and header handling, no network (8 tests) |
 | `tests/test_health.py` | Non-zero exit when either half is unreachable or broken, and the verdict's silence for a parked robot, an idle robot and a recorded veto (15 tests) |

@@ -470,3 +470,15 @@ def test_hold_giving_up_returns_promptly(env):
         assert time.monotonic() - t0 < 10       # its own keeper reaped, not 20 s on a zombie
     finally:
         hand.kill()
+
+
+def test_an_inherited_sig_ign_stays_ignored_for_the_command(env, tmp_path):
+    """`nohup`: SIGHUP ignored when `run` starts stays ignored in the command."""
+    out = tmp_path / "sighup"
+    probe = ("import signal;open(%r,'w').write(str(signal.getsignal(signal.SIGHUP) "
+             "is signal.SIG_IGN))" % str(out))
+    r = subprocess.run(["nohup", sys.executable, TOOL, "run", "--", sys.executable, "-c", probe],
+                       env=env, capture_output=True, text=True, timeout=60,
+                       cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert out.read_text() == "True"

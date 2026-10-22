@@ -368,7 +368,8 @@ def cmd_run(a):
     # time, and one that lands before the command started is delivered
     # once it has. The holder is in a session of its own, so the hold
     # outlasts the command's teardown. Known limits (the spec): a SIGINT
-    # sent to `run` alone is not forwarded; grandchildren are reached only
+    # sent to `run` alone is not forwarded; SIGKILL of `run` alone frees the
+    # board while the command runs on; grandchildren are reached only
     # through the command; a board-side bench keeps the board itself.
     state = {"child": None, "pending": []}
 
@@ -379,9 +380,17 @@ def cmd_run(a):
         elif child.poll() is None:
             child.send_signal(signum)
 
-    old = {signal.SIGTERM: signal.signal(signal.SIGTERM, on_term),
-           signal.SIGINT: signal.signal(signal.SIGINT, lambda *_: None),
-           signal.SIGHUP: signal.signal(signal.SIGHUP, lambda *_: None)}
+    def keep_waiting(*_):
+        pass
+
+    old = {signal.SIGTERM: signal.signal(signal.SIGTERM, on_term)}
+    for signum in (signal.SIGINT, signal.SIGHUP, signal.SIGQUIT):
+        # An inherited SIG_IGN (`nohup`, `&` in a script) stays ignored, so
+        # the command inherits it as it would without the tool; else a
+        # handler that only keeps `run` waiting (exec resets it to the
+        # default for the command).
+        if signal.getsignal(signum) is not signal.SIG_IGN:
+            old[signum] = signal.signal(signum, keep_waiting)
     try:
         child = subprocess.Popen(a.cmd, env={**os.environ, "PICAR_BOARD_TOKEN": h.token})
     except OSError as e:
