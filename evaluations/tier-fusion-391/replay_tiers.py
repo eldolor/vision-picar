@@ -31,18 +31,24 @@ import os
 import statistics
 import threading
 import time
+from collections import Counter
 
 from brain.local_vlm import LocalVLMClient
 from brain.navigate import to_scene
 from control.brain_config import load_brain_config
+from brain.tiered import _local_kind, percentiles
 from control.brain_server import _tiered_vision_fn
 
 
 def mem_available_mb():
-    with open("/proc/meminfo") as f:
-        for line in f:
-            if line.startswith("MemAvailable:"):
-                return int(line.split()[1]) // 1024
+    """None off Linux (the laptop): not measurable, said so in the summary."""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except OSError:
+        return None
     return None
 
 
@@ -69,12 +75,14 @@ def frame_of(walk_dir, row):
 
 
 def recorded_answers(rows):
-    """asked_seq -> the first recorded cloud answer about that frame."""
+    """asked_seq -> the first recorded cloud answer (or failure) about that
+    frame. A phone walk never reaches arrival, so each is a frame question's."""
     out = {}
     for row in rows:
         for entry in ((row.get("navigate") or {}).get("cloud_answers") or []):
-            if "error" not in entry and entry.get("asked_seq") not in out:
-                out[entry["asked_seq"]] = entry
+            seq = entry.get("asked_seq")
+            if isinstance(seq, int) and seq not in out:
+                out[seq] = entry
     return out
 
 
@@ -87,11 +95,6 @@ def reversals(actions):
                 n += 1
             last = a
     return n
-
-
-def p90(xs):
-    xs = sorted(xs)
-    return xs[min(len(xs) - 1, int(round(0.9 * (len(xs) - 1))))] if xs else None
 
 
 def main():
@@ -107,7 +110,13 @@ def main():
     target = meta["target_object"]
     rows = [json.loads(line) for line in open(os.path.join(args.walk_dir, "walk.jsonl"))]
     decided = [r for r in rows if r.get("navigate")]
-    by_seq = {r.get("teleop_seq"): r for r in rows}
+    if any(not isinstance(r.get("teleop_seq"), int) for r in decided):
+        raise SystemExit("a decided row has no robot seq: answers cannot be matched")
+    by_seq = {r["teleop_seq"]: r for r in rows if isinstance(r.get("teleop_seq"), int)}
+    probe_seqs = [int(s) for s in args.probe_seqs.split(",") if s]
+    missing = [s for s in probe_seqs if s not in by_seq]
+    if missing:
+        raise SystemExit(f"no frame with robot seq {missing}")
     recorded = recorded_answers(rows)
 
     config = load_brain_config()
@@ -120,12 +129,22 @@ def main():
     def stub_cloud(frame):
         seq = frame["metadata"]["seq"]
         entry = recorded.get(seq)
+        if entry is not None and "error" in entry:
+            cloud_log.append({"seq": seq, "kind": "recorded_error", "error": entry["error"]})
+            raise RuntimeError(f"recorded cloud failure: {entry['error']}")
         if entry is not None:
-            reply = dict(entry.get("reply") or {})
+            # `_navigate` always carries obstacle_ahead, None when not asked;
+            # to_scene reads a present key as asked.
+            reply = {k: v for k, v in (entry.get("reply") or {}).items()
+                     if not (k == "obstacle_ahead" and v is None)}
             reply["action"] = reply.get("reply_action") or entry.get("action")
             if "target_visible" not in reply:
-                # -200025 was recorded before A's fields were fixed: the verdict only.
+                # -200025 was recorded before A's fields were fixed: the verdict
+                # only. Corroborated means the cloud claimed the target that
+                # perception saw; anything else is read as not visible.
                 reply["target_visible"] = entry.get("verdict") == "corroborated"
+                reply["target_direction"] = ("unknown" if reply["target_visible"]
+                                             else "not_visible")
             cloud_log.append({"seq": seq, "kind": "recorded", "verdict": entry.get("verdict"),
                               "action": reply["action"]})
             return to_scene(reply, target)
@@ -143,7 +162,13 @@ def main():
 
     def logged_ask(frame, box=False):
         started = time.perf_counter()
-        got = real_ask(frame, box=box)
+        try:
+            got = real_ask(frame, box=box)
+        except Exception as e:  # noqa: BLE001 -- logged, then the policy's to handle
+            local_log.append({"seq": frame["metadata"]["seq"], "status": "absent",
+                              "score": None, "error": type(e).__name__,
+                              "ms": round((time.perf_counter() - started) * 1000, 1)})
+            raise
         local_log.append({"seq": frame["metadata"]["seq"], "status": got.get("status"),
                           "score": got.get("score"), "box_frac": got.get("box_frac"),
                           "ms": round((time.perf_counter() - started) * 1000, 1)})
@@ -163,60 +188,54 @@ def main():
                 "seq": row["seq"], "teleop_seq": row.get("teleop_seq"),
                 "perception": perception.get("status"),
                 "probability": perception.get("match_probability"),
-                "trigger": tier.get("trigger") or tier.get("local_asked"),
+                "trigger": tier.get("trigger") or tier.get("local_called"),
                 "local": local_log[n_local:] or None,
                 "cloud": cloud_log[n_cloud:] or None,
                 "action": scene.get("safest_direction"),
                 "turn_deg": scene.get("turn_deg"),
-                "reasoning": (scene.get("reasoning") or "")[:300],
+                "reasoning": ((scene.get("_navigate") or {}).get("reasoning") or "")[:300],
                 "live_action": live.get("action"),
                 "live_perception": ((live.get("_missionStatus") or {}).get("perception")
                                     or {}).get("status"),
             })
         probes = []
-        if args.probe_seqs:
+        if probe_seqs:
             client = LocalVLMClient(args.local_url, target, secret=args.secret,
                                     deadline_s=config["tier_local_timeout_s"])
-            for seq in (int(s) for s in args.probe_seqs.split(",")):
-                started = time.perf_counter()
-                got = client.ask(frame_of(args.walk_dir, by_seq[seq]), box=True)
-                probes.append({"seq": seq, "status": got.get("status"), "score": got.get("score"),
-                               "box_frac": got.get("box_frac"),
-                               "ms": round((time.perf_counter() - started) * 1000, 1)})
-            client.close()
+            try:
+                for seq in probe_seqs:
+                    started = time.perf_counter()
+                    got = client.ask(frame_of(args.walk_dir, by_seq[seq]), box=True)
+                    probes.append({"seq": seq, "status": got.get("status"),
+                                   "score": got.get("score"), "box_frac": got.get("box_frac"),
+                                   "ms": round((time.perf_counter() - started) * 1000, 1)})
+            finally:
+                client.close()
         stats = policy.stats.as_dict()
     finally:
         policy.close()
         watch.stop.set()
 
     def kind(entry):
-        s, score = entry["status"], entry["score"]
-        if s == "answered" and isinstance(score, (int, float)):
-            if score >= 0.5:
-                return "yes"
-            if score <= config["tier_local_no_below"]:
-                return "no"
-            return "unable_band"
-        return f"unable_{s}"
+        return _local_kind(entry, config["tier_local_no_below"])
 
     on_detected = [kind(e) for f in out_frames if f["perception"] == "detected"
                    for e in (f["local"] or [])]
     summary = {
         "frames": len(out_frames),
-        "local_answers": dict(sorted(
-            {k: sum(kind(e) == k for f in out_frames for e in (f["local"] or []))
-             for k in {kind(e) for f in out_frames for e in (f["local"] or [])}}.items())),
-        "local_on_detected": {k: on_detected.count(k) for k in sorted(set(on_detected))},
+        "local_answers": dict(sorted(Counter(kind(e) for e in local_log).items())),
+        "local_on_detected": dict(sorted(Counter(on_detected).items())),
         "cloud_recorded": sum(c["kind"] == "recorded" for c in cloud_log),
         "cloud_would_have_asked": sum(c["kind"] == "would_have_asked" for c in cloud_log),
+        "cloud_recorded_error": sum(c["kind"] == "recorded_error" for c in cloud_log),
         "live_dispatched": sum("cloud call dispatched" in (r["navigate"].get("reasoning") or "")
                                for r in decided),
         "reversals": reversals(f["action"] for f in out_frames),
         "live_reversals": reversals(f["live_action"] for f in out_frames),
         "local_ms_median": (statistics.median(e["ms"] for e in local_log) if local_log else None),
-        "local_ms_p90": p90([e["ms"] for e in local_log]),
+        "local_ms_p90": (percentiles([e["ms"] for e in local_log]) or {}).get("p90"),
         "mem_available_min_mb": watch.low,
-        "probes": {k: sum(kind(p) == k for p in probes) for k in {kind(p) for p in probes}},
+        "probes": dict(sorted(Counter(kind(p) for p in probes).items())),
     }
     json.dump({"walk": os.path.basename(os.path.normpath(args.walk_dir)), "target": target,
                "config": {k: config[k] for k in sorted(config) if k.startswith("tier_")},
