@@ -582,8 +582,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   nothing: the deploys and the env file done 2026-10-20, the decisions
   made 2026-10-21; M2.7 built 2026-10-21 (a low battery read counts only
   as a new board sample: a changed value, or the same one after
-  `BATTERY_SAMPLE_S` 12 s); to build: K5.3 (keepout marks cleared at a
-  mission's end); M1.5-M1.11 a sim-honesty
+  `BATTERY_SAMPLE_S` 12 s); K5.3 built 2026-10-22 (a mission's keepout
+  marks cleared at its end: `DELETE /world/keepout`, called by the
+  brain's navigator after its last goal; in-process sweeps unchanged, as
+  `FakeNav` has no clear) -- its live tour is still owed; M1.5-M1.11 a sim-honesty
   section after the Rover's numbers. Handoff:
   `HANDOFF-2026-10-15-3.76-J-onward.md`.
 * **The wheel loop late under explore (3.87), merged 2026-10-16.** Found by
