@@ -184,7 +184,8 @@ and `__call__` puts every question to the local tier first:
   even if `_annotate` raises) or synchronous (`_annotate_noted()`, on the
   main path and the local-first path's cloud fallback), and every failed
   call, is summarised by `_note_cloud_answer()` into `_cloud_answers` under
-  `_collect_lock`: `CLOUD_ANSWER_KEYS` (text cut to `CLOUD_TEXT_CHARS`), the
+  `_collect_lock`: `action` (the scene's `safest_direction`) and the
+  `_navigate` fields in `CLOUD_ANSWER_KEYS` (text cut to `CLOUD_TEXT_CHARS`), the
   robot seq it was asked on (`_dispatch()`), `via_local_tier` when the cloud
   answered a local-first question; a failure as its type and HTTP status
   (`_http_status`), never its text. At most `CLOUD_ANSWERS_KEPT` (64) wait;
