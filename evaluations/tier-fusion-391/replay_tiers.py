@@ -81,7 +81,8 @@ def recorded_answers(rows):
     for row in rows:
         for entry in ((row.get("navigate") or {}).get("cloud_answers") or []):
             seq = entry.get("asked_seq")
-            if isinstance(seq, int) and seq not in out:
+            # A landed answer wins over a failure recorded about the same frame.
+            if isinstance(seq, int) and (seq not in out or "error" in out[seq]):
                 out[seq] = entry
     return out
 
@@ -112,7 +113,10 @@ def main():
     decided = [r for r in rows if r.get("navigate")]
     if any(not isinstance(r.get("teleop_seq"), int) for r in decided):
         raise SystemExit("a decided row has no robot seq: answers cannot be matched")
-    by_seq = {r["teleop_seq"]: r for r in rows if isinstance(r.get("teleop_seq"), int)}
+    by_seq = {}
+    for r in decided + rows:   # the decided row first: the frame the policy replays
+        if isinstance(r.get("teleop_seq"), int) and r.get("file"):
+            by_seq.setdefault(r["teleop_seq"], r)
     probe_seqs = [int(s) for s in args.probe_seqs.split(",") if s]
     missing = [s for s in probe_seqs if s not in by_seq]
     if missing:
@@ -140,9 +144,9 @@ def main():
             reply["action"] = reply.get("reply_action") or entry.get("action")
             if "target_visible" not in reply:
                 # -200025 was recorded before A's fields were fixed: the verdict
-                # only. Corroborated means the cloud claimed the target that
-                # perception saw; anything else is read as not visible.
-                reply["target_visible"] = entry.get("verdict") == "corroborated"
+                # only; every verdict but no_claim means the cloud claimed the
+                # target (`corroboration_for`).
+                reply["target_visible"] = entry.get("verdict") not in ("no_claim", None)
                 reply["target_direction"] = ("unknown" if reply["target_visible"]
                                              else "not_visible")
             cloud_log.append({"seq": seq, "kind": "recorded", "verdict": entry.get("verdict"),
@@ -180,7 +184,15 @@ def main():
         for row in decided:
             current["row"] = row
             n_local, n_cloud = len(local_log), len(cloud_log)
-            scene = policy(frame_of(args.walk_dir, row))
+            try:
+                scene = policy(frame_of(args.walk_dir, row))
+            except Exception as e:  # noqa: BLE001 -- live, B3.2 counts it and the mission goes on
+                out_frames.append({"seq": row["seq"], "teleop_seq": row.get("teleop_seq"),
+                                   "error": type(e).__name__,
+                                   "local": local_log[n_local:] or None,
+                                   "cloud": cloud_log[n_cloud:] or None,
+                                   "live_action": row["navigate"].get("action")})
+                continue
             perception = scene.get("_perception") or {}
             tier = scene.get("_tier") or {}
             live = row["navigate"]
@@ -205,7 +217,12 @@ def main():
             try:
                 for seq in probe_seqs:
                     started = time.perf_counter()
-                    got = client.ask(frame_of(args.walk_dir, by_seq[seq]), box=True)
+                    try:
+                        got = client.ask(frame_of(args.walk_dir, by_seq[seq]), box=True)
+                    except Exception as e:  # noqa: BLE001 -- the replay's results are kept
+                        probes.append({"seq": seq, "status": "absent", "score": None,
+                                       "error": type(e).__name__})
+                        continue
                     probes.append({"seq": seq, "status": got.get("status"),
                                    "score": got.get("score"), "box_frac": got.get("box_frac"),
                                    "ms": round((time.perf_counter() - started) * 1000, 1)})
@@ -217,9 +234,12 @@ def main():
         watch.stop.set()
 
     def kind(entry):
-        return _local_kind(entry, config["tier_local_no_below"])
+        # A call that raised is the policy's `absent` (handed to the cloud),
+        # never one of its unable kinds.
+        return "absent" if "error" in entry else _local_kind(entry, config["tier_local_no_below"])
 
-    on_detected = [kind(e) for f in out_frames if f["perception"] == "detected"
+    answered = [e for e in local_log if "error" not in e]
+    on_detected = [kind(e) for f in out_frames if f.get("perception") == "detected"
                    for e in (f["local"] or [])]
     summary = {
         "frames": len(out_frames),
@@ -230,10 +250,12 @@ def main():
         "cloud_recorded_error": sum(c["kind"] == "recorded_error" for c in cloud_log),
         "live_dispatched": sum("cloud call dispatched" in (r["navigate"].get("reasoning") or "")
                                for r in decided),
-        "reversals": reversals(f["action"] for f in out_frames),
+        "reversals": reversals(f.get("action") for f in out_frames),
         "live_reversals": reversals(f["live_action"] for f in out_frames),
-        "local_ms_median": (statistics.median(e["ms"] for e in local_log) if local_log else None),
-        "local_ms_p90": (percentiles([e["ms"] for e in local_log]) or {}).get("p90"),
+        "frames_failed": sum("error" in f for f in out_frames),
+        # Replies only: a refused or failed call's time is not the VLM's.
+        "local_ms_median": (statistics.median(e["ms"] for e in answered) if answered else None),
+        "local_ms_p90": (percentiles([e["ms"] for e in answered]) or {}).get("p90"),
         "mem_available_min_mb": watch.low,
         "probes": dict(sorted(Counter(kind(p) for p in probes).items())),
     }
