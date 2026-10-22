@@ -98,4 +98,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.90](3.90-camera-stream.md) | The camera as a stream, and frames combined over time |
 | [3.91](3.91-tier-fusion.md) | Tier answers over time: disagreement, freshness and the approach (from the 2026-10-21 phone walk) |
 | [3.92](3.92-tier-calibration.md) | Calibrating the tiers on the labelled corpus: when to trust Qwen, when to ask |
+| [3.93](3.93-board-lock.md) | One session on the Jetson at a time: a lock held on the board |
 <!-- /sections -->
