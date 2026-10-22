@@ -322,24 +322,24 @@ bring-up that precedes it is the platform domain's procedure
   So a bench that outlives its session (Ctrl-C on the laptop leaves a
   remote `bash` running, since there is no tty and so no SIGHUP) still
   keeps the board.
-* **Signals.** `run` leads a process group, and its command and
-  everything that command starts stay in that group.
-  * A Ctrl-C or a closed terminal reaches the whole group from the tty,
-    so `run` does not forward it (it would arrive twice).
-  * A SIGTERM to `run` alone (`kill`, `timeout`) is sent on to the group
-    once.
+* **Signals.** `run` never ends while its command runs, and never moves
+  process groups: the command sits where any child would.
+  * A Ctrl-C or a closed terminal reaches the command from the tty, and
+    `run` keeps waiting.
+  * A SIGTERM to `run` goes on to the command, every time. One that
+    arrives before the command has started is delivered once it starts.
   * The holder's ssh runs in a session of its own, so the hold outlasts
     the command's teardown.
 
   Known limits:
-  * Ctrl-Z stops the heartbeat with the group. Past 90 s the hold ends,
-    and `run` warns on `fg`.
-  * `run` started from a non-interactive script makes its own group. That
-    group is not the terminal's foreground, so a command that reads the
-    tty there stops (SIGTTIN).
+  * A SIGINT sent to `run` alone is not forwarded (from a tty it would
+    arrive twice).
+  * Grandchildren are reached only through the command.
+  * Ctrl-Z stops the heartbeat. Past 90 s the hold ends, and `run` warns.
   * Under the caller's own token, a bench keeper's blocking takeover beats
-    polling acquirers, but not another blocking `flock(1)` waiter: the
-    kernel picks one of them.
+    polling acquirers, but not another blocking `flock(1)` waiter.
+
+  A board-side bench keeps the board itself in each of these cases.
 
 ## Verification
 
@@ -347,7 +347,7 @@ bring-up that precedes it is the platform domain's procedure
 |---|---|
 | `tests/test_serverless_routes.py` | Every public route crosses both the CloudFront behaviour and the API Gateway route to the right function; the vision zip's flat layout imports (6 tests) |
 | `tests/test_static_assets.py` | Every file `web-twin/index.html` and `control/admin.html` reference is in `service/static/assets.json`, plus the PWA manifest's icons, the manifest's keys and cache policies, and that `sync.sh` reads the same manifest (10 tests). `control/metrics.html` is not checked |
-| `tests/test_board_lock.py` | 3.93: a second hold is refused with the owner's line, by hand or by the tool; the lock frees on SIGKILL, on a silent heartbeat and at `--max`; the board-side check refuses a missing, wrong or expired token; review fixes: unreachable is not busy, SIGTERM ends the command first, a waiting or abandoned `hold` never takes the board later, a reused pid is not a hold, a bench keeps the board on its own, after its session's hold ends and against a waiting session, an orphan of the bench holds nothing, a Ctrl-C reaches the command once (24 tests, ~80 s, a local shell for ssh; on `SLOW_FILES`) |
+| `tests/test_board_lock.py` | 3.93: a second hold is refused with the owner's line, by hand or by the tool; the lock frees on SIGKILL, on a silent heartbeat and at `--max`; the board-side check refuses a missing, wrong or expired token; review fixes: unreachable is not busy, SIGTERM ends the command first, a waiting or abandoned `hold` never takes the board later, a reused pid is not a hold, a bench keeps the board on its own, after its session's hold ends and against a waiting session, an orphan of the bench holds nothing, a Ctrl-C or SIGTERM reaches the command once and the hold outlasts its teardown, `run` never leaves its group, `release` reports a keeper that did not stop (29 tests, ~70 s, a local shell for ssh; on `SLOW_FILES`) |
 | `tests/test_alb_routes.py` | The same check against the deleted ECS templates. History, still green |
 | `tests/test_tunnel_proxy.py` | The proxy's prefix routing and header handling, no network (8 tests) |
 | `tests/test_health.py` | Non-zero exit when either half is unreachable or broken, and the verdict's silence for a parked robot, an idle robot and a recorded veto (15 tests) |

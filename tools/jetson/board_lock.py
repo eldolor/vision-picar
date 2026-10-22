@@ -32,7 +32,8 @@ PICAR_BOARD_LOCK_DIR (default `~` on the board), PICAR_BOARD_PYTHON
 (python3), PICAR_BOARD_HEARTBEAT_S (20; 0 sends none, so a hold ends at the
 silence limit), PICAR_BOARD_SILENCE_S (90), PICAR_BOARD_WHO,
 PICAR_BOARD_STATE (the hold's local state file; default in the git dir of
-the checkout this file is in).
+the checkout this file is in), PICAR_BOARD_STOP_S (20: how long `release`
+waits for a keeper).
 """
 
 import argparse
@@ -316,7 +317,7 @@ def stop_keeper(pid: int) -> bool:
     if not is_keeper(pid):
         return True
     os.kill(pid, signal.SIGTERM)
-    end = time.monotonic() + 20
+    end = time.monotonic() + float(os.environ.get("PICAR_BOARD_STOP_S", 20))
     while time.monotonic() < end:
         try:
             if os.waitpid(pid, os.WNOHANG)[0] == pid:
@@ -359,36 +360,39 @@ def cmd_run(a):
         print(f"board busy: {h.busy_line}", file=sys.stderr)
         return BUSY
     print(f"board lock held: {h.line}", file=sys.stderr, flush=True)
-    # `run` leads a process group, and the command and everything it starts
-    # stay in it. A Ctrl-C or a closed terminal reaches that whole group from
-    # the tty, so neither is forwarded (it would arrive twice); a SIGTERM to
-    # `run` alone (`kill`, `timeout`) is sent on to the group once. The
-    # holder is in a session of its own, so the hold outlasts the command's
-    # teardown. Ctrl-Z stops the group, heartbeat included: past the silence
-    # limit the hold ends (run warns on `fg`).
-    if os.getpgrp() != os.getpid():
-        os.setpgid(0, 0)
-    state = {"child": None, "forwarding": False}
+    # `run` never ends while its command runs, and never moves groups: the
+    # command sits where any child would, so the terminal, pipelines and
+    # supervisors treat it as usual. A Ctrl-C or a closed terminal reaches
+    # the command from the tty already, so `run` only keeps waiting; a
+    # SIGTERM to `run` (`kill`, `timeout`) goes on to the command, every
+    # time, and one that lands before the command started is delivered
+    # once it has. The holder is in a session of its own, so the hold
+    # outlasts the command's teardown. Known limits (the spec): a SIGINT
+    # sent to `run` alone is not forwarded; grandchildren are reached only
+    # through the command; a board-side bench keeps the board itself.
+    state = {"child": None, "pending": []}
 
-    def forward(signum, _frame):
+    def on_term(signum, _frame):
         child = state["child"]
-        if state["forwarding"] or child is None or child.poll() is not None:
-            return
-        state["forwarding"] = True        # our own killpg comes back to us
-        os.killpg(os.getpgrp(), signum)
+        if child is None:
+            state["pending"].append(signum)
+        elif child.poll() is None:
+            child.send_signal(signum)
 
-    old = {signal.SIGTERM: signal.signal(signal.SIGTERM, forward),
+    old = {signal.SIGTERM: signal.signal(signal.SIGTERM, on_term),
            signal.SIGINT: signal.signal(signal.SIGINT, lambda *_: None),
            signal.SIGHUP: signal.signal(signal.SIGHUP, lambda *_: None)}
     try:
-        state["child"] = child = subprocess.Popen(
-            a.cmd, env={**os.environ, "PICAR_BOARD_TOKEN": h.token})
+        child = subprocess.Popen(a.cmd, env={**os.environ, "PICAR_BOARD_TOKEN": h.token})
     except OSError as e:
         for s_, f_ in old.items():
             signal.signal(s_, f_)
         h.release()
         print(f"run: {e}; board lock released", file=sys.stderr)
         return 127
+    state["child"] = child
+    for signum in state["pending"]:
+        child.send_signal(signum)
 
     warned = False
     try:
@@ -455,7 +459,10 @@ def cmd_hold(a):
         print(f"this worktree already holds the board: {cur['line']}", file=sys.stderr)
         return 0
     if cur and is_keeper(cur.get("pid")):
-        stop_keeper(cur["pid"])            # a keeper still waiting from an earlier hold
+        # A keeper still waiting from an earlier hold: never two of them.
+        if not stop_keeper(cur["pid"]):
+            print(f"hold: an earlier keeper (pid {cur['pid']}) did not stop", file=sys.stderr)
+            return UNREACHABLE
     path = state_path()
     if os.path.exists(path):
         os.remove(path)
@@ -483,6 +490,10 @@ def cmd_hold(a):
                 cur = read_state()          # it may have written busy just now
                 if cur and ("busy" in cur or "unreachable" in cur):
                     continue
+                if cur and cur.get("lost"):
+                    os.remove(path)
+                    print(f"hold: taken, then {cur['lost']} at once", file=sys.stderr)
+                    return UNREACHABLE
                 print(f"hold: the keeper exited {keeper.returncode} (see {path}.log)",
                       file=sys.stderr)
                 return UNREACHABLE
@@ -491,7 +502,10 @@ def cmd_hold(a):
     except KeyboardInterrupt:
         pass
     # Given up: the keeper must not take the board later behind our back.
-    stop_keeper(keeper.pid)
+    if not stop_keeper(keeper.pid):
+        print(f"hold: the keeper (pid {keeper.pid}) did not stop; state kept for `release`",
+              file=sys.stderr)
+        return UNREACHABLE
     if os.path.exists(path):
         os.remove(path)
     return UNREACHABLE

@@ -1,9 +1,9 @@
-board lock held: plan/3.93-board-lock pid 11730 (Mac): 3.93 criterion 6, since 2026-10-22T18:23:25-05:00, until 2026-10-22T22:23:25-05:00, token 490f14af65a0d8e0
-status from a second process: HELD plan/3.93-board-lock pid 11730 (Mac): 3.93 criterion 6, since 2026-10-22T18:23:25-05:00, until 2026-10-22T22:23:25-05:00, token 490f14af65a0d8e0
-wrong token: 75 the board is held by another session: plan/3.93-board-lock pid 11730 (Mac): 3.93 criterion 6, since 2026-10-22T18:23:25-05:00, until 2026-10-22T22:23:25-05:00, token 490f14af65a0d8e0
+board lock held: plan/3.93-board-lock pid 18314 (Mac): 3.93 criterion 6, since 2026-10-22T18:29:31-05:00, until 2026-10-22T22:29:32-05:00, token 83e886d591140d33
+status from a second process: HELD plan/3.93-board-lock pid 18314 (Mac): 3.93 criterion 6, since 2026-10-22T18:29:31-05:00, until 2026-10-22T22:29:32-05:00, token 83e886d591140d33
+wrong token: 75 the board is held by another session: plan/3.93-board-lock pid 18314 (Mac): 3.93 criterion 6, since 2026-10-22T18:29:31-05:00, until 2026-10-22T22:29:32-05:00, token 83e886d591140d33
 holder's token: 0 ran 
 board lock released
-board lock held: plan/3.93-board-lock pid 11742 (Mac): 3.93 kill test, since 2026-10-22T18:23:29-05:00, until 2026-10-22T22:23:29-05:00, token 01753b34297d170f
+board lock held: plan/3.93-board-lock pid 18326 (Mac): 3.93 kill test, since 2026-10-22T18:29:35-05:00, until 2026-10-22T22:29:36-05:00, token bf450a28c2f583cf
 after run: FREE
 SIGKILL -> FREE in 0.4 s (bar 5 s)
 criterion 6: met

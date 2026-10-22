@@ -1,7 +1,7 @@
 """3.93 criteria 1-5: the board lock, with the board stood in for by a local
 shell (PICAR_BOARD_SSH="sh -c") and the lock in a temporary directory. The
 holder is the same code that runs on the board. On SLOW_FILES: real waits
-for the silence limit and the maximum (~80 s)."""
+for the silence limit and the maximum (~70 s)."""
 
 import fcntl
 import os
@@ -28,6 +28,9 @@ def env(tmp_path):
     e.pop("PICAR_BOARD_TOKEN", None)
     yield e
     subprocess.run([sys.executable, TOOL, "release"], env=e, capture_output=True, timeout=30)
+    # start_run's own sleeps (a unique length: no other process's), left by
+    # the tests that SIGKILL `run`.
+    subprocess.run(["pkill", "-f", "^sleep 63.71$"], capture_output=True)
 
 
 def tool(env, *args, timeout=30):
@@ -52,7 +55,7 @@ def lock_free(env) -> bool:
         return True
 
 
-def start_run(env, *args, cmd=("sleep", "60")):
+def start_run(env, *args, cmd=("sleep", "63.71")):
     """A `run` in the background; returns once the board side says it holds."""
     p = subprocess.Popen([sys.executable, TOOL, "run", *args, "--", *cmd], env=env,
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -215,20 +218,41 @@ def test_unreachable_board_is_not_busy(env):
     assert tool(e, "status").returncode == 1
 
 
-def test_sigterm_ends_the_command_before_the_hold(env, tmp_path):
-    pidfile = tmp_path / "child.pid"
-    # Not `exec`: the sleep is a grandchild, which a signal to the shell
-    # alone would orphan (round 3).
-    a = start_run(env, cmd=("bash", "-c", f"sleep 61.37 & echo $! > {pidfile}; wait"))
+def test_sigterm_reaches_the_command_and_the_hold_outlasts_it(env, tmp_path):
+    """SIGTERM to `run`: the command gets it, and the board stays held
+    through the command's teardown (here 2 s), released only after."""
+    pidfile, hits = tmp_path / "child.pid", tmp_path / "hits"
+    cmd = ("sh", "-c", f'echo $$ > {pidfile}; trap "echo TERM >> {hits}; sleep 2; exit 0" TERM; '
+                       'while :; do sleep 0.1; done')
+    a = start_run(env, cmd=cmd)
     end = time.monotonic() + 5
     while not (pidfile.exists() and pidfile.read_text().strip()) and time.monotonic() < end:
         time.sleep(0.05)
     child = int(pidfile.read_text())
     a.send_signal(signal.SIGTERM)
+    time.sleep(1.0)
+    assert not lock_free(env)                   # held through the teardown
     a.wait(timeout=20)
+    assert hits.read_text().count("TERM") == 1
     wait_free(env, 5)
     with pytest.raises(OSError):
-        os.kill(child, 0)                       # no orphan left running unlocked
+        os.kill(child, 0)
+
+
+def test_run_never_leaves_its_group(env):
+    """No setpgid: a supervisor's kill of its group still reaches `run` and
+    the command (round 4)."""
+    sup = subprocess.Popen([sys.executable, "-c",
+                            "import os,subprocess,sys;"
+                            "print(os.getpgrp(), flush=True);"
+                            f"subprocess.call([sys.executable, {str(TOOL)!r}, 'run', '--', "
+                            "sys.executable, '-c', 'import os,time;print(os.getpgrp(),flush=True);time.sleep(30)'])"],
+                           env=env, stdout=subprocess.PIPE, text=True, start_new_session=True)
+    group = int(sup.stdout.readline())
+    assert int(sup.stdout.readline()) == group  # the command is in the supervisor's group
+    os.killpg(group, signal.SIGKILL)
+    sup.wait(timeout=10)
+    wait_free(env, 5)
 
 
 def test_run_warns_when_its_hold_ends_under_it(env):
@@ -400,3 +424,49 @@ def test_a_command_that_cannot_start_releases_the_hold(env):
     r = tool(env, "run", "--", "/no/such/bench")
     assert r.returncode == 127 and "released" in r.stderr
     wait_free(env, 5)
+
+
+# -- review round 4: the round-3 fixes pinned -------------------------------
+
+def test_the_bench_owner_line_is_written_before_the_check_returns(env):
+    owner_path = Path(env["PICAR_BOARD_LOCK_DIR"]) / ".picar-board.owner"
+    r = subprocess.run(["bash", "-c", f'source "{CHECK}"; cat "{owner_path}"'], env=env,
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0 and "bench on the board" in r.stdout
+
+
+def test_release_reports_a_keeper_that_does_not_stop(env, tmp_path):
+    state = env["PICAR_BOARD_STATE"]
+    stuck = subprocess.Popen([sys.executable, "-c",
+                              "import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+                              "time.sleep(60)", "board_lock.py", "_keep", "--state", state])
+    try:
+        time.sleep(0.5)
+        Path(state).write_text(f'{{"pid": {stuck.pid}, "token": "abc", "line": "x"}}')
+        r = tool({**env, "PICAR_BOARD_STOP_S": "1"}, "release")
+        assert r.returncode == 1 and "did not stop" in r.stderr
+        assert Path(state).exists()             # kept, so a later release can find it
+    finally:
+        stuck.kill()
+
+
+def test_a_hold_that_ends_at_once_says_so(env):
+    h = tool({**env, "PICAR_BOARD_HEARTBEAT_S": "0", "PICAR_BOARD_SILENCE_S": "0.2"}, "hold")
+    assert h.returncode in (0, 1)
+    time.sleep(2)
+    assert tool(env, "env").returncode == 1     # never a token for a hold that is gone
+    wait_free(env, 5)
+
+
+def test_hold_giving_up_returns_promptly(env):
+    hand = hand_hold(env)
+    try:
+        t0 = time.monotonic()
+        h = subprocess.Popen([sys.executable, TOOL, "hold", "--wait", "60"], env=env,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        time.sleep(2)
+        h.send_signal(signal.SIGINT)
+        h.wait(timeout=30)
+        assert time.monotonic() - t0 < 10       # its own keeper reaped, not 20 s on a zombie
+    finally:
+        hand.kill()
