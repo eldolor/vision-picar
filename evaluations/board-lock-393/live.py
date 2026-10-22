@@ -42,17 +42,18 @@ def main():
         rc = subprocess.call(TOOL + ["run", "--why", "3.93 criterion 6", "--", sys.executable, __file__])
         print("after run:", status())
         out["released"] = status() == "FREE"
-        t0 = time.monotonic()
-        p = subprocess.Popen(TOOL + ["run", "--why", "3.93 kill test", "--", "sleep", "120"])
+        p = subprocess.Popen(TOOL + ["run", "--why", "3.93 kill test", "--", "sleep", "120"],
+                             start_new_session=True)
         end = time.monotonic() + 30
         while not status().startswith("HELD") and time.monotonic() < end:
             time.sleep(0.5)
-        os.kill(p.pid, signal.SIGKILL)
+        os.kill(p.pid, signal.SIGKILL)       # run alone: its sleep is left, reaped below
         p.wait()
         t0 = time.monotonic()
         while status() != "FREE" and time.monotonic() - t0 < 30:
             time.sleep(0.25)
         freed = time.monotonic() - t0
+        os.killpg(p.pid, signal.SIGKILL)      # the orphaned sleep (run led its group)
         print(f"SIGKILL -> FREE in {freed:.1f} s (bar 5 s)")
         print("criterion 6:", "met" if rc == 0 and out["released"] and freed <= 5 else "FAILED")
         return

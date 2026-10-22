@@ -322,10 +322,24 @@ bring-up that precedes it is the platform domain's procedure
   So a bench that outlives its session (Ctrl-C on the laptop leaves a
   remote `bash` running, since there is no tty and so no SIGHUP) still
   keeps the board.
-* **Sessions.** The holder's ssh and `run`'s command each run in their
-  own session. A Ctrl-C or `timeout` sent to the group reaches the
-  command once, through `run`, and the hold outlasts the command's
-  teardown.
+* **Signals.** `run` leads a process group, and its command and
+  everything that command starts stay in that group.
+  * A Ctrl-C or a closed terminal reaches the whole group from the tty,
+    so `run` does not forward it (it would arrive twice).
+  * A SIGTERM to `run` alone (`kill`, `timeout`) is sent on to the group
+    once.
+  * The holder's ssh runs in a session of its own, so the hold outlasts
+    the command's teardown.
+
+  Known limits:
+  * Ctrl-Z stops the heartbeat with the group. Past 90 s the hold ends,
+    and `run` warns on `fg`.
+  * `run` started from a non-interactive script makes its own group. That
+    group is not the terminal's foreground, so a command that reads the
+    tty there stops (SIGTTIN).
+  * Under the caller's own token, a bench keeper's blocking takeover beats
+    polling acquirers, but not another blocking `flock(1)` waiter: the
+    kernel picks one of them.
 
 ## Verification
 

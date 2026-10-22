@@ -217,9 +217,11 @@ def test_unreachable_board_is_not_busy(env):
 
 def test_sigterm_ends_the_command_before_the_hold(env, tmp_path):
     pidfile = tmp_path / "child.pid"
-    a = start_run(env, cmd=("sh", "-c", f"echo $$ > {pidfile}; exec sleep 60"))
+    # Not `exec`: the sleep is a grandchild, which a signal to the shell
+    # alone would orphan (round 3).
+    a = start_run(env, cmd=("bash", "-c", f"sleep 61.37 & echo $! > {pidfile}; wait"))
     end = time.monotonic() + 5
-    while not pidfile.exists() and time.monotonic() < end:
+    while not (pidfile.exists() and pidfile.read_text().strip()) and time.monotonic() < end:
         time.sleep(0.05)
     child = int(pidfile.read_text())
     a.send_signal(signal.SIGTERM)
@@ -363,14 +365,14 @@ def test_a_bench_keeps_the_board_against_a_waiting_session(env):
 
 
 def test_a_process_the_bench_leaves_behind_does_not_hold_the_board(env):
-    b = subprocess.Popen(["bash", "-c", f'source "{CHECK}"; sleep 60 & echo ran'],
+    b = subprocess.Popen(["bash", "-c", f'source "{CHECK}"; sleep 62.41 & echo $!'],
                          env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    orphan = int(b.stdout.readline().strip())
     try:
-        assert b.stdout.readline().strip() == "ran"
         b.wait(timeout=20)
         wait_free(env, 3)
     finally:
-        subprocess.run(["pkill", "-f", "^sleep 60$"], capture_output=True)
+        os.kill(orphan, signal.SIGKILL)
 
 
 def test_ctrl_c_reaches_the_command_once_and_the_hold_outlasts_it(env, tmp_path):

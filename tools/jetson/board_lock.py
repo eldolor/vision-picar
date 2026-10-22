@@ -304,7 +304,7 @@ def is_keeper(pid) -> bool:
     except OSError:
         return False
     try:
-        cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True,
+        cmd = subprocess.run(["ps", "-ww", "-o", "command=", "-p", str(pid)], capture_output=True,
                              text=True, timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
         return False
@@ -318,6 +318,11 @@ def stop_keeper(pid: int) -> bool:
     os.kill(pid, signal.SIGTERM)
     end = time.monotonic() + 20
     while time.monotonic() < end:
+        try:
+            if os.waitpid(pid, os.WNOHANG)[0] == pid:
+                return True               # our own child (hold's give-up path): reaped
+        except ChildProcessError:
+            pass                          # not ours: kill(0) below
         try:
             os.kill(pid, 0)
         except OSError:
@@ -354,20 +359,37 @@ def cmd_run(a):
         print(f"board busy: {h.busy_line}", file=sys.stderr)
         return BUSY
     print(f"board lock held: {h.line}", file=sys.stderr, flush=True)
+    # `run` leads a process group, and the command and everything it starts
+    # stay in it. A Ctrl-C or a closed terminal reaches that whole group from
+    # the tty, so neither is forwarded (it would arrive twice); a SIGTERM to
+    # `run` alone (`kill`, `timeout`) is sent on to the group once. The
+    # holder is in a session of its own, so the hold outlasts the command's
+    # teardown. Ctrl-Z stops the group, heartbeat included: past the silence
+    # limit the hold ends (run warns on `fg`).
+    if os.getpgrp() != os.getpid():
+        os.setpgid(0, 0)
+    state = {"child": None, "forwarding": False}
+
+    def forward(signum, _frame):
+        child = state["child"]
+        if state["forwarding"] or child is None or child.poll() is not None:
+            return
+        state["forwarding"] = True        # our own killpg comes back to us
+        os.killpg(os.getpgrp(), signum)
+
+    old = {signal.SIGTERM: signal.signal(signal.SIGTERM, forward),
+           signal.SIGINT: signal.signal(signal.SIGINT, lambda *_: None),
+           signal.SIGHUP: signal.signal(signal.SIGHUP, lambda *_: None)}
     try:
-        # Its own session too: every signal reaches it once, from forward().
-        child = subprocess.Popen(a.cmd, env={**os.environ, "PICAR_BOARD_TOKEN": h.token},
-                                 start_new_session=True)
+        state["child"] = child = subprocess.Popen(
+            a.cmd, env={**os.environ, "PICAR_BOARD_TOKEN": h.token})
     except OSError as e:
+        for s_, f_ in old.items():
+            signal.signal(s_, f_)
         h.release()
         print(f"run: {e}; board lock released", file=sys.stderr)
         return 127
 
-    # Ctrl-C, SIGTERM, SIGHUP: to the command, which ends first; THEN the hold.
-    def forward(signum, _frame):
-        if child.poll() is None:
-            child.send_signal(signum)
-    old = {s: signal.signal(s, forward) for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     warned = False
     try:
         while True:
@@ -384,8 +406,8 @@ def cmd_run(a):
                       "session may now take the board", file=sys.stderr, flush=True)
                 warned = True
     finally:
-        for s, f in old.items():
-            signal.signal(s, f)
+        for s_, f_ in old.items():
+            signal.signal(s_, f_)
         h.release()
         print("board lock released", file=sys.stderr)
     return rc
@@ -437,8 +459,8 @@ def cmd_hold(a):
     path = state_path()
     if os.path.exists(path):
         os.remove(path)
-    args = [sys.executable, os.path.abspath(__file__), "_keep", "--why", a.why,
-            "--wait", str(a.wait), "--max", str(a.max), "--state", path]
+    args = [sys.executable, os.path.abspath(__file__), "_keep", "--state", path,
+            "--why", a.why, "--wait", str(a.wait), "--max", str(a.max)]
     log = open(path + ".log", "w")
     keeper = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                               start_new_session=True,
@@ -447,7 +469,7 @@ def cmd_hold(a):
     try:
         while time.monotonic() < end:
             cur = read_state()
-            if cur and cur.get("token"):
+            if cur and cur.get("token") and keeper.poll() is None:
                 print(f"board lock held: {cur['line']}", file=sys.stderr)
                 return 0
             if cur and ("busy" in cur or "unreachable" in cur):
@@ -459,7 +481,7 @@ def cmd_hold(a):
                 return UNREACHABLE
             if keeper.poll() is not None:
                 cur = read_state()          # it may have written busy just now
-                if cur and (cur.get("token") or "busy" in cur or "unreachable" in cur):
+                if cur and ("busy" in cur or "unreachable" in cur):
                     continue
                 print(f"hold: the keeper exited {keeper.returncode} (see {path}.log)",
                       file=sys.stderr)
@@ -482,7 +504,9 @@ def cmd_release(_):
         return 0
     if cur.get("lost"):
         print(f"note: {cur['lost']} before this release", file=sys.stderr)
-    stop_keeper(cur["pid"])
+    if not stop_keeper(cur["pid"]):
+        print(f"release: the keeper (pid {cur['pid']}) did not stop; state kept", file=sys.stderr)
+        return 1
     if os.path.exists(state_path()):
         os.remove(state_path())
     print("board lock released", file=sys.stderr)

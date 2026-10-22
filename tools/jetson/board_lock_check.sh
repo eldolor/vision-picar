@@ -78,24 +78,34 @@ def keep(takeover):
         threading.Thread(target=wait, daemon=True).start()
     else:
         got.set()
-    line = None
+    line = None if takeover else owner_line()   # the free path wrote it already
     while alive(bench):
         if got.wait(0.5) and line is None:
-            now = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
-            host = os.uname().nodename.split(".")[0]
-            line = (f"{os.path.basename(script)} pid {bench} ({host}): bench on the board"
-                    + (", kept after its session's hold ended" if takeover else "")
-                    + f", since {now}")
+            line = bench_line(True)
             write_owner(line)
     if line is not None and owner_line() == line:
         open(owner, "w").close()
     os._exit(0)
 
 
-if take_now():
+def bench_line(takeover):
+    now = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+    host = os.uname().nodename.split(".")[0]
+    return (f"{os.path.basename(script)} pid {bench} ({host}): bench on the board"
+            + (", kept after its session's hold ended" if takeover else "") + f", since {now}")
+
+
+def took_free():
+    # The owner line is written HERE, before the check returns, so no reader
+    # sees the lock held under a previous holder's line.
+    write_owner(bench_line(False))
     keep(False)
     print("board lock taken for this bench (it was free)", file=sys.stderr)
     sys.exit(0)
+
+
+if take_now():
+    took_free()
 m = re.search(r"until (\S+), token (\S+)$", owner_line())
 if token and m and m.group(2) == token:
     try:   # `until` is written by the holder on the board's own clock
@@ -108,9 +118,7 @@ if token and m and m.group(2) == token:
 end = time.monotonic() + 1.5          # a status probe holds it for microseconds
 while time.monotonic() < end:
     if take_now():
-        keep(False)
-        print("board lock taken for this bench (it was free)", file=sys.stderr)
-        sys.exit(0)
+        took_free()
     time.sleep(0.1)
 print(f"the board is held by another session: {owner_line() or 'no owner line'}", file=sys.stderr)
 print("wait for it (tools/jetson/board_lock.py status), then take the lock", file=sys.stderr)
