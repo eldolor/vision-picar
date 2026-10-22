@@ -1,0 +1,232 @@
+{
+ "red-backpack-gpt-6-astra-20261021-205545": {
+  "target_seen": "red duffel (control)",
+  "calls": [
+   {
+    "asked_seq": 3,
+    "trigger": "mission_start",
+    "perception": "absent",
+    "P": null,
+    "verdict": "corroborated",
+    "action": "FORWARD",
+    "cloud_visible": true,
+    "cloud_reached": false,
+    "reasoning": "The red backpack is centered but still distant, with clear floor ahead."
+   },
+   {
+    "asked_seq": 19,
+    "trigger": "candidate_sighting",
+    "perception": "detected",
+    "P": 0.9605,
+    "verdict": "corroborated",
+    "action": "FORWARD",
+    "cloud_visible": true,
+    "cloud_reached": false,
+    "reasoning": "The red backpack is centered but still too small in the frame to touch, and the floor immediately ahead is clear."
+   },
+   {
+    "asked_seq": 60,
+    "trigger": "staleness",
+    "perception": "detected",
+    "P": 0.9959,
+    "verdict": "corroborated",
+    "action": "RIGHT",
+    "cloud_visible": true,
+    "cloud_reached": false,
+    "reasoning": "Turn right toward the nearby red backpack because the equipment base blocks forward movement."
+   },
+   {
+    "asked_seq": 94,
+    "trigger": "staleness",
+    "perception": "detected",
+    "P": 0.9993,
+    "verdict": "corroborated",
+    "action": "STOP",
+    "cloud_visible": true,
+    "cloud_reached": true,
+    "reasoning": "The red backpack fills the center third at close range, and the bag and equipment base block forward movement."
+   },
+   {
+    "asked_seq": 131,
+    "trigger": "staleness",
+    "perception": "detected",
+    "P": 0.9793,
+    "verdict": "corroborated",
+    "action": "STOP",
+    "cloud_visible": true,
+    "cloud_reached": true,
+    "reasoning": "The red backpack fills the center third at close range, so stop to avoid colliding with it."
+   },
+   {
+    "asked_seq": 167,
+    "trigger": "staleness",
+    "perception": "detected",
+    "P": 0.8076,
+    "verdict": "corroborated",
+    "action": "STOP",
+    "cloud_visible": true,
+    "cloud_reached": true,
+    "reasoning": "The red backpack fills the frame directly ahead, so it has been reached and moving forward would cause a collision."
+   },
+   {
+    "asked_seq": 200,
+    "trigger": "cold_search",
+    "perception": "absent",
+    "P": null,
+    "verdict": "corroborated",
+    "action": "STOP",
+    "cloud_visible": true,
+    "cloud_reached": true,
+    "reasoning": "The red backpack fills the frame directly ahead, so it has been reached and moving forward would collide with it."
+   },
+   {
+    "asked_seq": 229,
+    "trigger": "cold_search",
+    "perception": "absent",
+    "P": null,
+    "verdict": "unclear",
+    "action": "STOP",
+    "cloud_visible": true,
+    "cloud_reached": true,
+    "reasoning": "The red backpack fills the frame directly ahead, so the robot has arrived and should stop to avoid collision."
+   }
+  ]
+ },
+ "red-backpack-gpt-6-astra-20261021-205737": {
+  "target_seen": "taupe bag",
+  "calls": [
+   {
+    "asked_seq": 260,
+    "trigger": "mission_start",
+    "perception": "absent",
+    "P": null,
+    "verdict": "unclear",
+    "action": "FORWARD",
+    "cloud_visible": true,
+    "cloud_reached": false,
+    "reasoning": "The red backpack appears in the center background, and the floor immediately ahead is clear."
+   },
+   {
+    "asked_seq": 292,
+    "trigger": "cold_search",
+    "perception": "absent",
+    "P": null,
+    "verdict": "no_claim",
+    "action": "FORWARD",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "The red backpack is not visible, and the clear carpet immediately ahead allows moving forward to continue searching."
+   },
+   {
+    "asked_seq": 325,
+    "trigger": "candidate_sighting",
+    "perception": "detected",
+    "P": 0.9975,
+    "verdict": "no_claim",
+    "action": "REVERSE",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "A dark backpack and metal frame block the path immediately ahead, so back up to continue searching."
+   },
+   {
+    "asked_seq": 358,
+    "trigger": "cold_search",
+    "perception": "absent",
+    "P": null,
+    "verdict": "no_claim",
+    "action": "REVERSE",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "A gray bag blocks the path at close range, so reverse to gain clearance and continue searching."
+   },
+   {
+    "asked_seq": 368,
+    "trigger": "candidate_sighting",
+    "perception": "detected",
+    "P": 0.9891,
+    "verdict": "no_claim",
+    "action": "REVERSE",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "A large gray bag blocks the path ahead, so back away to continue searching safely."
+   },
+   {
+    "asked_seq": 401,
+    "trigger": "staleness",
+    "perception": "detected",
+    "P": 0.9879,
+    "verdict": "no_claim",
+    "action": "LEFT",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "The red backpack is not visible, and turning left avoids the bag and equipment blocking the path ahead."
+   },
+   {
+    "asked_seq": 425,
+    "trigger": "candidate_sighting",
+    "perception": "detected",
+    "P": 0.8899,
+    "verdict": "no_claim",
+    "action": "REVERSE",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "A large gray bag blocks the path, so back away to make room to continue searching."
+   },
+   {
+    "asked_seq": 451,
+    "trigger": "cold_search",
+    "perception": "absent",
+    "P": null,
+    "verdict": "no_claim",
+    "action": "REVERSE",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "A large gray bag blocks the path directly ahead, so back up to make room to continue searching."
+   },
+   {
+    "asked_seq": 465,
+    "trigger": "candidate_sighting",
+    "perception": "detected",
+    "P": 0.9303,
+    "verdict": "no_claim",
+    "action": "LEFT",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "The red backpack is not visible, and turning left avoids the equipment frame and dark bag blocking the way ahead."
+   },
+   {
+    "asked_seq": 501,
+    "trigger": "staleness",
+    "perception": "absent",
+    "P": null,
+    "verdict": "no_claim",
+    "action": "LEFT",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "The equipment base blocks forward movement, so turn left toward the clearer space to continue searching."
+   },
+   {
+    "asked_seq": 532,
+    "trigger": "staleness",
+    "perception": "detected",
+    "P": 0.9587,
+    "verdict": "no_claim",
+    "action": "REVERSE",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "A large gray bag blocks the path directly ahead, so back away to continue searching for the red backpack."
+   },
+   {
+    "asked_seq": 548,
+    "trigger": "candidate_sighting",
+    "perception": "detected",
+    "P": 0.9883,
+    "verdict": "no_claim",
+    "action": "REVERSE",
+    "cloud_visible": false,
+    "cloud_reached": false,
+    "reasoning": "The red backpack is not visible, and a nearby bag and metal frame block forward movement, so back up for clearance."
+   }
+  ]
+ }
+}
