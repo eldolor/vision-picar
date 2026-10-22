@@ -754,8 +754,9 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   corridor's wedge, not the band). Known gap: the band's blind range
   (a creep or pivot can carry a sock inside 14 cm). C (hazard class,
   steering) and D (perception data) to go.
-* **The camera as a stream (3.90 A, E), merged 2026-10-21; twin and the
-  Jetson's stack (sim mode) on `ad4977d` 2026-10-21.** A: `robot/camera_stream.py` reads the car's camera
+* **The camera as a stream (3.90 A, E), merged 2026-10-21; twin on
+  `ad4977d` 2026-10-21; the Jetson's stack (sim mode) on `476e6ae`
+  2026-10-22.** A: `robot/camera_stream.py` reads the car's camera
   (`ROBOT_CAMERA`; `SIM_CAMERA=fake` for benches) on a thread, newest frame
   only, stale -> 503 on the monotonic clock; frames from a real camera or
   the phone carry `captured_at`, and with stamps `candidate_sighting` and
