@@ -504,3 +504,22 @@ if (1) and (2) leave a gap, since it costs a model call per frontier.
   safety rule. It must be its own explicit message, not the person's map
   goal, which explore deliberately neither adopts nor cancels (3.76 E).
   Not built; no criteria yet.
+- **Learning the tiered ladder** (raised 2026-10-22, after 3.91 B6; not
+  built). The ladder's numbers are config (the `tier_*` keys), but its flow
+  is code: who is asked, and what an answer does. B6 showed a local "no"
+  changes no steering. The user asked whether the rules could be learned.
+  [`LEARNING-APPROACHES-2026-10-22.md`](../evaluations/LEARNING-APPROACHES-2026-10-22.md)
+  surveys twelve ways and orders them:
+  * value of information over calibrated confidences;
+  * then the ladder as a behaviour tree whose numbers are tuned black-box,
+    against a simulator that emulates perception's reports calibrated on
+    real frames;
+  * then, on the Rover, conformal bounds on the local tier's unchecked
+    errors, and logged randomised choices so that bandits and routers can be
+    judged from logs;
+  * end-to-end RL last, after a realistic simulator (evaluated and parked by
+    the user 2026-10-22).
+
+  The same rule as explore's goal choice holds: a learner only chooses among
+  actions the rules allow. Safety, a person's Stop and the arrival guards are
+  its shield.
