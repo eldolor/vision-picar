@@ -1515,7 +1515,9 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 logger.warning(f"keepout: clearing not sent ({e})")
                 return {"cleared": len(live), "sent": False, "detail": str(e)}
         sent = bool(reply.get("accepted"))
-        logger.info(f"keepout: {len(live)} mark(s) cleared at a mission's end"
+        # WARNING, as a mark is: the live tours keep the robot server's log
+        # at WARNING, and this line is how a tour shows the marks went.
+        logger.warning(f"keepout: {len(live)} mark(s) cleared at a mission's end"
                     f"{'' if sent else ' (not sent: ' + str(reply.get('reason')) + ')'}")
         return {"cleared": len(live), "sent": sent}
 

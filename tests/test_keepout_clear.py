@@ -5,6 +5,8 @@ within a mission. The robot server owns the marks (`robot/wedge_watch.py`'s
 `SpotBook`), so it clears them (`DELETE /world/keepout`); the brain asks
 through its navigator once the mission's own goal is ended."""
 
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -33,6 +35,19 @@ def test_clearing_empties_the_bridge_and_the_book(wedged_server):
     posts = bridge.keepout_posts
     _wedge_once(client, bridge, posts)
     assert len(bridge.keepout) == 1
+
+
+def test_the_clear_is_logged_where_live_runs_keep_the_log(wedged_server, caplog):
+    """The live tours run the robot server at WARNING (`tests/demo_explore.py`),
+    and K5.3's tour is judged on this line after every mission with live
+    marks; at INFO it never reached the log (2026-10-22, 7 rooms, 0 lines)."""
+    client, bridge = wedged_server
+    assert client.post("/world/goal", json={"x_m": 3.0, "y_m": 1.0}).json()["accepted"]
+    _wedge_once(client, bridge, 0)
+    with caplog.at_level(logging.WARNING):
+        client.delete("/world/keepout")
+    assert any("1 mark(s) cleared at a mission's end" in r.getMessage()
+               and r.levelno >= logging.WARNING for r in caplog.records), caplog.text
 
 
 def test_clearing_with_nothing_marked_sends_nothing(wedged_server):

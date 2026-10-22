@@ -1,0 +1,8 @@
+b1 breakfast    found            605s contacts 0 marks 2 live@end 0 clear -  run-20261022-174453
+b1 den          found            320s contacts 0 marks 0 live@end 0 clear -  run-20261022-175711
+b1 dining room  found             17s contacts 0 marks 0 live@end 0 clear -  run-20261022-180444
+b1 family room  found            287s contacts 0 marks 2 live@end 2 clear -  run-20261022-180715
+b1 foyer        found              6s contacts 0 marks 0 live@end 0 clear -  run-20261022-181415
+b1 garage       found            622s contacts 0 marks 4 live@end 3 clear -  run-20261022-181635
+b1 garage hall  found            570s contacts 0 marks 4 live@end 3 clear -  run-20261022-182910
+found 7/7; contact samples 0; clear line after 0 of 3 missions with live marks at the end
