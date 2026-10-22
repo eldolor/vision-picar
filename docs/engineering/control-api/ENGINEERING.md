@@ -166,8 +166,9 @@ failure, including a reply with `accepted: false`. Marks from one server
 are sent one at a time (`spot_lock` is held across the post), so a slow
 bridge cannot receive an older set after a newer one. It moves nothing and
 changes no vetting. A mission's end clears the book (`DELETE /world/keepout`,
-3.76 K5.3): the book is emptied whatever the bridge answers, since the next
-mark's whole-set post mends a lost clear; `mark_wedge` re-reads
+3.76 K5.3): the book is emptied whatever the bridge answers, a lost clear is mended by
+the next mark's whole-set post, or else lasts until the bridge's 300 s
+expiry, as before; `mark_wedge` re-reads
 `goal_in_progress()` under `spot_lock`, so a mark whose pose was read as the
 mission's goal ended is dropped rather than outliving the clear. nav2's global costmap lists the `KeepoutFilter` since
 3.83 (`nav2.yaml`); backing out of a wedge is the brain's (explore's

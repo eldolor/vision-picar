@@ -1501,8 +1501,8 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         with it -- the brain asks once its own goal is ended, so the next
         mission starts on a clean map. The book is emptied whatever the
         bridge answers: the bridge replaces its whole set on every post, so
-        a send lost here is mended by the next mark (and the 300 s expiry
-        bounds it). A world with no keepout has nothing to clear."""
+        a send lost here is mended by the next mark, if there is one; if not,
+        the bridge keeps the old set until its 300 s expiry, as before K5.3. A world with no keepout has nothing to clear."""
         with spot_lock:
             live = spot_book.live(time.monotonic())
             session = spot_book.session

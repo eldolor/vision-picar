@@ -353,15 +353,6 @@ class _GatedNavigator:
         once no goal is on its way. Run off the brain's event loop (a Stop
         runs `_finish` there) -- both are calls through to the ROS bridge."""
         self.cancel_own()
-        # 3.76 K5.3 (the user, 2026-10-21): the keepout marks the mission's
-        # wedges left on nav2's map go with it -- after its goal, so no mark
-        # made under that goal is left behind it.
-        clear = getattr(self._nav, "clear_keepout", None)
-        if clear is not None:
-            try:
-                clear()
-            except Exception as e:  # noqa: BLE001 -- nothing on the way out may raise (3.55)
-                logger.warning("could not clear the mission's keepout marks: %s", e)
         with self._lock:
             self._ending = True
         self._close_if_done()
@@ -371,6 +362,16 @@ class _GatedNavigator:
             if not self._ending or self._in_flight or self._closed:
                 return
             self._closed = True
+        # 3.76 K5.3 (the user, 2026-10-21): the keepout marks the mission's
+        # wedges left on nav2's map go with it. Here, by whichever finishes
+        # last -- `end()` or a goal still on its way -- so it follows every
+        # goal the mission sent, and no mark made under one is left behind.
+        clear = getattr(self._nav, "clear_keepout", None)
+        if clear is not None:
+            try:
+                clear()
+            except Exception as e:  # noqa: BLE001 -- nothing on the way out may raise (3.55)
+                logger.warning("could not clear the mission's keepout marks: %s", e)
         closer = getattr(self._nav, "close", None)
         if closer is not None:
             try:

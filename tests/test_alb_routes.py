@@ -88,6 +88,11 @@ INTENTIONALLY_UNROUTED = {
     ("twin.yaml", "/teleop/frame"),
     # 3.90 E: the same body's kept frames, read by the brain's recorder.
     ("twin.yaml", "/teleop/frames"),
+    # 3.76 K5.3: the brain clears its mission's keepout marks here. The
+    # brain calls the robot server directly (or through service/tunnel/),
+    # never through these stacks, which were deleted 2026-09-05.
+    ("twin.yaml", "/world/keepout"),
+    ("teleop-robot.yaml", "/teleop-robot/world/keepout"),
     # admin_server mounts control/recording_routes.py so the recordings
     # Lambda has the write path (the walks left EFS, and the brain is going
     # back to the Pi where it should not hold AWS credentials). In THIS
@@ -151,7 +156,7 @@ def test_the_teleop_robot_deployment_serves_the_same_app_completely():
 
     patterns = alb_path_patterns(CFN / "teleop-robot.yaml")
     routes = {"/teleop-robot" + r for r in app_routes(create_app())}
-    missing = sorted(r for r in routes if not covered(r, patterns))
+    missing = unrouted("teleop-robot.yaml", routes, patterns)
     assert not missing, (
         f"teleop-robot routes with no ALB path pattern: {missing}")
 

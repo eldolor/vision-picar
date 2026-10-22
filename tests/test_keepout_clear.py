@@ -116,3 +116,31 @@ def test_a_navigator_that_cannot_clear_is_left_alone():
         def get_goal(self): return {"goal": None}
         def cancel_goal(self): return {}
     _GatedNavigator(Plain(), lambda: False).end()
+
+
+def test_a_goal_on_its_way_at_the_end_is_cleared_after_it():
+    """Thermos round 1: a goal accepted after end() had cleared could leave
+    marks for 300 s. The clear runs when the last of end() and a goal in
+    flight finishes, so it follows that goal's own cancel."""
+    import threading
+    running = [True]
+    entered, release = threading.Event(), threading.Event()
+
+    class Slow(_Nav):
+        def set_goal(self, x, y):
+            entered.set()
+            release.wait(5)
+            return super().set_goal(x, y)
+
+    nav = Slow()
+    gated = _GatedNavigator(nav, lambda: running[0])
+    t = threading.Thread(target=gated.set_goal, args=(1.0, 2.0))
+    t.start()
+    assert entered.wait(5)
+    running[0] = False
+    gated.end()                               # the goal is still on its way
+    assert "clear_keepout" not in nav.calls
+    release.set()
+    t.join(5)
+    assert nav.calls[-2:] == ["clear_keepout", "close"], nav.calls
+    assert nav.calls.index("cancel_goal") < nav.calls.index("clear_keepout"), nav.calls

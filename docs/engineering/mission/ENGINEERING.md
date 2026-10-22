@@ -478,11 +478,11 @@ cancelled_by)` (`stopped` -> `cancelled`/`stop`, `preempted` ->
   ended. `_finish` starts `end()` on a thread (`mission-goal-end`) before
   its stop: it cancels the mission's OWN goal if nav2 still holds one
   within `OWN_GOAL_TOLERANCE_M` (0.05 m) of it -- the robot server spares a
-  goal on the brain's stop -- then, when the navigator has
-  `clear_keepout` (`RemoteNavigator`: `DELETE /world/keepout`), clears the
-  keepout marks the mission's wedges left (3.76 K5.3, the user 2026-10-21;
-  a failure is logged, never raised), then closes the client once no goal
-  is on its way. `discard()` does the same for a runner built and never started, and also closes its policy (perception models, the local VLM client); a start refused after the tiered policy was built, or whose vision drill replaced it, closes that policy too (3.80 rebase review, 2026-10-17).
+  goal on the brain's stop -- then closes the client once no goal is on its
+  way. Whichever finishes last (`end()` or a goal still on its way) first
+  clears, when the navigator has `clear_keepout` (`RemoteNavigator`:
+  `DELETE /world/keepout`), the keepout marks the mission's wedges left
+  (3.76 K5.3, the user 2026-10-21; a failure is logged, never raised). `discard()` does the same for a runner built and never started, and also closes its policy (perception models, the local VLM client); a start refused after the tiered policy was built, or whose vision drill replaced it, closes that policy too (3.80 rebase review, 2026-10-17).
 
 ## Parameters and configuration
 
