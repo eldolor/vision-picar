@@ -323,6 +323,27 @@ since last call >= `stale_after` -> `staleness`. `max_calls` caps the total,
 the arrival confirmation included (a sixth key in `stats.triggers`,
 `arrival_confirmation`; see "Arrival").
 
+Since 3.94.B the triggers are a behavior tree (`_build_when_tree`,
+printed by `describe_when_tree()`).
+* **First,** the frame vote is tallied.
+* **Then the first of these that fires:**
+  * the opening question;
+  * an `unavailable` frame (no trigger; it clears the runs);
+  * the opening question again;
+  * this frame's evidence (the band run, the status run, the confirmed
+    edge), followed by the events, in order:
+    * local tracking;
+    * `candidate_sighting`;
+    * the absent edge;
+    * for an `absent` frame, the absent count, then the band,
+      out-of-vocabulary, and cold search by frames, then by metres;
+    * `staleness`;
+    * none.
+
+`tests/tiered_reference.py` freezes the code it replaced, and
+`tests/test_tier_tree.py` checks the two give the same trigger and state
+on 10,000 random sequences of 1-8 frames.
+
 ## Interfaces
 
 **Scene** (every `vision_fn` returns this; `brain/vision.py` defined it):
@@ -662,7 +683,7 @@ alert colour.
 | `tests/test_arrival.py` (14) | Uses `tests/test_bearing_turns.py`'s `_build()`, so the scaled house. **Recorded 2026-10-01 (PLAN 3.32, guarded verbs):** of missions that arrived, 69/69 (perfect detection), 689/689 (90%) and 677/689 = 98.3% (80%) end `found` (bar 95%); 0 false arrivals in 69 / 690 / 690; farthest `found` 0.51-0.52 m from the target's centre (bar 0.60 m, so 0.08 m of margin). **Re-measured 2026-10-02 with the arrival confirmation (handoff 1a) and a cloud that reports `target_visible`:** identical -- 69/69, 689/689, 677/689, 0 false, farthest 0.507/0.515/0.515 m. Also: not judged without scan, with a panned camera, or without local perception; two frames needed; range read at the bearing; edges refused |
 | `tests/test_arrival_confirmation.py` (9) | Handoff 2026-10-02 1a, scaled house, cloud faked: the right object ends `found` after one `arrival_confirmation` call; a cloud that disagrees refuses the arrival (ends `blocked`, at most 2 confirmation calls); a false-positive run (absent, absent, detected...) cannot end `found` and the same run with an agreeing cloud does; the call is counted; at the call cap it refuses without calling. Spec review 3: under `async_cloud` the confirmation never overlaps a trigger call (peak concurrency 1 with a 0.2 s cloud); a `found` mission's `status.tier.stats` counts it; the paid step is logged `[cloud: arrival_confirmation]`; a refused mission's final `status.arrival` keeps `identity` and its end line does not say "obstructed" |
 | `tests/test_refused_turn_loop.py` (3) | Handoff 5a, starter house: a refused turn is never chosen again from the same spot (was 130 times); with the world the active-search demo finds the backpack in 61 steps (the reference trace); with no world the boxed-in fallback runs instead of a refused LEFT alternating with STOP |
-| `tests/test_tier_tree.py` | 3.94: the tree module's statuses; on 10,000 seeded random states the tree's "what to do this frame" gives exactly the frozen code's scene and state (`tests/tiered_reference.py`), every rung exercised; p90 under 1 ms a frame; `describe()` reads settings live; a ladder that chooses nothing raises |
+| `tests/test_tier_tree.py` | 3.94: the tree module's statuses; on 10,000 seeded random states the tree's "what to do this frame" gives exactly the frozen code's scene and state (`tests/tiered_reference.py`), every rung exercised; "when to ask" (3.94.B) the same trigger and state on 10,000 random frame sequences, every trigger fired; p90 under 1 ms a frame; `describe()` reads settings live; a ladder that chooses nothing raises |
 | `tests/test_tiered.py` (92) | triggers and hysteresis, call cap, staleness floor, async dispatch and epoch drop, an async failure reaching B3.2, landed verdicts shown once, local bearing beats a stale cloud goal, spin guard never overrides a sighting, timing on the worker |
 | `tests/test_review_376k3.py` (5) | 3.76 K3: a failing cloud (not fatal, explore) hands a frame's question back to the local tier; no frame question goes out beside an arrival identity call still running, and it is asked once that ends (a candidate's edge too); close-in's refusals before an accepted goal do not count after it, and an estimate that flips still trips the bound |
 | `tests/test_vision_policy.py` (39) | visible is not found; absent `obstacle_ahead` is `unknown`; room guess backfill and `searched_rooms`; the policy does not peek; replay missions |

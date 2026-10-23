@@ -86,7 +86,7 @@ from typing import Callable, Optional
 
 from brain.arrival import run_spans
 from brain.goal_pose import GoalPose, OdomTracker, Pose, _wrap
-from brain.tree import SUCCESS, Action, Decorator, Fallback, Node, Sequence
+from brain.tree import SUCCESS, Action, Condition, Decorator, Fallback, Node, Sequence
 from brain.perceive import (ABSENT, DEFAULT_MATCH_PROBABILITY, DETECTED, UNAVAILABLE,
                             Perception)
 
@@ -790,6 +790,15 @@ RUNGS_THIS_FRAME = (RUNG_STEER, RUNG_LOCATED, RUNG_CANDIDATE)
 
 
 @dataclass
+class _TriggerDecision:
+    """3.94.B: the blackboard of the "when to ask" tree."""
+    perception: Perception
+    trigger: Optional[str] = None
+    band: bool = False
+    confirmed: Optional[str] = None
+
+
+@dataclass
 class _FrameDecision:
     """3.94: the blackboard of the "what to do this frame" tree."""
     perception: Perception
@@ -1079,6 +1088,7 @@ class TieredVision:
         self._last_confirmed = ABSENT
         self._since_call = 0
         self._what_tree = self._build_what_tree()
+        self._when_tree = self._build_when_tree()
 
     # -- the vision_fn contract ------------------------------------------
 
@@ -2095,120 +2105,219 @@ class TieredVision:
         return run_spans(self._run_since, self._frame_stamp, self.sighting_span_s)
 
     def _trigger_for(self, perception: Perception) -> Optional[str]:
-        if perception.status != UNAVAILABLE:
-            self._note_vote(perception.status)
+        # 3.94.B: when to ask is a tree (`_build_when_tree`); the code it
+        # replaced is in `tests/tiered_reference.py`.
+        bb = _TriggerDecision(perception=perception)
+        self._when_tree.tick(bb)
+        return bb.trigger
+
+    # -- 3.94.B: when to ask, as a tree -----------------------------------
+
+    def _build_when_tree(self) -> Node:
+        """The trigger policy, drawn as a tree:
+
+        * the frame vote tallied, on every frame before anything returns;
+        * then the first of: the opening question (the first frame); a frame
+          with no picture asking nothing; the opening question again (it went
+          unanswered); and this frame's evidence followed by the events --
+          local tracking, the candidate edge, then for an absent frame the
+          uncertain band, out of vocabulary and cold search (frames or
+          metres), then staleness, the floor that never pre-empts an event
+          that says more.
+        """
+        absent = Sequence("an absent frame", [
+            Condition("the target is absent", lambda bb: bb.perception.status == ABSENT),
+            Action("count the absent frame", self._tr_count_absent),
+            Fallback("absent events", [
+                Action("the uncertain band", self._tr_band,
+                       lambda: {"band_low": self.local_band_low, "gate": self.match_probability,
+                                "frames": self.consecutive_frames}),
+                Action("out of vocabulary", self._tr_oov),
+                Action("cold search, frames", self._tr_cold_frames,
+                       lambda: {"after": self._cold_search_bar()}),
+                Action("cold search, metres", self._tr_cold_metres,
+                       lambda: {"after_cm": self.cold_search_after_cm}),
+            ]),
+        ])
+        events = Fallback("events", [
+            Action("local tracking", self._tr_track),
+            Action("candidate sighting", self._tr_candidate,
+                   lambda: {"frames": self.consecutive_frames, "vote": self.frame_vote}),
+            Sequence("after the edges", [
+                Action("the absent edge", self._tr_absent_edge),
+                Fallback("absent, then the floor", [
+                    absent,
+                    Action("staleness", self._tr_stale, lambda: {"after": self.stale_after}),
+                    Action("no trigger", self._tr_none),
+                ]),
+            ]),
+        ])
+        return Sequence("when to ask", [
+            Action("tally the vote", self._tr_vote),
+            Fallback("the first trigger that fires", [
+                Action("the opening question", self._tr_start),
+                Action("no picture, no question", self._tr_unavailable),
+                Action("the opening question again", self._tr_retry_start),
+                Sequence("this frame's evidence, then the events", [
+                    Action("track the band", self._tr_track_band),
+                    Action("note the run", self._tr_note_run),
+                    Action("confirm the run", self._tr_confirm),
+                    events,
+                ]),
+            ]),
+        ])
+
+    def describe_when_tree(self) -> str:
+        return "\n".join(self._when_tree.describe())
+
+    def _fire(self, bb: "_TriggerDecision", trigger: Optional[str]) -> bool:
+        bb.trigger = trigger
+        return True
+
+    def _tr_vote(self, bb: "_TriggerDecision") -> bool:
+        if bb.perception.status != UNAVAILABLE:
+            self._note_vote(bb.perception.status)
             # Tallied on every frame, before any early return (review: the
             # tracking and start returns left the HUD's count stale).
             self._vote_ok = self._voted() if self.frame_vote else False
-        if not self._started:
-            self._started = True
-            # **The opening call is also the first frame's confirmation.**
-            # It goes out while looking at whatever is in front of the
-            # robot, so if that is already the target, firing
-            # `candidate_sighting` a frame later would buy a second answer
-            # to a question just asked about the same view. Seeding the
-            # edge detector from the start frame is what prevents that,
-            # and it is the difference between 2 calls and 1 on a mission
-            # that begins pointed at the backpack.
-            if perception.status in (DETECTED, ABSENT):
-                self._note_run(perception.status)
-                self._last_confirmed = perception.status
-            return TRIGGER_START
+        return True
 
-        # `unavailable` is never an event. It is the absence of
-        # information, so it must not fire a trigger and must not advance
-        # the cold-search streak -- a wedged camera would otherwise buy a
-        # cloud call every few frames and look like a search.
-        if perception.status == UNAVAILABLE:
-            self._run.clear()
-            self._run_since = None
-            self._votes.clear()
-            self._vote_ok = False
-            if self.stats.vote:
-                self.stats.vote["detected"] = 0
-            self._band_run = 0          # 3.80.D: any other frame breaks a band run
-            self._band_asked = False
-            self._candidate_rejected = False
-            return None
+    def _tr_start(self, bb: "_TriggerDecision") -> bool:
+        if self._started:
+            return False
+        self._started = True
+        # **The opening call is also the first frame's confirmation.** Seeding
+        # the edge detector from the start frame is what stops a
+        # `candidate_sighting` a frame later buying a second answer to the
+        # question just asked about the same view.
+        if bb.perception.status in (DETECTED, ABSENT):
+            self._note_run(bb.perception.status)
+            self._last_confirmed = bb.perception.status
+        return self._fire(bb, TRIGGER_START)
 
-        if self._retry_start:
-            # 3.80.D: the opening question went unanswered (unable).
-            self._retry_start = False
-            return TRIGGER_START
+    def _tr_unavailable(self, bb: "_TriggerDecision") -> bool:
+        # `unavailable` is never an event: no trigger, and no cold-search
+        # streak -- a wedged camera would otherwise buy a cloud call every
+        # few frames and look like a search.
+        if bb.perception.status != UNAVAILABLE:
+            return False
+        self._run.clear()
+        self._run_since = None
+        self._votes.clear()
+        self._vote_ok = False
+        if self.stats.vote:
+            self.stats.vote["detected"] = 0
+        self._band_run = 0          # 3.80.D: any other frame breaks a band run
+        self._band_asked = False
+        self._candidate_rejected = False
+        return self._fire(bb, None)
+
+    def _tr_retry_start(self, bb: "_TriggerDecision") -> bool:
+        if not self._retry_start:   # 3.80.D: the opening question went unanswered
+            return False
+        self._retry_start = False
+        return self._fire(bb, TRIGGER_START)
+
+    def _tr_track_band(self, bb: "_TriggerDecision") -> bool:
         # 3.80.D: the uncertain band, tracked only with a local tier.
-        band = (self.local_sighting_fn is not None and perception.status == ABSENT
-                and bool(perception.candidates)
-                and self.local_band_low
-                <= max(c.probability for c in perception.candidates)
-                < self.match_probability)
-        if band:
+        p = bb.perception
+        bb.band = (self.local_sighting_fn is not None and p.status == ABSENT
+                   and bool(p.candidates)
+                   and self.local_band_low
+                   <= max(c.probability for c in p.candidates)
+                   < self.match_probability)
+        if bb.band:
             self._band_run += 1
         else:
             self._band_run = 0
             self._band_asked = False
             self._candidate_rejected = False
+        return True
 
-        self._note_run(perception.status)
+    def _tr_note_run(self, bb: "_TriggerDecision") -> bool:
+        self._note_run(bb.perception.status)
+        return True
 
-        confirmed = (
-            perception.status
+    def _tr_confirm(self, bb: "_TriggerDecision") -> bool:
+        bb.confirmed = (
+            bb.perception.status
             if (len(self._run) >= self.consecutive_frames
                 and len(set(self._run)) == 1
                 and self._run_spans())
             else None
         )
+        return True
 
-        if (self._local_track and self._local_first() is not None
-                and perception.status != DETECTED):
-            # Only while the local tier takes the question (review): after
-            # `local_max_unable` unable answers the usual triggers run, and
-            # the cloud may take one of them.
-            if confirmed == ABSENT:
-                # The absent edge still moves (review), or a later detection
-                # would never fire `candidate_sighting`.
-                self._last_confirmed = ABSENT
-            # The absent streak does not grow on tracking frames (review): a
-            # cold search must not fire, paid, the moment tracking ends.
-            return TRIGGER_TRACK
+    def _tr_track(self, bb: "_TriggerDecision") -> bool:
+        # Only while the local tier takes the question (review): after
+        # `local_max_unable` unable answers the usual triggers run.
+        if not (self._local_track and self._local_first() is not None
+                and bb.perception.status != DETECTED):
+            return False
+        if bb.confirmed == ABSENT:
+            # The absent edge still moves (review), or a later detection would
+            # never fire `candidate_sighting`.
+            self._last_confirmed = ABSENT
+        # The absent streak does not grow on tracking frames (review): a cold
+        # search must not fire, paid, the moment tracking ends.
+        return self._fire(bb, TRIGGER_TRACK)
+
+    def _tr_candidate(self, bb: "_TriggerDecision") -> bool:
         # The vote never fires on a frame that does not itself show the target
         # (review): the question and any steering need this frame's box.
         if self.frame_vote:
-            sighted = perception.status == DETECTED and self._vote_ok
+            sighted = bb.perception.status == DETECTED and self._vote_ok
         else:
-            sighted = confirmed == DETECTED
-        if sighted and self._last_confirmed != DETECTED:
-            self._last_confirmed = DETECTED
-            if self.frame_vote:
-                self.stats.vote["fired"] += 1
-            return TRIGGER_CANDIDATE
-        if confirmed == ABSENT:
+            sighted = bb.confirmed == DETECTED
+        if not (sighted and self._last_confirmed != DETECTED):
+            return False
+        self._last_confirmed = DETECTED
+        if self.frame_vote:
+            self.stats.vote["fired"] += 1
+        return self._fire(bb, TRIGGER_CANDIDATE)
+
+    def _tr_absent_edge(self, bb: "_TriggerDecision") -> bool:
+        if bb.confirmed == ABSENT:
             self._last_confirmed = ABSENT
+        return True
 
-        if perception.status == ABSENT:
-            self._absent_streak += 1
-            if band and self._band_run >= self.consecutive_frames and not self._band_asked:
-                self._band_asked = True
-                return TRIGGER_BAND
-            if (self._local_first() is not None and self.vocabulary is not None
-                    and not self.vocabulary.in_vocabulary
-                    and self._absent_streak >= self.consecutive_frames):
-                # Only while the local tier takes it: a question due for the
-                # cloud waits for cold_search's bar (review, 2026-10-14).
-                return TRIGGER_OOV
-            # An OR, not a replacement. Distance is the better measure of
-            # "how much new view is there to look at" while the robot is
-            # driving; the frame floor is what still fires when it is
-            # scanning in place, which covers new view at zero path.
-            if self._absent_streak >= self._cold_search_bar():
-                return TRIGGER_COLD_SEARCH
-            if self._distance_bar_reached():
-                return TRIGGER_COLD_SEARCH
+    def _tr_count_absent(self, bb: "_TriggerDecision") -> bool:
+        self._absent_streak += 1
+        return True
 
-        # The floor. Last, so it never pre-empts an event that says
-        # something more specific about why we are calling.
-        if self.stale_after and self._since_call >= self.stale_after:
-            return TRIGGER_STALE
-        return None
+    def _tr_band(self, bb: "_TriggerDecision") -> bool:
+        if not (bb.band and self._band_run >= self.consecutive_frames and not self._band_asked):
+            return False
+        self._band_asked = True
+        return self._fire(bb, TRIGGER_BAND)
+
+    def _tr_oov(self, bb: "_TriggerDecision") -> bool:
+        # Only while the local tier takes it: a question due for the cloud
+        # waits for cold_search's bar (review, 2026-10-14).
+        if (self._local_first() is not None and self.vocabulary is not None
+                and not self.vocabulary.in_vocabulary
+                and self._absent_streak >= self.consecutive_frames):
+            return self._fire(bb, TRIGGER_OOV)
+        return False
+
+    def _tr_cold_frames(self, bb: "_TriggerDecision") -> bool:
+        # An OR with the distance bar, not a replacement: distance measures
+        # new view while driving; the frame floor still fires when scanning
+        # in place, which covers new view at zero path.
+        return self._absent_streak >= self._cold_search_bar() and self._fire(
+            bb, TRIGGER_COLD_SEARCH)
+
+    def _tr_cold_metres(self, bb: "_TriggerDecision") -> bool:
+        return self._distance_bar_reached() and self._fire(bb, TRIGGER_COLD_SEARCH)
+
+    def _tr_stale(self, bb: "_TriggerDecision") -> bool:
+        # The floor. Last, so it never pre-empts an event that says something
+        # more specific about why we are calling.
+        return bool(self.stale_after and self._since_call >= self.stale_after) and self._fire(
+            bb, TRIGGER_STALE)
+
+    def _tr_none(self, bb: "_TriggerDecision") -> bool:
+        return self._fire(bb, None)
 
     def _read_odometry(self, frame: dict) -> None:
         """Pull this frame's odometry reading, if the backend has any.

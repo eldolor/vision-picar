@@ -8,14 +8,17 @@ this file stays the record of what the code did on 2026-10-22 (`dev` at the
 branch point of 3.94).
 
 `ReferenceTieredVision` is `TieredVision` with the old bodies of the methods
-the tree replaced, copied verbatim.
+the tree replaced, copied verbatim: `_local_scene` (3.94.A) and
+`_trigger_for` (3.94.B).
 """
 
 from typing import Optional  # noqa: F401
 
 from brain.tiered import (  # noqa: F401 -- the names the frozen bodies use
-    SCAN_ACTION, SCAN_TURN_DEG, TURN_ACTIONS, TieredVision, _direction_for)
-from brain.perceive import DETECTED, Perception  # noqa: F401
+    SCAN_ACTION, SCAN_TURN_DEG, TRIGGER_BAND, TRIGGER_CANDIDATE, TRIGGER_COLD_SEARCH,
+    TRIGGER_OOV, TRIGGER_STALE, TRIGGER_START, TRIGGER_TRACK, TURN_ACTIONS, TieredVision,
+    _direction_for)
+from brain.perceive import ABSENT, DETECTED, UNAVAILABLE, Perception  # noqa: F401
 
 
 class ReferenceTieredVision(TieredVision):
@@ -195,3 +198,119 @@ class ReferenceTieredVision(TieredVision):
                       "pacing": self._pacing_readout(),
                       "stats": self.stats.as_dict()},
         }
+
+    def _trigger_for(self, perception: Perception) -> Optional[str]:
+        if perception.status != UNAVAILABLE:
+            self._note_vote(perception.status)
+            # Tallied on every frame, before any early return (review: the
+            # tracking and start returns left the HUD's count stale).
+            self._vote_ok = self._voted() if self.frame_vote else False
+        if not self._started:
+            self._started = True
+            # **The opening call is also the first frame's confirmation.**
+            # It goes out while looking at whatever is in front of the
+            # robot, so if that is already the target, firing
+            # `candidate_sighting` a frame later would buy a second answer
+            # to a question just asked about the same view. Seeding the
+            # edge detector from the start frame is what prevents that,
+            # and it is the difference between 2 calls and 1 on a mission
+            # that begins pointed at the backpack.
+            if perception.status in (DETECTED, ABSENT):
+                self._note_run(perception.status)
+                self._last_confirmed = perception.status
+            return TRIGGER_START
+
+        # `unavailable` is never an event. It is the absence of
+        # information, so it must not fire a trigger and must not advance
+        # the cold-search streak -- a wedged camera would otherwise buy a
+        # cloud call every few frames and look like a search.
+        if perception.status == UNAVAILABLE:
+            self._run.clear()
+            self._run_since = None
+            self._votes.clear()
+            self._vote_ok = False
+            if self.stats.vote:
+                self.stats.vote["detected"] = 0
+            self._band_run = 0          # 3.80.D: any other frame breaks a band run
+            self._band_asked = False
+            self._candidate_rejected = False
+            return None
+
+        if self._retry_start:
+            # 3.80.D: the opening question went unanswered (unable).
+            self._retry_start = False
+            return TRIGGER_START
+        # 3.80.D: the uncertain band, tracked only with a local tier.
+        band = (self.local_sighting_fn is not None and perception.status == ABSENT
+                and bool(perception.candidates)
+                and self.local_band_low
+                <= max(c.probability for c in perception.candidates)
+                < self.match_probability)
+        if band:
+            self._band_run += 1
+        else:
+            self._band_run = 0
+            self._band_asked = False
+            self._candidate_rejected = False
+
+        self._note_run(perception.status)
+
+        confirmed = (
+            perception.status
+            if (len(self._run) >= self.consecutive_frames
+                and len(set(self._run)) == 1
+                and self._run_spans())
+            else None
+        )
+
+        if (self._local_track and self._local_first() is not None
+                and perception.status != DETECTED):
+            # Only while the local tier takes the question (review): after
+            # `local_max_unable` unable answers the usual triggers run, and
+            # the cloud may take one of them.
+            if confirmed == ABSENT:
+                # The absent edge still moves (review), or a later detection
+                # would never fire `candidate_sighting`.
+                self._last_confirmed = ABSENT
+            # The absent streak does not grow on tracking frames (review): a
+            # cold search must not fire, paid, the moment tracking ends.
+            return TRIGGER_TRACK
+        # The vote never fires on a frame that does not itself show the target
+        # (review): the question and any steering need this frame's box.
+        if self.frame_vote:
+            sighted = perception.status == DETECTED and self._vote_ok
+        else:
+            sighted = confirmed == DETECTED
+        if sighted and self._last_confirmed != DETECTED:
+            self._last_confirmed = DETECTED
+            if self.frame_vote:
+                self.stats.vote["fired"] += 1
+            return TRIGGER_CANDIDATE
+        if confirmed == ABSENT:
+            self._last_confirmed = ABSENT
+
+        if perception.status == ABSENT:
+            self._absent_streak += 1
+            if band and self._band_run >= self.consecutive_frames and not self._band_asked:
+                self._band_asked = True
+                return TRIGGER_BAND
+            if (self._local_first() is not None and self.vocabulary is not None
+                    and not self.vocabulary.in_vocabulary
+                    and self._absent_streak >= self.consecutive_frames):
+                # Only while the local tier takes it: a question due for the
+                # cloud waits for cold_search's bar (review, 2026-10-14).
+                return TRIGGER_OOV
+            # An OR, not a replacement. Distance is the better measure of
+            # "how much new view is there to look at" while the robot is
+            # driving; the frame floor is what still fires when it is
+            # scanning in place, which covers new view at zero path.
+            if self._absent_streak >= self._cold_search_bar():
+                return TRIGGER_COLD_SEARCH
+            if self._distance_bar_reached():
+                return TRIGGER_COLD_SEARCH
+
+        # The floor. Last, so it never pre-empts an event that says
+        # something more specific about why we are calling.
+        if self.stale_after and self._since_call >= self.stale_after:
+            return TRIGGER_STALE
+        return None

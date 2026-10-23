@@ -220,3 +220,87 @@ def test_a_ladder_that_chooses_nothing_is_an_error():
     tier._what_tree = tier._build_what_tree()
     with pytest.raises(RuntimeError, match="chose no direction"):
         tier._local_scene(Perception(status=ABSENT))
+
+
+# -- 3.94.B: when to ask -------------------------------------------------------
+
+TRIGGER_STATE = ("_started", "_retry_start", "_run", "_run_since", "_votes", "_vote_ok",
+                 "_band_run", "_band_asked", "_candidate_rejected", "_absent_streak",
+                 "_last_confirmed", "_since_call")
+
+
+def _trigger_pair(seed):
+    import types
+    rng = random.Random(seed)
+    cfg = dict(consecutive_frames=rng.choice([1, 2, 2, 3]),
+               sighting_span_s=rng.choice([None, 0.25]),
+               frame_vote=rng.choice([None, None, (2, 3), (3, 5)]),
+               cold_search_after=rng.choice([3, 6, 8]),
+               cold_search_after_cm=rng.choice([None, None, 50.0]),
+               stale_after=rng.choice([0, 4, 8]),
+               max_calls=rng.choice([None, None, 3]),
+               oov_cold_search_after=rng.choice([None, 2]),
+               local_cold_search_after=rng.choice([None, 1]),
+               local_max_unable=rng.choice([1, 2]),
+               local_sighting_fn=rng.choice([None, lambda frame, box=False: {}]),
+               local_band_low=rng.choice([0.5, 0.6]))
+    mp = rng.choice([None, 0.7, 0.8])
+    st = random.Random(seed * 7919 + 3)
+    state = dict(_started=st.random() < 0.8, _retry_start=st.random() < 0.15,
+                 _local_track=st.random() < 0.3, _frame_unable=st.choice([0, 0, 1, 2, 3]),
+                 cloud_calls=st.choice([0, 1, 3, 5]),
+                 vocabulary=st.choice([None, types.SimpleNamespace(in_vocabulary=True),
+                                       types.SimpleNamespace(in_vocabulary=False)]),
+                 _absent_streak=st.choice([0, 1, 2, 5, 7, 9]),
+                 _last_confirmed=st.choice([ABSENT, DETECTED]),
+                 _since_call=st.choice([0, 3, 4, 8, 12]),
+                 _distance_since_call=st.choice([None, 0.0, 30.0, 60.0]),
+                 _band_run=st.choice([0, 1, 2, 3]), _band_asked=st.random() < 0.3,
+                 _candidate_rejected=st.random() < 0.2)
+    tiers = []
+    for cls in (ReferenceTieredVision, TieredVision):
+        t = cls(_Pipe(mp), lambda f: {}, **cfg)
+        for k, v in state.items():
+            if k == "cloud_calls":
+                t.stats.cloud_calls = v
+            else:
+                setattr(t, k, v)
+        tiers.append(t)
+    return tiers, rng
+
+
+def _trigger_state(t):
+    return ({k: (list(v) if isinstance(v, list) else v)
+             for k, v in ((k, getattr(t, k)) for k in TRIGGER_STATE)},
+            dict(t.stats.vote or {}))
+
+
+def test_criterion_2a_when_to_ask_exactly_as_the_code_it_replaced():
+    differences, fired = [], {}
+    for seed in range(N_STATES):
+        (ref, new), rng = _trigger_pair(seed)
+        stamp = rng.choice([None, 100.0])
+        for i in range(rng.choice([1, 3, 8])):
+            if stamp is not None:
+                stamp += rng.choice([0.0, 0.1, 0.25, 0.6])
+            repeat = rng.random() < 0.1
+            p_seed = seed * 131 + i
+            got = []
+            for t in (ref, new):
+                t._frame_stamp, t._repeat_frame = stamp, repeat
+                got.append(t._trigger_for(_perception(random.Random(p_seed))))
+            if got[0] != got[1] or _trigger_state(ref) != _trigger_state(new):
+                differences.append((seed, i, got))
+            fired[got[1]] = fired.get(got[1], 0) + 1
+    assert not differences, f"{len(differences)} differences, first: {differences[:3]}"
+    from brain import tiered as t
+    assert set(fired) == {None, t.TRIGGER_START, t.TRIGGER_TRACK, t.TRIGGER_CANDIDATE,
+                          t.TRIGGER_BAND, t.TRIGGER_OOV, t.TRIGGER_COLD_SEARCH,
+                          t.TRIGGER_STALE}, fired
+
+
+def test_when_to_ask_prints_as_a_tree():
+    tier = TieredVision(_Pipe(), lambda f: {})
+    text = tier.describe_when_tree()
+    assert text.splitlines()[0] == "sequence when to ask"
+    assert "action staleness after=8" in text
