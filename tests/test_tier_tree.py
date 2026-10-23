@@ -475,3 +475,100 @@ def test_a_who_tree_that_ends_without_an_answer_is_an_error():
     tier._who_tree = Fallback("empty", [Action("never", lambda bb: False)])
     with pytest.raises(RuntimeError, match="no route answered"):
         tier({"seq": 0})
+
+
+# -- 3.94.D: the tree from config (criterion 3) -------------------------------
+
+def test_criterion_3_the_config_defaults_are_todays_values():
+    from control.brain_config import TIER_TREE_DEFAULTS, TIER_TREE_ABSENT_EVENTS, \
+        TIER_TREE_RUNGS, load_brain_config
+    from brain import tiered
+    assert tiered.TREE_DEFAULTS == TIER_TREE_DEFAULTS
+    assert list(TIER_TREE_RUNGS) == tiered.TREE_DEFAULTS["what_rungs"]
+    assert list(TIER_TREE_ABSENT_EVENTS) == tiered.TREE_DEFAULTS["absent_events"]
+    assert load_brain_config()["tier_tree"] == TIER_TREE_DEFAULTS     # robot.yaml as shipped
+
+
+@pytest.mark.parametrize("bad, words", [
+    ({"what_rungs": ["steer", "held"]}, "must end with 'scan'"),
+    ({"what_rungs": ["steer", "steer", "scan"]}, "names one twice"),
+    ({"what_rungs": ["steer", "fly", "scan"]}, "unknown ['fly']"),
+    ({"absent_events": ["band", "stale"]}, "unknown ['stale']"),
+    ({"who_order": ["cloud", "mission_ended"]}, "hard rules"),
+    ({"steer_band_deg": 0}, "steer_band_deg must be in (0, 45]"),
+    ({"scan_turn_deg": 120}, "scan_turn_deg must be in [5, 90]"),
+    ({"min_turn_deg": 30, "max_turn_deg": 10}, "must be <= max_turn_deg"),
+    ({"local_yes_at": 0.05}, "local_yes_at must be in (0.1, 1]"),
+    ({"steer_band_deg": True}, "must be a number"),
+    ("fast", "must be a mapping"),
+])
+def test_criterion_3_a_bad_tree_is_refused_at_load(tmp_path, bad, words):
+    import yaml
+    from control.brain_config import load_brain_config
+    path = tmp_path / "robot.yaml"
+    path.write_text(yaml.safe_dump({"brain": {"tier_tree": bad}}))
+    with pytest.raises(ValueError) as e:
+        load_brain_config(path)
+    assert words in str(e.value)
+
+
+def test_criterion_3_a_partial_tree_keeps_the_other_defaults(tmp_path):
+    import yaml
+    from control.brain_config import TIER_TREE_DEFAULTS, load_brain_config
+    path = tmp_path / "robot.yaml"
+    path.write_text(yaml.safe_dump({"brain": {"tier_tree": {"scan_turn_deg": 30}}}))
+    tree = load_brain_config(path)["tier_tree"]
+    assert tree == {**TIER_TREE_DEFAULTS, "scan_turn_deg": 30}
+
+
+def _absent_frame():
+    return Perception(status=ABSENT)
+
+
+def _detected_at(bearing):
+    best = Candidate(detection=Detection(Box(0, 0, 10, 10), "x", 0.9), scores=(1.0, 0.0),
+                     bearing_deg=bearing)
+    return Perception(status=DETECTED, candidates=[best], best=best)
+
+
+def test_criterion_3_the_rung_order_takes_effect():
+    held = {"safest_direction": "LEFT"}
+    t = TieredVision(_Pipe(), lambda f: {}, spin_guard_after=0)
+    t._last_cloud_scene = held
+    assert t._local_scene(_absent_frame())["safest_direction"] == "LEFT"   # held wins over scan
+    t = TieredVision(_Pipe(), lambda f: {}, spin_guard_after=0,
+                     tree={"what_rungs": ["steer", "located", "scan"]})
+    t._last_cloud_scene = held
+    assert t._local_scene(_absent_frame())["safest_direction"] == "RIGHT"  # held left out: scan
+    assert "hold the last goal" not in t.describe_tree()
+
+
+def test_criterion_3_the_numbers_take_effect():
+    t = TieredVision(_Pipe(), lambda f: {}, tree={"steer_band_deg": 10.0, "scan_turn_deg": 30,
+                                                   "min_turn_deg": 12, "max_turn_deg": 40})
+    assert t._local_scene(_detected_at(8.0))["safest_direction"] == "FORWARD"   # inside 10
+    s = t._local_scene(_detected_at(-70.0))
+    assert (s["safest_direction"], s["turn_deg"]) == ("LEFT", 40)                # capped at 40
+    assert t._local_scene(_detected_at(11.0))["turn_deg"] == 12                  # floor 12
+    assert t._local_scene(_absent_frame())["turn_deg"] == 30                     # the scan step
+    base = TieredVision(_Pipe(), lambda f: {})
+    assert base._local_scene(_detected_at(8.0))["safest_direction"] == "RIGHT"  # 3-degree band
+
+
+def test_criterion_3_the_absent_events_order_takes_effect():
+    from brain import tiered
+    def tier(order):
+        t = TieredVision(_Pipe(), lambda f: {}, cold_search_after=1, stale_after=1,
+                         tree={"absent_events": order})
+        t._started, t._since_call, t._absent_streak = True, 5, 5
+        return t
+    assert tier(["cold_frames"])._trigger_for(_absent_frame()) == tiered.TRIGGER_COLD_SEARCH
+    assert tier([])._trigger_for(_absent_frame()) == tiered.TRIGGER_STALE   # none: the floor
+
+
+def test_criterion_3_local_yes_at_moves_the_frame_question_not_the_arrival():
+    from brain.tiered import _local_kind
+    got = {"status": "answered", "score": 0.6}
+    t = TieredVision(_Pipe(), lambda f: {}, tree={"local_yes_at": 0.7})
+    assert _local_kind(got, t.local_no_below, t.local_yes_at) == "unable_band"
+    assert _local_kind(got, t.local_no_below) == "yes"          # the default, as the arrival's

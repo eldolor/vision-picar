@@ -669,11 +669,11 @@ class TierStats:
         }
 
 
-def _local_kind(got: dict, no_below: float) -> str:
+def _local_kind(got: dict, no_below: float, yes_at: float = LOCAL_YES_AT) -> str:
     """A sighting reply as `yes`, `no` or `unable_<why>` (3.80.D's rule)."""
     status, score = got.get("status"), got.get("score")
     numeric = isinstance(score, (int, float))
-    if status == "answered" and numeric and score >= LOCAL_YES_AT:
+    if status == "answered" and numeric and score >= yes_at:
         return "yes"
     if status == "answered" and numeric and score <= no_below:
         return "no"
@@ -787,6 +787,17 @@ class _LocalAnswer:
 RUNG_STEER, RUNG_LOCATED, RUNG_RECKONED = "steer", "located", "reckoned"
 RUNG_CANDIDATE, RUNG_HELD, RUNG_SCAN, RUNG_SPIN_GUARD = "candidate", "held", "scan", "spin_guard"
 RUNGS_THIS_FRAME = (RUNG_STEER, RUNG_LOCATED, RUNG_CANDIDATE)
+# 3.94.D: the tree's defaults -- the code's values before the tree. The same
+# table is `control/brain_config.py`'s TIER_TREE_DEFAULTS (checked by a test).
+TREE_DEFAULTS = {
+    "what_rungs": [RUNG_STEER, RUNG_LOCATED, RUNG_RECKONED, RUNG_CANDIDATE, RUNG_HELD, RUNG_SCAN],
+    "absent_events": ["band", "oov", "cold_frames", "cold_metres"],
+    "steer_band_deg": STEER_BAND_DEG,
+    "scan_turn_deg": SCAN_TURN_DEG,
+    "min_turn_deg": MIN_TURN_DEG,
+    "max_turn_deg": MAX_TURN_DEG,
+    "local_yes_at": LOCAL_YES_AT,
+}
 
 
 @dataclass
@@ -862,6 +873,7 @@ class TieredVision:
         local_direction_fn: Optional[Callable[[dict], dict]] = None,
         steer_on_candidate: bool = False,
         cloud_errors_fatal: bool = True,
+        tree: Optional[dict] = None,
     ):
         self.pipeline = pipeline
         # 3.80.F: the local tier's search question (brain/local_vlm.py's
@@ -1098,6 +1110,16 @@ class TieredVision:
         self._absent_streak = 0
         self._last_confirmed = ABSENT
         self._since_call = 0
+        # 3.94.D: the tree's order and numbers (`brain.tier_tree`, validated
+        # by `load_brain_config`; the defaults are the module's constants, so
+        # a policy built without one behaves as before).
+        t = {**TREE_DEFAULTS, **(tree or {})}
+        self.what_rungs = list(t["what_rungs"])
+        self.absent_events = list(t["absent_events"])
+        self.steer_band_deg = float(t["steer_band_deg"])
+        self.scan_turn_deg = int(t["scan_turn_deg"])
+        self.min_turn_deg, self.max_turn_deg = t["min_turn_deg"], t["max_turn_deg"]
+        self.local_yes_at = float(t["local_yes_at"])
         self._what_tree = self._build_what_tree()
         self._when_tree = self._build_when_tree()
         self._who_tree = self._build_who_tree()
@@ -1483,7 +1505,7 @@ class TieredVision:
         # still draining on the driver, and the direction would wait out its
         # own deadline behind it (review, 2026-10-16).
         if (self.local_direction_fn is None or q.trigger not in SEARCH_TRIGGERS
-                or _local_kind(got, self.local_no_below) == "yes"
+                or _local_kind(got, self.local_no_below, self.local_yes_at) == "yes"
                 or got.get("status") not in ("answered", "unparsed")
                 or q.detected or q.epoch != self._epoch or self._closed):
             return None
@@ -1546,7 +1568,7 @@ class TieredVision:
         unable_before = self._frame_unable
         status, score = got.get("status"), got.get("score")
         numeric = isinstance(score, (int, float))
-        kind = _local_kind(got, self.local_no_below)
+        kind = _local_kind(got, self.local_no_below, self.local_yes_at)
         with self._stats_lock:
             self.stats.local_frame_calls += 1
             self.stats.local_frame[kind] = self.stats.local_frame.get(kind, 0) + 1
@@ -1560,8 +1582,8 @@ class TieredVision:
                 bearing = self._bearing_of(ans)
                 if bearing is not None:
                     self._local_turn = (
-                        ("LEFT" if bearing < 0 else "RIGHT", turn_for(bearing))
-                        if abs(bearing) > STEER_BAND_DEG else ("FORWARD", None))
+                        ("LEFT" if bearing < 0 else "RIGHT", self._turn_for(bearing))
+                        if abs(bearing) > self.steer_band_deg else ("FORWARD", None))
                     self._local_held = "FORWARD"
                     self._local_held_why = "located"
                 elif self._local_held_why == "direction":
@@ -2194,19 +2216,24 @@ class TieredVision:
           metres), then staleness, the floor that never pre-empts an event
           that says more.
         """
+        events_by_name = {
+            "band": Action("the uncertain band", self._tr_band,
+                           lambda: {"band_low": self.local_band_low,
+                                    "gate": self.match_probability,
+                                    "frames": self.consecutive_frames}),
+            "oov": Action("out of vocabulary", self._tr_oov),
+            "cold_frames": Action("cold search, frames", self._tr_cold_frames,
+                                  lambda: {"after": self._cold_search_bar()}),
+            "cold_metres": Action("cold search, metres", self._tr_cold_metres,
+                                  lambda: {"after_cm": self.cold_search_after_cm}),
+        }
         absent = Sequence("an absent frame", [
             Condition("the target is absent", lambda bb: bb.perception.status == ABSENT),
             Action("count the absent frame", self._tr_count_absent),
-            Fallback("absent events", [
-                Action("the uncertain band", self._tr_band,
-                       lambda: {"band_low": self.local_band_low, "gate": self.match_probability,
-                                "frames": self.consecutive_frames}),
-                Action("out of vocabulary", self._tr_oov),
-                Action("cold search, frames", self._tr_cold_frames,
-                       lambda: {"after": self._cold_search_bar()}),
-                Action("cold search, metres", self._tr_cold_metres,
-                       lambda: {"after_cm": self.cold_search_after_cm}),
-            ]),
+            # 3.94.D: the order is `tier_tree.absent_events`; one left out
+            # never fires. With none, an absent frame goes on to staleness.
+            Fallback("absent events", [events_by_name[n] for n in self.absent_events]
+                     or [Condition("none configured", lambda bb: False)]),
         ])
         events = Fallback("events", [
             Action("local tracking", self._tr_track),
@@ -2611,18 +2638,26 @@ class TieredVision:
         * the spin guard over them;
         * the turn's size, and the turn counted for the guard.
         """
-        rungs = Fallback("rungs, best evidence first", [
-            Action("steer on this frame's bearing", self._rung_steer,
-                   lambda: {"steer_on_sight": self.steer_on_sight, "band_deg": STEER_BAND_DEG}),
-            Action("turn to the local VLM's located yes", self._rung_located),
-            Action("dead-reckon to a sighting", self._rung_reckoned,
-                   lambda: {"hold_bearing": self.hold_bearing, "max_m": self.hold_bearing_max_m}),
-            Action("steer on an uncertain candidate", self._rung_candidate,
-                   lambda: {"steer_on_candidate": self.steer_on_candidate,
-                            "band_low": self.local_band_low, "gate": self.match_probability}),
-            Action("hold the last goal", self._rung_held, lambda: {"hold_goal": self.hold_goal}),
-            Action("scan", self._rung_scan, {"action": SCAN_ACTION}),
-        ])
+        nodes = {
+            RUNG_STEER: Action("steer on this frame's bearing", self._rung_steer,
+                               lambda: {"steer_on_sight": self.steer_on_sight,
+                                        "band_deg": self.steer_band_deg}),
+            RUNG_LOCATED: Action("turn to the local VLM's located yes", self._rung_located),
+            RUNG_RECKONED: Action("dead-reckon to a sighting", self._rung_reckoned,
+                                  lambda: {"hold_bearing": self.hold_bearing,
+                                           "max_m": self.hold_bearing_max_m}),
+            RUNG_CANDIDATE: Action("steer on an uncertain candidate", self._rung_candidate,
+                                   lambda: {"steer_on_candidate": self.steer_on_candidate,
+                                            "band_low": self.local_band_low,
+                                            "gate": self.match_probability}),
+            RUNG_HELD: Action("hold the last goal", self._rung_held,
+                              lambda: {"hold_goal": self.hold_goal}),
+            RUNG_SCAN: Action("scan", self._rung_scan, {"action": SCAN_ACTION}),
+        }
+        if not self.what_rungs or self.what_rungs[-1] != RUNG_SCAN:
+            raise ValueError(f"what_rungs must end with {RUNG_SCAN!r}; got {self.what_rungs}")
+        # 3.94.D: the order is `tier_tree.what_rungs`; a rung left out never runs.
+        rungs = Fallback("rungs, best evidence first", [nodes[n] for n in self.what_rungs])
         # Settings given as a function are read when printed, so `describe`
         # shows the values the rungs act on now, not those at construction.
         return Sequence("what to do this frame", [
@@ -2630,7 +2665,8 @@ class TieredVision:
             Decorator("spin guard", rungs, self._spin_guard,
                       lambda: {"after_quarter_turns": self.spin_guard_after}),
             Action("size the turn", self._size_turn,
-                   {"min_deg": MIN_TURN_DEG, "max_deg": MAX_TURN_DEG, "scan_deg": SCAN_TURN_DEG}),
+                   lambda: {"min_deg": self.min_turn_deg, "max_deg": self.max_turn_deg,
+                            "scan_deg": self.scan_turn_deg}),
             Action("count the turn", self._count_turn),
         ])
 
@@ -2722,8 +2758,12 @@ class TieredVision:
         if bb.direction in TURN_ACTIONS:
             # Only a bearing rung hands one over (`_choose`); a held goal, a
             # scan or a spin-guard FORWARD leave it None.
-            bb.turn_deg = SCAN_TURN_DEG if bb.rung_turn_deg is None else bb.rung_turn_deg
+            bb.turn_deg = self.scan_turn_deg if bb.rung_turn_deg is None else bb.rung_turn_deg
         return True
+
+    def _turn_for(self, bearing_deg: float) -> int:
+        """`turn_for` with this policy's bounds (`tier_tree`)."""
+        return int(round(min(self.max_turn_deg, max(self.min_turn_deg, abs(bearing_deg)))))
 
     def _count_turn(self, bb: "_FrameDecision") -> bool:
         # Counted AFTER the size is known -- the guard is in degrees (R1c).
@@ -2750,8 +2790,8 @@ class TieredVision:
         bearing = perception.bearing_deg
         # Steer on the finer band (STEER_BAND_DEG); `where` stays the
         # reporting vocabulary for everything else.
-        if bearing is not None and abs(bearing) > STEER_BAND_DEG:
-            self._steer_turn_deg = turn_for(bearing)
+        if bearing is not None and abs(bearing) > self.steer_band_deg:
+            self._steer_turn_deg = self._turn_for(bearing)
             return "LEFT" if bearing < 0 else "RIGHT"
         if where in ("left", "right", "center"):
             # Centred: close the distance. The collar re-checks clearance
@@ -2784,8 +2824,8 @@ class TieredVision:
         if not (self.local_band_low <= p < self.match_probability):
             return None
         bearing = float(best.bearing_deg)
-        if abs(bearing) > STEER_BAND_DEG:
-            self._steer_turn_deg = turn_for(bearing)
+        if abs(bearing) > self.steer_band_deg:
+            self._steer_turn_deg = self._turn_for(bearing)
             return "LEFT" if bearing < 0 else "RIGHT"
         return "FORWARD"
 
@@ -2822,11 +2862,11 @@ class TieredVision:
         if bearing is None:
             return None
         self._dead_reckoned += 1
-        if abs(bearing) > STEER_BAND_DEG:
-            self._reckoned_turn_deg = turn_for(bearing)
-        if bearing < -STEER_BAND_DEG:
+        if abs(bearing) > self.steer_band_deg:
+            self._reckoned_turn_deg = self._turn_for(bearing)
+        if bearing < -self.steer_band_deg:
             return "LEFT"
-        if bearing > STEER_BAND_DEG:
+        if bearing > self.steer_band_deg:
             return "RIGHT"
         return "FORWARD"
 
@@ -2870,13 +2910,13 @@ class TieredVision:
         direction = scene.get("safest_direction")
         bearing = perception.bearing_deg if perception.status == DETECTED else None
         if (direction in TURN_ACTIONS and bearing is not None
-                and abs(bearing) > STEER_BAND_DEG
+                and abs(bearing) > self.steer_band_deg
                 and (direction == "LEFT") == (bearing < 0)):
-            out["turn_deg"] = turn_for(bearing)
+            out["turn_deg"] = self._turn_for(bearing)
         elif direction in TURN_ACTIONS and not out.get("turn_deg"):
             # The cloud said turn and nothing local can size it: a search
             # step, for the reason SCAN_TURN_DEG gives.
-            out["turn_deg"] = SCAN_TURN_DEG
+            out["turn_deg"] = self.scan_turn_deg
         if executed:
             # 3.76: not for a landed async answer annotated for its side
             # effects -- that turn is never executed, and counting it fired

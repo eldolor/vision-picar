@@ -167,6 +167,11 @@ DEFAULTS = {
     # answers in one arrival hand it to the cloud (the user, 2026-10-14).
     "tier_local_vlm_url": "",
     "tier_local_no_below": 0.1,
+    # 3.94.D: the tiered policy's behavior tree -- the order of what may be
+    # reordered, and its numbers (`TIER_TREE_DEFAULTS`, today's values).
+    # The hard rules (who-to-ask's guards, when-to-ask's head, the arrival)
+    # are not settings: a key naming them is refused.
+    "tier_tree": {},
     "tier_local_max_unable": 2,
     "tier_local_timeout_s": 3.0,
     "tier_local_band_low": 0.5,
@@ -301,6 +306,67 @@ DEFAULTS = {
     "inventory_bucket": "",
     "inventory_prefix": "inventory",
 }
+
+
+# 3.94.D: the tree's settings. The names match brain/tiered.py's rungs and
+# events (`tests/test_tier_tree.py` checks); kept here, not imported, because
+# the walks Lambda carries only control/.
+TIER_TREE_RUNGS = ("steer", "located", "reckoned", "candidate", "held", "scan")
+TIER_TREE_ABSENT_EVENTS = ("band", "oov", "cold_frames", "cold_metres")
+TIER_TREE_DEFAULTS = {
+    "what_rungs": list(TIER_TREE_RUNGS),
+    "absent_events": list(TIER_TREE_ABSENT_EVENTS),
+    "steer_band_deg": 3.0,
+    "scan_turn_deg": 45,
+    "min_turn_deg": 5,
+    "max_turn_deg": 90,
+    "local_yes_at": 0.5,
+}
+
+
+def _number(tree: dict, key: str, low: float, high: float, low_open=False) -> float:
+    v = tree[key]
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        raise ValueError(f"brain.tier_tree.{key} must be a number; got {v!r}")
+    if v > high or v < low or (low_open and v == low):
+        bound = f"({low}, {high}]" if low_open else f"[{low}, {high}]"
+        raise ValueError(f"brain.tier_tree.{key} must be in {bound}; got {v}")
+    return v
+
+
+def tier_tree_config(value, local_no_below: float) -> dict:
+    """The validated tree settings: today's defaults, overlaid by `value`."""
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise ValueError(f"brain.tier_tree must be a mapping; got {value!r}")
+    unknown = set(value) - set(TIER_TREE_DEFAULTS)
+    if unknown:
+        raise ValueError(f"Unknown keys in brain.tier_tree: {sorted(unknown)} (the order of "
+                         "who-to-ask, the head of when-to-ask and the arrival are hard rules, "
+                         "not settings)")
+    tree = {**TIER_TREE_DEFAULTS, **value}
+    for key, names in (("what_rungs", TIER_TREE_RUNGS), ("absent_events", TIER_TREE_ABSENT_EVENTS)):
+        order = tree[key]
+        if not isinstance(order, list) or not all(isinstance(n, str) for n in order):
+            raise ValueError(f"brain.tier_tree.{key} must be a list of names; got {order!r}")
+        bad = [n for n in order if n not in names]
+        if bad:
+            raise ValueError(f"brain.tier_tree.{key}: unknown {bad}; the names are {list(names)}")
+        if len(set(order)) != len(order):
+            raise ValueError(f"brain.tier_tree.{key} names one twice: {order}")
+        tree[key] = list(order)
+    if not tree["what_rungs"] or tree["what_rungs"][-1] != "scan":
+        raise ValueError("brain.tier_tree.what_rungs must end with 'scan', the rung that always "
+                         f"chooses; got {tree['what_rungs']}")
+    _number(tree, "steer_band_deg", 0, 45, low_open=True)
+    _number(tree, "scan_turn_deg", 5, 90)
+    lo = _number(tree, "min_turn_deg", 1, 180)
+    hi = _number(tree, "max_turn_deg", 1, 180)
+    if lo > hi:
+        raise ValueError(f"brain.tier_tree.min_turn_deg ({lo}) must be <= max_turn_deg ({hi})")
+    _number(tree, "local_yes_at", local_no_below, 1, low_open=True)
+    return tree
 
 
 def load_brain_config(config_path=None) -> dict:
@@ -471,5 +537,6 @@ def load_brain_config(config_path=None) -> dict:
     if merged["explore_goal_policy"] not in ("rule", "learned", "network"):
         raise ValueError(f"brain.explore_goal_policy must be 'rule', 'learned' or 'network'; "
                          f"got {merged['explore_goal_policy']!r}")
+    merged["tier_tree"] = tier_tree_config(merged["tier_tree"], no_below)
 
     return merged

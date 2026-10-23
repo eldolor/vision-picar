@@ -452,6 +452,43 @@ if (1) and (2) leave a gap, since it costs a model call per frontier.
 | Local false positive | steers on every frame it passes the probability gate; one frame is enough; the cloud's answer does not override a local sighting | target: a false positive never ends a mission `found`. **Met** (the cloud confirms identity at arrival; decided and built 2026-10-02): a wrong object can be driven to, and the arrival is refused unless the cloud agrees. Steering on a false positive is accepted |
 | Spin with no detection | forced forward after a fixed amount of rotation | a held turn cannot repeat forever |
 
+## The tiered ladder is a behavior tree
+
+Since 3.94 the tiered policy's decisions are drawn as behavior trees: what
+to do this frame, when to ask, and who to ask. Each is a few small nodes,
+read in order. Each node has its own settings, and the tree prints itself.
+
+**Why.** The ladder grew as nested code. Every new rule was an edit to a
+long function, and its order of precedence could only be read off the
+code. As a tree:
+* a new behaviour is a new node;
+* an order that may be tuned is a setting;
+* the scenario simulator and a later learned node act on named nodes,
+  not on lines.
+
+**What the tree owns, and what it does not.**
+* **It owns the choices among allowed actions:**
+  * which evidence steers;
+  * which event earns a question;
+  * which tier is asked.
+* **Hard rules stay outside or fixed:**
+  * the safety veto;
+  * a person's Stop;
+  * the arrival rule;
+  * "`found` needs the cloud";
+  * B3's failsafes;
+  * the order of who-to-ask's guards (the call cap, one call at a time
+    and "mission ended" come before any question).
+
+  No setting reaches these, so a later learned node can choose only
+  among what they allow (the shield in
+  `LEARNING-APPROACHES-2026-10-22.md`).
+
+**Redrawn first, changed later.** 3.94 changed no behaviour. The new tree
+was checked against the code it replaced on thousands of random states.
+Changes of behaviour, such as 3.92's escalation on disagreement and 3.91.C's
+rules, are new nodes in their own sections, each with its own bars.
+
 ## Open questions
 
 - **The room-level planner** -- an LLM reasoning over mission memory to

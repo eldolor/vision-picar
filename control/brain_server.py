@@ -398,6 +398,8 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         "local_no_below": config["tier_local_no_below"],
         "local_max_unable": config["tier_local_max_unable"],
         "local_band_low": config["tier_local_band_low"],
+        # 3.94.D: the behavior tree's order and numbers (validated at load).
+        "tree": config["tier_tree"],
     }
     # 3.80.C: the local VLM tier at arrival, when a URL is configured; 3.80.D:
     # the same client for every frame's question, asking where as well.
@@ -788,6 +790,7 @@ def create_app(
                 "tier_local_direction", "tier_steer_on_candidate", "tier_search",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",
                 "tier_spin_guard_after", "tier_consecutive_frames", "tier_sighting_span_s", "tier_frame_vote",
+                "tier_tree",
                 "perception_floor_mask", "perception_crop_path",
                 "navigate_model_id", "navigate_prompt_variant",
                 "explore_goal_policy",
