@@ -2,8 +2,8 @@
 
     twist_mux -> diff_drive_controller -> picar_sim_hardware -> HTTP -> robot/server.py
     robot_state_publisher (URDF, R3) . joint_state_broadcaster . picar_bridge
-    slam_toolbox (R5): /scan + odom -> /map and map -> odom; saved and
-        reloaded by the bridge (3.50.D)
+    slam_toolbox (R5): /scan + odom -> /map and map -> odom; started, saved
+        and reloaded by the bridge (3.50.D)
     nav2 (R6): planner, controller, behaviours, bt_navigator -> cmd_vel/nav
     collision_monitor (R6): twist_mux -> /cmd_vel_mux -> collision_monitor
                             -> diff_drive_controller  (the collars in series)
@@ -56,8 +56,6 @@ def generate_launch_description():
     controllers = _controllers_with_scrub()
     mux = PathJoinSubstitution(
         [FindPackageShare("picar_bringup"), "config", "twist_mux.yaml"])
-    slam = PathJoinSubstitution(
-        [FindPackageShare("picar_bringup"), "config", "slam.yaml"])
     nav2 = PathJoinSubstitution(
         [FindPackageShare("picar_bringup"), "config", "nav2.yaml"])
     # nav2's controller and behaviours publish cmd_vel; theirs is the `nav`
@@ -80,13 +78,12 @@ def generate_launch_description():
         Node(package="twist_mux", executable="twist_mux", parameters=[mux],
              # R6: into collision_monitor, which feeds diff_drive_controller.
              remappings=[("cmd_vel_out", "/cmd_vel_mux")]),
+        # R5: the map, and the robot's place on it -- slam_toolbox, which
+        # the BRIDGE starts (3.50.D3, picar_bridge/slam_process.py): the async
+        # node mapping from empty, or the localisation node on the saved map,
+        # swapped for a fresh map if the reload does not fit. A launch file
+        # cannot swap a node at run time. It reads the same slam.yaml.
         Node(package="picar_bridge", executable="bridge", output="both"),
-        # R5: the map, and the robot's place on it. The async node maps;
-        # map_and_localization (which switches modes without a restart)
-        # bent home_first_floor's map 1.6-3x more (3.50.D2-b), so a reload
-        # restarts slam_toolbox in localisation mode instead (3.50.D3).
-        Node(package="slam_toolbox", executable="async_slam_toolbox_node",
-             name="slam_toolbox", parameters=[slam], output="both"),
         # R6: nav2, and collision_monitor between the mux and the base.
         Node(package="nav2_controller", executable="controller_server",
              parameters=[nav2], remappings=to_nav, output="both"),

@@ -80,7 +80,7 @@ from std_msgs.msg import String
 from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
-from picar_bridge import brain_view, convert, keepout, mapstore
+from picar_bridge import brain_view, convert, keepout, mapstore, relocalise, slam_process
 from picar_bridge.keepalive import KeepAliveClient
 
 # Driver (robot/interface.py DRIVER_PRIORITY names) -> twist_mux input.
@@ -145,6 +145,10 @@ MAP_DIR = os.environ.get("PICAR_MAP_DIR", "/maps")
 # slam_toolbox writes the graph in well under a second for a house
 # (3.50.D1: 0.4 s for 7 MB); a save stuck this long is abandoned.
 SAVE_TIMEOUT_S = 30.0
+# 3.50.D3: with a saved map in the store, slam_toolbox starts localising on
+# it from the dock. PICAR_MAP_RELOAD=0 keeps a fresh map every start (a run
+# that must map from empty while a store is mounted).
+MAP_RELOAD = os.environ.get("PICAR_MAP_RELOAD", "1") != "0"
 
 
 def _yaw_pitch_roll(q):
@@ -254,7 +258,7 @@ class Bridge(Node):
         # carry it (a reload, D3, will adopt the saved map's instead).
         self.map_id = mapstore.new_map_id()
         self.map_store = mapstore.MapStore(MAP_DIR) if os.path.isdir(MAP_DIR) else None
-        self.map_saves = {"saved": 0, "failed": 0, "last_version": None,
+        self.map_saves = {"saved": 0, "failed": 0, "skipped": 0, "last_version": None,
                           "last_at": None, "last_error": None}
         self._saving = False             # one save at a time; under self.lock
         self._save_again = None          # a save asked for during one: its reason
@@ -263,6 +267,18 @@ class Bridge(Node):
         self.serialize_cli = self.create_client(
             SerializePoseGraph, "slam_toolbox/serialize_map",
             callback_group=ReentrantCallbackGroup())
+        # ---- 3.50.D3: slam_toolbox, started by start_slam() ----
+        # `starting` until slam_toolbox runs; `checking` while a reloaded map
+        # is judged; `ready` after. Until `ready` no map pose is published and
+        # no goal is taken: the frame may yet be swapped for a fresh one.
+        self.slam = None
+        self.slam_state = "starting"
+        self.slam_started_at = None      # wall time of the current node's start
+        self.reload = {"result": "none"}
+        # The saved start truth of a matched reload: its map frame is session
+        # 1's, so /world/error lays it on the house from there.
+        self.reload_start_truth = None
+        self.reload_matched = False
         if self.map_store is None:
             self.get_logger().warning(f"no {MAP_DIR}: maps are not saved this session")
         if self.brain_url:
@@ -370,7 +386,12 @@ class Bridge(Node):
     def _on_map(self, msg):
         info = msg.info
         yaw, _, _ = _yaw_pitch_roll(info.origin.orientation)
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
         with self.lock:
+            # 3.50.D3: a map the previous slam_toolbox published (a reload
+            # that fell back) is not this frame's.
+            if self.slam_started_at is not None and stamp < self.slam_started_at:
+                return
             self.map_version += 1
             self.last_map = {
                 "session": self.session, "version": self.map_version,
@@ -391,6 +412,12 @@ class Bridge(Node):
         # taken as before.
         if body.get("session") not in (None, self.session):
             return 409, {"error": "the SLAM session changed", "session": self.session}
+        with self.lock:
+            state = self.slam_state
+        if state != "ready":
+            # 3.50.D3: nav2 is held while slam_toolbox starts or a reload is
+            # judged -- a bad match swaps the whole frame.
+            return 503, {"error": f"SLAM is not ready ({state})", "slam": state}
         if not self.nav.wait_for_server(timeout_sec=NAV2_WAIT_S):
             return 503, {"error": "nav2 is not up (navigate_to_pose has no server)"}
         self.cancel_goal()
@@ -709,10 +736,17 @@ class Bridge(Node):
 
     def slam_pose(self):
         with self.lock:                      # one consistent pair (round 5)
-            start, pending = self.start_truth, self.start_truth_pending
+            ready = self.slam_state == "ready"
+            if self.reload_matched:
+                start, pending = self.reload_start_truth, not ready
+            else:
+                start, pending = self.start_truth, self.start_truth_pending or not ready
+        # 3.50.D3: no map pose, and the start truth pending, until the frame
+        # is decided -- world/ros_world.py then anchors nothing and reads the
+        # pose and the map unusable, rather than anchor a frame about to go.
         return 200, {"session": self.session, "start_truth": start,
                      "start_truth_pending": pending,
-                     "map": self._pose_in("map"),
+                     "map": self._pose_in("map") if ready else None,
                      "odom": self._pose_in("odom"), "at": time.time()}
 
     def _robot_get(self, path):
@@ -891,6 +925,110 @@ class Bridge(Node):
         return 200, {"translation_m": [t.x, t.y, t.z], "quaternion_xyzw": [q.x, q.y, q.z, q.w],
                      "yaw_rad": yaw, "pitch_rad": pitch, "roll_rad": roll}
 
+    # ---------- 3.50.D3: starting slam_toolbox, and the reload ----------
+
+    def start_slam(self) -> None:
+        """Start slam_toolbox: localising on the store's current map from
+        the dock if there is one, else mapping from empty. A reload that does
+        not fit (relocalise.judge) is replaced by a fresh map. Its own thread
+        (main): the check waits on scans."""
+        from ament_index_python.packages import get_package_prefix, get_package_share_directory
+        self.slam = slam_process.SlamProcess(
+            os.path.join(get_package_prefix("slam_toolbox"), "lib", "slam_toolbox"),
+            os.path.join(get_package_share_directory("picar_bringup"), "config", "slam.yaml"))
+        saved = self.map_store.current() if (self.map_store is not None and MAP_RELOAD) else None
+        if saved is None:
+            self._start_fresh({"result": "none" if MAP_RELOAD else "off"})
+            return
+        dock = saved.meta.get("dock_pose") or mapstore.DOCK_POSE
+        t0 = time.monotonic()
+        with self.lock:
+            self.slam_state = "checking"
+            self.slam_started_at = time.time()
+            self.last_map = None
+            self.map_id = saved.map_id
+        self.slam.start("localisation", saved.prefix, (dock["x"], dock["y"], dock["theta"]))
+        verdict = self.check_reload(t0 + relocalise.VERDICT_TIMEOUT_S)
+        record = {"map_id": saved.map_id, "version": saved.version,
+                  "took_s": round(time.monotonic() - t0, 2), **verdict}
+        if not verdict["ok"]:
+            self.get_logger().warning(f"saved map {saved.map_id} v{saved.version} does not fit "
+                                      f"({verdict['reason']}): starting a fresh map")
+            self._start_fresh({**record, "result": "fell_back"})
+            return
+        with self.lock:
+            self.reload = {**record, "result": "matched"}
+            self.reload_start_truth = saved.meta.get("start_truth")
+            self.reload_matched = True
+            self.slam_state = "ready"
+        self.get_logger().info(f"reloaded map {saved.map_id} v{saved.version} at the dock "
+                               f"({verdict['agreement']:.0%} of returns on the map)")
+
+    def _start_fresh(self, record: dict) -> None:
+        with self.lock:
+            self.slam_state = "starting"
+            self.slam_started_at = time.time()
+            # A fallen-back reload's map is not this one: forget it, and the
+            # map_id it lent.
+            self.last_map = None
+            self.map_id = mapstore.new_map_id()
+            self.reload_matched = False
+            self.reload_start_truth = None
+        self.slam.start("mapping")
+        with self.lock:
+            self.reload = record
+        # Ready once THIS node places the robot: a stopped node's map -> odom
+        # lingers in the TF buffer for a moment, in the frame just dropped.
+        while rclpy.ok() and self._fresh_pose() is None:
+            time.sleep(0.1)
+        with self.lock:
+            self.slam_state = "ready"
+
+    def _fresh_pose(self):
+        """The map pose, if the transform under it was published by the
+        slam_toolbox started last."""
+        here = self._pose_in("map")
+        with self.lock:
+            since = self.slam_started_at
+        if here is None or since is None or here["age_s"] > 1.0 \
+                or time.time() - here["age_s"] < since:
+            return None
+        return here
+
+    def check_reload(self, deadline: float) -> dict:
+        """Judge the reloaded map on SCANS scans at rest: their agreement
+        with its /map, and the localised pose's distance from the dock."""
+        shares, pose, seen = [], None, None
+        occupied = None
+        while time.monotonic() < deadline and len(shares) < relocalise.SCANS:
+            with self.lock:
+                m, scan = self.last_map, self.last_scan
+            here = self._fresh_pose()
+            laser = self._laser_in_map()
+            if m is None or scan is None or here is None or laser is None \
+                    or scan["at"] == seen:
+                time.sleep(0.05)
+                continue
+            if occupied is None or occupied[0] is not m:
+                occupied = (m, relocalise.occupied_cells(m))
+            seen = scan["at"]
+            pose = (here["x_m"], here["y_m"], here["yaw_rad"])
+            shares.append(relocalise.scan_agreement(scan, laser, m, occupied[1]))
+        if len(shares) < relocalise.SCANS:
+            return {**relocalise.judge([], None), "ok": False,
+                    "reason": f"no localised pose and {relocalise.SCANS} scans within "
+                              f"{relocalise.VERDICT_TIMEOUT_S:.0f} s"}
+        return relocalise.judge(shares, pose)
+
+    def _laser_in_map(self):
+        try:
+            tr = self.tf_buffer.lookup_transform("map", "laser", Time())
+        except Exception:  # noqa: BLE001
+            return None
+        t = tr.transform.translation
+        yaw, _, _ = _yaw_pitch_roll(tr.transform.rotation)
+        return (t.x, t.y, yaw)
+
     # ---------- 3.50.D: saving the map ----------
 
     def save_map_async(self, why: str) -> bool:
@@ -934,8 +1072,18 @@ class Bridge(Node):
         it the next version only if both files arrived. Any failure leaves
         the previous version current."""
         pending, error, meta = None, None, None
+        with self.lock:
+            localising = self.slam is not None and self.slam.mode == "localisation"
+            map_id = self.map_id
+        if localising:
+            # 3.50.D3: localisation cannot serialise, and it leaves the saved
+            # map as it was -- nothing to save, and not a failure.
+            with self.lock:
+                self.map_saves["skipped"] += 1
+            self.get_logger().info(f"map {map_id} not saved ({why}): localising on it, unchanged")
+            return
         try:
-            pending = self.map_store.begin(self.map_id)
+            pending = self.map_store.begin(map_id)
             if not self.serialize_cli.wait_for_service(timeout_sec=2.0):
                 raise mapstore.SaveFailed("slam_toolbox's serialize_map is not up")
             req = SerializePoseGraph.Request()
@@ -968,9 +1116,9 @@ class Bridge(Node):
             else:
                 self.map_saves.update(failed=self.map_saves["failed"] + 1, last_error=error)
         if error is None:
-            self.get_logger().info(f"map {self.map_id} v{meta['version']} saved ({why})")
+            self.get_logger().info(f"map {map_id} v{meta['version']} saved ({why})")
         else:
-            self.get_logger().error(f"map {self.map_id} not saved ({why}): {error}")
+            self.get_logger().error(f"map {map_id} not saved ({why}): {error}")
 
     def health(self):
         with self.lock:
@@ -985,7 +1133,12 @@ class Bridge(Node):
                          "brain_age_s": None if not self.brain_at else time.time() - self.brain_at,
                          "brain_error": self.brain_error,
                          "map": {"map_id": self.map_id, "saving": self._saving,
-                                 "store": self.map_store is not None, **self.map_saves}}
+                                 "store": self.map_store is not None, **self.map_saves},
+                         # 3.50.D3: which slam_toolbox runs, and the reload's verdict
+                         "slam": {"state": self.slam_state,
+                                  "mode": self.slam.mode if self.slam else None,
+                                  "starts": self.slam.starts if self.slam else 0,
+                                  "reload": dict(self.reload)}}
 
 
 def _handler(bridge):
@@ -1085,9 +1238,14 @@ def main():
     bridge.get_logger().info(f"bridge on :{port}, robot at {bridge.robot_url}")
     executor = MultiThreadedExecutor()
     executor.add_node(bridge)
+    # 3.50.D3: slam_toolbox is the bridge's to start (slam_process.py); the
+    # reload's check reads scans and TF, so the executor must be spinning.
+    threading.Thread(target=bridge.start_slam, daemon=True, name="slam-start").start()
     try:
         executor.spin()
     finally:
+        if bridge.slam is not None:
+            bridge.slam.stop()
         server.shutdown()
         rclpy.shutdown()
 

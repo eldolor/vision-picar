@@ -157,7 +157,11 @@ Notes on those choices:
   and three maps kept, `/maps/current.json` naming the newest. Without
   it nothing is saved (the bridge logs `no /maps`, `/health` `map.store`
   false), as before 3.50. It is a floor plan of a home: keep it private.
-  `PICAR_MAP_DIR` moves it.
+  `PICAR_MAP_DIR` moves it. **With a saved map there, the next start
+  reloads it** (3.50.D3): the robot must stand on the dock (where the
+  first mapping session began); a robot elsewhere is caught within a few
+  seconds and gets a fresh map (`/health` `slam.reload`). Goals are
+  refused until then. `-e PICAR_MAP_RELOAD=0` maps from empty instead.
 
 * **`-p 127.0.0.1:8765:8765`** publishes Foxglove to this machine only. The
   launch binds `0.0.0.0` inside the container and offers only the

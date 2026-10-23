@@ -212,6 +212,7 @@ class _Nav:
 def _bridge(bridge_mod):
     b = bridge_mod.Bridge()
     b.nav = _Nav()
+    b.slam_state = "ready"             # 3.50.D3: slam_toolbox up, no reload being judged
     return b
 
 

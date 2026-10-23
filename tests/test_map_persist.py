@@ -14,7 +14,7 @@ import yaml
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(ROOT, "service/slam/src/picar_bridge"))
 
-from picar_bridge import mapstore  # noqa: E402
+from picar_bridge import mapstore, relocalise, slam_process  # noqa: E402
 from picar_bridge.mapstore import MapStore  # noqa: E402
 
 BRINGUP = os.path.join(ROOT, "service/slam/src/picar_bringup")
@@ -180,11 +180,15 @@ def test_no_amcl_and_no_map_server():
 def test_slam_maps_with_the_async_node():
     """3.50.D2-b: map_and_localization_slam_toolbox_node mapped
     home_first_floor worse than the async node (east max 0.142/0.228 m vs
-    0.089/0.071 m), so mapping stays on the async node (the user, 2026-10-23)."""
+    0.089/0.071 m), so mapping stays on the async node (the user, 2026-10-23).
+    Since 3.50.D3 the bridge starts slam_toolbox, and the launch file starts
+    none: one owner, or a reload would run beside a mapping node."""
+    assert slam_process.EXECUTABLES == {"mapping": "async_slam_toolbox_node",
+                                        "localisation": "localization_slam_toolbox_node"}
     with open(os.path.join(BRINGUP, "launch/picar.launch.py")) as f:
         launch = f.read()
-    assert 'executable="async_slam_toolbox_node"' in launch
-    assert 'executable="map_and_localization_slam_toolbox_node"' not in launch
+    assert 'package="slam_toolbox"' not in launch
+    assert "slam_toolbox_node" not in launch.replace("slam_toolbox, which", "")
 
 
 def test_only_the_newest_maps_are_kept(tmp_path):
@@ -286,3 +290,238 @@ def test_a_pointer_that_moved_is_a_save_even_if_the_dir_sync_fails(tmp_path, mon
     monkeypatch.setattr(mapstore, "_fsync_dir", flaky)
     _save(store, "map-0a1b2c3d")
     assert store.current().version == 1
+
+
+# ---- 3.50.D3: the reload, its check and the swap to a fresh map ----
+
+import math  # noqa: E402
+import time  # noqa: E402
+import types  # noqa: E402
+
+from tests.test_review_376h1 import _Msg, bridge_mod  # noqa: E402,F401 -- the stubbed bridge
+
+RES = 0.05
+
+
+def _room_grid():
+    """A 5 x 3 m room, walls one cell thick, the map's origin at (-1, -1):
+    an OccupancyGrid record as the bridge keeps it."""
+    w, h = int(5 / RES), int(3 / RES)
+    data = [0] * (w * h)
+    for c in range(w):
+        data[c] = data[(h - 1) * w + c] = 100
+    for r in range(h):
+        data[r * w] = data[r * w + w - 1] = 100
+    return {"resolution_m": RES, "width": w, "height": h, "origin_x_m": -1.0,
+            "origin_y_m": -1.0, "origin_yaw_rad": 0.0, "data": data}
+
+
+def _room_scan(x, y, yaw, n=360):
+    """Exact ranges from (x, y, yaw) to the room's wall centre lines."""
+    xmin, xmax, ymin, ymax = -1 + RES / 2, 4 - RES / 2, -1 + RES / 2, 2 - RES / 2
+    ranges = []
+    for i in range(n):
+        a = yaw - math.pi + i * 2 * math.pi / n
+        c, s = math.cos(a), math.sin(a)
+        ts = [t for t in ((xmax - x) / c if c > 1e-9 else None, (xmin - x) / c if c < -1e-9 else None,
+                          (ymax - y) / s if s > 1e-9 else None, (ymin - y) / s if s < -1e-9 else None)
+              if t is not None and t > 0]
+        ranges.append(min(ts))
+    return {"angle_min_rad": -math.pi, "angle_increment_rad": 2 * math.pi / n, "ranges_m": ranges}
+
+
+def test_scans_agree_with_the_map_where_the_robot_really_is():
+    grid, scan = _room_grid(), _room_scan(0.5, 0.4, 0.2)
+    assert relocalise.scan_agreement(scan, (0.5, 0.4, 0.2), grid) > 0.95
+
+
+def test_scans_disagree_when_the_robot_is_placed_a_metre_and_30_deg_off():
+    """Criterion 8's start: the robot is 1 m and 30 deg from the dock but
+    localisation puts it ON the dock, so its scans are laid there."""
+    grid = _room_grid()
+    scan = _room_scan(1.5, 0.4, math.radians(30))         # where it really is
+    assert relocalise.scan_agreement(scan, (0.5, 0.4, 0.0), grid) < relocalise.AGREE_MIN
+
+
+def test_no_returns_is_no_agreement():
+    scan = {"angle_min_rad": 0.0, "angle_increment_rad": 0.1, "ranges_m": [None, math.inf, 0.0]}
+    assert relocalise.scan_agreement(scan, (0, 0, 0), _room_grid()) is None
+
+
+def test_the_verdict_needs_both_agreement_and_the_dock():
+    ok = relocalise.judge([0.9] * 5, (0.02, -0.01, math.radians(1)))
+    assert ok["ok"] and ok["reason"] == "matched"
+    assert not relocalise.judge([0.9, 0.9, 0.3, 0.2, 0.1], (0, 0, 0))["ok"]   # median 0.3
+    far = relocalise.judge([0.9] * 5, (0.6, 0.0, 0.0))
+    assert not far["ok"] and "from the dock" in far["reason"]
+    turned = relocalise.judge([0.9] * 5, (0.0, 0.0, math.radians(20)))
+    assert not turned["ok"]
+    assert not relocalise.judge([0.9] * 5, None)["ok"]
+    assert not relocalise.judge([None] * 5, (0, 0, 0))["ok"]
+
+
+def test_the_localisation_node_is_given_the_saved_graph_and_the_dock():
+    argv = slam_process.command("/x/lib", "/p/slam.yaml", "localisation", "/maps/m/v2/graph",
+                                (0.0, 0.0, 0.0))
+    assert argv[0] == "/x/lib/localization_slam_toolbox_node"
+    assert "__node:=slam_toolbox" in argv and "/p/slam.yaml" in argv
+    assert "map_file_name:=/maps/m/v2/graph" in argv
+    assert "map_start_pose:=[0.0, 0.0, 0.0]" in argv
+    assert "mode:=localization" in argv
+
+
+def test_a_mapping_node_loads_no_map():
+    """Criterion 12: a fresh map loads no file."""
+    argv = slam_process.command("/x/lib", "/p/slam.yaml", "mapping")
+    assert argv[0] == "/x/lib/async_slam_toolbox_node"
+    assert not any("map_file_name" in a or "map_start" in a for a in argv)
+    with pytest.raises(ValueError):
+        slam_process.command("/x/lib", "/p/slam.yaml", "mapping", "/maps/m/v1/graph")
+    with pytest.raises(ValueError):
+        slam_process.command("/x/lib", "/p/slam.yaml", "lifelong")
+
+
+class _Proc:
+    def __init__(self, argv, **_kw):
+        self.argv, self.signals, self.code = argv, [], None
+
+    def poll(self):
+        return self.code
+
+    def send_signal(self, sig):
+        self.signals.append(sig)
+        self.code = 0
+
+    def wait(self, timeout=None):
+        return self.code
+
+    def kill(self):
+        self.code = -9
+
+
+def test_one_slam_toolbox_at_a_time():
+    procs = []
+    sp = slam_process.SlamProcess("/x/lib", "/p/slam.yaml",
+                                  spawn=lambda argv, **kw: procs.append(_Proc(argv)) or procs[-1])
+    sp.start("localisation", "/maps/m/v1/graph", (0, 0, 0))
+    sp.start("mapping")
+    assert len(procs) == 2 and procs[0].signals and procs[0].poll() is not None
+    assert sp.mode == "mapping" and sp.alive() and sp.starts == 2
+    sp.stop()
+    assert not sp.alive() and sp.mode is None
+
+
+class _FakeSlam:
+    def __init__(self):
+        self.calls, self.mode, self.starts = [], None, 0
+
+    def start(self, mode, map_prefix=None, start_pose=None):
+        self.calls.append((mode, map_prefix, start_pose))
+        self.mode = mode
+        self.starts += 1
+
+    def stop(self):
+        self.mode = None
+
+
+def _reload_bridge(bridge_mod, monkeypatch, tmp_path, verdict):
+    pkgs = types.ModuleType("ament_index_python.packages")
+    pkgs.get_package_prefix = lambda name: "/opt/" + name
+    pkgs.get_package_share_directory = lambda name: "/share/" + name
+    monkeypatch.setitem(sys.modules, "ament_index_python", types.ModuleType("ament_index_python"))
+    monkeypatch.setitem(sys.modules, "ament_index_python.packages", pkgs)
+    fake = _FakeSlam()
+    monkeypatch.setattr(bridge_mod.slam_process, "SlamProcess", lambda *a, **kw: fake)
+    store = MapStore(str(tmp_path))
+    _save(store, "map-0a1b2c3d", start_truth={"x_m": 1.0, "y_m": 2.0, "heading_deg": 90.0})
+    b = bridge_mod.Bridge()
+    b.map_store = store
+    b.last_map = {"session": b.session, "version": 1, "data": [0]}
+    b.start_truth = {"x_m": 3.0, "y_m": 3.0, "heading_deg": 0.0}     # this session's own
+    b.start_truth_pending = False
+    monkeypatch.setattr(b, "check_reload", lambda deadline: verdict)
+    return b, fake, store
+
+
+def test_a_reload_that_fits_localises_on_the_saved_map(bridge_mod, monkeypatch, tmp_path):
+    b, fake, store = _reload_bridge(bridge_mod, monkeypatch, tmp_path,
+                                    relocalise.judge([0.9] * 5, (0.0, 0.0, 0.0)))
+    b.start_slam()
+    assert fake.calls == [("localisation", store.current().prefix, (0.0, 0.0, 0.0))]
+    assert b.map_id == "map-0a1b2c3d" and b.slam_state == "ready"
+    assert b.reload["result"] == "matched" and b.reload["version"] == 1
+    reply = b.slam_pose()[1]
+    # The saved map's frame is session 1's: its start truth, not this session's.
+    assert reply["start_truth"] == {"x_m": 1.0, "y_m": 2.0, "heading_deg": 90.0}
+    assert reply["start_truth_pending"] is False
+    assert b.health()[1]["slam"]["reload"]["result"] == "matched"
+
+
+def test_a_reload_that_does_not_fit_falls_back_to_a_fresh_map(bridge_mod, monkeypatch, tmp_path):
+    """Criterion 8: a bad match is a fresh map with a new map_id, never a
+    mission on the mismatched frame."""
+    b, fake, store = _reload_bridge(bridge_mod, monkeypatch, tmp_path,
+                                    relocalise.judge([0.2] * 5, (0.0, 0.0, 0.0)))
+    b.start_slam()
+    assert [c[0] for c in fake.calls] == ["localisation", "mapping"]
+    assert fake.calls[1] == ("mapping", None, None)
+    assert b.map_id != "map-0a1b2c3d" and mapstore.MAP_ID_RE.fullmatch(b.map_id)
+    assert b.last_map is None                      # the saved map's /map is not this one
+    assert b.reload["result"] == "fell_back" and "agree" in b.reload["reason"]
+    assert b.slam_pose()[1]["start_truth"] == {"x_m": 3.0, "y_m": 3.0, "heading_deg": 0.0}
+
+
+def test_no_saved_map_or_reload_off_maps_from_empty(bridge_mod, monkeypatch, tmp_path):
+    b, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path, None)
+    monkeypatch.setattr(bridge_mod, "MAP_RELOAD", False)
+    b.start_slam()
+    assert fake.calls == [("mapping", None, None)] and b.reload["result"] == "off"
+
+
+def test_nav2_is_held_and_no_pose_is_published_while_the_reload_is_judged(bridge_mod):
+    from tests.test_review_376h1 import _bridge
+    b = _bridge(bridge_mod)
+    b.slam_state = "checking"
+    b.start_truth, b.start_truth_pending = {"x_m": 1.0, "y_m": 1.0, "heading_deg": 0.0}, False
+    code, body = b.send_goal({"x_m": 1.0, "y_m": 0.0})
+    assert code == 503 and body["slam"] == "checking"
+    assert b.nav.futures == []                     # nothing reached nav2
+    reply = b.slam_pose()[1]
+    assert reply["map"] is None and reply["start_truth_pending"] is True
+
+
+def test_a_mission_end_while_localising_saves_nothing_and_fails_nothing(bridge_mod, tmp_path):
+    from tests.test_review_376h1 import _bridge
+    b = _bridge(bridge_mod)
+    store = MapStore(str(tmp_path))
+    _save(store, "map-0a1b2c3d")
+    b.map_store, b.map_id = store, "map-0a1b2c3d"
+    b.slam = _FakeSlam()
+    b.slam.mode = "localisation"
+    b._save_map("mission_end")
+    assert b.map_saves["skipped"] == 1 and b.map_saves["failed"] == 0
+    assert store.versions("map-0a1b2c3d") == [1]
+
+
+def test_a_map_from_a_stopped_node_is_dropped(bridge_mod):
+    from tests.test_review_376h1 import _bridge
+    b = _bridge(bridge_mod)
+    b.slam_started_at = time.time()
+    old = int(b.slam_started_at - 2)
+    msg = _Msg(header=_Msg(stamp=_Msg(sec=old, nanosec=0)),
+               info=_Msg(resolution=0.05, width=1, height=1,
+                         origin=_Msg(position=_Msg(x=0.0, y=0.0),
+                                     orientation=_Msg(x=0.0, y=0.0, z=0.0, w=1.0))),
+               data=[0])
+    b._on_map(msg)
+    assert b.last_map is None
+    msg.header.stamp.sec = int(b.slam_started_at + 1)
+    b._on_map(msg)
+    assert b.last_map is not None
+
+
+def test_no_pose_within_the_window_is_a_bad_match(bridge_mod):
+    from tests.test_review_376h1 import _bridge
+    b = _bridge(bridge_mod)
+    v = b.check_reload(time.monotonic() + 0.2)
+    assert not v["ok"] and "no localised pose" in v["reason"]
