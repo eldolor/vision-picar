@@ -334,7 +334,7 @@ printed by `describe_when_tree()`).
     edge), followed by the events, in order:
     * local tracking;
     * `candidate_sighting`;
-    * the absent edge;
+    * (no trigger) the absent edge, which only moves `_last_confirmed`;
     * for an `absent` frame, the absent count, then the band,
       out-of-vocabulary, and cold search by frames, then by metres;
     * `staleness`;
@@ -342,7 +342,8 @@ printed by `describe_when_tree()`).
 
 `tests/tiered_reference.py` freezes the code it replaced, and
 `tests/test_tier_tree.py` checks the two give the same trigger and state
-on 10,000 random sequences of 1-8 frames.
+on 10,000 random sequences of 1-8 frames, with the dispatch path's changes
+between frames.
 
 ## Interfaces
 

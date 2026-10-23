@@ -285,6 +285,20 @@ def test_criterion_2a_when_to_ask_exactly_as_the_code_it_replaced():
                 stamp += rng.choice([0.0, 0.1, 0.25, 0.6])
             repeat = rng.random() < 0.1
             p_seed = seed * 131 + i
+            if i and rng.random() < 0.3:
+                # What the dispatch path does between frames: an answer landed
+                # (the pacing counts reset), a question went unanswered (an edge
+                # re-armed), a band no, the robot moved (review of B).
+                change = dict(rng.choice([
+                    {"_since_call": 0, "_absent_streak": 0, "_frame_unable": 0},
+                    {"_frame_unable": rng.choice([1, 2, 3])},
+                    {"_retry_start": True}, {"_last_confirmed": ABSENT},
+                    {"_candidate_rejected": True}, {"_local_track": rng.random() < 0.5},
+                    {"_distance_since_call": rng.choice([None, 10.0, 80.0])},
+                    {"_since_call": rng.choice([3, 9])}]))
+                for t in (ref, new):
+                    for k, v in change.items():
+                        setattr(t, k, v)
             got = []
             for t in (ref, new):
                 t._frame_stamp, t._repeat_frame = stamp, repeat
@@ -304,3 +318,15 @@ def test_when_to_ask_prints_as_a_tree():
     text = tier.describe_when_tree()
     assert text.splitlines()[0] == "sequence when to ask"
     assert "action staleness after=8" in text
+
+
+def test_criterion_4_when_to_ask_costs_under_a_millisecond_a_frame():
+    times = []
+    for seed in range(2_000):
+        (_, new), rng = _trigger_pair(seed)
+        new._frame_stamp = None
+        p = _perception(random.Random(seed))
+        t0 = time.perf_counter()
+        new._trigger_for(p)
+        times.append((time.perf_counter() - t0) * 1000)
+    assert statistics.quantiles(times, n=10)[-1] <= 1.0

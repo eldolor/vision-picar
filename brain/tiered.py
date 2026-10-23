@@ -2304,17 +2304,21 @@ class TieredVision:
         # An OR with the distance bar, not a replacement: distance measures
         # new view while driving; the frame floor still fires when scanning
         # in place, which covers new view at zero path.
-        return self._absent_streak >= self._cold_search_bar() and self._fire(
-            bb, TRIGGER_COLD_SEARCH)
+        if not self._absent_streak >= self._cold_search_bar():
+            return False
+        return self._fire(bb, TRIGGER_COLD_SEARCH)
 
     def _tr_cold_metres(self, bb: "_TriggerDecision") -> bool:
-        return self._distance_bar_reached() and self._fire(bb, TRIGGER_COLD_SEARCH)
+        if not self._distance_bar_reached():
+            return False
+        return self._fire(bb, TRIGGER_COLD_SEARCH)
 
     def _tr_stale(self, bb: "_TriggerDecision") -> bool:
         # The floor. Last, so it never pre-empts an event that says something
         # more specific about why we are calling.
-        return bool(self.stale_after and self._since_call >= self.stale_after) and self._fire(
-            bb, TRIGGER_STALE)
+        if not (self.stale_after and self._since_call >= self.stale_after):
+            return False
+        return self._fire(bb, TRIGGER_STALE)
 
     def _tr_none(self, bb: "_TriggerDecision") -> bool:
         return self._fire(bb, None)
