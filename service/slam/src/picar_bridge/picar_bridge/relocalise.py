@@ -68,18 +68,19 @@ def scan_agreement(scan: dict, laser_pose: Sequence[float], grid: dict,
     return hits / total if total else None
 
 
-def judge(shares: Sequence[Optional[float]], pose: Optional[Sequence[float]]) -> dict:
+def judge(shares: Sequence[Optional[float]], pose: Optional[Sequence[float]],
+          dock: Sequence[float] = (0.0, 0.0, 0.0)) -> dict:
     """The verdict on a reload from the agreement of SCANS scans and the
-    localised pose (x, y, yaw) in the map's frame. `ok` False means a fresh
-    map; `reason` says which test failed."""
+    localised pose (x, y, yaw) in the map's frame, against the `dock` it was
+    started at. `ok` False means a fresh map; `reason` says which test failed."""
     known = [s for s in shares if s is not None]
     share = median(known) if known else None
     out = {"agreement": None if share is None else round(share, 3),
            "dock_error_m": None, "dock_error_deg": None}
     if pose is None:
         return {**out, "ok": False, "reason": "no localised pose"}
-    dist = math.hypot(pose[0], pose[1])
-    turn = abs(math.degrees(math.atan2(math.sin(pose[2]), math.cos(pose[2]))))
+    dist = math.hypot(pose[0] - dock[0], pose[1] - dock[1])
+    turn = abs(math.degrees(math.atan2(math.sin(pose[2] - dock[2]), math.cos(pose[2] - dock[2]))))
     out.update(dock_error_m=round(dist, 3), dock_error_deg=round(turn, 2))
     if share is None:
         return {**out, "ok": False, "reason": "no scan returns to judge"}

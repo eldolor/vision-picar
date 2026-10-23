@@ -46,17 +46,6 @@ def command(exe_dir: str, params_file: str, mode: str, map_prefix: Optional[str]
     return argv
 
 
-def _die_with_parent() -> None:
-    """In the child, before exec: SIGTERM when the bridge dies, so a crashed
-    bridge leaves no slam_toolbox publishing map -> odom behind (Linux only;
-    a laptop test never execs one)."""
-    try:
-        import ctypes
-        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)   # PR_SET_PDEATHSIG
-    except Exception:  # noqa: BLE001 -- not Linux: nothing to set
-        pass
-
-
 class SlamProcess:
     """One slam_toolbox at a time. `start` stops any running one first."""
 
@@ -75,7 +64,11 @@ class SlamProcess:
         argv = command(self.exe_dir, self.params_file, mode, map_prefix, start_pose)
         with self._lock:
             self._stop_locked()
-            self.proc = self._spawn(argv, preexec_fn=_die_with_parent)
+            # No PR_SET_PDEATHSIG (Thermos, 3.50.D3): it fires when the
+            # THREAD that forked exits, and the bridge starts slam_toolbox from
+            # a short-lived one. The bridge stops it on exit, and the container
+            # ends both.
+            self.proc = self._spawn(argv)
             self.mode = mode
             self.starts += 1
 

@@ -439,7 +439,7 @@ def _reload_bridge(bridge_mod, monkeypatch, tmp_path, verdict):
     b.last_map = {"session": b.session, "version": 1, "data": [0]}
     b.start_truth = {"x_m": 3.0, "y_m": 3.0, "heading_deg": 0.0}     # this session's own
     b.start_truth_pending = False
-    monkeypatch.setattr(b, "check_reload", lambda deadline: verdict)
+    monkeypatch.setattr(b, "check_reload", lambda deadline, dock=None: verdict)
     return b, fake, store
 
 
@@ -525,3 +525,35 @@ def test_no_pose_within_the_window_is_a_bad_match(bridge_mod):
     b = _bridge(bridge_mod)
     v = b.check_reload(time.monotonic() + 0.2)
     assert not v["ok"] and "no localised pose" in v["reason"]
+
+
+def test_a_start_failure_is_shown_not_a_silent_dead_thread(bridge_mod, monkeypatch, tmp_path):
+    """Thermos: before 3.50.D3 the launch file always started slam_toolbox;
+    a raise on the start thread must leave a reason on /health."""
+    b, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path, None)
+    monkeypatch.setattr(fake, "start", lambda *a, **kw: (_ for _ in ()).throw(OSError("no exe")))
+    b.start_slam()
+    h = b.health()[1]["slam"]
+    assert h["state"] == "failed" and "no exe" in h["reload"]["error"]
+
+
+def test_the_dock_check_is_against_the_dock_it_started_at():
+    assert relocalise.judge([0.9] * 5, (1.0, 2.0, 0.5), dock=(1.0, 2.0, 0.5))["ok"]
+    assert not relocalise.judge([0.9] * 5, (0.0, 0.0, 0.0), dock=(1.0, 2.0, 0.5))["ok"]
+
+
+def test_no_pdeathsig_from_a_short_lived_thread():
+    """Both reviewers: PR_SET_PDEATHSIG fires when the forking THREAD exits."""
+    seen = {}
+    sp = slam_process.SlamProcess("/x/lib", "/p/slam.yaml",
+                                  spawn=lambda argv, **kw: seen.update(kw) or _Proc(argv))
+    sp.start("mapping")
+    assert "preexec_fn" not in seen
+
+
+def test_a_reload_without_a_saved_start_truth_waits_for_its_own(bridge_mod, monkeypatch, tmp_path):
+    b, fake, store = _reload_bridge(bridge_mod, monkeypatch, tmp_path,
+                                    relocalise.judge([0.9] * 5, (0.0, 0.0, 0.0)))
+    b.start_slam()
+    b.reload_start_truth, b.start_truth, b.start_truth_pending = None, None, True
+    assert b.slam_pose()[1]["start_truth_pending"] is True

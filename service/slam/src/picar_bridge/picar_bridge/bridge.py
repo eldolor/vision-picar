@@ -149,6 +149,9 @@ SAVE_TIMEOUT_S = 30.0
 # it from the dock. PICAR_MAP_RELOAD=0 keeps a fresh map every start (a run
 # that must map from empty while a store is mounted).
 MAP_RELOAD = os.environ.get("PICAR_MAP_RELOAD", "1") != "0"
+# A stopped node's last map -> odom is stamped up to slam.yaml's
+# transform_timeout (0.2 s) ahead: a fresh node's frame starts after it.
+SLAM_TF_LEAD_S = 0.25
 
 
 def _yaw_pitch_roll(q):
@@ -737,7 +740,7 @@ class Bridge(Node):
     def slam_pose(self):
         with self.lock:                      # one consistent pair (round 5)
             ready = self.slam_state == "ready"
-            if self.reload_matched:
+            if self.reload_matched and self.reload_start_truth is not None:
                 start, pending = self.reload_start_truth, not ready
             else:
                 start, pending = self.start_truth, self.start_truth_pending or not ready
@@ -931,7 +934,17 @@ class Bridge(Node):
         """Start slam_toolbox: localising on the store's current map from
         the dock if there is one, else mapping from empty. A reload that does
         not fit (relocalise.judge) is replaced by a fresh map. Its own thread
-        (main): the check waits on scans."""
+        (main): the check waits on scans. A failure here leaves no SLAM and
+        nav2 held, so it is recorded where /health shows it (Thermos)."""
+        try:
+            self._start_slam()
+        except Exception as e:  # noqa: BLE001 -- a state, shown, not a dead thread
+            with self.lock:
+                self.slam_state = "failed"
+                self.reload = {**self.reload, "error": f"{type(e).__name__}: {e}"[:300]}
+            self.get_logger().error(f"slam_toolbox not started: {e}")
+
+    def _start_slam(self) -> None:
         from ament_index_python.packages import get_package_prefix, get_package_share_directory
         self.slam = slam_process.SlamProcess(
             os.path.join(get_package_prefix("slam_toolbox"), "lib", "slam_toolbox"),
@@ -940,15 +953,18 @@ class Bridge(Node):
         if saved is None:
             self._start_fresh({"result": "none" if MAP_RELOAD else "off"})
             return
-        dock = saved.meta.get("dock_pose") or mapstore.DOCK_POSE
+        d = saved.meta.get("dock_pose")
+        if not (isinstance(d, dict) and all(isinstance(d.get(k), (int, float)) for k in ("x", "y", "theta"))):
+            d = mapstore.DOCK_POSE
+        dock = (float(d["x"]), float(d["y"]), float(d["theta"]))
         t0 = time.monotonic()
         with self.lock:
             self.slam_state = "checking"
             self.slam_started_at = time.time()
             self.last_map = None
             self.map_id = saved.map_id
-        self.slam.start("localisation", saved.prefix, (dock["x"], dock["y"], dock["theta"]))
-        verdict = self.check_reload(t0 + relocalise.VERDICT_TIMEOUT_S)
+        self.slam.start("localisation", saved.prefix, dock)
+        verdict = self.check_reload(t0 + relocalise.VERDICT_TIMEOUT_S, dock)
         record = {"map_id": saved.map_id, "version": saved.version,
                   "took_s": round(time.monotonic() - t0, 2), **verdict}
         if not verdict["ok"]:
@@ -967,19 +983,24 @@ class Bridge(Node):
     def _start_fresh(self, record: dict) -> None:
         with self.lock:
             self.slam_state = "starting"
-            self.slam_started_at = time.time()
-            # A fallen-back reload's map is not this one: forget it, and the
-            # map_id it lent.
-            self.last_map = None
-            self.map_id = mapstore.new_map_id()
             self.reload_matched = False
             self.reload_start_truth = None
         self.slam.start("mapping")
         with self.lock:
+            # Stamped once the old node has EXITED (start() waits for it), plus
+            # its transform's lead (Thermos): nothing it published counts.
+            # A fallen-back reload's map is not this one: forget it, and the
+            # map_id it lent.
+            self.slam_started_at = time.time() + SLAM_TF_LEAD_S
+            self.last_map = None
+            self.map_id = mapstore.new_map_id()
             self.reload = record
         # Ready once THIS node places the robot: a stopped node's map -> odom
         # lingers in the TF buffer for a moment, in the frame just dropped.
         while rclpy.ok() and self._fresh_pose() is None:
+            if not self.slam.alive():
+                raise RuntimeError(f"{slam_process.EXECUTABLES['mapping']} exited before "
+                                   "its first pose")
             time.sleep(0.1)
         with self.lock:
             self.slam_state = "ready"
@@ -995,7 +1016,7 @@ class Bridge(Node):
             return None
         return here
 
-    def check_reload(self, deadline: float) -> dict:
+    def check_reload(self, deadline: float, dock=(0.0, 0.0, 0.0)) -> dict:
         """Judge the reloaded map on SCANS scans at rest: their agreement
         with its /map, and the localised pose's distance from the dock."""
         shares, pose, seen = [], None, None
@@ -1018,7 +1039,7 @@ class Bridge(Node):
             return {**relocalise.judge([], None), "ok": False,
                     "reason": f"no localised pose and {relocalise.SCANS} scans within "
                               f"{relocalise.VERDICT_TIMEOUT_S:.0f} s"}
-        return relocalise.judge(shares, pose)
+        return relocalise.judge(shares, pose, dock)
 
     def _laser_in_map(self):
         try:
@@ -1179,8 +1200,9 @@ def _handler(bridge):
                 return self._send(*bridge.slam_pose())
             if url.path == "/slam/map":
                 with bridge.lock:
-                    reply = bridge.last_map or {"session": bridge.session,
-                                                "version": 0, "usable": False}
+                    # 3.50.D3: no map until the frame is decided, as /slam/pose
+                    reply = (bridge.last_map if bridge.slam_state == "ready" else None) \
+                        or {"session": bridge.session, "version": 0, "usable": False}
                 return self._send(200, reply)
             if url.path == "/goal":
                 return self._send(*bridge.goal_state())

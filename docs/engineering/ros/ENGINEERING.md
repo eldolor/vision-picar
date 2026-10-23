@@ -79,8 +79,9 @@ The nodes `picar.launch.py` starts:
 
 slam_toolbox is not in the launch file since 3.50.D3: the bridge starts it as
 a child process (`slam_process.SlamProcess`, node name `slam_toolbox`,
-`slam.yaml` from `picar_bringup`'s share, `PR_SET_PDEATHSIG` so it dies with
-the bridge), because a reload may have to swap it for another executable at
+`slam.yaml` from `picar_bringup`'s share; stopped in `main()`'s `finally`,
+and the container ends both. No `PR_SET_PDEATHSIG`: it fires when the
+forking THREAD exits, and the start thread is short-lived), because a reload may have to swap it for another executable at
 run time. `async_slam_toolbox_node` maps; `localization_slam_toolbox_node`
 localises on a saved map. 3.50.D2-b measured
 `map_and_localization_slam_toolbox_node` (which switches modes without a
@@ -109,14 +110,14 @@ the `MAX_BRIDGE_ROUTES` budget.
 
 | Route | Request | Answer |
 |---|---|---|
-| `GET /health` | -- | `ok`, `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking` or `ready`, `mode` `mapping` or `localisation`, `reload` `{result: none / off / matched / fell_back, map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`) |
+| `GET /health` | -- | `ok`, `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / matched / fell_back, map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`) |
 | `POST /cmd_vel` | `{driver, linear_m_s, angular_rad_s}` | 200 `{published: <topic>}`, or 400 `unknown driver`. A non-zero `twin-dpad` twist also cancels the active goal. |
 | `GET /odom` | -- | The latest `/diff_drive_controller/odom` as `{x_m, y_m, yaw_rad, linear_m_s, angular_rad_s, at}`, or `{usable: false}` |
 | `GET /scan` | -- | The last LaserScan published, as `{angle_min_rad, angle_increment_rad, ranges_m (None = no return), at}` |
 | `GET /tf?target=&source=` | Defaults `base_link` and `laser` | `{translation_m, quaternion_xyzw, yaw_rad, pitch_rad, roll_rad}`, or 404 |
 | `POST /pan` | `{angle_rad}` | Holds the published `pan_joint` angle. A test hook for R3. |
 | `GET /slam/pose` | -- | `{session, start_truth, start_truth_pending, map, odom, at}`. `start_truth_pending` is true while the start-truth thread is still working (3.76 round 5); `world/ros_world.py` anchors nothing for the session until it is false or `start_truth` is set. `map` and `odom` are `{x_m, y_m, yaw_rad, age_s}` of `base_footprint` in that frame, or null. `age_s` is how old tf2's latest transform is (3.76 H1-13): the lookup answers the last transform however old, so a dead `slam_toolbox` or `ros2_control` would otherwise read as a live, frozen pose. `world/ros_world.py` reads a pose older than `POSE_STALE_S` (1 s) as unusable. Until `slam.state` is `ready` (3.50.D3), `map` is null and `start_truth_pending` true, so nothing anchors on a frame a reload may yet drop; after a matched reload `start_truth` is the saved map's (its frame is session 1's), otherwise this session's. |
-| `GET /slam/map` | -- | `{session, version, resolution_m, width, height, origin_x_m, origin_y_m, origin_yaw_rad, data, at}`, ROS 0-100 / -1 |
+| `GET /slam/map` | -- | `{session, version, resolution_m, width, height, origin_x_m, origin_y_m, origin_yaw_rad, data, at}`, ROS 0-100 / -1; `{session, version: 0, usable: false}` until `slam.state` is `ready` (3.50.D3) |
 | `POST /goal` | `{x_m, y_m, yaw_rad, [session]}`, map frame | 409 `{error, session}` if `session` is given and is not this bridge's (3.76 round 8: a goal converted for a container that has since restarted; nothing is cancelled), else 503 `{error, slam}` while `slam.state` is not `ready` (3.50.D3: nav2 is held while slam_toolbox starts or a reload is judged), else 200 `{state: "pending"}`, or 503 when nav2's `navigate_to_pose` has no server within `NAV2_WAIT_S` (1 s, inside `RosWorld`'s 2 s client timeout so the 503 arrives; it was 2 s and the caller timed out first, 3.76 H1-8). It replaces any existing goal. |
 | `GET /goal` | -- | `{session, goal: {x_m, y_m, yaw_rad, state, since, [ended, cancel_reason, reason]}, plan: [[x, y], ...], cancelling}` (`since` and `ended` are wall time; the goal's internal `_`-prefixed monotonic fields are never published). `cancelling` counts the goals the bridge has asked nav2 to cancel and nav2 has not yet ended (3.76 Q3); while a SUPERSEDED one is among them, the current goal reads `active` with a `reason` saying so, so `goal_in_progress()` keeps refusing other autonomous drivers and a stop keeps its hold until nav2 confirms. `state` is one of `pending`, `active`, `succeeded`, `aborted`, `canceled`, `rejected`, `status_<n>`. A goal nav2 has not accepted or rejected within `GOAL_RESPONSE_TIMEOUT_S` (5 s) reads `aborted` with a `reason` (3.76 H1-2): while it read `pending` the robot server refused every other autonomous driver and a stop waited on it, for ever if nav2's navigator died after `wait_for_server`. If nav2 answers later, the goal is live again: `active`, with its handle kept and cancelled until it ends (3.76 R2). A cancelled goal with no result reads `aborted` only when nav2's `navigate_to_pose` server is GONE and nothing has driven on `cmd_vel/nav` for `CANCEL_RESULT_TIMEOUT_S` (10 s) since the first cancel (3.76 R6); the same rule gives up a superseded entry in `cancelling`. Never while the navigator is up (round 5 reverted F2's 30 s clause: nav2's recovery tree can be silent that long and then resume the goal); the robot server then settles its stop and lifts the `ros` hold over silent wheels. While the server is up it stays `active` (fail-safe). An unanswered goal stays plain `aborted` with a `reason` rather than a new state (3.76 R10): every consumer already treats `aborted` as ended, nav2 answers in milliseconds, and explore's stuck rule does not hold a goal the robot never moved toward against the place the first time. |
 | `DELETE /goal` | -- | `{cancelled: bool}`. Re-sends nav2's cancel on every call until nav2 reports the goal ended (3.76 H1-1): the handle is kept until the result arrives, because a cancel can be lost or refused and the robot server's stop loop re-sends until the goal reads ended. Every handle the bridge has asked to cancel -- the live goal's, a superseded one's, one accepted late -- stays in `Bridge.cancelling` until nav2's result arrives (or R6's rule gives it up) (3.76 Q3). One schedule for every such goal, whoever asks -- this route, a stop, the D-pad's twist, a superseding goal, or the bridge's own timer, which looks every `CANCEL_TIMER_S` (0.5 s): a cancel is due once the last send to that goal is `CANCEL_RESEND_S` (0.2 s) old during its first 30 s of cancelling, then 10 s old (round 10, `_take_due()`). Each call here asks for every due entry, superseded ones included. The first `cancel_reason` stands (3.76 R9). Answers true while anything it asked to end is still live. |
@@ -251,9 +252,11 @@ spins (its check reads scans and TF).
   and the pose is within `DOCK_TOL_M` (0.5 m) and `DOCK_TOL_DEG` (15 deg) of
   the dock. No fresh pose and 5 scans within `VERDICT_TIMEOUT_S` (8 s) is a
   bad match. All were set before measurement (the plan's D3 criteria).
-- **A bad match** stops the node, forgets its `/map` (`last_map` cleared;
-  `_on_map` drops any map stamped before the current node's start), takes a
-  new `map_id`, and starts the async node from empty. In either case `state`
+- **A bad match** stops the node (waiting for it to exit), then forgets its
+  `/map` (`last_map` cleared; `_on_map` drops any map stamped before
+  `slam_started_at`, set after that exit plus `SLAM_TF_LEAD_S` 0.25 s for
+  the old transform's `transform_timeout` lead), takes a new `map_id`, and
+  starts the async node from empty. In either case `state`
   turns `ready` only when the node started last has published its own
   transform: a stopped node's `map -> odom` lingers in the TF buffer.
 - **Robot at rest.** The check assumes the robot does not move while it runs
@@ -265,6 +268,12 @@ spins (its check reads scans and TF).
   uses the map frame's anchor, which matches odometry only to within the
   robot's placement on the dock (R5's diagnostic). Its `map_id` stays
   `slam-<session>`; a `map_id` that lasts across sessions is 3.50.D5's.
+- **Known limit: a fall-back's map becomes the current one.** Every map is
+  saved (the user, 2026-10-11) and the newest is reloaded, so a robot started
+  off the dock that then runs a mission saves its fresh, smaller map as
+  current; the house map stays in the store (`KEEP_MAPS`) but is not offered
+  again. A saved map whose meta has no `start_truth` keeps
+  `start_truth_pending` until this session's own thread finishes.
 
 ## Parameters and configuration
 
