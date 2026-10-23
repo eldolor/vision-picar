@@ -288,7 +288,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     `tests/tiered_reference.py` on random states, and 0 in 41,585 sweep
     frames against `dev` before it.
   * Live criterion FAILED on its run: explore's close-in was vetoed at
-    the target (K3.4). Two more runs on the tree found, 0 contacts.
+    the target (K3.4, kept by the user until the Rover's runs). Two more
+    runs on the tree found, 0 contacts.
   * Groundwork for learned or tuned trees in simulation.
 * **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
   (67%); few-shot on the user's own rooms meets accuracy on three rooms
