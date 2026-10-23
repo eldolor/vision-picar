@@ -275,6 +275,21 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   * Perception is silent on 20.4% of in-view frames, and VE covers 56% of
     those, so no Astra replay is proposed (re-read on Rover frames).
   * Inputs to 3.91.C and the behavior-tree work.
+* **The tiered ladder as behavior trees (3.94), merged 2026-10-23.**
+  `brain/tree.py` (Sequence, Fallback, Condition, Action, Decorator;
+  py_trees semantics) builds the tiered policy's three decisions as trees:
+  what to do this frame, when to ask, who to ask.
+  * Hard rules stay outside the trees: safety, a person's Stop, arrival,
+    "found needs the cloud", B3, and who-to-ask's guard order.
+  * Rung order and the node settings are config (`brain:` `tier_tree:`,
+    validated in `control/brain_config.py`; every default is the old
+    value). `describe_*tree()` prints the trees.
+  * Exactly the old behaviour: 0 differences against the frozen
+    `tests/tiered_reference.py` on random states, and 0 in 41,585 sweep
+    frames against `dev` before it.
+  * Live criterion FAILED on its run: explore's close-in was vetoed at
+    the target (K3.4). Two more runs on the tree found, 0 contacts.
+  * Groundwork for learned or tuned trees in simulation.
 * **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
   (67%); few-shot on the user's own rooms meets accuracy on three rooms
   (81%, within 1.1 points of the cloud) but not laptop-CPU cost. Not wired
