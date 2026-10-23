@@ -3,23 +3,23 @@
  "image": "vision-picar-ros:plan-3.50",
  "store_mounted": true,
  "start": 200,
- "saved_after_s": 0.31,
+ "saved_after_s": 0.2,
  "bridge_map": {
-  "map_id": "map-30b856dd",
+  "map_id": "map-dac9e5a7",
   "saving": false,
   "store": true,
   "saved": 1,
   "failed": 0,
   "last_version": 1,
-  "last_at": 1792580093.269877,
+  "last_at": 1792786606.3160946,
   "last_error": null
  },
  "meta": {
-  "map_id": "map-30b856dd",
+  "map_id": "map-dac9e5a7",
   "version": 1,
-  "saved_at": 1792580093.2661138,
-  "session": "c2f6d891",
-  "first_session": "c2f6d891",
+  "saved_at": 1792786606.3124838,
+  "session": "80e07862",
+  "first_session": "80e07862",
   "dock_pose": {
    "x": 0.0,
    "y": 0.0,
@@ -31,8 +31,8 @@
    "heading_deg": 90.0
   },
   "files": {
-   "graph.posegraph": 7288829,
-   "graph.data": 823427
+   "graph.posegraph": 6975068,
+   "graph.data": 515168
   }
  },
  "criteria": {

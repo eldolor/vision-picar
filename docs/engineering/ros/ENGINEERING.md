@@ -31,7 +31,7 @@ tf2_ros and slam_toolbox, built from source), then `/ws/install`. It then
 |---|---|---|
 | `picar_description` | xacro | `service/slam/src/picar_description/urdf/picar.urdf.xacro`. Every dimension sits in one block at the top, tagged `[BOM]`, `[CAD]` or `[PLACEHOLDER]`. It declares the `ros2_control` system `picar`, whose plugin is `picar_sim_hardware/PicarSimHardware`, with velocity command and position/velocity state interfaces on `left_wheel_joint` and `right_wheel_joint`. |
 | `picar_sim_hardware` | C++ | `service/slam/src/picar_sim_hardware/src/picar_sim_hardware.cpp`, a `hardware_interface::SystemInterface`. `write()` sends `POST /wheels {left_rad_s, right_rad_s}` with `x-driver: ros` on every cycle, zeros included, because those posts are ROS's heartbeat to the robot server. `read()` does `GET /wheels` and reads `left` and `right` `position_rad` and `velocity_rad_s`. libcurl keeps one connection open. |
-| `picar_bridge` | Python | `bridge.py` is the `Bridge` node plus a `ThreadingHTTPServer` on `BRIDGE_PORT`. `convert.py` holds the wall's conversions (scan, quaternion, and since `PLAN-ros-alignment.md` 3.36 `odometry_zero_in_house()`) and imports no rclpy. The node runs on a `MultiThreadedExecutor`; the 10 Hz scan poll (a blocking HTTP read of the robot's `/scan`) has its own `MutuallyExclusiveCallbackGroup` (3.36), because in the node's default group it starved every subscription on the Jetson: a full scan took about one timer period, the timer was always due, rclpy serves due timers first, and `/odom` went unread for minutes (nav2's odom TF went stale and every goal stalled). The start truth is recorded by its own thread from node start (next paragraph). The HTTP handlers copy what they answer under the node's lock and serialise and write it outside (3.76 H1-6): every subscription callback, the scan poll and `/cmd_vel` take that lock, and a slow reader once held it for the whole write. `brain_view.py` maps brain status to diagnostics and markers, with no rclpy. `keepalive.py` holds one kept-open HTTP connection per thread, with no rclpy. |
+| `picar_bridge` | Python | `bridge.py` is the `Bridge` node plus a `ThreadingHTTPServer` on `BRIDGE_PORT`. `convert.py` holds the wall's conversions (scan, quaternion, and since `PLAN-ros-alignment.md` 3.36 `odometry_zero_in_house()`) and imports no rclpy. The node runs on a `MultiThreadedExecutor`; the 10 Hz scan poll (a blocking HTTP read of the robot's `/scan`) has its own `MutuallyExclusiveCallbackGroup` (3.36), because in the node's default group it starved every subscription on the Jetson: a full scan took about one timer period, the timer was always due, rclpy serves due timers first, and `/odom` went unread for minutes (nav2's odom TF went stale and every goal stalled). The start truth is recorded by its own thread from node start (next paragraph). The HTTP handlers copy what they answer under the node's lock and serialise and write it outside (3.76 H1-6): every subscription callback, the scan poll and `/cmd_vel` take that lock, and a slow reader once held it for the whole write. `brain_view.py` maps brain status to diagnostics and markers, with no rclpy. `keepalive.py` holds one kept-open HTTP connection per thread, with no rclpy. `mapstore.py` is the saved-map store (3.50.D2, "The saved map" below), with no rclpy. |
 | `picar_bringup` | launch + yaml | `service/slam/src/picar_bringup/launch/picar.launch.py` starts everything (next table). Its `config/` directory holds `controllers.yaml`, `twist_mux.yaml`, `slam.yaml` and `nav2.yaml`. |
 
 **The start truth** (`GET /slam/pose`'s `start_truth`, what
@@ -76,7 +76,7 @@ The nodes `picar.launch.py` starts:
 | `controller_manager/ros2_control_node`, plus spawners | `joint_state_broadcaster` and `diff_drive_controller`. |
 | `twist_mux` | `cmd_vel_out` is remapped to `/cmd_vel_mux`. |
 | `picar_bridge/bridge` | The HTTP side of the wall. |
-| `slam_toolbox/async_slam_toolbox_node` | Configured by `slam.yaml`. |
+| `slam_toolbox/async_slam_toolbox_node` | Configured by `slam.yaml`. It maps; 3.50.D2-b measured `map_and_localization_slam_toolbox_node` (which switches modes without a restart) and it bent `home_first_floor`'s east rooms 1.6-3x more, so a reload restarts slam_toolbox in the other mode (3.50.D3). |
 | nav2 `controller_server`, `planner_server`, `behavior_server`, `bt_navigator` | `cmd_vel` is remapped to `cmd_vel/nav`. They run under `lifecycle_manager_navigation` with autostart on. |
 | `nav2_collision_monitor/collision_monitor` | Reads `/cmd_vel_mux` and writes `/diff_drive_controller/cmd_vel_unstamped`. It has its own lifecycle manager. |
 | `foxglove_bridge` | Off unless the container has `PICAR_FOXGLOVE=1` (3.81: the Rover does not need it). Port 8765, address `0.0.0.0`, capabilities `["connectionGraph"]` only. |
@@ -99,7 +99,7 @@ the `MAX_BRIDGE_ROUTES` budget.
 
 | Route | Request | Answer |
 |---|---|---|
-| `GET /health` | -- | `ok`, `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error` |
+| `GET /health` | -- | `ok`, `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved) |
 | `POST /cmd_vel` | `{driver, linear_m_s, angular_rad_s}` | 200 `{published: <topic>}`, or 400 `unknown driver`. A non-zero `twin-dpad` twist also cancels the active goal. |
 | `GET /odom` | -- | The latest `/diff_drive_controller/odom` as `{x_m, y_m, yaw_rad, linear_m_s, angular_rad_s, at}`, or `{usable: false}` |
 | `GET /scan` | -- | The last LaserScan published, as `{angle_min_rad, angle_increment_rad, ranges_m (None = no return), at}` |
@@ -182,6 +182,40 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | `/action` under `drive: ros` | M4 arbitration runs first. With ROS up, the verb runs `RosDriveRobot` through `safety.check_and_execute()`, and an `httpx.HTTPError` or `RuntimeError` gives `robot.stop()` plus `ros_unavailable`. With ROS down, a person runs `fallback_safety` and the result is tagged `via: direct-fallback`; an autonomous driver is refused `ros_unavailable`. The verb's twists go on the `/action`'s driver's twist_mux input; a driver with no input (anything but `twin-dpad`, `brain` and `ros`) gets 400 `unknown driver` from the bridge, which surfaces as `ros_unavailable` (Known gaps) without marking the bridge down. |
 | Stop (`RosDriveRobot.stop()`) | Specified in the [body engineering spec](../body/ENGINEERING.md) ("The ROS drive stop"), including `STOP_ZERO_TIMEOUT_S` and `STOP_HOLD_S`. What the ROS side determines: the hold must outlast twist_mux's input `timeout` plus `diff_drive_controller`'s `cmd_vel_timeout` (the two ADD) plus one plugin period, so a change to either yaml timeout below means re-deriving the hold there. A person's stop also ends any nav2 goal ([safety engineering](../safety/ENGINEERING.md), "Stop ends a nav2 goal"). The ROS-side facts: the server's `DELETE /goal` reaches `Bridge.cancel_goal()`, which cancels an accepted handle, and again on every later call until nav2's result arrives (3.76 H1-1); for a goal still `pending` it records `cancel_reason`, answers `cancelled: true`, and `_on_goal_response()` cancels the goal the moment nav2 accepts it, keeping its handle; it reads `active` until nav2's result says `canceled` (3.76 H1-1: it used to be marked `canceled` on one unconfirmed cancel). |
 
+### The saved map (3.50.D2)
+
+The bridge saves the map when a mission ends; no route asks for it (criterion
+12: the only map offered for loading is one the robot saved).
+
+- **When.** `_poll_brain` (at `BRAIN_HZ`) sees `running` go true -> false, or a
+  restart (running throughout with `budget.elapsed_s` falling: back-to-back
+  missions), and calls `save_map_async("mission_end")` outside the node's
+  lock. One save runs at a time; a request during a save queues exactly one
+  more (`_saving` / `_save_again`, checked and released in one critical
+  section). A mission shorter than one poll is not seen.
+- **How.** `MapStore.begin(map_id)` makes `<root>/<map_id>/.staging-<N>-<id>`;
+  the bridge calls `slam_toolbox/serialize_map` with that prefix (its own
+  `ReentrantCallbackGroup`, waited on an `Event` for `SAVE_TIMEOUT_S`; on a
+  timeout the call is cancelled and the staging left for a later prune).
+  `commit()` refuses missing or empty `graph.posegraph` / `graph.data`,
+  writes `meta.json` (`map_id`, `version`, `saved_at`, `session`,
+  `first_session`, `dock_pose` (0, 0, 0): where session 1 began, the map
+  frame's origin, `start_truth` (evaluation only, never read by the
+  estimate), file sizes), fsyncs the files and the staging directory, renames
+  it to `v<N>`, fsyncs the parent, then points `current.json` at it (a uuid
+  temp file and `os.replace`). Then it prunes: versions beyond `KEEP`, stale
+  staging, maps beyond `KEEP_MAPS`.
+- **Frame facts carry.** `first_session` and `start_truth` come from the
+  oldest kept valid meta; a `start_truth` still None is filled only by the
+  first session (its start is the map frame's), and a later version's filled
+  value is carried past an older None.
+- **Reading.** `MapStore.current()` offers a version only if the pointer is
+  well formed, its `meta.json` names the same map and version, and both
+  files exist; anything else is None. `map_id` today is `map-<8 hex>` per
+  bridge start (`new_map_id()`); D3's reload adopts the saved one.
+- **Privacy.** The files are a floor plan of a home: they stay on the volume
+  (3.50 criterion 14; an S3 copy is 3.50.D6, asked first).
+
 ## Parameters and configuration
 
 | Key or constant | Default | Unit | Where read | Why this value |
@@ -231,6 +265,10 @@ REP-117 (`+inf` means no return). The project side is clockwise, and uses
 | `CANCEL_RESEND_S` | 0.2 | s | `bridge.py` | The re-send interval per goal during its first 30 s of cancelling (3.76 R9, round 10); under the stop loop's 0.25 s poll, so every poll re-sends. |
 | `CANCEL_RESULT_TIMEOUT_S` | 10 | s | `bridge.py` | A cancelled goal with no result this long, nav2's navigator gone and `cmd_vel/nav` silent as long, ends `aborted` (3.76 R6). |
 | `KeepAliveClient` timeout | 0.5 (robot), 1.0 (brain) | s | `bridge.py` | New connections through Docker Desktop stalled past 0.5 s on 41 of 433 polls. A kept-open connection stalled on 0 of 595 (G1). |
+| `PICAR_MAP_DIR` (container) | `/maps` | path | `bridge.py` | The saved-map store; a volume (`-v picar-maps:/maps`). Absent: no store, a warning, no saves. |
+| `SAVE_TIMEOUT_S` | 30 | s | `bridge.py` | slam_toolbox's `serialize_map` answers in under a second for the furnished home (7.3 MB); a hung one is cancelled and counted failed. |
+| `KEEP`, `KEEP_MAPS` | 3, 3 | count | `mapstore.py` | Versions kept per map, and maps kept (newest by mtime, the current one always). |
+| `STALE_STAGING_S` | 600 | s | `mapstore.py` | A staging directory no save of this process owns is removed only this old: a timed-out `serialize_map` may still be writing in it. |
 | `MAX_DUPLICATES`, `MAX_BRIDGE_ROUTES` | 11, 14 | count | `tests/test_wall_linters.py` | Raise only in a commit that says why. Eleven since 3.27's lidar offset; 14 routes since 3.68's `/nav/keepout`. |
 
 ## Procedures

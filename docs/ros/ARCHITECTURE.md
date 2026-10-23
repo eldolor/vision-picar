@@ -337,8 +337,13 @@ where noted.
   the lidar's range into a point on the map, composed through the transform
   tree. It is decided in principle (1.1), has no criteria yet, and would
   raise the bridge's route budget.
-- **Saving and reloading the map**, keeping mapping on top of the reloaded
-  map (question 6).
+- **Saving and reloading the map** (question 6): decided as option D
+  (localise on the saved map by default, re-map on entering unknown space,
+  the dock as the start; the user, 2026-10-09 and 2026-10-11). Being built
+  in 3.50.D: the bridge saves at every mission end into a private volume
+  (D2); slam_toolbox maps with its async node and is restarted in
+  localisation mode for a reload (D3), because the node that switches
+  without a restart mapped the furnished home worse (D2-b).
 - **How the robot keeps its place in large furnished rooms** (3.39). This is
   a problem every indoor robot with a low 2D lidar meets: repeated features
   confuse scan matching, open space gives it little to hold, and SLAM must
