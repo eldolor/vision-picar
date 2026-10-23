@@ -1,3 +1,8 @@
 # Raw per-choice records are large; the committed record is a.json and the
 # outcome summary in the plan. Regenerate with `a.py collect U|R`.
 choices-*.json
+# Pulled from the instance: the JSON results are committed, the torch files
+# and markers are not.
+cloud/**/*.pt
+cloud/**/*.tmp
+cloud/.pulled

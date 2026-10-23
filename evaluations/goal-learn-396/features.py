@@ -109,8 +109,8 @@ class Labeller:
                 out.add(name)
         return out
 
-    def types(self, m: dict, goals: list) -> list:
-        known = self.known_rooms(m)
+    def types(self, m: dict, goals: list, known=None) -> list:
+        known = self.known_rooms(m) if known is None else known
         out = []
         for x, y in goals:
             cx, cy = math.floor(x / self.cell_m), math.floor(y / self.cell_m)

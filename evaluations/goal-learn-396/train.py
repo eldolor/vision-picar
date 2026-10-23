@@ -5,14 +5,17 @@ interruption.
 
     python evaluations/goal-learn-396/train.py ARM OUT_DIR      # ARM: F-small | F-large | MAP-large | PONI-large
     python evaluations/goal-learn-396/train.py rule OUT_DIR     # the rule on the selection houses
+    python evaluations/goal-learn-396/train.py oracle ROOT      # the shared oracle sets, first
 
 Stages, each skipped when its output exists in OUT_DIR:
 
 1. **oracle**: oracle-driven missions on the arm's training houses, one in
-   mode R and one in mode U each (`oracle-<k>.pkl`, a shard every
-   SHARD houses, so an interruption loses at most one shard).
-2. **clone**: supervised softmax cross-entropy on the oracle's picks
-   (`clone.pt`).
+   mode R and one in mode U each, shared by the arms on the same house set
+   (`OUT_DIR/../oracle-<small|large>/oracle-<k>.pkl`, a shard every SHARD
+   houses, so an interruption loses at most one shard). `train.py oracle
+   ROOT` makes them all first, so the arms never race to write them.
+2. **clone**: supervised softmax cross-entropy on the oracle's picks, or
+   PONI's potentials (`clone.pt`; `clone-ckpt.pt` after every epoch).
 3. **ppo**: ITERS iterations of HOUSES houses x ROLLOUTS missions, each
    mission's mode drawn R or U half and half; group-relative advantages and
    PPO's clipped objective (3.65's, unchanged). A checkpoint (`ckpt.pt`:
@@ -46,9 +49,10 @@ sys.path.insert(0, os.path.join(ROOT, "evaluations", "explore-365"))
 sys.path.insert(0, HERE)
 import oracle as O                                            # noqa: E402
 from a import houses as a_houses, pick_target                 # noqa: E402
-from features import Labeller, room_features                  # noqa: E402
+from features import Labeller, room_features, room_type       # noqa: E402
 from harness import CRASH_COST, GOAL_COST, METRE_COST, MeteredNav  # noqa: E402
 from model import crops, layers, score_np, to_np, torch_net   # noqa: E402
+from brain.frontier import _cell_of                            # noqa: E402
 from brain.goal_policy import FEATURES, LinearGoalPolicy      # noqa: E402
 from control.mission_runner import MissionRunner              # noqa: E402
 from sim.maps import build_world                              # noqa: E402
@@ -79,8 +83,11 @@ def train_houses(arm: str) -> list:
     small = a_houses("train")
     if arm == "F-small":
         return small
-    u = usable("train")
-    return small + [("train", h) for h in u if h >= 2000]
+    extra = [("train", h) for h in usable("train") if h >= 2000]
+    if len(extra) < 1000:
+        # B1's 10,000-house import has not landed in this checkout.
+        raise SystemExit(f"only {len(extra)} usable train houses from 2000 on; import B1 first")
+    return small + extra
 
 
 def select_houses() -> list:
@@ -118,16 +125,17 @@ def mission(split: str, index: int, mode: str, spec, seed: int = 0) -> dict:
             if not pool:
                 return None
             goals = [c.goal for _, c, _ in pool]
-            types_ = labeller.types(m, goals)
+            known = labeller.known_rooms(m)
+            types_ = labeller.types(m, goals, known)
             room = room_features(m, pose, goals, trail=trail, types=types_, prior=prior)
             X = np.asarray([a + b for a, b in zip(feats, room)], dtype=np.float32)
             C = None
             if want_crops:
                 pc = {}
-                for name in labeller.known_rooms(m):
-                    p = prior.get(labeller_type(name), 0.0)
+                for name in known:
+                    p = prior.get(room_type(name), 0.0)
                     for (i, j) in labeller.cells[name]:
-                        pc[O_cell(m, i, j)] = p
+                        pc[_cell_of(m, (i + 0.5) * CELL, (j + 0.5) * CELL)] = p
                 L = layers(m, self.seen, trail, pc)
                 C = crops(m, L, pose, goals)
             costs = [O.cost_at(dist, g[0], g[1]) for g in goals]
@@ -173,17 +181,6 @@ def mission(split: str, index: int, mode: str, spec, seed: int = 0) -> dict:
     return row
 
 
-def labeller_type(name: str) -> str:
-    from features import room_type
-    return room_type(name)
-
-
-def O_cell(m: dict, i: int, j: int) -> tuple:
-    """A true-grid cell's centre -> the brain map's cell."""
-    from brain.frontier import _cell_of
-    return _cell_of(m, (i + 0.5) * CELL, (j + 0.5) * CELL)
-
-
 def _job(args):
     return mission(*args)
 
@@ -196,9 +193,16 @@ def save_atomic(path: str, write) -> None:
     os.replace(tmp, path)
     s3 = os.environ.get("CKPT_S3")
     if s3:
-        subprocess.run(["aws", "s3", "cp", "--only-show-errors", path,
-                        f"{s3.rstrip('/')}/{os.path.basename(os.path.dirname(path))}/"
-                        f"{os.path.basename(path)}"], check=False)
+        dest = (f"{s3.rstrip('/')}/{os.path.basename(os.path.dirname(path))}/"
+                f"{os.path.basename(path)}")
+        try:
+            ok = subprocess.run(["aws", "s3", "cp", "--only-show-errors", path, dest]).returncode == 0
+        except OSError as e:
+            ok = False
+            print(f"WARNING: {e}", flush=True)
+        if not ok:
+            # The local copy is good; only a spot interruption now would lose it.
+            print(f"WARNING: upload of {path} to {dest} FAILED", flush=True)
 
 
 def summary(rows: list) -> dict:
@@ -215,8 +219,16 @@ def summary(rows: list) -> dict:
 
 # ---------- stages ----------
 
-def stage_oracle(arm: str, out: str, ex) -> list:
-    hs = train_houses(arm)
+def house_set(arm: str) -> str:
+    return "small" if arm == "F-small" else "large"
+
+
+def stage_oracle(which: str, root: str, ex) -> list:
+    """Oracle shards for a house set, in `root/oracle-<set>/`, shared by every
+    arm on that set (remote.sh runs this once, before the arms)."""
+    hs = train_houses("F-small" if which == "small" else "F-large")
+    out = os.path.join(root, f"oracle-{which}")
+    os.makedirs(out, exist_ok=True)
     shards = []
     for k in range(0, len(hs), SHARD):
         path = os.path.join(out, f"oracle-{k // SHARD:03d}.pkl")
@@ -226,7 +238,7 @@ def stage_oracle(arm: str, out: str, ex) -> list:
         jobs = [(s, h, mode, "oracle") for s, h in hs[k:k + SHARD] for mode in ("R", "U")]
         rows = list(ex.map(_job, jobs, chunksize=4))
         save_atomic(path, lambda p: pickle.dump(rows, open(p, "wb")))
-        print(f"oracle shard {k // SHARD}: {summary(rows)}", flush=True)
+        print(f"oracle {which} shard {k // SHARD}: {summary(rows)}", flush=True)
     return shards
 
 
@@ -248,6 +260,10 @@ def load_choices(shards: list, kind: str) -> list:
     for p in shards:
         for r in pickle.load(open(p, "rb")):
             for c in r["choices"]:
+                if not (c["costs"] >= 0).any():
+                    # The target unreachable from every candidate: the oracle's
+                    # "pick" is just the pool's first, which would teach the rule.
+                    continue
                 out.append((c["X"], c["C"] if kind == "MAP" else None, c["oracle"],
                             potential(c["costs"])))
     return out
@@ -274,7 +290,7 @@ def _batch_loss(net, batch, kind, torch, poni=False):
     return loss / len(batch)
 
 
-def stage_clone(arm: str, out: str, shards: list):
+def stage_clone(arm: str, out: str, shards: list, ex):
     import torch
     kind = "F" if arm.startswith("F") else "MAP"
     poni = arm.startswith("PONI")
@@ -283,11 +299,23 @@ def stage_clone(arm: str, out: str, shards: list):
         return torch.load(path, weights_only=False)
     torch.manual_seed(SEED)
     data = load_choices(shards, kind)
-    held = load_choices(_select_oracle(out), kind)
+    held = load_choices(_select_oracle(os.path.dirname(out), ex), kind)
+    if not data or not held:
+        raise SystemExit(f"{arm}: no oracle choices ({len(data)} training, {len(held)} held out)")
     net = torch_net(kind)
     opt = torch.optim.Adam(net.parameters(), lr=CLONE_LR)
     rng = random.Random(SEED)
-    for ep in range(CLONE_EPOCHS):
+    first = 0
+    cpath = os.path.join(out, "clone-ckpt.pt")
+    if os.path.exists(cpath):
+        st = torch.load(cpath, weights_only=False)
+        net.load_state_dict(st["net"])
+        opt.load_state_dict(st["opt"])
+        rng.setstate(st["rng"])
+        torch.set_rng_state(st["torch_rng"])
+        first = st["epoch"] + 1
+        print(f"clone: resuming at epoch {first}", flush=True)
+    for ep in range(first, CLONE_EPOCHS):
         rng.shuffle(data)
         for k in range(0, len(data), CLONE_BATCH):
             loss = _batch_loss(net, data[k:k + CLONE_BATCH], kind, torch, poni)
@@ -299,6 +327,9 @@ def stage_clone(arm: str, out: str, shards: list):
                 hl = float(sum(_batch_loss(net, held[k:k + 512], kind, torch, poni) * len(held[k:k + 512])
                                for k in range(0, len(held), 512)) / len(held))
             print(f"clone epoch {ep}: held-out loss {hl:.4f}", flush=True)
+        cst = {"net": net.state_dict(), "opt": opt.state_dict(), "rng": rng.getstate(),
+               "torch_rng": torch.get_rng_state(), "epoch": ep}
+        save_atomic(cpath, lambda p: torch.save(cst, p))
     agree = _agreement(net, held, kind, torch)
     state = {"kind": kind, "net": net.state_dict(), "held_out_agreement": agree,
              "n_train": len(data), "n_held": len(held)}
@@ -316,14 +347,15 @@ def _agreement(net, held, kind, torch) -> float:
     return round(hit / len(held), 4)
 
 
-def _select_oracle(out: str) -> list:
+def _select_oracle(root: str, ex) -> list:
     """Oracle missions on the selection houses, both modes (held-out choices
-    for the clone's agreement, reported only)."""
+    for the clone's agreement, reported only), in `root/oracle-select/`."""
+    out = os.path.join(root, "oracle-select")
+    os.makedirs(out, exist_ok=True)
     path = os.path.join(out, "oracle-select.pkl")
     if not os.path.exists(path):
-        with ProcessPoolExecutor(WORKERS) as ex:
-            rows = list(ex.map(_job, [(s, h, m, "oracle") for s, h in select_houses()
-                                      for m in ("R", "U")], chunksize=2))
+        rows = list(ex.map(_job, [(s, h, m, "oracle") for s, h in select_houses()
+                                  for m in ("R", "U")], chunksize=2))
         save_atomic(path, lambda p: pickle.dump(rows, open(p, "wb")))
     return [path]
 
@@ -336,9 +368,11 @@ def run_selection(kind: str, params: dict, ex) -> dict:
 
 def ppo_update(net, opt, missions, kind, torch):
     seg, X, C, chosen, old, adv = [], [], [], [], [], []
+    at = 0
     for m in missions:
         for c in m["choices"]:
-            seg.append((sum(len(x) for x in X), len(c["X"])))
+            seg.append((at, len(c["X"])))
+            at += len(c["X"])
             X.append(c["X"])
             if kind == "MAP":
                 C.append(c["C"])
@@ -442,7 +476,7 @@ def stage_ppo(arm: str, out: str, clone: dict, ex) -> None:
             sel = run_selection(kind, net.export(), ex)
             log["selection"].append({"it": it, **sel})
             print(f"selection it {it}: {sel}", flush=True)
-            if sel["R"]["mean_reward"] > best["selection"]["R"]["mean_reward"]:
+            if (sel["R"]["mean_reward"] or -math.inf) > (best["selection"]["R"]["mean_reward"] or -math.inf):
                 best = {"it": it, "selection": sel, "params": net.export()}
         st = {"net": net.state_dict(), "opt": opt.state_dict(), "rng": rng.getstate(),
               "torch_rng": torch.get_rng_state(), "log": log, "best": best, "it": it}
@@ -468,11 +502,18 @@ def main(arm: str, out: str) -> None:
                         lambda p: json.dump({"summary": res, "rows": rows}, open(p, "w")))
             print("rule:", res)
             return
+        if arm == "oracle":
+            # `train.py oracle ROOT`: every shared oracle set, before the arms.
+            stage_oracle("small", out, ex)
+            stage_oracle("large", out, ex)
+            _select_oracle(out, ex)
+            return
         if os.path.exists(os.path.join(out, "best.json")):
             print("already done")
             return
-        shards = stage_oracle(arm, out, ex)
-        clone = stage_clone(arm, out, shards)
+        root = os.path.dirname(os.path.abspath(out))
+        shards = stage_oracle(house_set(arm), root, ex)
+        clone = stage_clone(arm, out, shards, ex)
         stage_ppo(arm, out, clone, ex)
 
 

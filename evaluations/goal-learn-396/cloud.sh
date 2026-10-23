@@ -21,13 +21,30 @@ export GPU_PURPOSE=goal-learn-396
 REGION="${AWS_REGION:-us-east-2}"
 BUCKET="${GPU_BUCKET:-vision-picar-deploy-303351622021-us-east-2}"
 S3="s3://$BUCKET/$GPU_PREFIX"
-export GPU_AMI="${GPU_AMI:-$(aws --region "$REGION" ssm get-parameter --name \
-  /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
-  --query Parameter.Value --output text)}"
+MAX_HOURS="${MAX_HOURS:-6}"   # the instance powers itself off (terminate) by then
 EC2=tools/gpu/ec2.sh
 HERE=evaluations/goal-learn-396
 
+ami() {
+  # Ubuntu 24.04 (python 3.12). A failed lookup must stop here: ec2.sh would
+  # otherwise fall back to its GPU image.
+  if [ -z "${GPU_AMI:-}" ]; then
+    GPU_AMI="$(aws --region "$REGION" ssm get-parameter --name \
+      /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
+      --query Parameter.Value --output text)" || { echo "AMI lookup failed" >&2; exit 1; }
+  fi
+  [ -n "$GPU_AMI" ] || { echo "AMI lookup returned nothing" >&2; exit 1; }
+  export GPU_AMI
+}
+
 push_code() {
+  # The instance gets HEAD, never the working tree: refuse uncommitted changes
+  # to tracked files, or the run would train on something else.
+  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    echo "uncommitted changes -- commit first (the instance gets HEAD):" >&2
+    git status --short --untracked-files=no >&2
+    exit 1
+  fi
   local tmp; tmp="$(mktemp -d)"
   git archive --format=tar.gz -o "$tmp/code.tar.gz" HEAD
   aws --region "$REGION" s3 cp --only-show-errors "$tmp/code.tar.gz" "$S3/code.tar.gz"
@@ -37,12 +54,12 @@ push_code() {
 
 run_remote() {
   # Canonical's Ubuntu image has the SSM agent but no AWS CLI.
-  bash "$EC2" run "export PATH=\$PATH:/snap/bin; command -v aws >/dev/null || snap install aws-cli --classic >/dev/null; aws s3 cp --only-show-errors $S3/remote.sh /tmp/remote.sh && sudo -u ubuntu env PATH=\$PATH bash /tmp/remote.sh $S3"
+  bash "$EC2" run "export PATH=\$PATH:/snap/bin; command -v aws >/dev/null || snap install aws-cli --classic >/dev/null; aws s3 cp --only-show-errors $S3/remote.sh /tmp/remote.sh && sudo -u ubuntu env PATH=\$PATH bash /tmp/remote.sh $S3 $MAX_HOURS"
 }
 
 case "${1:-}" in
-  start)  push_code; bash "$EC2" up; run_remote ;;
-  resume) bash "$EC2" up; run_remote ;;
+  start)  ami; push_code; bash "$EC2" up; run_remote ;;
+  resume) ami; bash "$EC2" up; run_remote ;;
   status) bash "$EC2" status
           for a in F-small F-large MAP-large PONI-large rule; do
             echo "== $a"; aws --region "$REGION" s3 cp --only-show-errors "$S3/logs/$a.log" - 2>/dev/null \
@@ -52,15 +69,20 @@ case "${1:-}" in
             aws --region "$REGION" s3 ls "$S3/ckpt/$f" >/dev/null 2>&1 || exit 1
           done ;;
   pull)   mkdir -p "$HERE/cloud"
-          for a in F-small F-large MAP-large PONI-large; do
-            aws --region "$REGION" s3 cp --only-show-errors "$S3/ckpt/$a/best.json" "$HERE/cloud/$a.json" || true
-            aws --region "$REGION" s3 cp --only-show-errors "$S3/ckpt/$a/clone.pt" "$HERE/cloud/$a-clone.pt" || true
-          done
-          aws --region "$REGION" s3 cp --only-show-errors "$S3/ckpt/rule/rule-select.json" "$HERE/cloud/rule-select.json" || true
+          # Everything under ckpt/ except the big oracle shards (regenerable).
+          aws --region "$REGION" s3 sync --only-show-errors --exclude "oracle-*" \
+            "$S3/ckpt/" "$HERE/cloud/ckpt/"
           aws --region "$REGION" s3 sync --only-show-errors "$S3/logs/" "$HERE/cloud/logs/"
-          ls -la "$HERE/cloud" ;;
+          touch "$HERE/cloud/.pulled"
+          ls -la "$HERE/cloud" "$HERE/cloud/ckpt" ;;
   down)   bash "$EC2" down
-          aws --region "$REGION" s3 rm --recursive --only-show-errors "$S3/" && echo "deleted $S3/"
+          # The results live only in S3 until pulled: keep them unless pulled
+          # (or FORCE=1, to throw them away).
+          if [ -f "$HERE/cloud/.pulled" ] || [ "${FORCE:-0}" = 1 ]; then
+            aws --region "$REGION" s3 rm --recursive --only-show-errors "$S3/" && echo "deleted $S3/"
+          else
+            echo "NOT deleting $S3/ -- run pull first (or FORCE=1 down to discard it)"
+          fi
           aws --region "$REGION" ec2 describe-instances --filters "Name=tag:Name,Values=$GPU_HOST_NAME" \
             "Name=instance-state-name,Values=pending,running,stopping,stopped" \
             --query 'Reservations[].Instances[].InstanceId' --output text ;;

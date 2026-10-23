@@ -150,7 +150,10 @@ cmd_up() {
 
   local market=()
   if [ "$SPOT" = 1 ]; then
-    market=(--instance-market-options '{"MarketType":"spot","SpotOptions":{"SpotInstanceType":"one-time","InstanceInterruptionBehavior":"terminate"}}')
+    # A shutdown from inside (the work's own end or dead-man switch)
+    # terminates too, so nothing is left stopped and still holding a volume.
+    market=(--instance-market-options '{"MarketType":"spot","SpotOptions":{"SpotInstanceType":"one-time","InstanceInterruptionBehavior":"terminate"}}'
+            --instance-initiated-shutdown-behavior terminate)
   fi
   say "launching $TYPE$([ "$SPOT" = 1 ] && echo ' (spot)') from $ami in $subnet (${VOLUME_GB}GB gp3)"
   id="$(aws_ ec2 run-instances ${market[@]+"${market[@]}"} \
