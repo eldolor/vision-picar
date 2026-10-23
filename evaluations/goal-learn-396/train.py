@@ -188,7 +188,8 @@ def _job(args):
 # ---------- persistence ----------
 
 def save_atomic(path: str, write) -> None:
-    tmp = path + ".tmp"
+    # Per-process tmp: arms rebuilding one shared file at once never mix bytes.
+    tmp = f"{path}.{os.getpid()}.tmp"
     write(tmp)
     os.replace(tmp, path)
     s3 = os.environ.get("CKPT_S3")
@@ -304,14 +305,12 @@ def stage_clone(arm: str, out: str, shards: list, ex):
         raise SystemExit(f"{arm}: no oracle choices ({len(data)} training, {len(held)} held out)")
     net = torch_net(kind)
     opt = torch.optim.Adam(net.parameters(), lr=CLONE_LR)
-    rng = random.Random(SEED)
     first = 0
     cpath = os.path.join(out, "clone-ckpt.pt")
     if os.path.exists(cpath):
         st = torch.load(cpath, weights_only=False)
         net.load_state_dict(st["net"])
         opt.load_state_dict(st["opt"])
-        rng.setstate(st["rng"])
         torch.set_rng_state(st["torch_rng"])
         first = st["epoch"] + 1
         print(f"clone: resuming at epoch {first}", flush=True)
@@ -330,7 +329,7 @@ def stage_clone(arm: str, out: str, shards: list, ex):
                 hl = float(sum(_batch_loss(net, held[k:k + 512], kind, torch, poni) * len(held[k:k + 512])
                                for k in range(0, len(held), 512)) / len(held))
             print(f"clone epoch {ep}: held-out loss {hl:.4f}", flush=True)
-        cst = {"net": net.state_dict(), "opt": opt.state_dict(), "rng": rng.getstate(),
+        cst = {"net": net.state_dict(), "opt": opt.state_dict(),
                "torch_rng": torch.get_rng_state(), "epoch": ep}
         save_atomic(cpath, lambda p: torch.save(cst, p))
     agree = _agreement(net, held, kind, torch)
@@ -421,6 +420,12 @@ def ppo_update(net, opt, missions, kind, torch):
             "clipped": round(float(((ratio - 1).abs() > CLIP).float().mean()), 3)}
 
 
+def _reward(sel: dict) -> float:
+    """Mode R's mean selection reward; none counts as the worst."""
+    x = sel["R"]["mean_reward"]
+    return -math.inf if x is None else x
+
+
 def stage_ppo(arm: str, out: str, clone: dict, ex) -> None:
     import torch
     kind = clone["kind"]
@@ -479,9 +484,7 @@ def stage_ppo(arm: str, out: str, clone: dict, ex) -> None:
             sel = run_selection(kind, net.export(), ex)
             log["selection"].append({"it": it, **sel})
             print(f"selection it {it}: {sel}", flush=True)
-            def _r(x):
-                return -math.inf if x is None else x
-            if _r(sel["R"]["mean_reward"]) > _r(best["selection"]["R"]["mean_reward"]):
+            if _reward(sel) > _reward(best["selection"]):
                 best = {"it": it, "selection": sel, "params": net.export()}
         st = {"net": net.state_dict(), "opt": opt.state_dict(), "rng": rng.getstate(),
               "torch_rng": torch.get_rng_state(), "log": log, "best": best, "it": it}

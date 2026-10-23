@@ -10,6 +10,7 @@
 #   evaluations/goal-learn-396/cloud.sh pull     results -> evaluations/goal-learn-396/cloud/
 #   evaluations/goal-learn-396/cloud.sh down     terminate, delete SG + role, AND the S3 prefix
 set -euo pipefail
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(git rev-parse --show-toplevel)"
 export GPU_HOST_NAME=vision-picar-cpu-396
 export GPU_PREFIX=train-396
@@ -41,9 +42,10 @@ push_code() {
   # The instance gets HEAD, never the working tree: refuse uncommitted changes
   # to tracked files, or the run would train on something else.
   # Untracked files count too: committed code may import one (3.76 batch I).
-  if [ -n "$(git status --porcelain)" ]; then
+  # (cloud/ holds pulled results, never code.)
+  if [ -n "$(git status --porcelain -- . ":!$HERE/cloud")" ]; then
     echo "uncommitted or untracked files -- commit first (the instance gets HEAD):" >&2
-    git status --short >&2
+    git status --short -- . ":!$HERE/cloud" >&2
     exit 1
   fi
   local tmp; tmp="$(mktemp -d)"
@@ -60,7 +62,11 @@ run_remote() {
 
 case "${1:-}" in
   # A new launch makes any earlier pull stale, so `down` must see a new one.
-  start)  ami; push_code; rm -f "$HERE/cloud/.pulled"; bash "$EC2" up; run_remote ;;
+  start)  # A fresh run must not resume an earlier run's checkpoints.
+          if aws --region "$REGION" s3 ls "$S3/ckpt/" >/dev/null 2>&1; then
+            echo "$S3/ckpt/ holds an earlier run -- pull + down first (or resume it)" >&2; exit 1
+          fi
+          ami; push_code; rm -f "$HERE/cloud/.pulled"; bash "$EC2" up; run_remote ;;
   resume) ami; rm -f "$HERE/cloud/.pulled"; bash "$EC2" up; run_remote ;;
   status) bash "$EC2" status
           for a in oracle F-small F-large MAP-large PONI-large rule; do
@@ -71,12 +77,15 @@ case "${1:-}" in
             aws --region "$REGION" s3 ls "$S3/ckpt/$f" >/dev/null 2>&1 || exit 1
           done ;;
   pull)   mkdir -p "$HERE/cloud"
+          # Checked BEFORE the download, so nothing can land in S3 unseen
+          # between the copy and the mark.
+          complete=0; bash "$SELF" done && complete=1
           # Everything under ckpt/ except the big oracle shards (regenerable).
           aws --region "$REGION" s3 sync --only-show-errors --exclude "oracle-*" \
             "$S3/ckpt/" "$HERE/cloud/ckpt/"
           aws --region "$REGION" s3 sync --only-show-errors "$S3/logs/" "$HERE/cloud/logs/"
           # Marked pulled only when every result is in (`down` keys off it).
-          if bash "$0" done; then touch "$HERE/cloud/.pulled"; else echo "not all results in yet -- pull again when done"; fi
+          if [ $complete = 1 ]; then touch "$HERE/cloud/.pulled"; else echo "not all results in yet -- pull again when done"; fi
           ls -la "$HERE/cloud" "$HERE/cloud/ckpt" ;;
   down)   bash "$EC2" down
           # The results live only in S3 until pulled: keep them unless pulled

@@ -19,13 +19,15 @@ export PATH="$PATH:/snap/bin"
 S3="$1"
 MAX_HOURS="${2:-6}"
 DIR=/opt/train
-if pgrep -f "goal-learn-396/(train.py|drive.sh)" >/dev/null || pgrep -f "$DIR/drive.sh" >/dev/null; then
-  echo "a run is already going here -- not starting a second one"
+if pgrep -f "goal-learn-396/train.py|$DIR/drive.sh|$DIR/watch.sh" >/dev/null; then
+  # A watcher alone means a run is finishing (it may power off any minute).
+  echo "a run is going or finishing here -- not starting another; resume after it ends"
   pgrep -af "train.py|drive.sh|watch.sh" | head
   exit 0
 fi
 # The dead-man switch, armed only for a run that actually starts.
-sudo shutdown -h "+$((MAX_HOURS * 60))" "3.96 dead-man switch" >/dev/null 2>&1 || true
+sudo shutdown -h "+$((MAX_HOURS * 60))" "3.96 dead-man switch" \
+  || { echo "could not arm the dead-man switch -- not starting" >&2; exit 1; }
 sudo mkdir -p "$DIR" && sudo chown -R ubuntu:ubuntu "$DIR"
 cd "$DIR"
 aws s3 cp --only-show-errors "$S3/code.tar.gz" code.tar.gz
@@ -80,6 +82,7 @@ cat > watch.sh <<EOF
 #!/usr/bin/env bash
 export PATH="\$PATH:/snap/bin"
 idle=0
+stuck=0
 while sleep 60; do
   aws s3 sync --only-show-errors $DIR/logs $S3/logs
   # Results too, every minute: an upload save_atomic missed is retried here.
@@ -91,8 +94,12 @@ while sleep 60; do
   fi
   if [ \$idle -ge 2 ]; then
     aws s3 sync --only-show-errors $DIR/logs $S3/logs
-    aws s3 sync --only-show-errors --exclude "*.tmp" $DIR/out $S3/ckpt \\
-      && sudo shutdown -h now "3.96: no trainer left"
+    if aws s3 sync --only-show-errors --exclude "*.tmp" $DIR/out $S3/ckpt; then
+      sudo shutdown -h now "3.96: no trainer left"
+    fi
+    # The final sync keeps failing: stop paying after 15 minutes of it.
+    stuck=\$((stuck + 1))
+    [ \$stuck -ge 15 ] && sudo shutdown -h now "3.96: final sync failing"
   fi
 done
 EOF
