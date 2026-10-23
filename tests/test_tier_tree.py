@@ -45,7 +45,7 @@ def test_fallback_stops_at_the_first_child_that_does_not_fail():
 
 def test_a_decorator_wraps_its_child_and_a_bad_status_is_refused():
     t = Decorator("not", Condition("c", lambda bb: True),
-                  lambda bb, child: FAILURE if child.tick(bb) == SUCCESS else SUCCESS)
+                  lambda bb, child_status: FAILURE if child_status == SUCCESS else SUCCESS)
     assert t.tick(None) == FAILURE
     with pytest.raises(ValueError):
         Action("bad", lambda bb: "maybe").tick(None)
@@ -619,3 +619,49 @@ def test_criterion_3_local_yes_at_moves_the_frame_question_not_the_arrival():
     t = TieredVision(_Pipe(), lambda f: {}, tree={"local_yes_at": 0.7})
     assert _local_kind(got, t.local_no_below, t.local_yes_at) == "unable_band"
     assert _local_kind(got, t.local_no_below) == "yes"          # the default, as the arrival's
+
+
+# -- 3.95: on py_trees ---------------------------------------------------------
+
+def _trees(tier):
+    return {"what": tier._what_tree, "when": tier._when_tree, "who": tier._who_tree}
+
+
+def test_criterion_1_py_trees_ticks_every_node_of_the_three_trees():
+    from py_trees import behaviour, composites, decorators
+    tier = TieredVision(_Pipe(), lambda f: {}, local_identity_fn=lambda f: {},
+                        local_sighting_fn=lambda *a, **k: {}, steer_on_candidate=True)
+    kinds = (composites.Sequence, composites.Selector, decorators.Decorator,
+             behaviour.Behaviour)
+    seen = 0
+    for name, tree in _trees(tier).items():
+        for node in tree.walk():
+            assert isinstance(node, kinds), (name, node.name)
+            if isinstance(node, (composites.Sequence, composites.Selector)):
+                assert node.memory is False, (name, node.name)
+            seen += 1
+    assert seen > 40, seen
+
+
+@pytest.mark.parametrize("tree", ["what", "when", "who"])
+def test_criterion_3_an_error_in_any_tree_reaches_the_caller(tree):
+    tier = TieredVision(_ScriptPipe(1), lambda f: {})
+
+    class Planted(Exception):
+        pass
+
+    def boom(bb):
+        raise Planted(tree)
+    # The first action of each tree runs on every frame that reaches it.
+    first = next(n for n in _trees(tier)[tree].walk() if hasattr(n, "act"))
+    first.act = boom
+    with pytest.raises(Planted, match=tree):
+        for seq in range(50):
+            tier({"seq": seq})
+
+
+def test_a_decorator_sees_its_childs_status_after_the_child_ran():
+    seen = []
+    t = Decorator("d", Action("c", lambda bb: seen.append("child") or FAILURE),
+                  lambda bb, child_status: seen.append(child_status) or SUCCESS)
+    assert t.tick(None) == SUCCESS and seen == ["child", FAILURE]

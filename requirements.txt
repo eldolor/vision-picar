@@ -44,3 +44,7 @@ numpy
 # vision_core.py. Missing here, a fresh environment errored on those tests
 # (3.33's Python 3.10 check, 2026-10-02).
 pillow-heif
+
+# The tiered policy's behavior trees (brain/tree.py, 3.95). Pinned: the
+# trees must tick exactly as the 3.94 equivalence runs measured.
+py_trees==2.6.0

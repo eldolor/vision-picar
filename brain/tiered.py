@@ -2736,11 +2736,12 @@ class TieredVision:
     def _rung_scan(self, bb: "_FrameDecision") -> bool:
         return self._choose(bb, RUNG_SCAN, SCAN_ACTION, "")
 
-    def _spin_guard(self, bb: "_FrameDecision", child: Node) -> str:
-        """The spin floor. Counted over what the robot was actually TOLD to
-        do, cloud steps included, because a spin does not care which tier
-        caused it. Never over a bearing measured or located on this frame."""
-        child.tick(bb)
+    def _spin_guard(self, bb: "_FrameDecision", rungs_status) -> str:
+        """The spin floor, decided after the rungs have run (py_trees ticks
+        the decorator's child first). Counted over what the robot was
+        actually TOLD to do, cloud steps included, because a spin does not
+        care which tier caused it. Never over a bearing measured or located
+        on this frame."""
         if bb.direction is None:
             # The scan rung always chooses; a ladder that ends without one
             # would skip the turn's size and the guard's count below.

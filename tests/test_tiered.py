@@ -1494,10 +1494,10 @@ def test_a_live_sighting_still_outranks_a_dead_reckoned_one():
     # a held goal.
     tier = TieredVision(ScriptedPipeline([ABSENT]), FakeCloud())
     rungs = tier._what_tree.find("rungs, best evidence first")
-    assert [c.name for c in rungs.children()] == [
+    assert [c.name for c in rungs.children] == [
         "steer on this frame's bearing", "turn to the local VLM's located yes",
         "dead-reckon to a sighting", "steer on an uncertain candidate",
         "hold the last goal", "scan"]
-    assert [c.act.__func__ for c in rungs.children()] == [
+    assert [c.act.__func__ for c in rungs.children] == [
         TieredVision._rung_steer, TieredVision._rung_located, TieredVision._rung_reckoned,
         TieredVision._rung_candidate, TieredVision._rung_held, TieredVision._rung_scan]
