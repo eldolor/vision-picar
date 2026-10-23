@@ -78,6 +78,9 @@ class _Node:
     def create_timer(self, *a, **kw):
         return None
 
+    def create_client(self, *a, **kw):        # 3.50.D2: slam_toolbox's serialize_map
+        return None
+
     def get_logger(self):
         return self._logger
 
@@ -107,7 +110,8 @@ def bridge_mod(monkeypatch):
 
     mod("rclpy", ok=lambda: ok["value"], init=lambda: None, shutdown=lambda: None)
     mod("rclpy.action", ActionClient=lambda *a, **kw: None)
-    mod("rclpy.callback_groups", MutuallyExclusiveCallbackGroup=_Msg)
+    mod("rclpy.callback_groups", MutuallyExclusiveCallbackGroup=_Msg,
+        ReentrantCallbackGroup=_Msg)
     mod("rclpy.executors", MultiThreadedExecutor=_Msg)
     mod("rclpy.node", Node=_Node)
     mod("rclpy.qos", DurabilityPolicy=_Msg(), QoSProfile=_Msg, ReliabilityPolicy=_Msg())
@@ -124,6 +128,8 @@ def bridge_mod(monkeypatch):
     mod("nav2_msgs.msg", CostmapFilterInfo=_Msg)          # 3.83: the keepout filter
     mod("nav_msgs")
     mod("nav_msgs.msg", OccupancyGrid=_Msg, Odometry=_Msg, Path=_Msg)
+    mod("slam_toolbox")
+    mod("slam_toolbox.srv", SerializePoseGraph=_Msg)        # 3.50.D2: the map save
     mod("sensor_msgs")
     mod("sensor_msgs.msg", JointState=_Msg, LaserScan=_Msg)
     mod("std_msgs")
