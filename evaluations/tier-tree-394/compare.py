@@ -6,6 +6,7 @@ mission by mission, frame by frame (action, turn size, trigger, local
 question, call counts, reasoning) and on the missions' rows. Writes
 `summary.json`.
 
+    tar xzf evaluations/tier-tree-394/traces.tar.gz -C evaluations/tier-tree-394   # the committed traces
     .venv/bin/python evaluations/tier-tree-394/compare.py
 """
 
