@@ -1,0 +1,3 @@
+# Raw per-choice records are large; the committed record is a.json and the
+# outcome summary in the plan. Regenerate with `a.py collect U|R`.
+choices-*.json

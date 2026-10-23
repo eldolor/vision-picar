@@ -1,0 +1,62 @@
+{
+ "basketball": {
+  "bathroom": 0.0,
+  "bedroom": 0.5304,
+  "kitchen": 0.0,
+  "living room": 0.0
+ },
+ "box": {
+  "bathroom": 0.0029,
+  "bedroom": 0.3831,
+  "kitchen": 0.004,
+  "living room": 0.3657
+ },
+ "cart": {
+  "bathroom": 0.0,
+  "bedroom": 0.0,
+  "kitchen": 0.0,
+  "living room": 0.6609
+ },
+ "dog bed": {
+  "bathroom": 0.0,
+  "bedroom": 0.328,
+  "kitchen": 0.0,
+  "living room": 0.4088
+ },
+ "garbage bag": {
+  "bathroom": 0.0,
+  "bedroom": 0.0,
+  "kitchen": 1.0,
+  "living room": 0.0
+ },
+ "garbage can": {
+  "bathroom": 0.8999,
+  "bedroom": 0.2047,
+  "kitchen": 0.3221,
+  "living room": 0.1853
+ },
+ "house plant": {
+  "bathroom": 0.0,
+  "bedroom": 0.3114,
+  "kitchen": 0.4304,
+  "living room": 0.3669
+ },
+ "laundry hamper": {
+  "bathroom": 0.4762,
+  "bedroom": 0.0632,
+  "kitchen": 0.0,
+  "living room": 0.0
+ },
+ "plunger": {
+  "bathroom": 0.8143,
+  "bedroom": 0.0368,
+  "kitchen": 0.0231,
+  "living room": 0.0243
+ },
+ "red backpack": {
+  "bathroom": 0.1959,
+  "bedroom": 0.1633,
+  "kitchen": 0.2281,
+  "living room": 0.1856
+ }
+}

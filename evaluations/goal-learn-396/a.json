@@ -1,0 +1,147 @@
+{
+ "R": {
+  "old10": {
+   "linear_select": {
+    "n": 313,
+    "unranked": 0,
+    "strict": 0.2236,
+    "tie_aware": 0.2332,
+    "rule_strict": 0.1438,
+    "rule_tie_aware": 0.1438
+   },
+   "linear_train": 0.2551,
+   "mlp_select": 0.2652,
+   "mlp_train": 0.3093,
+   "weights": [
+    -2.67146,
+    0.06958,
+    0.30209,
+    1.82877,
+    -0.06749,
+    1.29231,
+    -0.62567,
+    0.0,
+    2.15718,
+    0.82069
+   ],
+   "n_train": 2140,
+   "n_select": 313
+  },
+  "old10+room": {
+   "linear_select": {
+    "n": 313,
+    "unranked": 0,
+    "strict": 0.2843,
+    "tie_aware": 0.2971,
+    "rule_strict": 0.1438,
+    "rule_tie_aware": 0.1438
+   },
+   "linear_train": 0.3145,
+   "mlp_select": 0.3099,
+   "mlp_train": 0.4103,
+   "weights": [
+    -2.35935,
+    0.01329,
+    0.15121,
+    1.76165,
+    -0.06262,
+    0.95407,
+    -0.62772,
+    0.0,
+    2.02138,
+    0.84727,
+    -0.30815,
+    0.4694,
+    -0.10918,
+    -2.15071,
+    -1.8235,
+    2.8856,
+    0.3206
+   ],
+   "n_train": 2140,
+   "n_select": 313
+  }
+ },
+ "U": {
+  "old10": {
+   "linear_select": {
+    "n": 296,
+    "unranked": 0,
+    "strict": 0.2872,
+    "tie_aware": 0.2973,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   },
+   "linear_train": 0.2692,
+   "mlp_select": 0.3074,
+   "mlp_train": 0.2952,
+   "weights": [
+    -4.11985,
+    -0.69534,
+    0.04979,
+    2.4231,
+    -0.10484,
+    3.74415,
+    0.27548,
+    0.0,
+    1.51835,
+    2.3552
+   ],
+   "n_train": 1768,
+   "n_select": 296
+  },
+  "old10+room": {
+   "linear_select": {
+    "n": 296,
+    "unranked": 0,
+    "strict": 0.3074,
+    "tie_aware": 0.3243,
+    "rule_strict": 0.152,
+    "rule_tie_aware": 0.152
+   },
+   "linear_train": 0.3139,
+   "mlp_select": 0.3412,
+   "mlp_train": 0.3597,
+   "weights": [
+    -4.087,
+    -0.60702,
+    -0.02207,
+    2.25031,
+    -0.08983,
+    2.96925,
+    0.27872,
+    0.0,
+    1.47647,
+    2.26535,
+    -0.23167,
+    -0.27388,
+    -0.27906,
+    -0.05568,
+    -1.51085,
+    0.23192,
+    0.81466
+   ],
+   "n_train": 1768,
+   "n_select": 296
+  }
+ },
+ "features": [
+  "path",
+  "turn",
+  "is_view",
+  "size",
+  "area",
+  "unknown_near",
+  "unseen_near",
+  "failed",
+  "reached",
+  "view_late",
+  "room_new",
+  "room_area",
+  "room_other",
+  "room_share",
+  "type_known",
+  "prior",
+  "prior_new"
+ ]
+}
