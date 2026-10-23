@@ -177,13 +177,14 @@ def test_no_amcl_and_no_map_server():
         assert "nav2_map_server" not in t
 
 
-def test_slam_runs_the_node_that_switches_modes():
-    """3.50.D1: D localises by default and maps for a re-map or a save, on
-    one graph, without a restart -- only map_and_localization does that."""
+def test_slam_maps_with_the_async_node():
+    """3.50.D2-b: map_and_localization_slam_toolbox_node mapped
+    home_first_floor worse than the async node (east max 0.142/0.228 m vs
+    0.089/0.071 m), so mapping stays on the async node (the user, 2026-10-23)."""
     with open(os.path.join(BRINGUP, "launch/picar.launch.py")) as f:
         launch = f.read()
-    assert 'executable="map_and_localization_slam_toolbox_node"' in launch
-    assert "async_slam_toolbox_node" not in launch
+    assert 'executable="async_slam_toolbox_node"' in launch
+    assert 'executable="map_and_localization_slam_toolbox_node"' not in launch
 
 
 def test_only_the_newest_maps_are_kept(tmp_path):

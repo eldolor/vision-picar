@@ -81,10 +81,11 @@ def generate_launch_description():
              # R6: into collision_monitor, which feeds diff_drive_controller.
              remappings=[("cmd_vel_out", "/cmd_vel_mux")]),
         Node(package="picar_bridge", executable="bridge", output="both"),
-        # R5: the map, and the robot's place on it. 3.50.D: the node that
-        # switches between mapping and localising on one graph at runtime
-        # (3.50.D1); its `mode` in slam.yaml is where it starts.
-        Node(package="slam_toolbox", executable="map_and_localization_slam_toolbox_node",
+        # R5: the map, and the robot's place on it. The async node maps;
+        # map_and_localization (which switches modes without a restart)
+        # bent home_first_floor's map 1.6-3x more (3.50.D2-b), so a reload
+        # restarts slam_toolbox in localisation mode instead (3.50.D3).
+        Node(package="slam_toolbox", executable="async_slam_toolbox_node",
              name="slam_toolbox", parameters=[slam], output="both"),
         # R6: nav2, and collision_monitor between the mux and the base.
         Node(package="nav2_controller", executable="controller_server",
