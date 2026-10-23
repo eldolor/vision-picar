@@ -94,6 +94,30 @@ def _age_jobs():
             _pending.remove(job)
 
 
+def _land_all():
+    for job in list(_pending):
+        job.run_now()
+        _pending.remove(job)
+
+
+# The arrival waits on the in-flight question's `local_done` Event, which only
+# its job sets; with no worker thread that wait never ends. Waiting on it
+# lands the pending jobs first, as waiting on a future does.
+def _landing_first(name):
+    original = getattr(sweep.TieredVision, name)
+
+    def wrapped(self, *a, **k):
+        q = self._inflight_question
+        if q is not None and not q.local_done.is_set():
+            _land_all()
+        return original(self, *a, **k)
+    setattr(sweep.TieredVision, name, wrapped)
+
+
+for _name in ("confirm_local", "wait_local_free"):
+    _landing_first(_name)
+
+
 def traced(self, frame):
     _age_jobs()
     scene = _call(self, frame)
