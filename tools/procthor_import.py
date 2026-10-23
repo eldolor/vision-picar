@@ -53,10 +53,10 @@ OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "sim", "maps", "procthor
 # D500 meet; a painting or a wall-mounted TV does not.
 FLOOR_BAND_M = 0.25
 
-# `train` holds 10,000 houses; its first 1,000 are kept, the size of the
-# other two splits, which is enough for 600 usable ones (`val` 570, `test`
-# 613 of 1,000).
-TRAIN_HOUSES = 1000
+# `train` holds 10,000 houses. 3.88 B kept its first 1,000 (test houses);
+# 3.96 amendment 2 keeps all of them, for a large training set. The first
+# 1,000 convert exactly as before, so their usable list is unchanged.
+TRAIN_HOUSES = 10000
 
 
 def fetch(name: str, cache_dir: str) -> bytes:

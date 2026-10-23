@@ -49,13 +49,18 @@ def test_the_test_split_is_its_own_set_of_houses():
 
 
 def test_the_train_split_is_its_own_set_of_houses():
-    """3.88 B: `procthor:train:<i>`, the first 1,000 of ProcTHOR's `train`
-    split, are B's fresh test houses; 3.66's checks gave 615 usable."""
+    """3.88 B: `procthor:train:<i>`, ProcTHOR's `train` split; its first
+    1,000 gave 615 usable (B's fresh test houses). 3.96 amendment 2 imports
+    all 10,000 (6,097 usable), and the first 1,000 convert exactly as before,
+    so 3.88's houses are the same houses."""
     from sim.maps.procthor import parse_split_name
     assert parse_split_name("procthor:train:7") == ("train", 7)
     assert build_world("procthor:train:7").map_name == "procthor:train:7"
-    assert len(houses("train")) == 1000
-    assert len(usable("train")) == 615
+    assert len(houses("train")) == 10000
+    u = usable("train")
+    assert len(u) == 6097
+    assert len([h for h in u if h < 1000]) == 615
+    assert len([h for h in u if 1000 <= h < 2000]) == 588   # 3.96's test houses
     a, b, c = (build_world(f"procthor:{s}:7") for s in ("train", "test", "val"))
     assert a.layout != b.layout and a.layout != c.layout
 
