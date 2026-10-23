@@ -1,0 +1,66 @@
+{
+ "pace6": {
+  "missions": 21,
+  "frames": 7764,
+  "frames_differ": 0,
+  "missions_rows_differ": 0,
+  "outcomes": {
+   "found": 10,
+   "exhausted": 10,
+   "out_of_budget": 1
+  },
+  "first_difference": null,
+  "met": true
+ },
+ "pace1": {
+  "missions": 21,
+  "frames": 6403,
+  "frames_differ": 0,
+  "missions_rows_differ": 0,
+  "outcomes": {
+   "found": 15,
+   "exhausted": 5,
+   "out_of_budget": 1
+  },
+  "first_difference": null,
+  "met": true
+ },
+ "decoy": {
+  "missions": 21,
+  "frames": 8278,
+  "frames_differ": 0,
+  "missions_rows_differ": 0,
+  "outcomes": {
+   "found": 10,
+   "exhausted": 10,
+   "out_of_budget": 1
+  },
+  "first_difference": null,
+  "met": true
+ },
+ "cloudno": {
+  "missions": 21,
+  "frames": 11175,
+  "frames_differ": 0,
+  "missions_rows_differ": 0,
+  "outcomes": {
+   "exhausted": 20,
+   "out_of_budget": 1
+  },
+  "first_difference": null,
+  "met": true
+ },
+ "sync": {
+  "missions": 21,
+  "frames": 7965,
+  "frames_differ": 0,
+  "missions_rows_differ": 0,
+  "outcomes": {
+   "found": 11,
+   "exhausted": 9,
+   "out_of_budget": 1
+  },
+  "first_difference": null,
+  "met": true
+ }
+}

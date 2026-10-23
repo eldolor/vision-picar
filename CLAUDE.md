@@ -291,6 +291,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     the target (K3.4, kept by the user until the Rover's runs). Two more
     runs on the tree found, 0 contacts.
   * Groundwork for learned or tuned trees in simulation.
+* **The trees on py_trees (3.95), merged 2026-10-23.** `brain/tree.py`'s
+  node kinds are py_trees 2.6.0 classes (pinned), ticked by py_trees.
+  * No behaviour change: 0 differences in 41,585 sweep frames against `dev`
+    before it, and live `found` with 0 contacts.
+  * Jetson p90 0.85 ms a frame for all three trees.
+  * py_trees' XML parser loads all 12 of nav2's shipped trees with
+    stand-in nodes (`evaluations/tree-395/nav2_probe.py`).
+  * The board's brain needs `pip install -r requirements.txt` at its next
+    update (the README's update step does it).
 * **Rooms from CLIP (3.51, 3.54), merged 2026-10-09.** Zero-shot fails
   (67%); few-shot on the user's own rooms meets accuracy on three rooms
   (81%, within 1.1 points of the cloud) but not laptop-CPU cost. Not wired

@@ -1,0 +1,13 @@
+OK   follow_point.xml 8 nodes
+OK   nav_to_pose_with_consistent_replanning_and_if_path_becomes_invalid.xml 25 nodes
+OK   navigate_through_poses_w_replanning_and_recovery.xml 20 nodes
+OK   navigate_to_pose_w_replanning_and_recovery.xml 18 nodes
+OK   navigate_to_pose_w_replanning_goal_patience_and_recovery.xml 24 nodes
+OK   navigate_w_recovery_and_replanning_only_if_path_becomes_invalid.xml 23 nodes
+OK   navigate_w_replanning_distance.xml 4 nodes
+OK   navigate_w_replanning_only_if_goal_is_updated.xml 4 nodes
+OK   navigate_w_replanning_only_if_path_becomes_invalid.xml 9 nodes
+OK   navigate_w_replanning_speed.xml 4 nodes
+OK   navigate_w_replanning_time.xml 4 nodes
+OK   odometry_calibration.xml 10 nodes
+12 of 12
