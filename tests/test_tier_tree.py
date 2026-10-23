@@ -330,3 +330,105 @@ def test_criterion_4_when_to_ask_costs_under_a_millisecond_a_frame():
         new._trigger_for(p)
         times.append((time.perf_counter() - t0) * 1000)
     assert statistics.quantiles(times, n=10)[-1] <= 1.0
+
+
+# -- 3.94.C: who to ask --------------------------------------------------------
+
+class _ScriptPipe(_Pipe):
+    def __init__(self, seed, match_probability=None):
+        super().__init__(match_probability)
+        self.rng = random.Random(seed)
+        self.tier = None
+
+    def perceive(self, frame):
+        if self.tier is not None and self.rng.random() < 0.05:
+            self.tier._epoch += 1        # a Stop lands while the frame is in perception
+        return _perception(self.rng)
+
+
+def _route_pair(seed, monkeypatch):
+    from brain.local_vlm import LocalVLMAbsent
+    rng = random.Random(seed)
+    async_cloud = rng.random() < 0.5
+    fatal = rng.random() < 0.5
+    has_local = rng.random() < 0.6
+    cfg = dict(async_cloud=async_cloud, cloud_errors_fatal=fatal,
+               max_calls=rng.choice([None, None, 1, 3]),
+               local_max_unable=rng.choice([1, 2]),
+               consecutive_frames=rng.choice([1, 2]),
+               cold_search_after=rng.choice([2, 4]), stale_after=rng.choice([0, 3]),
+               sighting_span_s=None)
+    tiers, logs = [], []
+    for cls in (ReferenceTieredVision, TieredVision):
+        log = {"cloud": 0, "local": 0, "dispatch": []}
+        crng, lrng, drng = (random.Random(seed * 3 + k) for k in range(3))
+
+        def cloud(frame, log=log, crng=crng):
+            log["cloud"] += 1
+            if crng.random() < 0.15:
+                raise RuntimeError("cloud down")
+            return {"safest_direction": crng.choice(["LEFT", "RIGHT", "FORWARD"]),
+                    "obstacles_ahead": [], "important_objects": [],
+                    "_navigate": {"target_visible": crng.random() < 0.3}}
+
+        def local(frame, box=False, log=log, lrng=lrng):
+            log["local"] += 1
+            r = lrng.random()
+            if r < 0.1:
+                raise LocalVLMAbsent("down")
+            if r < 0.25:
+                return {"status": "timeout"}
+            return {"status": "answered", "score": lrng.random(),
+                    "box": [100, 100, 200, 200] if lrng.random() < 0.5 else None}
+
+        t = cls(_ScriptPipe(seed * 11), cloud, local_sighting_fn=local if has_local else None,
+                **cfg)
+        t.pipeline.tier = t
+
+        def dispatch(frame, trigger, epoch=None, tier="cloud", job=None, log=log, drng=drng):
+            ok = drng.random() < 0.9
+            log["dispatch"].append((trigger, tier, ok))
+            return ok
+        t._dispatch = dispatch
+        tiers.append(t)
+        logs.append(log)
+    return tiers, logs, rng
+
+
+ROUTE_STATE = ("_since_call", "_absent_streak", "_last_confirmed", "_band_asked",
+               "_frame_unable", "_last_cloud_scene", "_local_held", "_local_turn",
+               "_retry_start", "_local_landed")
+
+
+def test_criterion_2a_who_to_ask_exactly_as_the_code_it_replaced(monkeypatch):
+    import brain.tiered as tiered_mod
+    monkeypatch.setattr(tiered_mod.time, "perf_counter", lambda: 0.0)   # no timing noise
+    differences, routes = [], {}
+    for seed in range(N_STATES // 4):
+        (ref, new), logs, rng = _route_pair(seed, monkeypatch)
+        for i in range(rng.choice([1, 4, 10])):
+            from concurrent.futures import Future
+            inflight = Future() if rng.random() < 0.15 else None   # a call still out
+            closed = rng.random() < 0.05
+            out = []
+            for t in (ref, new):
+                t._inflight, t._inflight_trigger = inflight, ("cold_search" if inflight else None)
+                t._closed = closed
+                try:
+                    r = t({"seq": i, "image_width": 640})
+                except Exception as e:  # noqa: BLE001 -- the same failure on both is equivalence
+                    r = ("raised", type(e).__name__, str(e))
+                out.append(r)
+            state = [({k: getattr(t, k) for k in ROUTE_STATE}, t.stats.as_dict()) for t in (ref, new)]
+            if out[0] != out[1] or state[0] != state[1] or logs[0] != logs[1]:
+                differences.append((seed, i))
+            r = out[1]
+            key = (r[0] if isinstance(r, tuple) else
+                   r["_navigate"].get("reasoning", "cloud answered").split("] ", 1)[-1]
+                   .split(" -- ")[0][:30])
+            routes[key] = routes.get(key, 0) + 1
+    assert not differences, f"{len(differences)} differences, first: {differences[:3]}"
+    for want in ("call cap reached", "cold_search call still in flight", "mission ended",
+                 "asked the local tier", "dispatched", "raised", "cloud answered",
+                 "cloud call failed", "no trigger"):
+        assert any(k.startswith(want[:30]) for k in routes), (want, routes)

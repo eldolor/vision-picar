@@ -790,6 +790,17 @@ RUNGS_THIS_FRAME = (RUNG_STEER, RUNG_LOCATED, RUNG_CANDIDATE)
 
 
 @dataclass
+class _RouteDecision:
+    """3.94.C: the blackboard of the "who to ask" tree."""
+    frame: dict
+    perception: Perception
+    trigger: Optional[str]
+    epoch: int
+    local_fn: Optional[Callable] = None
+    scene: Optional[dict] = None
+
+
+@dataclass
 class _TriggerDecision:
     """3.94.B: the blackboard of the "when to ask" tree."""
     perception: Perception
@@ -1089,6 +1100,7 @@ class TieredVision:
         self._since_call = 0
         self._what_tree = self._build_what_tree()
         self._when_tree = self._build_when_tree()
+        self._who_tree = self._build_who_tree()
 
     # -- the vision_fn contract ------------------------------------------
 
@@ -1167,42 +1179,98 @@ class TieredVision:
 
         self._frame_stamp = frame.get("captured_at")
         self._count_skipped(frame)
-        trigger = self._trigger_for(perception)
-        if trigger is None:
-            self._since_call += 1
-            return self._local_scene(perception)
+        # 3.94.C: who to ask (if anyone) is a tree (`_build_who_tree`); the
+        # code it replaced is in `tests/tiered_reference.py`.
+        bb = _RouteDecision(frame=frame, perception=perception,
+                            trigger=self._trigger_for(perception), epoch=frame_epoch)
+        self._who_tree.tick(bb)
+        return bb.scene
 
-        if (trigger == TRIGGER_CANDIDATE and self.async_cloud
+    # -- 3.94.C: who to ask, as a tree --------------------------------------
+
+    def _build_who_tree(self) -> Node:
+        """Who answers this frame's question, drawn as a tree. No trigger: no
+        question. Else an edge held back by a call in flight is re-armed, the
+        local tier is chosen first (unless it has been unable
+        `local_max_unable` times in a row), and the first of these answers:
+        the call cap (no question for the cloud), one call at a time, the
+        mission ended, the local tier, the cloud."""
+        return Fallback("who to ask", [
+            Action("no trigger, no question", self._who_no_trigger),
+            Sequence("a question", [
+                Action("re-arm an edge held back by a call in flight", self._who_rearm),
+                Action("the local tier first", self._who_choose_local,
+                       lambda: {"local_max_unable": self.local_max_unable}),
+                Fallback("the first that answers", [
+                    Action("the call cap", self._who_call_cap, lambda: {"max_calls": self.max_calls}),
+                    Action("one call at a time", self._who_one_at_a_time,
+                           lambda: {"async_cloud": self.async_cloud}),
+                    Action("the mission ended", self._who_mission_ended),
+                    Action("ask the local tier", self._who_ask_local),
+                    Action("ask the cloud", self._who_ask_cloud),
+                ]),
+            ]),
+        ])
+
+    def describe_who_tree(self) -> str:
+        return "\n".join(self._who_tree.describe())
+
+    def _answer(self, bb: "_RouteDecision", scene: dict) -> bool:
+        bb.scene = scene
+        return True
+
+    def _who_no_trigger(self, bb: "_RouteDecision") -> bool:
+        if bb.trigger is not None:
+            return False
+        self._since_call += 1
+        return self._answer(bb, self._local_scene(bb.perception))
+
+    def _who_rearm(self, bb: "_RouteDecision") -> bool:
+        if (bb.trigger == TRIGGER_CANDIDATE and self.async_cloud
                 and self._inflight is not None):
             # 3.76: the edge into `detected` was spent in _trigger_for; held
             # back by the call in flight, it must fire once that lands, not
             # wait for the staleness floor.
             self._last_confirmed = None
-        if trigger == TRIGGER_BAND and self.async_cloud and self._inflight is not None:
+        if bb.trigger == TRIGGER_BAND and self.async_cloud and self._inflight is not None:
             self._band_asked = False   # 3.80.D: the same, for the band
+        return True
+
+    def _who_choose_local(self, bb: "_RouteDecision") -> bool:
         # 3.80.D: the local tier first, unless it has been unable
         # `local_max_unable` times in a row (then this one is the cloud's).
-        local_fn = self._local_first()
-        if (local_fn is None and self.max_calls is not None
+        bb.local_fn = self._local_first()
+        return True
+
+    def _who_call_cap(self, bb: "_RouteDecision") -> bool:
+        if not (bb.local_fn is None and self.max_calls is not None
                 and self.stats.cloud_calls >= self.max_calls):
-            logger.warning("call cap %d reached -- not firing %s",
-                           self.max_calls, trigger)
-            return self._local_scene(perception, note="call cap reached")
+            return False
+        logger.warning("call cap %d reached -- not firing %s", self.max_calls, bb.trigger)
+        return self._answer(bb, self._local_scene(bb.perception, note="call cap reached"))
 
-        if self.async_cloud and self._inflight is not None:
-            # One call at a time. A second dispatch while the first is
-            # outstanding is how replays used to lose frames (CLAUDE.md's
-            # note on stacking replays on one vision task), and it would
-            # also spend twice for one answer.
-            return self._local_scene(
-                perception,
-                note=f"{self._inflight_trigger} call still in flight")
+    def _who_one_at_a_time(self, bb: "_RouteDecision") -> bool:
+        # One call at a time. A second dispatch while the first is outstanding
+        # is how replays used to lose frames, and it would also spend twice
+        # for one answer.
+        if not (self.async_cloud and self._inflight is not None):
+            return False
+        return self._answer(bb, self._local_scene(
+            bb.perception, note=f"{self._inflight_trigger} call still in flight"))
 
-        if self._closed or self._epoch != frame_epoch:
-            return self._local_scene(perception, note="mission ended")
+    def _who_mission_ended(self, bb: "_RouteDecision") -> bool:
+        if not (self._closed or self._epoch != bb.epoch):
+            return False
+        return self._answer(bb, self._local_scene(bb.perception, note="mission ended"))
 
-        if local_fn is not None:
-            return self._ask_local_first(frame, perception, trigger, frame_epoch, local_fn)
+    def _who_ask_local(self, bb: "_RouteDecision") -> bool:
+        if bb.local_fn is None:
+            return False
+        return self._answer(bb, self._ask_local_first(
+            bb.frame, bb.perception, bb.trigger, bb.epoch, bb.local_fn))
+
+    def _who_ask_cloud(self, bb: "_RouteDecision") -> bool:
+        frame, perception, trigger, frame_epoch = bb.frame, bb.perception, bb.trigger, bb.epoch
         escalated = self.local_sighting_fn is not None
 
         self.stats.cloud_calls += 1
@@ -1217,12 +1285,12 @@ class TieredVision:
                 # is counted as a call.
                 self.stats.cloud_calls -= 1
                 self.stats.triggers[trigger] -= 1
-                return self._local_scene(perception, note="mission ended")
+                return self._answer(bb, self._local_scene(perception, note="mission ended"))
             if escalated:
                 # 3.80.D: handed up after `local_max_unable` unable answers.
                 self._count("frame_escalations", "unable")
-            return self._local_scene(perception, note="dispatched",
-                                     dispatched=trigger)
+            return self._answer(bb, self._local_scene(perception, note="dispatched",
+                                                      dispatched=trigger))
 
         if escalated:
             self._count("frame_escalations", "unable")
@@ -1234,7 +1302,7 @@ class TieredVision:
             if self.cloud_errors_fatal:
                 raise
             self._count_cloud_error(exc)
-            return self._local_scene(perception, note="cloud call failed")
+            return self._answer(bb, self._local_scene(perception, note="cloud call failed"))
         self.stats.record("cloud_ms", (time.perf_counter() - _t0) * 1000)
         # The goal the stand-in holds on later free frames. Set on BOTH
         # paths: it lived only in _collect_inflight() at first, so a
@@ -1245,7 +1313,7 @@ class TieredVision:
         self._local_held_why = None
         self._local_turn = None     # 3.80.D: this answer is newer
         self._frame_unable = 0
-        return self._annotate_noted(scene, perception, trigger, frame)
+        return self._answer(bb, self._annotate_noted(scene, perception, trigger, frame))
 
     # -- 3.80.D: a frame's question, to the local tier first --------------
 
