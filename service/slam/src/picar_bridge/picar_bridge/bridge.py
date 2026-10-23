@@ -416,11 +416,12 @@ class Bridge(Node):
         if body.get("session") not in (None, self.session):
             return 409, {"error": "the SLAM session changed", "session": self.session}
         with self.lock:
-            state = self.slam_state
+            state, why = self.slam_state, self.reload.get("error")
         if state != "ready":
             # 3.50.D3: nav2 is held while slam_toolbox starts or a reload is
             # judged -- a bad match swaps the whole frame.
-            return 503, {"error": f"SLAM is not ready ({state})", "slam": state}
+            return 503, {"error": f"SLAM is not ready ({state})" + (f": {why}" if why else ""),
+                         "slam": state}
         if not self.nav.wait_for_server(timeout_sec=NAV2_WAIT_S):
             return 503, {"error": "nav2 is not up (navigate_to_pose has no server)"}
         self.cancel_goal()
@@ -939,6 +940,12 @@ class Bridge(Node):
         try:
             self._start_slam()
         except Exception as e:  # noqa: BLE001 -- a state, shown, not a dead thread
+            # No half-judged node left publishing map -> odom (review round 2).
+            try:
+                if self.slam is not None:
+                    self.slam.stop()
+            except Exception:  # noqa: BLE001
+                pass
             with self.lock:
                 self.slam_state = "failed"
                 self.reload = {**self.reload, "error": f"{type(e).__name__}: {e}"[:300]}
@@ -954,7 +961,9 @@ class Bridge(Node):
             self._start_fresh({"result": "none" if MAP_RELOAD else "off"})
             return
         d = saved.meta.get("dock_pose")
-        if not (isinstance(d, dict) and all(isinstance(d.get(k), (int, float)) for k in ("x", "y", "theta"))):
+        if not (isinstance(d, dict) and all(
+                isinstance(d.get(k), (int, float)) and not isinstance(d.get(k), bool)
+                and math.isfinite(d[k]) for k in ("x", "y", "theta"))):
             d = mapstore.DOCK_POSE
         dock = (float(d["x"]), float(d["y"]), float(d["theta"]))
         t0 = time.monotonic()
@@ -963,6 +972,7 @@ class Bridge(Node):
             self.slam_started_at = time.time()
             self.last_map = None
             self.map_id = saved.map_id
+            self.reload = {"result": "checking", "map_id": saved.map_id, "version": saved.version}
         self.slam.start("localisation", saved.prefix, dock)
         verdict = self.check_reload(t0 + relocalise.VERDICT_TIMEOUT_S, dock)
         record = {"map_id": saved.map_id, "version": saved.version,
@@ -985,15 +995,16 @@ class Bridge(Node):
             self.slam_state = "starting"
             self.reload_matched = False
             self.reload_start_truth = None
+            # A fallen-back reload's map_id is not this map's: a new one
+            # before the swap, so no save can file a fresh graph under it.
+            self.map_id = mapstore.new_map_id()
+            self.last_map = None
         self.slam.start("mapping")
         with self.lock:
             # Stamped once the old node has EXITED (start() waits for it), plus
             # its transform's lead (Thermos): nothing it published counts.
-            # A fallen-back reload's map is not this one: forget it, and the
-            # map_id it lent.
             self.slam_started_at = time.time() + SLAM_TF_LEAD_S
             self.last_map = None
-            self.map_id = mapstore.new_map_id()
             self.reload = record
         # Ready once THIS node places the robot: a stopped node's map -> odom
         # lingers in the TF buffer for a moment, in the frame just dropped.
@@ -1143,7 +1154,8 @@ class Bridge(Node):
 
     def health(self):
         with self.lock:
-            return 200, {"ok": True, "robot_url": self.robot_url,
+            # 3.50.D3: no slam_toolbox (the start failed) is not ok.
+            return 200, {"ok": self.slam_state != "failed", "robot_url": self.robot_url,
                          "odom_age_s": None if not self.last_odom else time.time() - self.last_odom["at"],
                          "scan_age_s": None if not self.last_scan else time.time() - self.last_scan["at"],
                          "scans_published": self.scan_count, "twists": dict(self.twists),

@@ -18,6 +18,7 @@ import tempfile
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import Shutdown
 from launch.substitutions import Command, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -83,7 +84,10 @@ def generate_launch_description():
         # node mapping from empty, or the localisation node on the saved map,
         # swapped for a fresh map if the reload does not fit. A launch file
         # cannot swap a node at run time. It reads the same slam.yaml.
-        Node(package="picar_bridge", executable="bridge", output="both"),
+        # It ends the launch if it dies (3.50.D3 review): slam_toolbox is its
+        # child, and must not run on with no bridge to hold or stop it.
+        Node(package="picar_bridge", executable="bridge", output="both",
+             on_exit=Shutdown(reason="picar_bridge exited")),
         # R6: nav2, and collision_monitor between the mux and the base.
         Node(package="nav2_controller", executable="controller_server",
              parameters=[nav2], remappings=to_nav, output="both"),

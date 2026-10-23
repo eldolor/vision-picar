@@ -66,8 +66,9 @@ class SlamProcess:
             self._stop_locked()
             # No PR_SET_PDEATHSIG (Thermos, 3.50.D3): it fires when the
             # THREAD that forked exits, and the bridge starts slam_toolbox from
-            # a short-lived one. The bridge stops it on exit, and the container
-            # ends both.
+            # a short-lived one. The bridge stops it on exit, and a bridge that
+            # dies otherwise ends the launch (on_exit=Shutdown), so the
+            # container and this child with it.
             self.proc = self._spawn(argv)
             self.mode = mode
             self.starts += 1

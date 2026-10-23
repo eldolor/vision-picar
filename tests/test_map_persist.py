@@ -557,3 +557,30 @@ def test_a_reload_without_a_saved_start_truth_waits_for_its_own(bridge_mod, monk
     b.start_slam()
     b.reload_start_truth, b.start_truth, b.start_truth_pending = None, None, True
     assert b.slam_pose()[1]["start_truth_pending"] is True
+
+
+def test_a_failed_start_is_not_ok_and_names_the_map_tried(bridge_mod, monkeypatch, tmp_path):
+    b, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path, None)
+    monkeypatch.setattr(b, "check_reload", lambda *a: (_ for _ in ()).throw(ValueError("odd map")))
+    b.start_slam()
+    h = b.health()[1]
+    assert h["ok"] is False and h["slam"]["state"] == "failed"
+    assert h["slam"]["reload"]["map_id"] == "map-0a1b2c3d" and "odd map" in h["slam"]["reload"]["error"]
+    assert fake.mode is None                       # the half-judged node was stopped
+
+
+def test_a_corrupt_dock_pose_starts_at_the_origin(bridge_mod, monkeypatch, tmp_path):
+    b, fake, store = _reload_bridge(bridge_mod, monkeypatch, tmp_path,
+                                    relocalise.judge([0.9] * 5, (0.0, 0.0, 0.0)))
+    meta_path = os.path.join(os.path.dirname(store.current().prefix), "meta.json")
+    meta = json.load(open(meta_path))
+    meta["dock_pose"] = {"x": float("nan"), "y": True, "theta": 0.0}
+    json.dump(meta, open(meta_path, "w"))
+    b.start_slam()
+    assert fake.calls[0][2] == (0.0, 0.0, 0.0)
+
+
+def test_the_bridge_ends_the_launch_if_it_dies():
+    with open(os.path.join(BRINGUP, "launch/picar.launch.py")) as f:
+        launch = f.read()
+    assert 'executable="bridge", output="both",\n             on_exit=Shutdown(' in launch
