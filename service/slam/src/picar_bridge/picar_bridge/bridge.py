@@ -940,16 +940,17 @@ class Bridge(Node):
         try:
             self._start_slam()
         except Exception as e:  # noqa: BLE001 -- a state, shown, not a dead thread
-            # No half-judged node left publishing map -> odom (review round 2).
+            with self.lock:
+                self.slam_state = "failed"
+                self.reload = {**self.reload, "result": "failed",
+                               "error": f"{type(e).__name__}: {e}"[:300]}
+            self.get_logger().error(f"slam_toolbox not started: {e}")
+            # No half-started node left publishing map -> odom (review round 2).
             try:
                 if self.slam is not None:
                     self.slam.stop()
             except Exception:  # noqa: BLE001
                 pass
-            with self.lock:
-                self.slam_state = "failed"
-                self.reload = {**self.reload, "error": f"{type(e).__name__}: {e}"[:300]}
-            self.get_logger().error(f"slam_toolbox not started: {e}")
 
     def _start_slam(self) -> None:
         from ament_index_python.packages import get_package_prefix, get_package_share_directory
@@ -964,6 +965,8 @@ class Bridge(Node):
         if not (isinstance(d, dict) and all(
                 isinstance(d.get(k), (int, float)) and not isinstance(d.get(k), bool)
                 and math.isfinite(d[k]) for k in ("x", "y", "theta"))):
+            self.get_logger().warning(f"saved map {saved.map_id} v{saved.version}: dock_pose "
+                                      f"{d!r} unreadable; localising at the origin")
             d = mapstore.DOCK_POSE
         dock = (float(d["x"]), float(d["y"]), float(d["theta"]))
         t0 = time.monotonic()
@@ -973,8 +976,13 @@ class Bridge(Node):
             self.last_map = None
             self.map_id = saved.map_id
             self.reload = {"result": "checking", "map_id": saved.map_id, "version": saved.version}
-        self.slam.start("localisation", saved.prefix, dock)
-        verdict = self.check_reload(t0 + relocalise.VERDICT_TIMEOUT_S, dock)
+        try:
+            self.slam.start("localisation", saved.prefix, dock)
+            verdict = self.check_reload(t0 + relocalise.VERDICT_TIMEOUT_S, dock)
+        except Exception as e:  # noqa: BLE001 -- review round 3: a reload that cannot
+            # be judged is a reload that does not fit: a fresh map, not no SLAM.
+            verdict = {**relocalise.judge([], None), "ok": False,
+                       "reason": f"the reload raised {type(e).__name__}: {e}"[:300]}
         record = {"map_id": saved.map_id, "version": saved.version,
                   "took_s": round(time.monotonic() - t0, 2), **verdict}
         if not verdict["ok"]:
@@ -1106,13 +1114,16 @@ class Bridge(Node):
         pending, error, meta = None, None, None
         with self.lock:
             localising = self.slam is not None and self.slam.mode == "localisation"
-            map_id = self.map_id
-        if localising:
+            state, map_id = self.slam_state, self.map_id
+        if localising or state != "ready":
             # 3.50.D3: localisation cannot serialise, and it leaves the saved
-            # map as it was -- nothing to save, and not a failure.
+            # map as it was; before `ready` (or after a failed start) there is
+            # no map of this frame worth keeping -- nothing to save, and not a
+            # failure (review round 3: an empty graph must not become current).
             with self.lock:
                 self.map_saves["skipped"] += 1
-            self.get_logger().info(f"map {map_id} not saved ({why}): localising on it, unchanged")
+            self.get_logger().info(f"map {map_id} not saved ({why}): "
+                                   + ("localising on it, unchanged" if localising else f"SLAM {state}"))
             return
         try:
             pending = self.map_store.begin(map_id)

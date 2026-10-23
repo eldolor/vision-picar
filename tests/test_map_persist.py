@@ -559,23 +559,49 @@ def test_a_reload_without_a_saved_start_truth_waits_for_its_own(bridge_mod, monk
     assert b.slam_pose()[1]["start_truth_pending"] is True
 
 
-def test_a_failed_start_is_not_ok_and_names_the_map_tried(bridge_mod, monkeypatch, tmp_path):
+def test_a_reload_that_raises_falls_back_to_a_fresh_map(bridge_mod, monkeypatch, tmp_path):
+    """Review round 3: a reload that cannot be judged does not fit -- a fresh
+    map, not a bridge with no SLAM."""
     b, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path, None)
     monkeypatch.setattr(b, "check_reload", lambda *a: (_ for _ in ()).throw(ValueError("odd map")))
     b.start_slam()
     h = b.health()[1]
+    assert h["ok"] is True and h["slam"]["state"] == "ready" and fake.mode == "mapping"
+    assert h["slam"]["reload"]["result"] == "fell_back" and "odd map" in h["slam"]["reload"]["reason"]
+    assert h["slam"]["reload"]["map_id"] == "map-0a1b2c3d" and b.map_id != "map-0a1b2c3d"
+
+
+def test_a_failed_fresh_start_is_not_ok(bridge_mod, monkeypatch, tmp_path):
+    b, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path, None)
+    monkeypatch.setattr(bridge_mod, "MAP_RELOAD", False)
+    monkeypatch.setattr(fake, "start", lambda *a, **kw: (_ for _ in ()).throw(OSError("no exe")))
+    b.start_slam()
+    h = b.health()[1]
     assert h["ok"] is False and h["slam"]["state"] == "failed"
-    assert h["slam"]["reload"]["map_id"] == "map-0a1b2c3d" and "odd map" in h["slam"]["reload"]["error"]
-    assert fake.mode is None                       # the half-judged node was stopped
+    assert h["slam"]["reload"]["result"] == "failed"
+
+
+def test_no_save_before_slam_is_ready(bridge_mod, tmp_path):
+    """Review round 3: a fresh node's empty graph must not become current."""
+    from tests.test_review_376h1 import _bridge
+    b = _bridge(bridge_mod)
+    store = MapStore(str(tmp_path))
+    b.map_store, b.slam_state = store, "starting"
+    b.slam = _FakeSlam()
+    b.slam.mode = "mapping"
+    b._save_map("mission_end")
+    assert b.map_saves["skipped"] == 1 and b.map_saves["failed"] == 0 and store.current() is None
 
 
 def test_a_corrupt_dock_pose_starts_at_the_origin(bridge_mod, monkeypatch, tmp_path):
     b, fake, store = _reload_bridge(bridge_mod, monkeypatch, tmp_path,
                                     relocalise.judge([0.9] * 5, (0.0, 0.0, 0.0)))
     meta_path = os.path.join(os.path.dirname(store.current().prefix), "meta.json")
-    meta = json.load(open(meta_path))
+    with open(meta_path) as f:
+        meta = json.load(f)
     meta["dock_pose"] = {"x": float("nan"), "y": True, "theta": 0.0}
-    json.dump(meta, open(meta_path, "w"))
+    with open(meta_path, "w") as f:
+        json.dump(meta, f)
     b.start_slam()
     assert fake.calls[0][2] == (0.0, 0.0, 0.0)
 
@@ -583,4 +609,5 @@ def test_a_corrupt_dock_pose_starts_at_the_origin(bridge_mod, monkeypatch, tmp_p
 def test_the_bridge_ends_the_launch_if_it_dies():
     with open(os.path.join(BRINGUP, "launch/picar.launch.py")) as f:
         launch = f.read()
-    assert 'executable="bridge", output="both",\n             on_exit=Shutdown(' in launch
+    import re
+    assert re.search(r'executable="bridge"[^)]*on_exit=Shutdown\(', launch)

@@ -83,7 +83,7 @@ a child process (`slam_process.SlamProcess`, node name `slam_toolbox`,
 and the container ends both. No `PR_SET_PDEATHSIG`: it fires when the
 forking THREAD exits, and the start thread is short-lived; instead the
 bridge's launch `Node` has `on_exit=Shutdown`, so a bridge that dies ends the
-launch, the container and slam_toolbox with it), because a reload may have to swap it for another executable at
+launch, the container and slam_toolbox with it -- because `entrypoint.sh` execs `ros2 launch` as PID 1; under another wrapper an orphan would survive), because a reload may have to swap it for another executable at
 run time. `async_slam_toolbox_node` maps; `localization_slam_toolbox_node`
 localises on a saved map. 3.50.D2-b measured
 `map_and_localization_slam_toolbox_node` (which switches modes without a
@@ -112,7 +112,7 @@ the `MAX_BRIDGE_ROUTES` budget.
 
 | Route | Request | Answer |
 |---|---|---|
-| `GET /health` | -- | `ok` (false when `slam.state` is `failed`, 3.50.D3), `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / matched / fell_back, map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`) |
+| `GET /health` | -- | `ok` (false when `slam.state` is `failed`, 3.50.D3; still HTTP 200 -- the robot server's probe reads the status code as "ROS up", and the D-pad drives without SLAM), `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / checking / matched / fell_back / failed, map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`) |
 | `POST /cmd_vel` | `{driver, linear_m_s, angular_rad_s}` | 200 `{published: <topic>}`, or 400 `unknown driver`. A non-zero `twin-dpad` twist also cancels the active goal. |
 | `GET /odom` | -- | The latest `/diff_drive_controller/odom` as `{x_m, y_m, yaw_rad, linear_m_s, angular_rad_s, at}`, or `{usable: false}` |
 | `GET /scan` | -- | The last LaserScan published, as `{angle_min_rad, angle_increment_rad, ranges_m (None = no return), at}` |
@@ -230,7 +230,9 @@ The bridge saves the map when a mission ends; no route asks for it (criterion
   (3.50 criterion 14; an S3 copy is 3.50.D6, asked first).
 - **While localising** (3.50.D3) a mission end saves nothing: the
   localisation node refuses `serialize_map` and leaves the graph unchanged.
-  It is counted in `map.skipped`, not `failed`.
+  Nor before `slam.state` is `ready` (or after a failed start): a fresh
+  node's empty graph must not become the current map. Both are counted in
+  `map.skipped`, not `failed`.
 
 ### Reloading the map (3.50.D3)
 
@@ -254,6 +256,9 @@ spins (its check reads scans and TF).
   and the pose is within `DOCK_TOL_M` (0.5 m) and `DOCK_TOL_DEG` (15 deg) of
   the dock. No fresh pose and 5 scans within `VERDICT_TIMEOUT_S` (8 s) is a
   bad match. All were set before measurement (the plan's D3 criteria).
+- **A reload that raises** (the node cannot start, the check fails on an
+  odd map) is a bad match too, with the exception as its `reason`. An
+  unreadable `dock_pose` is logged and the origin used.
 - **A bad match** stops the node (waiting for it to exit), then forgets its
   `/map` (`last_map` cleared; `_on_map` drops any map stamped before
   `slam_started_at`, set after that exit plus `SLAM_TF_LEAD_S` 0.25 s for
