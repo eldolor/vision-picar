@@ -138,7 +138,9 @@ cmd_up() {
   ensure_role
   local sg subnet ami
   sg="$(ensure_sg)"
+  # GPU_AZ picks the zone (spot capacity differs by zone); default the first.
   subnet="$(aws_ ec2 describe-subnets --filters Name=default-for-az,Values=true \
+            ${GPU_AZ:+Name=availability-zone,Values=$GPU_AZ} \
             --query 'Subnets[0].SubnetId' --output text)"
   # The Deep Learning base AMI, resolved through SSM rather than pinned: it
   # carries the NVIDIA driver and CUDA, which is the part that is slow and
