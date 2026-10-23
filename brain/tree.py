@@ -68,10 +68,19 @@ class _Node:
         children (and `tick_once()` on any node)."""
         if bb is ...:
             return super().tick()
-        for n in self.iterate():
+        # Not re-entrant: the blackboard sits on the nodes for the tick, so
+        # one tree is ticked by one thread at a time (the policy's runner;
+        # its worker jobs tick no tree). Cleared after, so a node holds no
+        # frame between ticks.
+        nodes = list(self.iterate())
+        for n in nodes:
             n._bb = bb
-        for _ in super().tick():
-            pass
+        try:
+            for _ in super().tick():
+                pass
+        finally:
+            for n in nodes:
+                n._bb = None
         return self.status
 
     def describe(self, indent: int = 0) -> list:
@@ -105,7 +114,6 @@ class Sequence(_Node, composites.Sequence):
         self._setup_node(settings)
 
 
-
 class Fallback(_Node, composites.Selector):
     kind = "fallback"
 
@@ -115,7 +123,6 @@ class Fallback(_Node, composites.Selector):
             raise ValueError(f"{self.kind} {name!r} has no children")
         composites.Selector.__init__(self, name=name, memory=False, children=children)
         self._setup_node(settings)
-
 
 
 class Condition(_Node, behaviour.Behaviour):
@@ -128,7 +135,6 @@ class Condition(_Node, behaviour.Behaviour):
 
     def update(self) -> Status:
         return SUCCESS if self.test(self._bb) else FAILURE
-
 
 
 class Action(_Node, behaviour.Behaviour):
@@ -144,7 +150,6 @@ class Action(_Node, behaviour.Behaviour):
         return _checked(self, self.act(self._bb))
 
 
-
 class Decorator(_Node, decorators.Decorator):
     """py_trees ticks `child`; then `after(bb, child_status)` returns this
     node's status (or a bool)."""
@@ -158,7 +163,6 @@ class Decorator(_Node, decorators.Decorator):
 
     def update(self) -> Status:
         return _checked(self, self.after(self._bb, self.decorated.status))
-
 
 
 Node = _Node
