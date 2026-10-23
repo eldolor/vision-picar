@@ -1,0 +1,32 @@
+board lock held: plan/3.95-py-trees pid 11164 (Mac): 3.95 tree timing, final code, since 2026-10-23T05:12:27-05:00, until 2026-10-23T09:12:27-05:00, token 29ad346e11581e20
+NV Power Mode: 15W
+ 05:12:28 up 11 days, 11:23,  0 users,  load average: 0.39, 0.35, 0.15
+{
+ "host": "picar-jetson",
+ "python": "3.10.12",
+ "what": {
+  "p50": 0.2318,
+  "p90": 0.2367,
+  "max": 0.2803,
+  "n": 17264
+ },
+ "when": {
+  "p50": 0.4458,
+  "p90": 0.5262,
+  "max": 2.5325,
+  "n": 20000
+ },
+ "who": {
+  "p50": 0.3117,
+  "p90": 0.3316,
+  "max": 0.4877,
+  "n": 20000
+ },
+ "frame_all_trees": {
+  "p50": 0.7358,
+  "p90": 0.8463,
+  "max": 2.9229,
+  "n": 20000
+ }
+}
+board lock released
