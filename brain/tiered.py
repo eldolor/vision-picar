@@ -1183,7 +1183,10 @@ class TieredVision:
         # code it replaced is in `tests/tiered_reference.py`.
         bb = _RouteDecision(frame=frame, perception=perception,
                             trigger=self._trigger_for(perception), epoch=frame_epoch)
-        self._who_tree.tick(bb)
+        if self._who_tree.tick(bb) != SUCCESS:
+            # Every route ends in an answer; a tree that ends without one
+            # would hand the runner nothing to act on.
+            raise RuntimeError(f"who to ask: no route answered {bb.trigger}")
         return bb.scene
 
     # -- 3.94.C: who to ask, as a tree --------------------------------------
@@ -1226,14 +1229,12 @@ class TieredVision:
         return self._answer(bb, self._local_scene(bb.perception))
 
     def _who_rearm(self, bb: "_RouteDecision") -> bool:
-        if (bb.trigger == TRIGGER_CANDIDATE and self.async_cloud
+        # 3.76: the edge into `detected` was spent in _trigger_for; held back
+        # by the call in flight, it must fire once that lands, not wait for the
+        # staleness floor. 3.80.D: the same for the band.
+        if (bb.trigger in (TRIGGER_CANDIDATE, TRIGGER_BAND) and self.async_cloud
                 and self._inflight is not None):
-            # 3.76: the edge into `detected` was spent in _trigger_for; held
-            # back by the call in flight, it must fire once that lands, not
-            # wait for the staleness floor.
-            self._last_confirmed = None
-        if bb.trigger == TRIGGER_BAND and self.async_cloud and self._inflight is not None:
-            self._band_asked = False   # 3.80.D: the same, for the band
+            self._rearm(bb.trigger)
         return True
 
     def _who_choose_local(self, bb: "_RouteDecision") -> bool:

@@ -8,6 +8,7 @@ it leaves behind. Criterion 4: it costs under 1 ms a frame (p90).
 
 import math
 import random
+from concurrent.futures import Future
 import statistics
 import time
 
@@ -346,7 +347,7 @@ class _ScriptPipe(_Pipe):
         return _perception(self.rng)
 
 
-def _route_pair(seed, monkeypatch):
+def _route_pair(seed):
     from brain.local_vlm import LocalVLMAbsent
     rng = random.Random(seed)
     async_cloud = rng.random() < 0.5
@@ -385,9 +386,14 @@ def _route_pair(seed, monkeypatch):
                 **cfg)
         t.pipeline.tier = t
 
-        def dispatch(frame, trigger, epoch=None, tier="cloud", job=None, log=log, drng=drng):
+        def dispatch(frame, trigger, epoch=None, tier="cloud", job=None, log=log, drng=drng,
+                     t=t):
+            # As the real one: an accepted call is in flight until a later frame
+            # lands it (review of C), as a cloud scene or a failure.
             ok = drng.random() < 0.9
             log["dispatch"].append((trigger, tier, ok))
+            if ok:
+                t._inflight, t._inflight_trigger, t._inflight_tier = Future(), trigger, tier
             return ok
         t._dispatch = dispatch
         tiers.append(t)
@@ -396,24 +402,46 @@ def _route_pair(seed, monkeypatch):
 
 
 ROUTE_STATE = ("_since_call", "_absent_streak", "_last_confirmed", "_band_asked",
-               "_frame_unable", "_last_cloud_scene", "_local_held", "_local_turn",
-               "_retry_start", "_local_landed")
+               "_frame_unable", "_last_cloud_scene", "_local_held", "_local_held_why",
+               "_local_turn", "_retry_start", "_local_landed", "_inflight_trigger",
+               "_inflight_tier", "_distance_since_call", "_pending_error")
 
 
 def test_criterion_2a_who_to_ask_exactly_as_the_code_it_replaced(monkeypatch):
+    import types
     import brain.tiered as tiered_mod
-    monkeypatch.setattr(tiered_mod.time, "perf_counter", lambda: 0.0)   # no timing noise
+    import tests.tiered_reference as ref_mod
+    # No timing noise: a clock for these two modules only, not the process.
+    clock = types.SimpleNamespace(perf_counter=lambda: 0.0, monotonic=time.monotonic,
+                                  time=time.time, sleep=time.sleep)
+    monkeypatch.setattr(tiered_mod, "time", clock)
+    monkeypatch.setattr(ref_mod, "time", clock)
     differences, routes = [], {}
     for seed in range(N_STATES // 4):
-        (ref, new), logs, rng = _route_pair(seed, monkeypatch)
+        (ref, new), logs, rng = _route_pair(seed)
         for i in range(rng.choice([1, 4, 10])):
-            from concurrent.futures import Future
-            inflight = Future() if rng.random() < 0.15 else None   # a call still out
+            held_now = rng.choice([None, None, (("LEFT", 20), "FORWARD", "located"),
+                                   (None, "RIGHT", "direction")])
+            land = rng.random()
+            outcome = rng.choice(["scene", "error"])
+            arrival_busy = rng.random() < 0.05
             closed = rng.random() < 0.05
             out = []
             for t in (ref, new):
-                t._inflight, t._inflight_trigger = inflight, ("cold_search" if inflight else None)
+                fut = t._inflight
+                if fut is not None and not fut.done() and land < 0.5:
+                    # A call out since an earlier frame lands now.
+                    if outcome == "scene":
+                        fut.set_result({"safest_direction": "LEFT", "obstacles_ahead": [],
+                                        "important_objects": [],
+                                        "_navigate": {"target_visible": False}})
+                    else:
+                        fut.set_exception(RuntimeError("late failure"))
+                t._local_inflight = object() if arrival_busy else None
                 t._closed = closed
+                if held_now is not None:
+                    # A located yes or a held local answer waiting (review of C).
+                    t._local_turn, t._local_held, t._local_held_why = held_now
                 try:
                     r = t({"seq": i, "image_width": 640})
                 except Exception as e:  # noqa: BLE001 -- the same failure on both is equivalence
@@ -428,7 +456,22 @@ def test_criterion_2a_who_to_ask_exactly_as_the_code_it_replaced(monkeypatch):
                    .split(" -- ")[0][:30])
             routes[key] = routes.get(key, 0) + 1
     assert not differences, f"{len(differences)} differences, first: {differences[:3]}"
-    for want in ("call cap reached", "cold_search call still in flight", "mission ended",
+    for want in ("call cap reached", "call still in flight", "mission ended",
                  "asked the local tier", "dispatched", "raised", "cloud answered",
-                 "cloud call failed", "no trigger"):
-        assert any(k.startswith(want[:30]) for k in routes), (want, routes)
+                 "cloud call failed", "no trigger", "local VLM busy with the arrival check"):
+        assert any(want[:30] in k for k in routes), (want, routes)
+
+
+def test_who_to_ask_prints_as_a_tree_with_live_settings():
+    tier = TieredVision(_Pipe(), lambda f: {})
+    tier.max_calls = 7
+    text = tier.describe_who_tree()
+    assert text.splitlines()[0] == "fallback who to ask"
+    assert "action the call cap max_calls=7" in text
+
+
+def test_a_who_tree_that_ends_without_an_answer_is_an_error():
+    tier = TieredVision(_ScriptPipe(1), lambda f: {}, max_calls=0)
+    tier._who_tree = Fallback("empty", [Action("never", lambda bb: False)])
+    with pytest.raises(RuntimeError, match="no route answered"):
+        tier({"seq": 0})
