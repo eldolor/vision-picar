@@ -59,6 +59,9 @@ export PATH="\$PATH:/snap/bin"
 cd $DIR/repo
 N=\$(nproc)
 export CKPT_S3="$S3/ckpt" PYTHONPATH=.
+# One maths thread per process: the workers already fill the cores, and
+# numpy's own thread pools on top made the load ~100 on 64 cores (3.96 run 1).
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 # The shared oracle sets, with every core, before any arm reads them. If the
 # large set fails (B1 missing), F-small and the rule still run; the large
 # arms then fail on their own, each with its reason in its log.
