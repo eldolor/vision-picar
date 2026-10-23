@@ -1,0 +1,127 @@
+{
+ "pace6": {
+  "missions": 21,
+  "frames": 7470,
+  "frames_differ": 50,
+  "missions_rows_differ": 1,
+  "outcomes": {
+   "found": 12,
+   "exhausted": 8,
+   "out_of_budget": 1
+  },
+  "first_difference": [
+   "procthor:val:12",
+   447,
+   [
+    "RIGHT",
+    45,
+    null,
+    null,
+    0,
+    85,
+    "[reactive tier, no cloud call] cold_search call still in flight"
+   ],
+   [
+    "RIGHT",
+    45,
+    null,
+    null,
+    0,
+    86,
+    "[reactive tier, no cloud call] no trigger (absent)"
+   ]
+  ],
+  "met": false
+ },
+ "pace1": {
+  "missions": 21,
+  "frames": 5914,
+  "frames_differ": 2100,
+  "missions_rows_differ": 8,
+  "outcomes": {
+   "found": 17,
+   "exhausted": 4
+  },
+  "first_difference": [
+   "home_first_floor",
+   127,
+   [
+    "RIGHT",
+    45,
+    null,
+    "cold_search",
+    0,
+    127,
+    "[reactive tier, local question: cold_search] asked the local tier"
+   ],
+   [
+    "RIGHT",
+    45,
+    null,
+    null,
+    0,
+    126,
+    "[reactive tier, no cloud call] cold_search call still in flight"
+   ]
+  ],
+  "met": false
+ },
+ "decoy": {
+  "missions": 21,
+  "frames": 7408,
+  "frames_differ": 7164,
+  "missions_rows_differ": 18,
+  "outcomes": {
+   "found": 13,
+   "exhausted": 8
+  },
+  "first_difference": [
+   "home_first_floor",
+   85,
+   [
+    "RIGHT",
+    45,
+    null,
+    null,
+    0,
+    15,
+    "[reactive tier, no cloud call] no trigger (absent)"
+   ],
+   [
+    "LEFT",
+    90,
+    null,
+    null,
+    0,
+    15,
+    "[reactive tier, no cloud call] no trigger (absent) -- turning to where the local VLM saw the target"
+   ]
+  ],
+  "met": false
+ },
+ "cloudno": {
+  "missions": 21,
+  "frames": 10721,
+  "frames_differ": 0,
+  "missions_rows_differ": 0,
+  "outcomes": {
+   "exhausted": 20,
+   "out_of_budget": 1
+  },
+  "first_difference": null,
+  "met": true
+ },
+ "sync": {
+  "missions": 21,
+  "frames": 7965,
+  "frames_differ": 0,
+  "missions_rows_differ": 0,
+  "outcomes": {
+   "found": 11,
+   "exhausted": 9,
+   "out_of_budget": 1
+  },
+  "first_difference": null,
+  "met": true
+ }
+}
