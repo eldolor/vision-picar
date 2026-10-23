@@ -100,4 +100,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.92](3.92-tier-calibration.md) | Calibrating the tiers on the labelled corpus: when to trust Qwen, when to ask |
 | [3.93](3.93-board-lock.md) | One session on the Jetson at a time: a lock held on the board |
 | [3.94](3.94-tier-tree.md) | The tiered ladder as a behavior tree: today's logic redrawn, no behaviour change |
+| [3.95](3.95-py-trees.md) | The tiered trees on py_trees |
 <!-- /sections -->
