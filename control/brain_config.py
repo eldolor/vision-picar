@@ -309,9 +309,11 @@ DEFAULTS = {
 
 
 # 3.94.D: the tree's settings. The names match brain/tiered.py's rungs and
-# events (`tests/test_tier_tree.py` checks); kept here, not imported, because
-# the walks Lambda carries only control/.
+# events, and ARRIVAL_CENTRE_DEG brain/arrival.py's (`tests/test_tier_tree.py`
+# checks); kept here, not imported, because the walks Lambda carries only
+# control/.
 TIER_TREE_RUNGS = ("steer", "located", "reckoned", "candidate", "held", "scan")
+TIER_TREE_REQUIRED_RUNGS = ("steer", "located", "scan")
 TIER_TREE_ABSENT_EVENTS = ("band", "oov", "cold_frames", "cold_metres")
 TIER_TREE_DEFAULTS = {
     "what_rungs": list(TIER_TREE_RUNGS),
@@ -322,19 +324,29 @@ TIER_TREE_DEFAULTS = {
     "max_turn_deg": 90,
     "local_yes_at": 0.5,
 }
+# The arrival counts a target centred within this many degrees, and it is a
+# hard rule (3.80.O): a steering band wider than it would stop turning toward
+# a target the arrival never counts as centred (review of 3.94.D).
+ARRIVAL_CENTRE_DEG = 3.0
+# explore steers with the module's band and turn bounds (brain/explore.py);
+# under `tier_search: explore` the tier must use the same, one band a mission.
+_EXPLORE_SHARED = ("steer_band_deg", "min_turn_deg", "max_turn_deg")
 
 
-def _number(tree: dict, key: str, low: float, high: float, low_open=False) -> float:
+def _number(tree: dict, key: str, low: float, high: float, low_open=False,
+            whole=False) -> float:
     v = tree[key]
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
         raise ValueError(f"brain.tier_tree.{key} must be a number; got {v!r}")
+    if whole and v != int(v):
+        raise ValueError(f"brain.tier_tree.{key} must be a whole number of degrees; got {v}")
     if v > high or v < low or (low_open and v == low):
         bound = f"({low}, {high}]" if low_open else f"[{low}, {high}]"
         raise ValueError(f"brain.tier_tree.{key} must be in {bound}; got {v}")
-    return v
+    return int(v) if whole else v
 
 
-def tier_tree_config(value, local_no_below: float) -> dict:
+def tier_tree_config(value, local_no_below: float, tier_search: str = "cloud") -> dict:
     """The validated tree settings: today's defaults, overlaid by `value`."""
     if value is None:
         value = {}
@@ -359,13 +371,24 @@ def tier_tree_config(value, local_no_below: float) -> dict:
     if not tree["what_rungs"] or tree["what_rungs"][-1] != "scan":
         raise ValueError("brain.tier_tree.what_rungs must end with 'scan', the rung that always "
                          f"chooses; got {tree['what_rungs']}")
-    _number(tree, "steer_band_deg", 0, 45, low_open=True)
-    _number(tree, "scan_turn_deg", 5, 90)
-    lo = _number(tree, "min_turn_deg", 1, 180)
-    hi = _number(tree, "max_turn_deg", 1, 180)
+    missing = [n for n in TIER_TREE_REQUIRED_RUNGS if n not in tree["what_rungs"]]
+    if missing:
+        # A located yes is spent and held on every frame whether or not its
+        # rung runs; without the rung the hold would drive on it unsteered.
+        raise ValueError(f"brain.tier_tree.what_rungs must keep {missing}; only "
+                         "reckoned, candidate and held may be left out")
+    _number(tree, "steer_band_deg", 0, ARRIVAL_CENTRE_DEG, low_open=True)
+    lo = tree["min_turn_deg"] = _number(tree, "min_turn_deg", 1, 90, whole=True)
+    hi = tree["max_turn_deg"] = _number(tree, "max_turn_deg", 1, 90, whole=True)
     if lo > hi:
         raise ValueError(f"brain.tier_tree.min_turn_deg ({lo}) must be <= max_turn_deg ({hi})")
+    tree["scan_turn_deg"] = _number(tree, "scan_turn_deg", max(5, lo), hi, whole=True)
     _number(tree, "local_yes_at", local_no_below, 1, low_open=True)
+    if tier_search == "explore":
+        moved = [k for k in _EXPLORE_SHARED if tree[k] != TIER_TREE_DEFAULTS[k]]
+        if moved:
+            raise ValueError(f"brain.tier_tree.{moved} must keep their defaults under "
+                             "tier_search: explore, whose own steering uses them")
     return tree
 
 
@@ -537,6 +560,6 @@ def load_brain_config(config_path=None) -> dict:
     if merged["explore_goal_policy"] not in ("rule", "learned", "network"):
         raise ValueError(f"brain.explore_goal_policy must be 'rule', 'learned' or 'network'; "
                          f"got {merged['explore_goal_policy']!r}")
-    merged["tier_tree"] = tier_tree_config(merged["tier_tree"], no_below)
+    merged["tier_tree"] = tier_tree_config(merged["tier_tree"], no_below, merged["tier_search"])
 
     return merged

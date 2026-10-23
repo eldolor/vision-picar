@@ -790,11 +790,14 @@ def create_app(
                 "tier_local_direction", "tier_steer_on_candidate", "tier_search",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",
                 "tier_spin_guard_after", "tier_consecutive_frames", "tier_sighting_span_s", "tier_frame_vote",
-                "tier_tree",
                 "perception_floor_mask", "perception_crop_path",
                 "navigate_model_id", "navigate_prompt_variant",
                 "explore_goal_policy",
             ) if k in config},
+            # 3.94.D: the tree as one compact string -- the console prints each
+            # config value as `k=v`, and a nested mapping read `[object Object]`.
+            "tier_tree": json.dumps(config.get("tier_tree") or {}, sort_keys=True,
+                                    separators=(",", ":")),
             "explore_ask": asks,
         }
         if req.policy == "tiered":

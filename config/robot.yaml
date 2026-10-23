@@ -348,19 +348,17 @@ brain:
   tier_local_max_unable: 2
   tier_local_timeout_s: 3.0
   # 3.94.D -- the tiered policy as a behavior tree: what may be reordered,
-  # and its numbers; every value here is the code's before 3.94. `scan` ends
-  # what_rungs (it always chooses); a rung or event may be left out. The
-  # order of who-to-ask, the head of when-to-ask and the arrival are hard
-  # rules and have no key. Tiered only: explore keeps the module's values.
-  # local_yes_at is the frame questions' yes, not the arrival's.
-  tier_tree:
-    what_rungs: [steer, located, reckoned, candidate, held, scan]
-    absent_events: [band, oov, cold_frames, cold_metres]
-    steer_band_deg: 3.0
-    scan_turn_deg: 45
-    min_turn_deg: 5
-    max_turn_deg: 90
-    local_yes_at: 0.5
+  # and its numbers. Empty is today's tree (the defaults live in the code,
+  # control/brain_config.py TIER_TREE_DEFAULTS): what_rungs [steer, located,
+  # reckoned, candidate, held, scan] (scan last; only reckoned, candidate,
+  # held may be left out), absent_events [band, oov, cold_frames,
+  # cold_metres], steer_band_deg 3.0 (at most the arrival's 3.0),
+  # scan_turn_deg 45 (whole, within the bounds), min_turn_deg 5 and
+  # max_turn_deg 90 (whole, at most 90), local_yes_at 0.5 (frame questions,
+  # not the arrival). Under tier_search: explore the band and bounds stay at
+  # their defaults. The order of who-to-ask, the head of when-to-ask and the
+  # arrival are hard rules and have no key.
+  tier_tree: {}
   # 3.80.D -- per frame, with the local tier on: a best candidate with CLIP
   # P in [band_low, the 0.8 gate) on tier_consecutive_frames frames asks the
   # local VLM (`uncertain_band`), as do an out-of-vocabulary target and

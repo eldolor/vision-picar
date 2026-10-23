@@ -1114,6 +1114,14 @@ class TieredVision:
         # by `load_brain_config`; the defaults are the module's constants, so
         # a policy built without one behaves as before).
         t = {**TREE_DEFAULTS, **(tree or {})}
+        for key, names in (("what_rungs", TREE_DEFAULTS["what_rungs"]),
+                           ("absent_events", TREE_DEFAULTS["absent_events"])):
+            # The loader validates in full; a policy built directly (a test, a
+            # tool) still fails here, by name, not as a KeyError mid-build.
+            if (not isinstance(t[key], (list, tuple)) or len(set(t[key])) != len(t[key])
+                    or any(n not in names for n in t[key])):
+                raise ValueError(f"tree {key} must name each of {names} at most once; "
+                                 f"got {t[key]!r}")
         self.what_rungs = list(t["what_rungs"])
         self.absent_events = list(t["absent_events"])
         self.steer_band_deg = float(t["steer_band_deg"])

@@ -495,7 +495,12 @@ def test_criterion_3_the_config_defaults_are_todays_values():
     ({"what_rungs": ["steer", "fly", "scan"]}, "unknown ['fly']"),
     ({"absent_events": ["band", "stale"]}, "unknown ['stale']"),
     ({"who_order": ["cloud", "mission_ended"]}, "hard rules"),
-    ({"steer_band_deg": 0}, "steer_band_deg must be in (0, 45]"),
+    ({"steer_band_deg": 0}, "steer_band_deg must be in (0, 3.0]"),
+    ({"steer_band_deg": 6}, "steer_band_deg must be in (0, 3.0]"),     # past the arrival's band
+    ({"max_turn_deg": 30}, "scan_turn_deg must be in [5, 30]"),        # the scan outside the bounds
+    ({"scan_turn_deg": 45.5}, "must be a whole number"),
+    ({"min_turn_deg": 60}, "scan_turn_deg must be in [60, 90]"),
+    ({"what_rungs": ["steer", "held", "scan"]}, "must keep ['located']"),
     ({"scan_turn_deg": 120}, "scan_turn_deg must be in [5, 90]"),
     ({"min_turn_deg": 30, "max_turn_deg": 10}, "must be <= max_turn_deg"),
     ({"local_yes_at": 0.05}, "local_yes_at must be in (0.1, 1]"),
@@ -510,6 +515,33 @@ def test_criterion_3_a_bad_tree_is_refused_at_load(tmp_path, bad, words):
     with pytest.raises(ValueError) as e:
         load_brain_config(path)
     assert words in str(e.value)
+
+
+def test_under_an_explore_search_the_band_and_bounds_stay(tmp_path):
+    import yaml
+    from control.brain_config import load_brain_config
+    path = tmp_path / "robot.yaml"
+    path.write_text(yaml.safe_dump({"brain": {"tier_search": "explore",
+                                              "tier_tree": {"min_turn_deg": 10}}}))
+    with pytest.raises(ValueError, match="under tier_search: explore"):
+        load_brain_config(path)
+    path.write_text(yaml.safe_dump({"brain": {"tier_search": "explore",
+                                              "tier_tree": {"what_rungs": ["steer", "located",
+                                                                           "scan"]}}}))
+    assert load_brain_config(path)["tier_tree"]["what_rungs"] == ["steer", "located", "scan"]
+
+
+def test_the_band_cap_is_the_arrivals_centring_band():
+    from brain.arrival import ARRIVAL_CENTRE_DEG
+    from control import brain_config
+    assert brain_config.ARRIVAL_CENTRE_DEG == ARRIVAL_CENTRE_DEG
+
+
+def test_a_policy_built_directly_refuses_a_bad_tree_by_name():
+    with pytest.raises(ValueError, match="absent_events must name"):
+        TieredVision(_Pipe(), lambda f: {}, tree={"absent_events": "band"})
+    with pytest.raises(ValueError, match="what_rungs must name"):
+        TieredVision(_Pipe(), lambda f: {}, tree={"what_rungs": ["steer", "steer", "scan"]})
 
 
 def test_criterion_3_a_partial_tree_keeps_the_other_defaults(tmp_path):
@@ -544,15 +576,15 @@ def test_criterion_3_the_rung_order_takes_effect():
 
 
 def test_criterion_3_the_numbers_take_effect():
-    t = TieredVision(_Pipe(), lambda f: {}, tree={"steer_band_deg": 10.0, "scan_turn_deg": 30,
+    t = TieredVision(_Pipe(), lambda f: {}, tree={"steer_band_deg": 1.0, "scan_turn_deg": 30,
                                                    "min_turn_deg": 12, "max_turn_deg": 40})
-    assert t._local_scene(_detected_at(8.0))["safest_direction"] == "FORWARD"   # inside 10
+    assert t._local_scene(_detected_at(2.0))["safest_direction"] == "RIGHT"     # outside 1
     s = t._local_scene(_detected_at(-70.0))
     assert (s["safest_direction"], s["turn_deg"]) == ("LEFT", 40)                # capped at 40
     assert t._local_scene(_detected_at(11.0))["turn_deg"] == 12                  # floor 12
     assert t._local_scene(_absent_frame())["turn_deg"] == 30                     # the scan step
     base = TieredVision(_Pipe(), lambda f: {})
-    assert base._local_scene(_detected_at(8.0))["safest_direction"] == "RIGHT"  # 3-degree band
+    assert base._local_scene(_detected_at(2.0))["safest_direction"] == "FORWARD"  # 3-degree band
 
 
 def test_criterion_3_the_absent_events_order_takes_effect():
