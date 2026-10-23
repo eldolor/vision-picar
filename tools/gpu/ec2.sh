@@ -42,6 +42,11 @@ REMOTE_DIR="/opt/eval"
 # us-east-2 on-demand, g5.xlarge. Used only for the cost readout; if you
 # change TYPE, change this or the number printed is a lie.
 HOURLY="${GPU_HOURLY:-1.006}"
+# GPU_SPOT=1: a one-time spot instance, terminated (never stopped) on an
+# interruption, so nothing lingers; the work must checkpoint to S3 and be
+# relaunched with `up` (3.96). HOURLY is then the spot price you saw.
+SPOT="${GPU_SPOT:-0}"
+PURPOSE="${GPU_PURPOSE:-perception-eval}"
 
 say() { printf '\033[1m[gpu]\033[0m %s\n' "$*"; }
 die() { printf '\033[31m[gpu] %s\033[0m\n' "$*" >&2; exit 1; }
@@ -143,14 +148,18 @@ cmd_up() {
       /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id \
       --query 'Parameter.Value' --output text)}"
 
-  say "launching $TYPE from $ami in $subnet (${VOLUME_GB}GB gp3)"
-  id="$(aws_ ec2 run-instances \
+  local market=()
+  if [ "$SPOT" = 1 ]; then
+    market=(--instance-market-options '{"MarketType":"spot","SpotOptions":{"SpotInstanceType":"one-time","InstanceInterruptionBehavior":"terminate"}}')
+  fi
+  say "launching $TYPE$([ "$SPOT" = 1 ] && echo ' (spot)') from $ami in $subnet (${VOLUME_GB}GB gp3)"
+  id="$(aws_ ec2 run-instances ${market[@]+"${market[@]}"} \
     --image-id "$ami" --instance-type "$TYPE" --subnet-id "$subnet" \
     --security-group-ids "$sg" \
     --iam-instance-profile "Name=$NAME" \
     --metadata-options 'HttpTokens=required,HttpEndpoint=enabled' \
     --block-device-mappings "[{\"DeviceName\":\"/dev/sda1\",\"Ebs\":{\"VolumeSize\":$VOLUME_GB,\"VolumeType\":\"gp3\",\"DeleteOnTermination\":true,\"Encrypted\":true}}]" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME},{Key=Project,Value=vision-picar},{Key=Purpose,Value=perception-eval}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME},{Key=Project,Value=vision-picar},{Key=Purpose,Value=$PURPOSE}]" \
     --query 'Instances[0].InstanceId' --output text)"
   say "instance $id -- waiting for SSM to come online (about two minutes)"
   # From here a failure leaves a paid instance up: say which, and how to stop

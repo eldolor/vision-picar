@@ -177,7 +177,10 @@ def run(index: int, split: str, mode: str, prior_all: dict) -> dict:
 
 
 def _job(args):
-    O.yield_to_live_runs()
+    # PICAR_HEAVY_LOCK_HELD=1: this session holds the heavy-run lock itself
+    # (the user reserved the laptop for 3.96), so waiting on it would wait on us.
+    if os.environ.get("PICAR_HEAVY_LOCK_HELD") != "1":
+        O.yield_to_live_runs()
     (split, h), mode, prior = args
     return run(h, split, mode, prior)
 
