@@ -63,9 +63,10 @@ def main():
             for name, ms in this_frame.items():
                 times[name].append(ms)
             if this_frame:
-                frame_total.append(sum(this_frame.values()))
-    # The three are ticked one after another, never inside each other, so a
-    # frame's total is their sum.
+                frame_total.append(this_frame.get("when", 0.0) + this_frame.get("who", 0.0))
+    # The what tree is ticked INSIDE the who tree (its routes build the
+    # scene through `_local_scene`), so a frame's total is when + who, and
+    # the what tree's own row is part of the who tree's.
     print(json.dumps({"host": platform.node(), "python": platform.python_version(),
                       **{k: _q(v) for k, v in times.items()},
                       "frame_all_trees": _q(frame_total)}, indent=1))
