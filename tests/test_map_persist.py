@@ -611,3 +611,18 @@ def test_the_bridge_ends_the_launch_if_it_dies():
         launch = f.read()
     import re
     assert re.search(r'executable="bridge"[^)]*on_exit=Shutdown\(', launch)
+
+
+def test_a_rejected_reload_survives_a_failed_fresh_spawn(bridge_mod, monkeypatch, tmp_path):
+    b, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path,
+                                relocalise.judge([0.2] * 5, (0.0, 0.0, 0.0)))
+    real = fake.start
+
+    def start(mode, *a, **kw):
+        if mode == "mapping":
+            raise OSError("no exe")
+        return real(mode, *a, **kw)
+    monkeypatch.setattr(fake, "start", start)
+    b.start_slam()
+    r = b.health()[1]["slam"]["reload"]
+    assert r["result"] == "failed" and r["before"] == "fell_back" and "agree" in r["reason"]

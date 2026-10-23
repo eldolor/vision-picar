@@ -964,9 +964,13 @@ class Bridge(Node):
             self._start_fresh({"result": "none" if MAP_RELOAD else "off"})
             return
         d = saved.meta.get("dock_pose")
-        if not (isinstance(d, dict) and all(
+        try:
+            readable = isinstance(d, dict) and all(
                 isinstance(d.get(k), (int, float)) and not isinstance(d.get(k), bool)
-                and math.isfinite(d[k]) for k in ("x", "y", "theta"))):
+                and math.isfinite(d[k]) for k in ("x", "y", "theta"))
+        except (OverflowError, TypeError):      # an int too big for a float (Thermos)
+            readable = False
+        if not readable:
             self.get_logger().warning(f"saved map {saved.map_id} v{saved.version}: dock_pose "
                                       f"{d!r} unreadable; localising at the origin")
             d = mapstore.DOCK_POSE
@@ -1009,6 +1013,9 @@ class Bridge(Node):
             # before the swap, so no save can file a fresh graph under it.
             self.map_id = mapstore.new_map_id()
             self.last_map = None
+            # Before the spawn (Thermos): if it raises, the rejected reload's
+            # verdict is still what the failure record replaces.
+            self.reload = record
         self.slam.start("mapping")
         with self.lock:
             # Stamped once the old node has EXITED (start() waits for it), plus
