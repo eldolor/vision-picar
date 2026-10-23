@@ -20,8 +20,13 @@ sys.path.insert(0, ROOT)
 
 from tests import demo_explore as de  # noqa: E402
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "D2b")
-assert os.environ.get("ROS_IMAGE", "").endswith("plan-3.50"), "run with this branch's env"
+# The control arm (ROS_IMAGE=vision-picar-ros:plan-3.50-async: this branch's
+# image with only the SLAM executable put back to 3.40's async node) writes
+# beside the main arm, so the two differ in that one thing.
+IMAGE = os.environ.get("ROS_IMAGE", "")
+assert IMAGE.endswith(("plan-3.50", "plan-3.50-async")), "run with this branch's env"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "D2b",
+                   *(["control-async"] if IMAGE.endswith("-async") else []))
 
 
 def run_module(module, house, name, drift="", args=()):
