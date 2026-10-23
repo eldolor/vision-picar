@@ -665,3 +665,9 @@ def test_a_decorator_sees_its_childs_status_after_the_child_ran():
     t = Decorator("d", Action("c", lambda bb: seen.append("child") or FAILURE),
                   lambda bb, child_status: seen.append(child_status) or SUCCESS)
     assert t.tick(None) == SUCCESS and seen == ["child", FAILURE]
+
+
+def test_walk_is_parent_first_and_find_takes_the_first_in_that_order():
+    t = Sequence("s", [Fallback("f", [Action("x", lambda bb: True)]), Action("x", lambda bb: True)])
+    assert [n.name for n in t.walk()] == ["s", "f", "x", "x"]
+    assert t.find("x") is t.children[0].children[0]

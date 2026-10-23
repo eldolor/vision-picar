@@ -84,10 +84,14 @@ class _Node:
         return lines
 
     def walk(self) -> Iterable["_Node"]:
-        return self.iterate()
+        """Every node, parent before children (py_trees' `iterate()` yields
+        children first)."""
+        yield self
+        for c in self.children:
+            yield from c.walk()
 
     def find(self, name: str) -> Optional["_Node"]:
-        return next((n for n in self.iterate() if n.name == name), None)
+        return next((n for n in self.walk() if n.name == name), None)
 
 
 class Sequence(_Node, composites.Sequence):
