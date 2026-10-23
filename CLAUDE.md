@@ -674,6 +674,19 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   sweep and ProcTHOR pin (99) unchanged. Known limits: a slow bridge adds to
   the bound, and a ROS verb planned over 4/3 s now reads `timeout` to
   `SHORT_MOVES` if cut (no policy sends one).
+* **The saved map (3.50.D), D1-D2 merged 2026-10-23 (`a12c8ad5`).** Option
+  D (the user, 2026-10-09/11). D2: the bridge saves slam_toolbox's pose graph
+  at every mission end into `PICAR_MAP_DIR` (`/maps`, a volume: run the
+  container with `-v picar-maps:/maps`), versioned, 3 kept, `current.json`
+  only ever naming a whole save (`picar_bridge/mapstore.py`); `/health`'s
+  `map` block. Saved 0.2 s after the end, survives a new container. D2-b
+  FAILED on `map_and_localization_slam_toolbox_node` (east max 0.142/0.228 m,
+  kitchen 86/76%), against the async node's 0.089/0.071 m on the same branch,
+  so mapping stays on the async node and a reload (D3) restarts slam_toolbox
+  in localisation mode (the user, 2026-10-23). The async node itself missed
+  the room bar once in two on today's `dev` (3.40: 2/2), its own section.
+  Next: D3 reload from the dock, D4 re-map trigger, D5 sightings; D6 (S3) asks
+  first. Maps are a home's floor plan: never commit or upload one unasked.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,
@@ -830,9 +843,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   * 3.81.F: `MemAvailable` over a full tiered mission with VE resident and
     one change of target; below 500 MB (or trending there inside 1,200 s)
     reopens 3.81.D, in amendment 4's order.
-* **Decisions still open:** `PLAN-ros-alignment.md` section 6 (map save and
-  reload, gyro heading, the floor band below the lidar, speed by
-  clearance); `HANDOFF-2026-10-02-spec-review.md` section 3 (3a-3c);
+* **Decisions still open:** `PLAN-ros-alignment.md` section 6 (gyro heading, the floor band below the
+  lidar, speed by clearance); `HANDOFF-2026-10-02-spec-review.md` section 3 (3a-3c);
   review 3's fix 7 (arrival confirmation against the real cloud) and fix
   11 (whether a person's verb cancels a goal).
 * **Not built:** `brain/planner.py`, room-level planning over
