@@ -501,6 +501,7 @@ def test_criterion_3_the_config_defaults_are_todays_values():
     ({"scan_turn_deg": 45.5}, "must be a whole number"),
     ({"min_turn_deg": 60}, "scan_turn_deg must be in [60, 90]"),
     ({"what_rungs": ["steer", "held", "scan"]}, "must keep ['located']"),
+    ({"max_turn_deg": 4}, "max_turn_deg must be in [5, 90]"),
     ({"scan_turn_deg": 120}, "scan_turn_deg must be in [5, 90]"),
     ({"min_turn_deg": 30, "max_turn_deg": 10}, "must be <= max_turn_deg"),
     ({"local_yes_at": 0.05}, "local_yes_at must be in (0.1, 1]"),
@@ -529,6 +530,20 @@ def test_under_an_explore_search_the_band_and_bounds_stay(tmp_path):
                                               "tier_tree": {"what_rungs": ["steer", "located",
                                                                            "scan"]}}}))
     assert load_brain_config(path)["tier_tree"]["what_rungs"] == ["steer", "located", "scan"]
+
+
+def test_whole_numbers_given_as_floats_load_as_ints_and_pass_explores_rule(tmp_path):
+    import yaml
+    from control.brain_config import load_brain_config
+    path = tmp_path / "robot.yaml"
+    path.write_text(yaml.safe_dump({"brain": {"tier_search": "explore", "tier_tree": {
+        "min_turn_deg": 5.0, "max_turn_deg": 90.0, "steer_band_deg": 3}}}))
+    tree = load_brain_config(path)["tier_tree"]
+    assert tree["min_turn_deg"] == 5 and isinstance(tree["min_turn_deg"], int)
+    for moved in ({"max_turn_deg": 80}, {"steer_band_deg": 2.0}):
+        path.write_text(yaml.safe_dump({"brain": {"tier_search": "explore", "tier_tree": moved}}))
+        with pytest.raises(ValueError, match="under tier_search: explore"):
+            load_brain_config(path)
 
 
 def test_the_band_cap_is_the_arrivals_centring_band():

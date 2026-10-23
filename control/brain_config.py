@@ -379,7 +379,7 @@ def tier_tree_config(value, local_no_below: float, tier_search: str = "cloud") -
                          "reckoned, candidate and held may be left out")
     _number(tree, "steer_band_deg", 0, ARRIVAL_CENTRE_DEG, low_open=True)
     lo = tree["min_turn_deg"] = _number(tree, "min_turn_deg", 1, 90, whole=True)
-    hi = tree["max_turn_deg"] = _number(tree, "max_turn_deg", 1, 90, whole=True)
+    hi = tree["max_turn_deg"] = _number(tree, "max_turn_deg", 5, 90, whole=True)  # room for a scan
     if lo > hi:
         raise ValueError(f"brain.tier_tree.min_turn_deg ({lo}) must be <= max_turn_deg ({hi})")
     tree["scan_turn_deg"] = _number(tree, "scan_turn_deg", max(5, lo), hi, whole=True)
