@@ -40,9 +40,10 @@ ami() {
 push_code() {
   # The instance gets HEAD, never the working tree: refuse uncommitted changes
   # to tracked files, or the run would train on something else.
-  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-    echo "uncommitted changes -- commit first (the instance gets HEAD):" >&2
-    git status --short --untracked-files=no >&2
+  # Untracked files count too: committed code may import one (3.76 batch I).
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "uncommitted or untracked files -- commit first (the instance gets HEAD):" >&2
+    git status --short >&2
     exit 1
   fi
   local tmp; tmp="$(mktemp -d)"
@@ -58,10 +59,11 @@ run_remote() {
 }
 
 case "${1:-}" in
-  start)  ami; push_code; bash "$EC2" up; run_remote ;;
-  resume) ami; bash "$EC2" up; run_remote ;;
+  # A new launch makes any earlier pull stale, so `down` must see a new one.
+  start)  ami; push_code; rm -f "$HERE/cloud/.pulled"; bash "$EC2" up; run_remote ;;
+  resume) ami; rm -f "$HERE/cloud/.pulled"; bash "$EC2" up; run_remote ;;
   status) bash "$EC2" status
-          for a in F-small F-large MAP-large PONI-large rule; do
+          for a in oracle F-small F-large MAP-large PONI-large rule; do
             echo "== $a"; aws --region "$REGION" s3 cp --only-show-errors "$S3/logs/$a.log" - 2>/dev/null \
               | grep -v Blocked | tail -n 2 || echo "(no log yet)"
           done ;;
@@ -73,7 +75,8 @@ case "${1:-}" in
           aws --region "$REGION" s3 sync --only-show-errors --exclude "oracle-*" \
             "$S3/ckpt/" "$HERE/cloud/ckpt/"
           aws --region "$REGION" s3 sync --only-show-errors "$S3/logs/" "$HERE/cloud/logs/"
-          touch "$HERE/cloud/.pulled"
+          # Marked pulled only when every result is in (`down` keys off it).
+          if bash "$0" done; then touch "$HERE/cloud/.pulled"; else echo "not all results in yet -- pull again when done"; fi
           ls -la "$HERE/cloud" "$HERE/cloud/ckpt" ;;
   down)   bash "$EC2" down
           # The results live only in S3 until pulled: keep them unless pulled

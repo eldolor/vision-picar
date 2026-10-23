@@ -316,9 +316,12 @@ def stage_clone(arm: str, out: str, shards: list, ex):
         first = st["epoch"] + 1
         print(f"clone: resuming at epoch {first}", flush=True)
     for ep in range(first, CLONE_EPOCHS):
-        rng.shuffle(data)
-        for k in range(0, len(data), CLONE_BATCH):
-            loss = _batch_loss(net, data[k:k + CLONE_BATCH], kind, torch, poni)
+        # Each epoch's order from its own seed, so a resumed clone runs the
+        # same batches as an uninterrupted one.
+        order = list(range(len(data)))
+        random.Random(SEED * 1000 + ep).shuffle(order)
+        for k in range(0, len(order), CLONE_BATCH):
+            loss = _batch_loss(net, [data[q] for q in order[k:k + CLONE_BATCH]], kind, torch, poni)
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -476,7 +479,9 @@ def stage_ppo(arm: str, out: str, clone: dict, ex) -> None:
             sel = run_selection(kind, net.export(), ex)
             log["selection"].append({"it": it, **sel})
             print(f"selection it {it}: {sel}", flush=True)
-            if (sel["R"]["mean_reward"] or -math.inf) > (best["selection"]["R"]["mean_reward"] or -math.inf):
+            def _r(x):
+                return -math.inf if x is None else x
+            if _r(sel["R"]["mean_reward"]) > _r(best["selection"]["R"]["mean_reward"]):
                 best = {"it": it, "selection": sel, "params": net.export()}
         st = {"net": net.state_dict(), "opt": opt.state_dict(), "rng": rng.getstate(),
               "torch_rng": torch.get_rng_state(), "log": log, "best": best, "it": it}
