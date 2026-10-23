@@ -942,7 +942,9 @@ class Bridge(Node):
         except Exception as e:  # noqa: BLE001 -- a state, shown, not a dead thread
             with self.lock:
                 self.slam_state = "failed"
+                # A rejected reload stays visible beside the fresh start's failure.
                 self.reload = {**self.reload, "result": "failed",
+                               "before": self.reload.get("result"),
                                "error": f"{type(e).__name__}: {e}"[:300]}
             self.get_logger().error(f"slam_toolbox not started: {e}")
             # No half-started node left publishing map -> odom (review round 2).
