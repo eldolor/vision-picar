@@ -1,0 +1,28 @@
+b1 breakfast    found            503s contacts 0 marks 3 live@end 3 clear [(3, '')]  run-20261022-192451
+b1 den          found            371s contacts 0 marks 2 live@end 2 clear [(2, '')]  run-20261022-193527
+b1 dining room  found             17s contacts 0 marks 0 live@end 0 clear -  run-20261022-194352
+b1 family room  found            356s contacts 0 marks 3 live@end 3 clear [(3, '')]  run-20261022-194623
+b1 foyer        found              6s contacts 0 marks 0 live@end 0 clear -  run-20261022-195433
+b1 garage       found            729s contacts 0 marks 4 live@end 3 clear [(3, '')]  run-20261022-195652
+b1 garage hall  found            630s contacts 0 marks 1 live@end 1 clear [(1, '')]  run-20261022-201115
+b1 half bath    found            250s contacts 0 marks 0 live@end 0 clear -  run-20261022-202559
+b1 hall         found            520s contacts 0 marks 1 live@end 1 clear [(1, '')]  run-20261022-203223
+b1 kitchen      found            468s contacts 0 marks 3 live@end 2 clear [(2, '')]  run-20261022-204316
+b1 laundry      found            458s contacts 0 marks 3 live@end 2 clear [(2, '')]  run-20261022-205418
+b1 living room  found             44s contacts 0 marks 0 live@end 0 clear -  run-20261022-210410
+b1 pantry       found            690s contacts 0 marks 2 live@end 2 clear [(2, '')]  run-20261022-210708
+b2 breakfast    found            545s contacts 0 marks 3 live@end 2 clear [(2, '')]  run-20261022-212152
+b2 den          found            339s contacts 0 marks 1 live@end 1 clear [(1, '')]  run-20261022-213311
+b2 dining room  found            100s contacts 0 marks 1 live@end 1 clear [(1, '')]  run-20261022-214104
+b2 family room  found            272s contacts 0 marks 2 live@end 2 clear [(2, '')]  run-20261022-214458
+b2 foyer        found              6s contacts 0 marks 0 live@end 0 clear -  run-20261022-215244
+b2 garage       found            642s contacts 0 marks 3 live@end 2 clear [(2, '')]  run-20261022-215504
+b2 garage hall  found            687s contacts 0 marks 4 live@end 4 clear [(4, '')]  run-20261022-220759
+b2 half bath    found            310s contacts 0 marks 0 live@end 0 clear -  run-20261022-222139
+b2 hall         found            481s contacts 0 marks 4 live@end 3 clear [(3, '')]  run-20261022-222903
+b2 kitchen      found            559s contacts 0 marks 1 live@end 0 clear -  run-20261022-223918
+b2 laundry      found            727s contacts 0 marks 4 live@end 3 clear [(3, '')]  run-20261022-225050
+b2 living room  found           1086s contacts 0 marks 5 live@end 1 clear [(1, '')]  run-20261022-230511
+b2 pantry       found            823s contacts 0 marks 5 live@end 2 clear [(2, '')]  run-20261022-232531
+found 26/26; contact samples 0; clear line (sent) after 19 of 19 missions with live marks at the end; 0 logged as not sent
+R6: 6/6 succeeded; keepout marks 0

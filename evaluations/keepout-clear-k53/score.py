@@ -41,9 +41,15 @@ def main():
     rows = []
     for b in (1, 2):
         p = HERE / f"rooms-batch{b}.jsonl"
+        if not p.exists():
+            continue
         rows += [dict(json.loads(l), batch=b) for l in p.read_text().splitlines() if l.strip()]
     runs = sorted(LOGDIR.glob("run-*"))
-    found = contacts = owed = shown = 0
+    # Rows and run directories pair by order: one run per room, then R6's.
+    # A count off by one would score every later room against the wrong log.
+    if len(runs) - (HERE / "r6.out").exists() != len(rows):
+        raise SystemExit(f"{len(rows)} room rows but {len(runs)} run directories in {LOGDIR}")
+    found = contacts = owed = shown = unsent = 0
     for row, d in zip(rows, runs):
         marks, clears, end = run_log(d)
         # Live at the end: placed within TTL_S of the brain's "mission
@@ -53,13 +59,17 @@ def main():
         found += row.get("outcome") == "found"
         contacts += row.get("contact_samples") or 0
         owed += need
-        shown += need and bool(clears)
+        # The line with "(not sent: ...)" means the book was emptied but
+        # nav2's mask was not: counted apart from a clear that reached it.
+        shown += need and any(not x for _, _, x in clears)
+        unsent += need and any(x for _, _, x in clears)
         print(f"b{row['batch']} {row.get('room', '?'):12s} {row.get('outcome')!s:14s} "
               f"{row.get('seconds')!s:>5}s contacts {row.get('contact_samples')} marks {len(marks)} live@end {len(live)} "
               f"clear {[(n, x) for _, n, x in clears] or '-'}  {d.name}"
               f"{'  INVALID ' + row['invalid'] if row.get('invalid') else ''}")
     print(f"found {found}/{len(rows)}; contact samples {contacts}; "
-          f"clear line after {shown} of {owed} missions with live marks at the end")
+          f"clear line (sent) after {shown} of {owed} missions with live marks at the end; "
+          f"{unsent} logged as not sent")
     r6 = HERE / "r6.out"
     if r6.exists():
         txt = r6.read_text()

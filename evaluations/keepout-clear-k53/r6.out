@@ -1,0 +1,14 @@
+load at start 1.56
+run dir /tmp/vision-picar-3.76/run-20261022-234127
+refusals during the mapping lap {}
+{"goal": "hallway, north", "state": "succeeded", "seconds": 13.7, "end_error_m": 0.102, "min_clearance_m": 0.403, "min_clearance_static_m": 0.403, "min_clearance_mover_m": null, "plan_points": 99, "wheels_stopped": true}
+{"goal": "kitchen, through its door", "state": "succeeded", "seconds": 15.2, "end_error_m": 0.106, "min_clearance_m": 0.395, "min_clearance_static_m": 0.395, "min_clearance_mover_m": null, "plan_points": 98, "wheels_stopped": true}
+{"goal": "hallway, south", "state": "succeeded", "seconds": 23.3, "end_error_m": 0.1, "min_clearance_m": 0.383, "min_clearance_static_m": 0.383, "min_clearance_mover_m": null, "plan_points": 153, "wheels_stopped": true}
+{"goal": "bedroom, through its door", "state": "succeeded", "seconds": 15.0, "end_error_m": 0.09, "min_clearance_m": 0.369, "min_clearance_static_m": 0.369, "min_clearance_mover_m": null, "plan_points": 94, "wheels_stopped": true}
+{"goal": "study, across the hallway", "state": "succeeded", "seconds": 26.4, "end_error_m": 0.101, "min_clearance_m": 0.427, "min_clearance_static_m": 0.427, "min_clearance_mover_m": null, "plan_points": 176, "wheels_stopped": true}
+{"goal": "back to the start", "state": "succeeded", "seconds": 31.7, "end_error_m": 0.086, "min_clearance_m": 0.35, "min_clearance_static_m": 0.35, "min_clearance_mover_m": null, "plan_points": 217, "wheels_stopped": true}
+nav stats {"applied": 2554, "reversals": 12, "metres": 20.63311465295922, "monitor_stops": 0, "monitor_slows": 5, "since": 1792730658.0108814}
+unreachable {"state": "aborted", "seconds": 18.0, "end_error_m": 2.084, "min_clearance_m": 0.754, "min_clearance_static_m": 0.754, "min_clearance_mover_m": null, "plan_points": 0, "wheels_stopped": true}
+preempt {"tap_executed": true, "seconds_from_tap_sent_to_canceled": 0.041, "states_seen": {"active": 0.005, "canceled": 0.041}}
+robot/safety.py refusals by reason {}
+keepout marks 0
