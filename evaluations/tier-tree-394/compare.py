@@ -7,13 +7,14 @@ question, call counts, reasoning) and on the missions' rows. Writes
 `summary.json`.
 
     tar xzf evaluations/tier-tree-394/traces.tar.gz -C evaluations/tier-tree-394   # the committed traces
-    .venv/bin/python evaluations/tier-tree-394/compare.py
+    .venv/bin/python evaluations/tier-tree-394/compare.py [<dir with base-*/head-*.json>]
 """
 
 import json
+import sys
 from pathlib import Path
 
-HERE = Path(__file__).parent
+HERE = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent   # 3.95 reuses it
 ARMS = ("pace6", "pace1", "decoy", "cloudno", "sync")
 
 

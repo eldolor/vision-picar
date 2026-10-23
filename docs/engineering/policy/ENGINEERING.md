@@ -20,7 +20,7 @@ file is true only until the code changes and is updated in the same commit.
 | `brain/agent.py` | `ConstrainedAgent` (allowed actions, `step()`, `sensed_scene()`, the stuck-breaker), `MissionAgent` (memory, arrival review in `_review_scene()`, room backfill, world pose, frontier preference in `decide()`), `ObjectSearchAgent` (look-around on first entering a room), `StepResult`. |
 | `brain/vision_agent.py` | `VisionAgent(MissionAgent)`: `decide()` skips the frontier logic and calls `ConstrainedAgent.decide()` on the model's `safest_direction`. |
 | `brain/navigate.py` | `navigate_scene()` (one POST to `{vision_url}/navigate`), `to_scene()` (pure mapping), `vision_fn_for()` (binds target, URL, secret, model, wording; carries `set_searched_rooms`). |
-| `brain/tree.py` | 3.94: a small behavior tree (`Sequence`, `Fallback`, `Condition`, `Action`, `Decorator`; SUCCESS / FAILURE / RUNNING, `py_trees`' semantics) with settings per node and `describe()`. No dependency. |
+| `brain/tree.py` | 3.94, on `py_trees` 2.6.0 since 3.95: the node kinds `Sequence` and `Fallback` (py_trees' `Sequence` and `Selector`, `memory=False`), `Condition` and `Action` (`Behaviour`), `Decorator` (py_trees ticks the child, then `after(bb, child_status)`); py_trees' statuses. Adds settings per node, `tick(bb)` (hands the blackboard to every node of the tree for that tick), `describe()`, `walk()`, `find()`. A node returning a non-status raises. |
 | `brain/tiered.py` | `TieredVision` (a callable `vision_fn`), `TierStats`, `corroboration_for()`, `turn_for()`, `tiered_vision_fn_for()`. Trigger policy, free-frame stand-in with its precedence ladder, async dispatch with an epoch, sized turns, spin guard. |
 | `brain/arrival.py` | `ArrivalCheck.observe(scene, robot)`, `arrived_scene()`, the readout states (`REFUSED` is set by the agent, never here: this module makes no calls). |
 | `brain/goal_pose.py` | `OdomTracker` (integrates `get_odometry()` path length along heading), `GoalPose` (`sight()`, `bearing_from()`, `distance_from()`, `clear()`; `is_point`). |
@@ -60,7 +60,8 @@ stuck-breaker (three STOPs in a row -> RIGHT; never on a scene whose
 
 **Tier free-frame precedence** (`TieredVision._local_scene()`). Since 3.94
 it is a behavior tree (`brain/tree.py`; built by `_build_what_tree`, printed
-by `describe_tree()`).
+by `describe_tree()`). It is ticked inside the who tree: every route that
+answers a frame builds its scene through `_local_scene`.
 * **The order of the tree.**
   1. Take this frame's evidence: the local VLM's located yes is spent here
      even when a better rung wins, and the held goal is read.
@@ -73,7 +74,8 @@ by `describe_tree()`).
      * the held goal (`_rung_held`; if `hold_goal`, or while a call is in
        flight);
      * `SCAN_ACTION` ("RIGHT").
-  3. The spin guard, a decorator over the rungs. It replaces a turn with
+  3. The spin guard, a decorator over the rungs, decided after they ran
+     (py_trees ticks a decorator's child first). It replaces a turn with
      FORWARD once consecutive turning reaches `spin_guard_after * 90`
      degrees, the target is not detected, and the rung is not a bearing
      from this frame (`RUNGS_THIS_FRAME`).

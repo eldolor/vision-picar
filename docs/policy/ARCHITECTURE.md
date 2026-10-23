@@ -489,6 +489,13 @@ was checked against the code it replaced on thousands of random states.
 Changes of behaviour, such as 3.92's escalation on disagreement and 3.91.C's
 rules, are new nodes in their own sections, each with its own bars.
 
+**On a standard library (3.95).** The trees run on `py_trees`, the common
+open-source Python behavior-tree library, rather than code of our own. The
+richer trees still to come need what it already has: nodes that span frames,
+decorators such as timeouts and retries, and drawings of the tree. It also
+reads BehaviorTree.CPP's XML, the format nav2's trees are written in. The
+move changed no decision.
+
 ## Open questions
 
 - **The room-level planner** -- an LLM reasoning over mission memory to
