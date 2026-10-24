@@ -82,7 +82,7 @@ required):
 
 | Path | Function | Notes |
 |---|---|---|
-| `POST /analyze`, `POST /describe`, `POST /navigate`, `GET /navigate/models`, `POST /guidance`, `GET /health` | vision | cloud-vision owns their behaviour |
+| `POST /analyze`, `POST /describe`, `POST /navigate`, `GET /navigate/models`, `POST /room`, `POST /guidance`, `GET /health` | vision | cloud-vision owns their behaviour |
 | `ANY /recording/{proxy+}`, `GET /stats` | walks | recordings owns their behaviour |
 | `ANY /metrics/{proxy+}` | walks | see below |
 | everything else | static bucket | default behaviour, `index.html` at `/` |

@@ -126,6 +126,22 @@ Response body (JSON):
            web twin's Guide-me-to panel to draw an outline around the
            object once found, instead of a generic checkmark.
     }
+
+POST /room -- the room a frame was taken in, for a survey's room labels
+(3.70 S2's car half). A name and nothing else, so a survey's 60 asks do not
+pay for /navigate's whole reply. See vision_core.py's
+describe_image_bytes_room().
+
+Request body (JSON):
+    {"image_base64": "...", "media_type": "image/jpeg"}   // no target
+
+Response body (JSON):
+    {
+      "room": "kitchen" | "unclear",   -- lowercase, at most three words
+      "model_id": "...",
+      "usage": {"input_tokens": int, "output_tokens": int},
+      "_raw": "..."                    -- only when the reply was not a name
+    }
 """
 
 import base64
@@ -142,6 +158,7 @@ from vision_core import (
     describe_image_bytes_person,
     describe_image_bytes_navigate,
     describe_image_bytes_guidance,
+    describe_image_bytes_room,
     NAVIGATE_MODEL_CHOICES,
     NAVIGATE_MODEL_ID,
     NAVIGATE_PROMPT_VARIANTS,
@@ -345,6 +362,15 @@ def create_app() -> FastAPI:
         )
 
         return decision
+
+    @app.post("/room")
+    async def room(request: Request):
+        """The room a frame was taken in, as one short name or "unclear"
+        (3.70 S2's car half: a survey's room labels). No target: a survey
+        has none."""
+        image_bytes, media_type, _body = await _decode_image(request)
+
+        return _vision_call("room", describe_image_bytes_room, image_bytes, media_type)
 
     @app.post("/guidance")
     async def guidance(request: Request):

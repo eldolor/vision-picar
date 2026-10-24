@@ -487,3 +487,107 @@ def test_spacing_does_not_ask_again_beside_a_seed_whose_cell_turned_occupied():
     moved = {**m, "map_version": 2, "cells": m["cells"][:k] + [CELL_OCCUPIED] + m["cells"][k + 1:]}
     lab.observe(moved, _pose(1.65, 1.65), dict)
     assert len(asked) == 1
+
+
+# ---------- S2's car half: the cloud's /room as the label source ----------
+
+def _room_client(handler):
+    import httpx
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_the_cloud_label_source_asks_room_with_the_frame_and_the_secret():
+    import json as _json
+    from brain.navigate import room_label_fn_for
+
+    seen = {}
+
+    def handler(request):
+        seen["url"] = str(request.url)
+        seen["secret"] = request.headers.get("x-app-secret")
+        seen["body"] = _json.loads(request.content)
+        seen["timeout"] = request.extensions.get("timeout")
+        return __import__("httpx").Response(200, json={"room": " Kitchen "})
+
+    fn = room_label_fn_for("https://vision.example/", secret="s3", timeout_s=12.0,
+                           client=_room_client(handler))
+    assert fn({"image_base64": "aW1n", "media_type": "image/png"}) == "kitchen"
+    assert seen["url"] == "https://vision.example/room"
+    assert seen["secret"] == "s3"
+    assert seen["body"] == {"image_base64": "aW1n", "media_type": "image/png"}
+    assert seen["timeout"]["read"] == 12.0
+
+
+@pytest.mark.parametrize("reply", [{"room": "unknown"}, {"room": "Unclear"}, {"room": ""},
+                                   {"room": 7}, {}])
+def test_a_cloud_reply_that_names_no_room_is_unclear(reply):
+    import httpx
+    from brain.navigate import room_label_fn_for
+
+    fn = room_label_fn_for("https://v", client=_room_client(lambda r: httpx.Response(200, json=reply)))
+    assert fn({"image_base64": "aW1n"}) == "unclear"
+
+
+def test_a_frame_without_pixels_spends_no_cloud_call():
+    import httpx
+    from brain.navigate import room_label_fn_for
+    from brain.room_labels import NOT_HERE
+
+    asked = []
+    fn = room_label_fn_for("https://v", client=_room_client(
+        lambda r: asked.append(r) or httpx.Response(200, json={"room": "kitchen"})))
+    assert fn({"room": "unknown"}) is NOT_HERE
+    assert asked == []
+
+
+@pytest.mark.parametrize("status", [502, 503, 429, 408])
+def test_a_cloud_outage_reads_as_unavailable(status):
+    import httpx
+    from brain.navigate import CloudUnavailable, room_label_fn_for
+
+    fn = room_label_fn_for("https://v", client=_room_client(lambda r: httpx.Response(status)))
+    with pytest.raises(CloudUnavailable):
+        fn({"image_base64": "aW1n"})
+
+
+def test_a_refused_secret_is_our_fault_not_an_outage():
+    import httpx
+    from brain.navigate import CloudUnavailable, room_label_fn_for
+
+    fn = room_label_fn_for("https://v", client=_room_client(lambda r: httpx.Response(401)))
+    with pytest.raises(RuntimeError) as e:
+        fn({"image_base64": "aW1n"})
+    assert not isinstance(e.value, CloudUnavailable)
+
+
+def test_the_cloud_label_source_needs_a_url(monkeypatch):
+    from brain.navigate import room_label_fn_for
+
+    monkeypatch.delenv("VISION_URL", raising=False)
+    with pytest.raises(ValueError, match="vision"):
+        room_label_fn_for("")
+
+
+def test_a_survey_on_the_cloud_source_backs_off_through_an_outage_and_keeps_going():
+    """The labeller's own back-off is the retry policy: an outage spends a
+    few calls, never the cap, and never the survey."""
+    import httpx
+    from brain.navigate import room_label_fn_for
+
+    asked = []
+
+    def handler(request):
+        asked.append(1)
+        return httpx.Response(503)
+
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid)                     # rendered: frames carry pixels
+    runner = MissionRunner(robot, job="survey", policy="explore", navigator=FakeNav(robot),
+                           world=MockWorld(grid), clock=lambda: grid.sim_time,
+                           idle=robot.pass_time, room_label_max_calls=60,
+                           room_label_fn=room_label_fn_for("https://v", client=_room_client(handler)))
+    runner.start()
+    s = _drive(runner)
+    assert s["outcome"] == EXHAUSTED, s["log_tail"]
+    assert 1 <= len(asked) < 15
+    assert s["survey"]["rooms_named"] == []

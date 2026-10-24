@@ -405,6 +405,12 @@ brain:
   survey_time_limit_s: 1800
   room_label_mode: spacing
   room_label_max_calls: 60
+  # Who names the rooms: frame (the simulator's own `room`, free; on the car
+  # nothing is asked) or cloud (the vision service's /room, Opus 5.5, one
+  # paid call an ask). Its timeout is held to half of tick_timeout_s: the
+  # ask runs inside the mission's tick.
+  room_label_source: frame
+  room_label_timeout_s: 15
   # Brain-side pre-check; the robot server re-checks against
   # safety.min_distance_cm above, which is now the same number on purpose.
   # NOT 30.0: that is exactly one grid cell, so with sim.sensor_noise on it

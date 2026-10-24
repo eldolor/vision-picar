@@ -183,6 +183,9 @@ def check_brain(url: str, secret=None, timeout=DEFAULT_TIMEOUT_S) -> dict:
             "tick_rate_hz": body.get("tick_rate_hz"),
             "navigate_model_id": body.get("navigate_model_id"),
             "navigate_prompt_variant": body.get("navigate_prompt_variant"),
+            # 3.70 S2: whether a survey's room names are paid calls. Described,
+            # never a verdict: a release cannot be blamed for a config choice.
+            "room_label_source": body.get("room_label_source"),
         },
     }
 

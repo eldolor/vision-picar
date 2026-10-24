@@ -152,7 +152,15 @@ def navigate_scene(
     if secret:
         headers["x-app-secret"] = secret
 
-    url = vision_url.rstrip("/") + "/navigate"
+    result = _post(vision_url.rstrip("/") + "/navigate", body, headers, timeout_s, client)
+    return to_scene(result, target_object)
+
+
+def _post(url: str, body: dict, headers: dict, timeout_s: float,
+          client: Optional[httpx.Client]) -> dict:
+    """One POST to the vision service, its failures sorted: an outage is
+    CloudUnavailable, our own fault (a bad URL, any other 4xx) a plain
+    RuntimeError."""
     http = client or httpx.Client(timeout=timeout_s)
     try:
         try:
@@ -168,12 +176,10 @@ def navigate_scene(
             raise CloudUnavailable(f"HTTP {response.status_code}: {response.text[:200]}")
         if response.status_code != 200:
             raise RuntimeError(f"HTTP {response.status_code}: {response.text[:200]}")
-        result = response.json()
+        return response.json()
     finally:
         if client is None:
             http.close()
-
-    return to_scene(result, target_object)
 
 
 # Mirrors service/vision_analyze/vision_core.py's allow-list. Duplicated
@@ -297,3 +303,54 @@ def vision_fn_for(
 
     vision_fn.set_searched_rooms = set_searched_rooms
     return vision_fn
+
+
+# 3.70 S2's car half. Each ask runs inside the mission's tick, so it ends
+# well inside `tick_timeout_s` (30 s; brain_config checks the order). A
+# name is a few tokens out: ~3-6 s on Opus 5.5.
+ROOM_TIMEOUT_S = 15.0
+
+
+def room_name(frame: dict, vision_url: str, secret: Optional[str] = None,
+              timeout_s: float = ROOM_TIMEOUT_S,
+              client: Optional[httpx.Client] = None) -> str:
+    """The room `frame` was taken in, from the vision service's /room: one
+    lowercase name, or "unclear". Raises FrameHasNoImage, CloudUnavailable
+    (an outage) or RuntimeError (our fault) -- no retries in here, for the
+    module docstring's reason: the room labeller backs off."""
+    image_base64 = frame.get("image_base64")
+    if not image_base64:
+        raise FrameHasNoImage("This frame carries no image_base64: /room needs pixels.")
+    body = {"image_base64": image_base64, "media_type": frame.get("media_type", "image/jpeg")}
+    headers = {"Content-Type": "application/json"}
+    if secret:
+        headers["x-app-secret"] = secret
+    result = _post(vision_url.rstrip("/") + "/room", body, headers, timeout_s, client)
+    name = result.get("room") if isinstance(result, dict) else None
+    name = " ".join(name.split()).lower() if isinstance(name, str) else ""
+    return name if name and name not in ("unclear", "unknown") else "unclear"
+
+
+def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = None,
+                      timeout_s: float = ROOM_TIMEOUT_S,
+                      client: Optional[httpx.Client] = None):
+    """A survey's paid room-label source, `label_fn(frame) -> name` in
+    brain/room_labels.py's sense: each call is one /room call. A frame with
+    no pixels is NOT_HERE (nothing asked, nothing counted)."""
+    from brain.room_labels import NOT_HERE
+
+    url = vision_url or os.environ.get("VISION_URL", "")
+    if not url:
+        raise ValueError(
+            "No vision service URL for the room labels. Pass vision_url, set "
+            "brain.vision_url in config/robot.yaml, or export VISION_URL."
+        )
+    app_secret = secret if secret is not None else os.environ.get("APP_SHARED_SECRET", "")
+
+    def label_fn(frame: dict):
+        try:
+            return room_name(frame, url, secret=app_secret, timeout_s=timeout_s, client=client)
+        except FrameHasNoImage:
+            return NOT_HERE
+
+    return label_fn

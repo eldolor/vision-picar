@@ -79,6 +79,11 @@ ANALYZE_MODEL_ID = os.environ.get("BEDROCK_ANALYZE_MODEL_ID", MODEL_ID)
 NAVIGATE_MODEL_ID = os.environ.get(
     "BEDROCK_NAVIGATE_MODEL_ID", "us.anthropic.claude-opus-4-5-20251101-v1:0")
 GUIDANCE_MODEL_ID = os.environ.get("BEDROCK_GUIDANCE_MODEL_ID", "amazon.nova-lite-v1:0")
+# /room names the room a survey's frame was taken in (3.70 S2's car half).
+# Claude Opus 5.5, the user's choice for labels (2026-10-13), confirmed with
+# two real Converse calls on recorded walk frames from us-east-2 that day.
+# Keep in step with cloudformation/serverless.yaml's RoomModelId.
+ROOM_MODEL_ID = os.environ.get("BEDROCK_ROOM_MODEL_ID", "us.anthropic.claude-opus-5-5")
 
 # /navigate's model A/B set -- a request may pick one of these by id (app.py
 # validates against this exact set before it ever reaches Bedrock, so an
@@ -1305,3 +1310,75 @@ def _parse_scene_json(text: str) -> dict:
     except ValueError:
         logger.warning(f"Failed to parse VLM response as JSON: {text!r}")
         return {**_EMPTY_SCHEMA, "_raw": text}
+
+
+# ---------------------------------------------------------------- /room
+
+# 3.70 S2's car half: a survey asks for a room's name about every 2 m and
+# through every doorway, up to 60 times. /navigate's reply (a target, an
+# action, a reason: 230-300 tokens out on Opus 5.5) would pay for answers a
+# survey throws away, so this asks for the name alone. The list steers one
+# room to one spelling (3.76 L2: one room named two ways was two rooms); a
+# room it does not cover still gets a short name of its own.
+ROOM_PROMPT = """You are the camera of a small indoor robot mapping a house, about 10 cm above the floor. Which room of the house is this photo taken in?
+
+Answer with the room's name only, lowercase, at most three words. Use one of these if one fits: kitchen, living room, family room, dining room, bedroom, bathroom, hallway, foyer, office, laundry room, pantry, closet, garage. Otherwise give another short room-type name. If the photo does not show enough to tell, answer: unclear"""
+
+ROOM_MAX_TOKENS = 16
+_ROOM_NAME = re.compile(r"[a-z][a-z' -]{0,39}")
+_ROOM_UNCLEAR = ("unclear", "unknown", "none", "n/a")
+
+
+def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
+    client = _get_client(ROOM_MODEL_ID)
+
+    image_bytes, fmt = _prepare_image(image_bytes, media_type)
+
+    response = _converse(client,
+        modelId=ROOM_MODEL_ID,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "image": {
+                            "format": fmt,
+                            "source": {"bytes": image_bytes},
+                        }
+                    },
+                    {"text": ROOM_PROMPT},
+                ],
+            }
+        ],
+        inferenceConfig={"maxTokens": ROOM_MAX_TOKENS},
+    )
+
+    content_blocks = response["output"]["message"]["content"]
+    text = "".join(b["text"] for b in content_blocks if "text" in b)
+    result = _parse_room_name(text)
+    # Carried on the reply for the same reason /navigate's are: a survey's
+    # record has to say which model named its rooms, and at what cost.
+    result["model_id"] = ROOM_MODEL_ID
+    usage = response.get("usage") or {}
+    result["usage"] = {
+        "input_tokens": usage.get("inputTokens"),
+        "output_tokens": usage.get("outputTokens"),
+    }
+    return result
+
+
+def _parse_room_name(text: str) -> dict:
+    """The reply's first line as one short lowercase room name, or
+    "unclear". Anything that is not a name -- a sentence, a number, more
+    than three words -- is "unclear", with the reply kept under `_raw`: a
+    garbage label would land on the map as a room."""
+    first = next((line for line in (text or "").splitlines() if line.strip()), "")
+    name = re.sub(r"\s+", " ", first.strip().strip("*_`\"'.,:;!").strip()).lower()
+    if name in _ROOM_UNCLEAR:
+        return {"room": "unclear"}
+    if _ROOM_NAME.fullmatch(name) and len(name.split()) <= 3:
+        return {"room": name}
+    if text and text.strip():
+        logger.warning(f"Unusable room reply: {text!r}")
+        return {"room": "unclear", "_raw": text[:200]}
+    return {"room": "unclear"}

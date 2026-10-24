@@ -1553,6 +1553,102 @@ def test_a_survey_the_runner_would_refuse_is_refused_at_start(tmp_path, monkeypa
     assert resp.status_code in (400, 422), resp.text
 
 
+def test_a_survey_names_rooms_from_the_frame_by_default(tmp_path, monkeypatch):
+    """3.70 S2: the frame's own `room` (free, the simulator's) unless the
+    config says the cloud: the car's paid source is never on by default."""
+    from brain.room_labels import frame_room
+
+    app = _survey_app(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={"job": "survey", "policy": "explore"})
+        runner = app.state.brain_state["runner"]
+        client.post("/mission/stop")
+    assert resp.status_code == 200, resp.text
+    assert runner.room_labeller.label_fn is frame_room
+
+
+def test_a_survey_on_the_cloud_source_asks_the_vision_service(tmp_path, monkeypatch):
+    import control.brain_server as bs
+
+    seen = {}
+
+    def fake_for(vision_url=None, secret=None, timeout_s=None, client=None):
+        seen.update(url=vision_url, secret=secret, timeout_s=timeout_s)
+        return fake_fn
+
+    def fake_fn(frame):
+        return "kitchen"
+
+    monkeypatch.setattr(bs, "room_label_fn_for", fake_for)
+    monkeypatch.setenv("VISION_SHARED_SECRET", "vs")
+    app = _survey_app(tmp_path, monkeypatch, room_label_source="cloud",
+                      vision_url="https://vision.example", room_label_timeout_s=11)
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={"job": "survey", "policy": "explore"})
+        runner = app.state.brain_state["runner"]
+        client.post("/mission/stop")
+    assert resp.status_code == 200, resp.text
+    assert runner.room_labeller.label_fn is fake_fn
+    assert seen == {"url": "https://vision.example", "secret": "vs", "timeout_s": 11}
+
+
+def test_a_cloud_labelled_survey_with_no_vision_service_is_refused_at_start(tmp_path, monkeypatch):
+    app = _survey_app(tmp_path, monkeypatch, room_label_source="cloud")
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={"job": "survey", "policy": "explore"})
+    assert resp.status_code == 400, resp.text
+    assert "vision" in resp.text
+
+
+def test_a_find_mission_never_builds_the_room_label_source(tmp_path, monkeypatch):
+    import control.brain_server as bs
+
+    monkeypatch.setattr(bs, "room_label_fn_for",
+                        lambda **k: pytest.fail("a find mission labels no rooms"))
+    app = _survey_app(tmp_path, monkeypatch, room_label_source="cloud")
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={"policy": "explore",
+                                                   "target_object": "red backpack"})
+        client.post("/mission/stop")
+    assert resp.status_code == 200, resp.text
+
+
+def test_the_room_label_timeout_is_held_inside_the_tick_s(tmp_path, monkeypatch):
+    import control.brain_server as bs
+
+    seen = {}
+    monkeypatch.setattr(bs, "room_label_fn_for",
+                        lambda **k: seen.update(k) or (lambda frame: "kitchen"))
+    app = _survey_app(tmp_path, monkeypatch, room_label_source="cloud",
+                      vision_url="https://v", room_label_timeout_s=15, tick_timeout_s=10)
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={"job": "survey", "policy": "explore"})
+        client.post("/mission/stop")
+    assert resp.status_code == 200, resp.text
+    assert seen["timeout_s"] == 5.0
+
+
+def test_health_reports_where_a_survey_s_room_names_come_from(tmp_path, monkeypatch):
+    app = _survey_app(tmp_path, monkeypatch, room_label_source="cloud")
+    with TestClient(app) as client:
+        assert client.get("/health").json()["room_label_source"] == "cloud"
+
+
+@pytest.mark.parametrize("extra, match", [
+    ({"room_label_source": "phone"}, "room_label_source"),
+    ({"room_label_timeout_s": 0}, "room_label_timeout_s"),
+    ({"room_label_timeout_s": ".nan"}, "room_label_timeout_s"),
+    ({"room_label_timeout_s": "true"}, "room_label_timeout_s"),
+])
+def test_a_bad_room_label_source_or_timeout_is_refused_at_load(tmp_path, extra, match):
+    from control.brain_config import load_brain_config
+
+    p = tmp_path / "robot.yaml"
+    p.write_text("brain:\n" + "".join(f"  {k}: {v}\n" for k, v in extra.items()))
+    with pytest.raises(ValueError, match=match):
+        load_brain_config(str(p))
+
+
 def test_an_explore_search_still_needs_a_target(tmp_path, monkeypatch):
     app = _survey_app(tmp_path, monkeypatch)
     with TestClient(app) as client:

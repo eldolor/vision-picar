@@ -86,7 +86,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from brain.navigate import MAX_TARGET_CHARS, vision_fn_for
+from brain.navigate import MAX_TARGET_CHARS, room_label_fn_for, vision_fn_for
 from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
                             DEFAULT_MATCH_PROBABILITY, PerceptionUnavailable)
 from brain.tiered import parse_frame_vote, tiered_vision_fn_for
@@ -696,6 +696,21 @@ def create_app(
                         simulated=_frames_are_simulated(robot), confirm_vision_fn=confirm_fn,
                         local_secret=_local_vlm_secret(config, secret))
 
+            # 3.70 S2's car half: a survey's rooms named by the cloud's /room,
+            # one paid call an ask, only when the config says so. Its timeout
+            # is held to half the tick's: the ask runs inside the tick.
+            room_label_fn = None
+            if req.job == "survey" and config["room_label_source"] == "cloud":
+                if not config["vision_url"]:
+                    raise ValueError(
+                        "brain.room_label_source 'cloud' needs a vision service. Set "
+                        "brain.vision_url in config/robot.yaml (or VISION_URL in the "
+                        "environment).")
+                room_label_fn = room_label_fn_for(
+                    vision_url=config["vision_url"], secret=vision_secret,
+                    timeout_s=min(float(config["room_label_timeout_s"]),
+                                  float(config["tick_timeout_s"]) / 2))
+
         except BaseException:
             if navigator is not None:
                 navigator.close()      # a refused start keeps no client open
@@ -712,6 +727,7 @@ def create_app(
             job=req.job,
             room_label_max_calls=config["room_label_max_calls"] or None,
             room_label_mode=config["room_label_mode"],
+            room_label_fn=room_label_fn,
             battery_floor_v=config["battery_floor_v"] or None,
             vision_max_calls=config["vision_max_calls"] or None,
             stuck_after=config["stuck_after"],
@@ -1297,6 +1313,8 @@ def create_app(
             # 3.70 S5: the most paid room-name calls one survey may make
             # (null: no cap), so the phone can say it before a survey starts.
             "room_label_max_calls": config["room_label_max_calls"] or None,
+            # 3.70 S2: "frame" (free, the simulator's) or "cloud" (paid).
+            "room_label_source": config["room_label_source"],
             # Phase P2. Whether `policy: "tiered"` can run here at all, and
             # which models it would load if it did -- so the twin can name
             # the detector on screen before anything is spent, and grey the

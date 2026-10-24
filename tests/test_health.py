@@ -243,3 +243,11 @@ def test_direct_drive_is_never_judged_on_ros(patched):
     body = {**HEALTHY_ROBOT, "drive": {"mode": "direct", "ros_up": None}}
     patched(robot_body=body, brain_body=HEALTHY_BRAIN)
     assert health.main([]) == 0
+
+
+def test_a_survey_on_the_paid_room_source_is_described_not_judged(patched, capsys):
+    """3.70 S2: whether a survey's room names are paid calls is a config
+    choice -- printed, never a verdict."""
+    patched(robot_body=HEALTHY_ROBOT, brain_body={**HEALTHY_BRAIN, "room_label_source": "cloud"})
+    assert health.main([]) == 0
+    assert "room_label_source" in capsys.readouterr().out

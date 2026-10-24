@@ -218,6 +218,13 @@ DEFAULTS = {
     # tests/survey_sweep.py). 0 = no cap.
     "room_label_mode": "spacing",
     "room_label_max_calls": 60,
+    # Who names a survey's rooms (3.70 S2): "frame" -- the frame's own `room`,
+    # which only the simulator's frames carry (free; on the car nothing is
+    # asked) -- or "cloud", the vision service's /room, one paid call an ask.
+    # Each ask runs inside the mission's tick, so its timeout is held to half
+    # of tick_timeout_s.
+    "room_label_source": "frame",
+    "room_label_timeout_s": 15.0,
     # End a mission `blocked` after this many FORWARDs in a row refused by
     # the safety layer (control/mission_runner.py's BLOCKED). 0 disables.
     # Five because a policy that is merely unlucky gets one or two refusals
@@ -541,6 +548,15 @@ def load_brain_config(config_path=None) -> dict:
     if merged["room_label_mode"] not in ("rooms", "spacing"):
         raise ValueError(f"brain.room_label_mode must be 'rooms' or 'spacing'; "
                          f"got {merged['room_label_mode']!r}")
+    if merged["room_label_source"] not in ("frame", "cloud"):
+        raise ValueError(f"brain.room_label_source must be 'frame' or 'cloud'; "
+                         f"got {merged['room_label_source']!r}")
+    # Above half of tick_timeout_s it is clamped at use, never refused here
+    # (3.56's reason: a deployment that lowers only the tick's would fail).
+    timeout = merged["room_label_timeout_s"]
+    if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+            or not 0 < timeout < float("inf")):
+        raise ValueError(f"brain.room_label_timeout_s must be a number > 0; got {timeout!r}")
     limit = merged["survey_time_limit_s"]
     if isinstance(limit, bool) or not isinstance(limit, (int, float)) or limit < 0:
         raise ValueError(f"brain.survey_time_limit_s must be a number of seconds >= 0 "

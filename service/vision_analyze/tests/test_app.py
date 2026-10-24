@@ -893,3 +893,89 @@ def test_guidance_target_visible_is_a_real_boolean_too(raw, expected):
 
     parsed = vision_core._parse_guidance_json(_json.dumps({"target_visible": raw}))
     assert parsed["target_visible"] is expected
+
+
+# ---------- /room: one room name for a survey's label (3.70 S2's car half) ----------
+
+def test_room_returns_the_name_verbatim(client, monkeypatch):
+    seen = {}
+
+    def fake(image_bytes, media_type):
+        seen["media_type"] = media_type
+        return {"room": "kitchen", "model_id": "m", "usage": {}}
+
+    monkeypatch.setattr(app_module, "describe_image_bytes_room", fake)
+    r = client.post("/room", json={"image_base64": IMAGE_B64, "media_type": "image/png"})
+    assert r.status_code == 200
+    assert r.json()["room"] == "kitchen"
+    assert seen["media_type"] == "image/png"
+
+
+def test_room_needs_no_target_object(client, monkeypatch):
+    monkeypatch.setattr(app_module, "describe_image_bytes_room",
+                        lambda b, m: {"room": "unclear"})
+    assert client.post("/room", json={"image_base64": IMAGE_B64}).status_code == 200
+
+
+def test_room_missing_image_is_a_400(client):
+    assert client.post("/room", json={}).status_code == 400
+
+
+def test_room_a_vision_failure_is_a_502(client, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("bedrock down")
+
+    monkeypatch.setattr(app_module, "describe_image_bytes_room", boom)
+    r = client.post("/room", json={"image_base64": IMAGE_B64})
+    assert r.status_code == 502
+
+
+def test_room_requires_the_shared_secret_when_configured(client, monkeypatch):
+    monkeypatch.setenv("APP_SHARED_SECRET", "s3cret")
+    monkeypatch.setattr(app_module, "describe_image_bytes_room",
+                        lambda b, m: {"room": "kitchen"})
+    assert client.post("/room", json={"image_base64": IMAGE_B64}).status_code == 401
+    r = client.post("/room", json={"image_base64": IMAGE_B64},
+                    headers={"x-app-secret": "s3cret"})
+    assert r.status_code == 200
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("kitchen", "kitchen"),
+    ("Kitchen.", "kitchen"),
+    ('"Living Room"', "living room"),
+    ("  laundry   room \n", "laundry room"),
+    ("**Bedroom**", "bedroom"),
+    ("Unclear", "unclear"),
+    ("unknown", "unclear"),
+    ("", "unclear"),
+    ("I think this is probably the kitchen of the house", "unclear"),
+    ("kitchen\nThe counters and the fridge say so.", "kitchen"),
+    ("room #4", "unclear"),
+])
+def test_a_room_reply_becomes_one_short_lowercase_name(raw, expected):
+    import vision_core
+
+    assert vision_core._parse_room_name(raw)["room"] == expected
+
+
+def test_the_room_call_is_short_and_asks_the_room_model(monkeypatch):
+    import vision_core
+
+    fake = _stub_converse(monkeypatch, "Dining room")
+    monkeypatch.setattr(vision_core, "_prepare_image", lambda b, m: (b, "jpeg"))
+    out = vision_core.describe_image_bytes_room(b"x", "image/jpeg")
+    assert out["room"] == "dining room"
+    assert out["model_id"] == vision_core.ROOM_MODEL_ID
+    assert fake.kwargs["modelId"] == vision_core.ROOM_MODEL_ID
+    # A name, not /navigate's reply: a few tokens out, not 300.
+    assert fake.kwargs["inferenceConfig"]["maxTokens"] <= 20
+    assert out["usage"] == {"input_tokens": 1, "output_tokens": 2}
+
+
+def test_an_unusable_room_reply_keeps_what_the_model_said():
+    import vision_core
+
+    out = vision_core._parse_room_name("I cannot tell from this angle, sorry")
+    assert out["room"] == "unclear"
+    assert out["_raw"].startswith("I cannot tell")
