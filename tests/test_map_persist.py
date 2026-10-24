@@ -1026,7 +1026,7 @@ def test_the_watch_re_maps_on_entering_the_saved_map_s_unknown(bridge_mod, monke
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.5, 0.5, 0.0))
     b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
     asked = []
-    monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append(trigger) or (200, {}))
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (200, {}))
     b.remap_step()
     assert asked == []
     monkeypatch.setattr(b, "_fresh_pose",
@@ -1040,7 +1040,7 @@ def test_the_watch_re_maps_when_the_scans_contradict(bridge_mod, monkeypatch, tm
     pose = (0.0, 0.0, 0.0)
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
     asked, stamps = [], []
-    monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append((trigger, detail)) or (200, {}))
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append((trigger, detail)) or (200, {}))
 
     def laser(at=None):
         stamps.append(at.nanoseconds)
@@ -1072,7 +1072,7 @@ def test_the_watch_judges_only_scans_taken_at_rest(bridge_mod, monkeypatch, tmp_
     pose = (0.0, 0.0, 0.0)
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
     asked = []
-    monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append(trigger) or (200, {}))
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (200, {}))
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
     rc = b._rest_clock
     for k in range(150):
@@ -1257,7 +1257,7 @@ def test_a_trigger_that_cannot_start_a_re_map_backs_off(bridge_mod, monkeypatch,
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(3.0, 0.5, 0.0))
     b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
     asked = []
-    monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append(trigger) or (503, {}))
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (503, {}))
     for _ in range(5):
         b.remap_step()
     assert asked == ["entered_unknown"]
@@ -1604,7 +1604,7 @@ def test_a_fire_from_a_replaced_tracker_is_not_acted_on(bridge_mod, monkeypatch,
     pose = (0.0, 0.0, 0.0)
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
     asked = []
-    monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append(trigger) or (200, {}))
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (200, {}))
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
     _rest_clock_still(b)
     old = b._remap_tracker
@@ -1618,3 +1618,43 @@ def test_a_fire_from_a_replaced_tracker_is_not_acted_on(bridge_mod, monkeypatch,
     _queue(b, [1000.0])
     b.remap_step()
     assert asked == [] and len(b._remap_pending) == 1 and b._remap_tracker is not old
+
+
+def test_the_poll_files_nothing_while_the_watch_is_stopped(bridge_mod, monkeypatch, tmp_path):
+    """Review rounds 6-7: a scan published during a back-off is never the watch's."""
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
+    b._remap_retry_at = time.monotonic() + 60
+    _queue(b, [1000.0, 1000.1])
+    assert not b._remap_pending
+    b._remap_retry_at = 0.0
+    _queue(b, [1000.2])
+    assert len(b._remap_pending) == 1
+
+
+def test_remap_refuses_a_trigger_from_a_stale_watch(bridge_mod, monkeypatch, tmp_path):
+    """Review round 7: an automatic trigger judged by a tracker since
+    replaced, or arriving during a back-off, is refused; a person is not."""
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
+    started = []
+    monkeypatch.setattr(b, "_remap_run", lambda *a: started.append(a))
+    stale = remap.Contradictions(b._remap_saved)
+    assert b.remap("contradiction", {}, stale)[0] == 409
+    b._remap_retry_at = time.monotonic() + 60
+    assert b.remap("entered_unknown", {}, b._remap_tracker)[0] == 409
+    assert started == [] and b.slam_state == "ready"
+    assert b.remap("request", "twin-dpad")[0] == 200
+
+
+def test_the_poll_itself_files_each_scan(bridge_mod, monkeypatch, tmp_path):
+    """Review round 7: through _poll_scan, not the tests' _file."""
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
+    n = 360
+    monkeypatch.setattr(b, "_robot_get", lambda path: {
+        "usable": True, "ranges_m": [1.0] * n, "angle_increment_deg": 1.0,
+        "angle_min_deg": -180.0, "range_min_m": 0.05, "range_max_m": 12.0,
+        "stamp_unix": time.time()})
+    monkeypatch.setattr(b.tf_buffer, "lookup_transform", lambda *a, **k: _Msg(
+        header=_Msg(stamp=_Msg(sec=int(time.time()), nanosec=0))), raising=False)
+    b._poll_scan()
+    b._poll_scan()
+    assert len(b._remap_pending) == 2 and b._remap_pending[-1] is b.last_scan

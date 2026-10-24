@@ -1209,7 +1209,7 @@ class Bridge(Node):
         """The poll files each scan it publishes, once, while the watch runs
         (call under self.lock). No stamp is compared, so a clock stepping
         back cannot blind the watch (review rounds 4-6)."""
-        if scan.get("stamp_ns") is None or not self._watching():
+        if scan is None or scan.get("stamp_ns") is None or not self._watching():
             return
         if len(self._remap_pending) >= REMAP_PENDING_MAX:
             self._remap_pending.popleft()
@@ -1232,7 +1232,7 @@ class Bridge(Node):
         here = self._fresh_pose()
         if here is not None and remap.entered_unknown(saved, here["x_m"], here["y_m"]):
             self._ask_remap("entered_unknown",
-                            {"pose_m": [round(here["x_m"], 3), round(here["y_m"], 3)]})
+                            {"pose_m": [round(here["x_m"], 3), round(here["y_m"], 3)]}, tracker)
             return
         while True:
             with self.lock:
@@ -1251,8 +1251,9 @@ class Bridge(Node):
                 # Taken off before it is judged, and only if still this
                 # tracker's head: one the poll pushed out meanwhile was
                 # counted `overflow` and is not judged as well (review round 4).
-                if (self._remap_tracker is not tracker or not self._remap_pending
-                        or self._remap_pending[0] is not s):
+                if not self._watching() or self._remap_tracker is not tracker:
+                    break                   # stopped or replaced while it judged (review round 7)
+                if not self._remap_pending or self._remap_pending[0] is not s:
                     continue
                 self._remap_pending.popleft()
                 if laser is None:
@@ -1263,23 +1264,23 @@ class Bridge(Node):
             fired = tracker.add(s, laser, s["stamp_ns"] * 1e-9, still=bool(still))
             if fired is not None:
                 with self.lock:
-                    current = self._remap_tracker is tracker
+                    current = self._remap_tracker is tracker and self._watching()
                     if current:
                         self._remap_pending.clear()
                 if current:                 # a replaced tracker's fire is not the new one's
-                    self._ask_remap("contradiction", fired)
+                    self._ask_remap("contradiction", fired, tracker)
                 break
 
-    def _ask_remap(self, trigger, detail) -> None:
+    def _ask_remap(self, trigger, detail, tracker=None) -> None:
         """A trigger's request; one that could not start backs off
         REMAP_RETRY_S (Thermos) rather than ask again on every look."""
-        code, _ = self.remap(trigger, detail)
+        code, _ = self.remap(trigger, detail, tracker)
         if code != 200:
             with self.lock:
                 # Never shorten a longer back-off already set (a deferral's).
                 self._remap_retry_at = max(self._remap_retry_at, time.monotonic() + REMAP_RETRY_S)
 
-    def remap(self, trigger: str, detail=None):
+    def remap(self, trigger: str, detail=None, tracker=None):
         """Re-map (D4): slam_toolbox restarted as the mapping node on the
         version just localised on, from where the robot is. Only from a
         matched reload that is `ready`; the map_id stays, so the mission-end
@@ -1295,6 +1296,13 @@ class Bridge(Node):
                 # Review: the watch read "not latched" before a failed re-map
                 # latched; a person may still ask, a trigger may not.
                 return 409, {"error": "automatic re-maps are off after a failed one",
+                             "slam": self.slam_state, "mode": mode}
+            if trigger in AUTOMATIC_TRIGGERS and (
+                    (tracker is not None and tracker is not self._remap_tracker)
+                    or time.monotonic() < self._remap_retry_at):
+                # Review round 7: judged by a tracker since replaced, or
+                # during a back-off -- the watch's view is not the bridge's now.
+                return 409, {"error": "the trigger's watch has since stopped or started over",
                              "slam": self.slam_state, "mode": mode}
             self.slam_state = "remapping"
             version = self._remap_version
