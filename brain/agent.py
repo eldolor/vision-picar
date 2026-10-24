@@ -387,8 +387,14 @@ class MissionAgent(ConstrainedAgent):
         # candidate, MissionRunner._guarded_confirm routes the identity check
         # (the agent's vision_fn there is the runner's wrapper, round 5).
         spoke = getattr(self.vision_fn, "cloud_spoke", None)
-        if local_ok and spoke is not None and spoke() == "ask":
+        said = spoke() if spoke is not None else None
+        if said == "ask":
             local_ok = False
+        if said == "no":
+            # The cloud's own no about this run, held: refused, no call.
+            confirm = lambda frame, local_ok=True: {  # noqa: E731
+                "confirmed": False, "cloud_called": False, "tier": "cloud",
+                "reason": "the cloud said this candidate is not the target; not asked again"}
         if not local_ok and confirm is not None and not _takes_local_ok(confirm):
             # A confirmer that cannot be told to skip the local tier is not
             # asked, and the arrival is not refused either (review: a refusal

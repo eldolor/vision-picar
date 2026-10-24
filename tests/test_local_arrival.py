@@ -472,6 +472,11 @@ def test_391c_once_the_cloud_spoke_the_arrival_is_the_clouds():
 
 
 
+def _detected():
+    from brain.perceive import DETECTED, Perception
+    return Perception(status=DETECTED, reason="test")
+
+
 def _runner_at_rest(cloud=None, **kw):
     """A tiered explore runner, started, no tick run: the arrival step is
     called by hand through MissionRunner._guarded_confirm (round 5: the
@@ -510,6 +515,7 @@ def test_391c_through_the_runner_a_held_cloud_no_refuses_free():
     try:
         tier._lost, tier._episode = 0, 1
         tier._reject("cloud", None, 1)
+        tier._remask(tier._perception_this_frame or _detected())
         verdict = runner._guarded_confirm(robot.get_camera_frame())
         assert verdict["confirmed"] is False and verdict["cloud_called"] is False
         assert cloud.calls == 0 and identity.asked == 0

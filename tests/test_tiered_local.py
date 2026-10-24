@@ -83,6 +83,12 @@ class Cloud:
         return scene
 
 
+def _steering_only(frame):
+    scene = _quiet_cloud(frame)
+    nav = {k: v for k, v in (scene.get("_navigate") or {}).items() if k != "target_visible"}
+    return {**scene, "_navigate": nav}
+
+
 def _run(local, cloud, max_steps=60, start=CLEAR_STARTS[0], **tier_kw):
     x, y, off = start
     grid = _build()
@@ -90,8 +96,11 @@ def _run(local, cloud, max_steps=60, start=CLEAR_STARTS[0], **tier_kw):
     grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
     robot = MockRobot(grid, render=False)
     # Triggers get a cloud that always answers, so only the ARRIVAL
-    # question is what each test varies.
-    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud, confirm_vision_fn=cloud,
+    # question is what each test varies. 3.91.C: its steering only -- no
+    # identity answer (`target_visible`), or the cloud has spoken about the
+    # candidate and the arrival is the cloud's by the tiers' order (tested in
+    # tests/test_local_arrival.py), not the local check these tests are about.
+    tier = TieredVision(FrameReportedPipeline(TARGET), _steering_only, confirm_vision_fn=cloud,
                         steer_on_sight=True, hold_goal=True, local_identity_fn=local,
                         **tier_kw)
     runner = MissionRunner(robot, target_object=TARGET, max_steps=max_steps,

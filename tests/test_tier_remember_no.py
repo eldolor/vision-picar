@@ -792,6 +792,7 @@ def test_the_arrival_goes_to_the_cloud_once_the_cloud_spoke():
     tier._episode = 2
     assert tier.cloud_spoke() is None
     tier._reject("cloud", None, 2)
+    tier._remask(D())                            # the frame shows that run
     assert tier.cloud_spoke() == "no"            # refused without a call
     tier._release("lost")
     assert tier._probation_by == "cloud" and tier.cloud_spoke() == "ask"
@@ -808,6 +809,7 @@ def test_cloud_spoke_is_off_with_remember_no_off_and_at_a_spent_cap():
     capped.stats.cloud_calls = 1
     assert capped.cloud_spoke() is None          # no answer can come: the local tier
     capped._reject("cloud", None, 1)
+    capped._remask(D())
     assert capped.cloud_spoke() == "no"          # a held no still refuses free
 
 
@@ -819,6 +821,7 @@ def test_the_arrivals_cloud_no_is_remembered():
     verdict = tier.confirm_cloud({"image_base64": "x"})
     assert verdict["confirmed"] is False
     assert tier._rejection is not None and tier._rejection["by"] == "cloud"
+    tier._remask(D())
     assert tier.cloud_spoke() == "no"
 
 
@@ -852,3 +855,52 @@ def test_a_local_yes_on_the_clouds_probation_asks_again_after_a_new_release():
     tier._apply_local(_local_answer(yes(), episode=1))
     assert tier._escalate_episode == 1
     assert tier._disagree_key != (1, tier._release_gen)    # free to fire
+
+
+
+# --- review round 6 -------------------------------------------------------------
+
+def test_a_far_no_ends_a_local_probation_with_the_cloud_offline():
+    # Round 6: amendment 4 had moved where it could never run; with the
+    # cloud failing the far target was never closed on.
+    frames = [A] + [D(share=0.5)] * 4 + [A] * 3 + [D(p=0.9, share=0.05)] * 4
+    cloud = Cloud(direction="REVERSE", fail=RuntimeError("offline"))
+    tier, _, scenes = run(frames, Local(no()), cloud=cloud, stale_after=0)
+    assert tier.stats.releases == {"lost": 1}
+    assert scenes[-1]["_tier"]["probation"] is False
+    assert actions(scenes)[-1] == "FORWARD"
+
+
+def test_only_the_clouds_own_no_about_the_run_in_view_refuses_free():
+    from brain.goal_pose import Pose
+    tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()))
+    tier._lost, tier._episode = 0, 1
+    tier._reject("cloud", Pose(0.0, 0.0, 0.0), 1)
+    tier._remask(D())
+    assert tier.cloud_spoke() == "no"
+    tier._episode = 2                     # a new run, the no still held (odometry)
+    assert tier.cloud_spoke() == "ask"    # asked, not refused: maybe the target
+    # A local no renewing the cloud's probation has the cloud's rank but is
+    # not the cloud's word: asked.
+    renewed = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()))
+    renewed._lost, renewed._episode = 0, 3
+    renewed._probation, renewed._probation_episode, renewed._probation_by = True, 3, "cloud"
+    renewed._reject("local", None, 3)
+    renewed._remask(D())
+    assert renewed._rejection["rank"] == "cloud" and renewed.cloud_spoke() == "ask"
+
+
+def test_an_arrival_answer_is_about_what_was_in_view_when_asked():
+    # Round 6: an abandoned arrival call landing later must not refuse the
+    # run then in view.
+    tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()))
+    tier._lost, tier._episode = 0, 1
+    tier._perception_this_frame = D()
+
+    def late(frame):
+        tier._episode = 2                   # ticks went on meanwhile
+        return {"_navigate": {"target_visible": False}}
+
+    tier.confirm_vision_fn = late
+    tier.confirm_cloud({"image_base64": "x"})
+    assert tier._rejection is None

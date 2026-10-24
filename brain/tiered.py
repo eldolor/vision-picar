@@ -1551,8 +1551,14 @@ class TieredVision:
             return None
         with self._reject_lock:
             r = self._rejection
-            if r is not None and r["rank"] == "cloud":
+            if (r is not None and r["by"] == "cloud" and r["episode"] == self._episode
+                    and self._masked):
+                # Only the cloud's own no, about the run in view (round 6: with
+                # odometry a no outlives its run, and an arrival at the real
+                # target nearby was refused free and its place dropped).
                 return "no"
+            if r is not None and r["rank"] == "cloud":
+                return "ask"
             if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
                 return None
             if (self._cloud_yes_episode == self._episode
@@ -1997,6 +2003,15 @@ class TieredVision:
                                 # cannot vouch for goes up to the cloud, once
                                 # per run; perception steers until it answers.
                                 self._escalate_episode = ans.q.episode
+                                if share < lo and self._probation_by == "local":
+                                    # Amendment 4 (the user, 2026-10-23/24): a
+                                    # far no ends a local probation -- the far
+                                    # view is where a real target would
+                                    # otherwise never be closed on. A
+                                    # fabric-only no keeps it: the robot is at
+                                    # that object already (the taupe replay: 2
+                                    # reversals). The cloud's stands.
+                                    self._end_probation()
                         if agrees:
                             # On the cloud's probation the local no agrees
                             # with the cloud: the cloud's no is held again,
@@ -2006,14 +2021,6 @@ class TieredVision:
                             # taupe replay steer at the re-found bag; asking
                             # the cloud paid every 20 s on a phone (round 5).
                             self._reject("local", ans.q.pose, ans.q.episode)
-                            if share < lo and self._probation_by == "local":
-                                # Amendment 4 (the user, 2026-10-23/24): a far
-                                # no ends a local probation -- the far view is
-                                # where a real target would otherwise never be
-                                # closed on. A fabric-only no keeps it: the
-                                # robot is at that object already (the taupe
-                                # replay: 2 reversals). The cloud's stands.
-                                self._end_probation()
                         with self._stats_lock:
                             self.stats.cannot_tell += 1
                 if ans.q.band:
@@ -2273,6 +2280,9 @@ class TieredVision:
             return {"confirmed": False, "cloud_called": False,
                     "reason": "call cap reached -- identity not confirmed",
                     "stats": self.stats.as_dict()}
+        # 3.91.C (round 6): what the answer is about, taken now -- an abandoned
+        # call can land frames later, about whatever is then in view.
+        asked = (self._epoch, self._perception_this_frame, self._pose_now(), self._episode)
         # One call in flight at a time, this one included (spec review 3,
         # fix 8): under `async_cloud` a trigger call may still be out. Wait
         # for it and apply it first -- the confirmation already blocks the
@@ -2304,8 +2314,8 @@ class TieredVision:
         # 3.91.C (round 5): the arrival's answer is the cloud's about the
         # candidate in view, remembered like any other -- a no held then
         # refuses the next arrival at it without a call.
-        self._learn_from_cloud(scene, self._perception_this_frame, self._pose_now(),
-                               self._episode)
+        if asked[0] == self._epoch:
+            self._learn_from_cloud(scene, *asked[1:])
         return {"confirmed": confirmed, "cloud_called": True, "tier": "cloud",
                 "reason": ("the cloud sees the target in the arrival frame" if confirmed
                            else "the cloud does not see the target in the arrival frame"),

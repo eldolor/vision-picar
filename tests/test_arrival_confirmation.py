@@ -91,7 +91,12 @@ def test_a_wrong_object_arrival_is_refused_when_the_cloud_disagrees():
     assert cells <= ARRIVED_CELLS, "the robot never reached the object -- the test proves nothing"
     assert status["outcome"] != FOUND, status
     asked = tier.stats.triggers.get(TRIGGER_ARRIVAL, 0)
-    assert asked >= 1, "arrival was never put to the cloud"
+    # 3.91.C: this cloud said "not visible" about the object on the way in, so
+    # its own no is held at the arrival -- refused with no call, the cloud's
+    # word already given. Otherwise the arrival is put to the cloud.
+    refused_free = "not asked again" in ((status.get("arrival") or {})
+                                         .get("identity") or {}).get("reason", "")
+    assert asked >= 1 or refused_free, "arrival was never put to the cloud"
     # One paid call per arrival, not one per frame parked in front of it.
     assert asked <= 2, f"{asked} confirmation calls for one arrival"
 

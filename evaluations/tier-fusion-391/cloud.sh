@@ -23,7 +23,7 @@ REGION="${AWS_REGION:-us-east-2}"
 BUCKET="${GPU_BUCKET:-vision-picar-deploy-303351622021-us-east-2}"
 S3="s3://$BUCKET/$GPU_PREFIX"
 MAX_HOURS="${MAX_HOURS:-2}"   # the instance powers itself off (terminate) by then
-case "$MAX_HOURS" in ''|*[!0-9]*) echo "MAX_HOURS must be a whole number of hours" >&2; exit 1 ;; esac
+case "$MAX_HOURS" in [1-9]|[1-9][0-9]) ;; *) echo "MAX_HOURS must be a whole number of hours, 1-99" >&2; exit 1 ;; esac
 EC2=tools/gpu/ec2.sh
 HERE=evaluations/tier-fusion-391
 ARMS="G-0.9 G-0.0 O1-blind-1 O1-blind-6 O2-decoy-1 O2-decoy-6 sighted-6"
@@ -81,8 +81,14 @@ case "${1:-}" in
   pull)   mkdir -p "$HERE/C8"
           complete=0; bash "$SELF" done && complete=1
           # This run's files only: an arm that failed must not leave an
-          # earlier run's result beside this run's HEAD.
-          rm -f "$HERE/C8/"*.json "$HERE/C8/"*.log "$HERE/C8/HEAD"
+          # earlier run's result beside this run's HEAD -- cleared only once
+          # S3 is known to hold this run's results (round 6: a pull after
+          # `down`, or a failed listing, emptied C8/).
+          if [ -n "$(aws --region "$REGION" s3 ls "$S3/out/")" ]; then
+            rm -f "$HERE/C8/"*.json "$HERE/C8/"*.log "$HERE/C8/HEAD"
+          else
+            echo "no results under $S3/out/ -- nothing pulled" >&2; exit 1
+          fi
           aws --region "$REGION" s3 sync --only-show-errors "$S3/out/" "$HERE/C8/"
           aws --region "$REGION" s3 sync --only-show-errors "$S3/logs/" "$HERE/C8/"
           aws --region "$REGION" s3 cp --only-show-errors "$S3/HEAD" "$HERE/C8/HEAD" || true

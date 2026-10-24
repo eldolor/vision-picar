@@ -478,7 +478,7 @@ def test_criterion_2a_who_to_ask_exactly_as_the_code_it_replaced(monkeypatch):
                     r = ("raised", type(e).__name__, str(e))
                 out.append(r)
             state = [({k: getattr(t, k) for k in ROUTE_STATE}, _stats(t)) for t in (ref, new)]
-            if out[0] != _scene(out[1]) or state[0] != state[1] or logs[0] != logs[1]:
+            if _scene(out[0]) != _scene(out[1]) or state[0] != state[1] or logs[0] != logs[1]:
                 differences.append((seed, i))
             r = out[1]
             key = (r[0] if isinstance(r, tuple) else
