@@ -817,9 +817,11 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   and with Record on the BRAIN records every frame received
   (`control/stream_recorder.py`, `record_walk`), marked `perceived`; laptop:
   5-min walk 1,195 rows / 1,192 pushed, paid calls 19.0/min at 2 and 8 fps.
-  The laptop brain perceives ~2.6 fps whatever the phone sends. Open: the
-  twin deploy (the user's yes), criterion 11 through the tunnel, B (the
-  vote on rig walks), C/D on the Rover.
+  The laptop brain perceives ~2.6 fps whatever the phone sends. **B
+  FAILED (2026-10-23):** k-of-n on 3.92's 2,261 labelled frames moves
+  precision under a point (single frames are already 98.8%, so +5 was out
+  of reach) and costs 7.7-12.5 points of recall; C still measures all
+  three. Open: criterion 11 through the tunnel, C/D on the Rover.
 * **Raising nav2's speed** (6.9's high end) now has its speed-dependent
   stop, but waits on measured braking (6.9 (d)) and 3.42's relayed-scan
   time stamp; read `HANDOFF-2026-10-07-lidar-and-speed.md` first.
