@@ -115,7 +115,7 @@
     "cold_search": 51,
     "candidate_sighting": 3,
     "staleness": 2,
-    "local_track": 16
+    "local_track": 15
    },
    "decoy_false_yes": 0,
    "tail": [
@@ -556,5 +556,5 @@
    ]
   }
  ],
- "wall_s": 203
+ "wall_s": 202
 }

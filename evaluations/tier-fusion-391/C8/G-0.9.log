@@ -19,4 +19,4 @@
 {"house": "procthor:val:34", "outcome": "found", "sim_s": 15, "goals": 7, "arrival_checks": 1, "first_check_target_m": 0.55, "end_target_m": 0.55, "close_ins": 2, "cloud_calls": 0, "tail": ["mission ended (found): Kitchen, living room searched. Found."]}
 {"house": "procthor:val:36", "outcome": "found", "sim_s": 32, "goals": 15, "arrival_checks": 1, "first_check_target_m": 0.55, "end_target_m": 0.55, "close_ins": 2, "cloud_calls": 0, "tail": ["mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."]}
 {"house": "procthor:val:37", "outcome": "found", "sim_s": 43, "goals": 21, "arrival_checks": 1, "first_check_target_m": 0.54, "end_target_m": 0.54, "close_ins": 3, "cloud_calls": 0, "tail": ["mission ended (found): Bathroom 2, bedroom 2, kitchen, living room searched. Found."]}
-{"score": 0.9, "missions": 21, "arrivals_at_true_target": 19, "found": 19, "cloud_calls": 0, "wall_s": 67}
+{"score": 0.9, "missions": 21, "arrivals_at_true_target": 19, "found": 19, "cloud_calls": 0, "wall_s": 61}

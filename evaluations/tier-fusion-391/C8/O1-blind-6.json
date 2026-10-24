@@ -75,11 +75,11 @@
   {
    "house": "procthor:val:2",
    "outcome": "exhausted",
-   "sim_s": 1005,
-   "goals": 44,
+   "sim_s": 931,
+   "goals": 41,
    "arrivals": [],
    "first_arrival_target_m": null,
-   "end_target_m": 1.62,
+   "end_target_m": 11.16,
    "found_far": false,
    "local_identity_asked": 0,
    "guarded": 0,
@@ -87,8 +87,8 @@
    "close_ins": 0,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 153,
-    "local_track": 4
+    "cold_search": 142,
+    "local_track": 14
    },
    "decoy_false_yes": 0,
    "tail": [
@@ -350,8 +350,8 @@
    "close_ins": 2,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 46,
-    "local_track": 26
+    "cold_search": 45,
+    "local_track": 31
    },
    "decoy_false_yes": 0,
    "tail": [
@@ -518,7 +518,7 @@
    "local_triggers": {
     "mission_start": 1,
     "cold_search": 88,
-    "local_track": 34
+    "local_track": 32
    },
    "decoy_false_yes": 0,
    "tail": [
@@ -526,5 +526,5 @@
    ]
   }
  ],
- "wall_s": 213
+ "wall_s": 211
 }
