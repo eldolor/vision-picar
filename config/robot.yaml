@@ -446,7 +446,8 @@ brain:
   cloud_probe_s: 15.0
   # 3.65 phase 2 -- explore's next goal: "rule" (hand-written order),
   # "learned" (a linear score trained in simulation, brain/explore_goal_weights.json)
-  # or "network" (that plus a small network, brain/explore_goal_net.json).
+  # or "network" (that plus a small network, brain/explore_goal_net.json);
+  # 3.96: "rooms" (seven room features more, brain/explore_goal_rooms.json).
   explore_goal_policy: rule
   # 3.88 A -- ask mode: explore pauses at each goal choice for a person's pick
   # among the candidates the rules allow (the Sim tab's map), takes the rule's

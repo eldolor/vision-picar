@@ -114,7 +114,8 @@ def dropped_rooms(grid, index: int, share: float) -> frozenset:
 
 def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float = 0.0) -> dict:
     """spec: "rule" | "net365" (3.65's shipped network, its own ten
-    features) | "oracle" | ("sample"|"greedy", kind, params). `drop`: the
+    features) | "wired" (`explore_goal_policy: rooms` as the brain runs it,
+    3.96.C) | "oracle" | ("sample"|"greedy", kind, params). `drop`: the
     share of rooms whose labels are withheld (criterion 3)."""
     grid = build_world(f"procthor:{split}:{index}")
     target, dist = pick_target(grid, index, mode)
@@ -126,10 +127,13 @@ def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float 
     nav = MeteredNav(robot)
     runner = MissionRunner(robot, target_object=target, policy="explore", navigator=nav,
                            world=MockWorld(grid), max_steps=MAX_STEPS,
-                           clock=lambda: grid.sim_time, idle=robot.pass_time)
+                           clock=lambda: grid.sim_time, idle=robot.pass_time,
+                           explore_goal_policy="rooms" if spec == "wired" else "rule")
     trail, records = [], []
     if spec == "net365":
         runner.agent.goal_policy = NetGoalPolicy.load()
+    elif spec == "wired":
+        pass                              # built by the runner from the flag, above
     elif spec != "rule":
         agent = runner.agent
         agent.goal_policy = LinearGoalPolicy([0.0] * len(FEATURES))

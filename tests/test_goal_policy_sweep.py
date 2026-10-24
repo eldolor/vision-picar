@@ -31,3 +31,23 @@ def test_the_network_holds_its_test_set_numbers():
     found = [r for r in rows if r["outcome"] == "found"]
     assert len(found) >= 196
     assert statistics.median(r["goals"] for r in found) <= 8
+
+
+def test_rooms_as_wired_holds_its_selection_numbers():
+    """3.96.C: `explore_goal_policy: rooms` through MissionRunner, with no room
+    labels (a find mission's map has none), on the 100 selection houses in
+    both target modes, pinned at what it measured on 2026-10-24
+    (`evaluations/goal-learn-396/wired/select.json`): R 100 found, median 7
+    goals (the rule 100, 7); U 100, 8 (the rule 99, 10). 200 missions."""
+    import sys
+    root = os.path.join(HERE, "..", "evaluations", "goal-learn-396")
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    import train as T
+    for mode, goals in (("R", 7), ("U", 8)):
+        rows = [T.mission(s, h, mode, "wired") for s, h in T.select_houses()]
+        bad = [r for r in rows if r["outcome"] in ("exception", "running", None) or r.get("capped")]
+        assert not bad, bad
+        found = [r for r in rows if r["outcome"] == "found"]
+        assert len(found) >= 100, mode
+        assert statistics.median(r["goals"] for r in found) <= goals, mode

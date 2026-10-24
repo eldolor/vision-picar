@@ -256,7 +256,8 @@ DEFAULTS = {
     "cloud_probe_s": 15.0,
     # 3.65 phase 2 -- how explore picks its next goal: "rule" (3.45/3.69's
     # hand-written order), "learned" (brain/explore_goal_weights.json) or
-    # "network" (that plus a small network, brain/explore_goal_net.json).
+    # "network" (that plus a small network, brain/explore_goal_net.json); 3.96:
+    # "rooms" (seven room features more, brain/explore_goal_rooms.json).
     "explore_goal_policy": "rule",
     # 3.88 A -- ask mode: explore pauses at each goal choice for a person's
     # pick among the candidates the rules allow (POST /mission/explore/pick),
@@ -591,9 +592,9 @@ def load_brain_config(config_path=None) -> dict:
                          f"got {ask_s!r}")
     if not str(merged["explore_choice_dir"] or "").strip():
         raise ValueError("brain.explore_choice_dir must name a directory")
-    if merged["explore_goal_policy"] not in ("rule", "learned", "network"):
-        raise ValueError(f"brain.explore_goal_policy must be 'rule', 'learned' or 'network'; "
-                         f"got {merged['explore_goal_policy']!r}")
+    if merged["explore_goal_policy"] not in ("rule", "learned", "network", "rooms"):
+        raise ValueError("brain.explore_goal_policy must be 'rule', 'learned', 'network' or "
+                         f"'rooms'; got {merged['explore_goal_policy']!r}")
     merged["tier_tree"] = tier_tree_config(merged["tier_tree"], no_below, merged["tier_search"])
 
     return merged

@@ -598,7 +598,7 @@ cloud alone.
   (`SIM_PERCEPTION_BLIND=1` on the brain server) never reports the target.
 
 **Explore's learned goal choice (3.65 phase 2).** `explore_goal_policy`
-(`brain:` block; `rule` | `learned` | `network`, default `rule`; the
+(`brain:` block; `rule` | `learned` | `network` | `rooms`, default `rule`; the
 `EXPLORE_GOAL_POLICY` environment variable overrides it for live runs; validated by
 `load_brain_config`) reaches `MissionRunner(explore_goal_policy=...)`, which
 gives `ExploreAgent` a `goal_policy` from `brain/goal_policy.goal_policy_for`
@@ -627,6 +627,34 @@ from `brain/explore_goal_net.json` (the linear weights plus each layer's
 each mission's advantage its reward against the mean of 8 rollouts of the
 same house, the MLP's last layer starting at zero so training starts at the
 linear policy.
+
+`rooms` (3.96.C) is `RoomGoalPolicy`, 3.96's arm F-large: the same pool,
+whose ten features `_pool` extends with seven room features
+(`goal_policy.room_features`, `ROOM_FEATURES`) when the policy says
+`rooms`. The map is resampled to 0.30 m (`coarse()`: occupied if any cell
+is, free if half are), cut into rooms by `brain/room_labels.segment()`, and
+each candidate gets its room's newness (never stood in, by
+`ExploreAgent._trail`: one pose per 5 cm square, `TRAIL_M`, noted with the
+room in `_note_room`), area, whether it is another room than the robot's,
+the pool's share in that room, and -- only where the map carries a
+`room_labels` layer -- the room type's prior for the target
+(`_goal_types`; the prior is the training houses', in the weights file). A
+find mission's map has no labels, so those three read 0. Scored
+`w . f + MLP(f)` (17 -> 32 -> 32 -> 1, tanh) in float32 exactly as the test
+run's `evaluations/goal-learn-396/model.py` `score_np`, argmax with a
+non-finite score last; parameters and prior in
+`brain/explore_goal_rooms.json`, copied unchanged from the test run's
+checkpoint (`tests/test_goal_policy_rooms.py` pins that, and the score).
+`evaluations/goal-learn-396/wired.py` checks the flag's missions against the
+harness's F-large with every label withheld, mission for mission. A whole
+choice costs ~0.3 s p90 on the Jetson (3.96 criterion 6, failed: bar 0.1 s),
+during which the robot stands still. Under ask mode the published
+candidates carry all 17 features by name, so the choice log keeps them.
+Known limits: the prior knows only the ten training targets and ProcTHOR's
+four room types (any other target or label reads `type_known` 1 with a
+prior of 0, a case training saw only where the prior was 0), and the trail
+is never re-anchored, so after a loop closure or a fresh map an old point
+can mark the wrong room as stood in.
 
 **Explore asks a person (3.88 A).** With `explore_ask` on (brain config,
 or a start's own `explore_ask`), `MissionRunner` gives `ExploreAgent` a

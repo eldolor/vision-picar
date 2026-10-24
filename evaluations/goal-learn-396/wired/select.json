@@ -1,0 +1,3010 @@
+{
+ "pairs": 200,
+ "differ": 0,
+ "found": {
+  "harness": 200,
+  "wired": 200
+ },
+ "rows": [
+  {
+   "split": "val",
+   "index": 179,
+   "mode": "R",
+   "harness": [
+    "found",
+    6,
+    15.3
+   ],
+   "wired": [
+    "found",
+    6,
+    15.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 179,
+   "mode": "U",
+   "harness": [
+    "found",
+    11,
+    31.5
+   ],
+   "wired": [
+    "found",
+    11,
+    31.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 182,
+   "mode": "R",
+   "harness": [
+    "found",
+    6,
+    18.3
+   ],
+   "wired": [
+    "found",
+    6,
+    18.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 182,
+   "mode": "U",
+   "harness": [
+    "found",
+    6,
+    17.1
+   ],
+   "wired": [
+    "found",
+    6,
+    17.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 184,
+   "mode": "R",
+   "harness": [
+    "found",
+    25,
+    74.4
+   ],
+   "wired": [
+    "found",
+    25,
+    74.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 184,
+   "mode": "U",
+   "harness": [
+    "found",
+    2,
+    5.7
+   ],
+   "wired": [
+    "found",
+    2,
+    5.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 185,
+   "mode": "R",
+   "harness": [
+    "found",
+    14,
+    53.1
+   ],
+   "wired": [
+    "found",
+    14,
+    53.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 185,
+   "mode": "U",
+   "harness": [
+    "found",
+    14,
+    51.9
+   ],
+   "wired": [
+    "found",
+    14,
+    51.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 186,
+   "mode": "R",
+   "harness": [
+    "found",
+    5,
+    13.5
+   ],
+   "wired": [
+    "found",
+    5,
+    13.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 186,
+   "mode": "U",
+   "harness": [
+    "found",
+    37,
+    142.2
+   ],
+   "wired": [
+    "found",
+    37,
+    142.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 187,
+   "mode": "R",
+   "harness": [
+    "found",
+    30,
+    126.6
+   ],
+   "wired": [
+    "found",
+    30,
+    126.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 187,
+   "mode": "U",
+   "harness": [
+    "found",
+    13,
+    45.9
+   ],
+   "wired": [
+    "found",
+    13,
+    45.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 188,
+   "mode": "R",
+   "harness": [
+    "found",
+    1,
+    0.9
+   ],
+   "wired": [
+    "found",
+    1,
+    0.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 188,
+   "mode": "U",
+   "harness": [
+    "found",
+    3,
+    11.7
+   ],
+   "wired": [
+    "found",
+    3,
+    11.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 190,
+   "mode": "R",
+   "harness": [
+    "found",
+    6,
+    18.3
+   ],
+   "wired": [
+    "found",
+    6,
+    18.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 190,
+   "mode": "U",
+   "harness": [
+    "found",
+    45,
+    181.8
+   ],
+   "wired": [
+    "found",
+    45,
+    181.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 191,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    6.6
+   ],
+   "wired": [
+    "found",
+    2,
+    6.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 191,
+   "mode": "U",
+   "harness": [
+    "found",
+    4,
+    9.6
+   ],
+   "wired": [
+    "found",
+    4,
+    9.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 192,
+   "mode": "R",
+   "harness": [
+    "found",
+    8,
+    22.8
+   ],
+   "wired": [
+    "found",
+    8,
+    22.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 192,
+   "mode": "U",
+   "harness": [
+    "found",
+    10,
+    30.3
+   ],
+   "wired": [
+    "found",
+    10,
+    30.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 194,
+   "mode": "R",
+   "harness": [
+    "found",
+    7,
+    22.2
+   ],
+   "wired": [
+    "found",
+    7,
+    22.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 194,
+   "mode": "U",
+   "harness": [
+    "found",
+    15,
+    50.1
+   ],
+   "wired": [
+    "found",
+    15,
+    50.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 195,
+   "mode": "R",
+   "harness": [
+    "found",
+    7,
+    26.7
+   ],
+   "wired": [
+    "found",
+    7,
+    26.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 195,
+   "mode": "U",
+   "harness": [
+    "found",
+    2,
+    3.6
+   ],
+   "wired": [
+    "found",
+    2,
+    3.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 197,
+   "mode": "R",
+   "harness": [
+    "found",
+    5,
+    13.5
+   ],
+   "wired": [
+    "found",
+    5,
+    13.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 197,
+   "mode": "U",
+   "harness": [
+    "found",
+    12,
+    46.8
+   ],
+   "wired": [
+    "found",
+    12,
+    46.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 198,
+   "mode": "R",
+   "harness": [
+    "found",
+    13,
+    48.9
+   ],
+   "wired": [
+    "found",
+    13,
+    48.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 198,
+   "mode": "U",
+   "harness": [
+    "found",
+    7,
+    27.3
+   ],
+   "wired": [
+    "found",
+    7,
+    27.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 200,
+   "mode": "R",
+   "harness": [
+    "found",
+    9,
+    24.0
+   ],
+   "wired": [
+    "found",
+    9,
+    24.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 200,
+   "mode": "U",
+   "harness": [
+    "found",
+    17,
+    44.7
+   ],
+   "wired": [
+    "found",
+    17,
+    44.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 201,
+   "mode": "R",
+   "harness": [
+    "found",
+    14,
+    54.3
+   ],
+   "wired": [
+    "found",
+    14,
+    54.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 201,
+   "mode": "U",
+   "harness": [
+    "found",
+    28,
+    100.2
+   ],
+   "wired": [
+    "found",
+    28,
+    100.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 204,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    2.4
+   ],
+   "wired": [
+    "found",
+    2,
+    2.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 204,
+   "mode": "U",
+   "harness": [
+    "found",
+    2,
+    3.9
+   ],
+   "wired": [
+    "found",
+    2,
+    3.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 207,
+   "mode": "R",
+   "harness": [
+    "found",
+    1,
+    1.5
+   ],
+   "wired": [
+    "found",
+    1,
+    1.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 207,
+   "mode": "U",
+   "harness": [
+    "found",
+    10,
+    31.5
+   ],
+   "wired": [
+    "found",
+    10,
+    31.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 208,
+   "mode": "R",
+   "harness": [
+    "found",
+    14,
+    33.3
+   ],
+   "wired": [
+    "found",
+    14,
+    33.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 208,
+   "mode": "U",
+   "harness": [
+    "found",
+    2,
+    4.5
+   ],
+   "wired": [
+    "found",
+    2,
+    4.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 211,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    7.5
+   ],
+   "wired": [
+    "found",
+    2,
+    7.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 211,
+   "mode": "U",
+   "harness": [
+    "found",
+    7,
+    24.3
+   ],
+   "wired": [
+    "found",
+    7,
+    24.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 212,
+   "mode": "R",
+   "harness": [
+    "found",
+    17,
+    65.4
+   ],
+   "wired": [
+    "found",
+    17,
+    65.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 212,
+   "mode": "U",
+   "harness": [
+    "found",
+    20,
+    92.1
+   ],
+   "wired": [
+    "found",
+    20,
+    92.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 217,
+   "mode": "R",
+   "harness": [
+    "found",
+    22,
+    82.5
+   ],
+   "wired": [
+    "found",
+    22,
+    82.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 217,
+   "mode": "U",
+   "harness": [
+    "found",
+    7,
+    21.3
+   ],
+   "wired": [
+    "found",
+    7,
+    21.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 219,
+   "mode": "R",
+   "harness": [
+    "found",
+    5,
+    14.1
+   ],
+   "wired": [
+    "found",
+    5,
+    14.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 219,
+   "mode": "U",
+   "harness": [
+    "found",
+    36,
+    107.1
+   ],
+   "wired": [
+    "found",
+    36,
+    107.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 221,
+   "mode": "R",
+   "harness": [
+    "found",
+    3,
+    13.2
+   ],
+   "wired": [
+    "found",
+    3,
+    13.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 221,
+   "mode": "U",
+   "harness": [
+    "found",
+    3,
+    10.2
+   ],
+   "wired": [
+    "found",
+    3,
+    10.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 222,
+   "mode": "R",
+   "harness": [
+    "found",
+    6,
+    24.0
+   ],
+   "wired": [
+    "found",
+    6,
+    24.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 222,
+   "mode": "U",
+   "harness": [
+    "found",
+    22,
+    69.3
+   ],
+   "wired": [
+    "found",
+    22,
+    69.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 225,
+   "mode": "R",
+   "harness": [
+    "found",
+    9,
+    24.6
+   ],
+   "wired": [
+    "found",
+    9,
+    24.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 225,
+   "mode": "U",
+   "harness": [
+    "found",
+    2,
+    3.9
+   ],
+   "wired": [
+    "found",
+    2,
+    3.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 227,
+   "mode": "R",
+   "harness": [
+    "found",
+    26,
+    78.3
+   ],
+   "wired": [
+    "found",
+    26,
+    78.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 227,
+   "mode": "U",
+   "harness": [
+    "found",
+    6,
+    15.3
+   ],
+   "wired": [
+    "found",
+    6,
+    15.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 228,
+   "mode": "R",
+   "harness": [
+    "found",
+    7,
+    15.9
+   ],
+   "wired": [
+    "found",
+    7,
+    15.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 228,
+   "mode": "U",
+   "harness": [
+    "found",
+    8,
+    20.4
+   ],
+   "wired": [
+    "found",
+    8,
+    20.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 231,
+   "mode": "R",
+   "harness": [
+    "found",
+    16,
+    36.6
+   ],
+   "wired": [
+    "found",
+    16,
+    36.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 231,
+   "mode": "U",
+   "harness": [
+    "found",
+    15,
+    36.0
+   ],
+   "wired": [
+    "found",
+    15,
+    36.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 232,
+   "mode": "R",
+   "harness": [
+    "found",
+    8,
+    24.6
+   ],
+   "wired": [
+    "found",
+    8,
+    24.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 232,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    20.4
+   ],
+   "wired": [
+    "found",
+    5,
+    20.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 233,
+   "mode": "R",
+   "harness": [
+    "found",
+    7,
+    33.3
+   ],
+   "wired": [
+    "found",
+    7,
+    33.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 233,
+   "mode": "U",
+   "harness": [
+    "found",
+    51,
+    196.5
+   ],
+   "wired": [
+    "found",
+    51,
+    196.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 234,
+   "mode": "R",
+   "harness": [
+    "found",
+    6,
+    18.6
+   ],
+   "wired": [
+    "found",
+    6,
+    18.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 234,
+   "mode": "U",
+   "harness": [
+    "found",
+    9,
+    27.3
+   ],
+   "wired": [
+    "found",
+    9,
+    27.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 235,
+   "mode": "R",
+   "harness": [
+    "found",
+    9,
+    29.1
+   ],
+   "wired": [
+    "found",
+    9,
+    29.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 235,
+   "mode": "U",
+   "harness": [
+    "found",
+    3,
+    6.9
+   ],
+   "wired": [
+    "found",
+    3,
+    6.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 236,
+   "mode": "R",
+   "harness": [
+    "found",
+    7,
+    33.9
+   ],
+   "wired": [
+    "found",
+    7,
+    33.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 236,
+   "mode": "U",
+   "harness": [
+    "found",
+    7,
+    31.2
+   ],
+   "wired": [
+    "found",
+    7,
+    31.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 237,
+   "mode": "R",
+   "harness": [
+    "found",
+    9,
+    18.9
+   ],
+   "wired": [
+    "found",
+    9,
+    18.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 237,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    11.4
+   ],
+   "wired": [
+    "found",
+    5,
+    11.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 239,
+   "mode": "R",
+   "harness": [
+    "found",
+    5,
+    12.3
+   ],
+   "wired": [
+    "found",
+    5,
+    12.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 239,
+   "mode": "U",
+   "harness": [
+    "found",
+    12,
+    37.2
+   ],
+   "wired": [
+    "found",
+    12,
+    37.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 241,
+   "mode": "R",
+   "harness": [
+    "found",
+    6,
+    15.6
+   ],
+   "wired": [
+    "found",
+    6,
+    15.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 241,
+   "mode": "U",
+   "harness": [
+    "found",
+    2,
+    8.7
+   ],
+   "wired": [
+    "found",
+    2,
+    8.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 243,
+   "mode": "R",
+   "harness": [
+    "found",
+    6,
+    14.7
+   ],
+   "wired": [
+    "found",
+    6,
+    14.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 243,
+   "mode": "U",
+   "harness": [
+    "found",
+    1,
+    2.7
+   ],
+   "wired": [
+    "found",
+    1,
+    2.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 244,
+   "mode": "R",
+   "harness": [
+    "found",
+    17,
+    46.5
+   ],
+   "wired": [
+    "found",
+    17,
+    46.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 244,
+   "mode": "U",
+   "harness": [
+    "found",
+    11,
+    30.0
+   ],
+   "wired": [
+    "found",
+    11,
+    30.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 247,
+   "mode": "R",
+   "harness": [
+    "found",
+    24,
+    88.2
+   ],
+   "wired": [
+    "found",
+    24,
+    88.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 247,
+   "mode": "U",
+   "harness": [
+    "found",
+    4,
+    12.6
+   ],
+   "wired": [
+    "found",
+    4,
+    12.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 251,
+   "mode": "R",
+   "harness": [
+    "found",
+    20,
+    58.8
+   ],
+   "wired": [
+    "found",
+    20,
+    58.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 251,
+   "mode": "U",
+   "harness": [
+    "found",
+    2,
+    4.8
+   ],
+   "wired": [
+    "found",
+    2,
+    4.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 254,
+   "mode": "R",
+   "harness": [
+    "found",
+    18,
+    68.1
+   ],
+   "wired": [
+    "found",
+    18,
+    68.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 254,
+   "mode": "U",
+   "harness": [
+    "found",
+    18,
+    67.5
+   ],
+   "wired": [
+    "found",
+    18,
+    67.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 258,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    7.8
+   ],
+   "wired": [
+    "found",
+    2,
+    7.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 258,
+   "mode": "U",
+   "harness": [
+    "found",
+    16,
+    59.7
+   ],
+   "wired": [
+    "found",
+    16,
+    59.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 261,
+   "mode": "R",
+   "harness": [
+    "found",
+    66,
+    254.7
+   ],
+   "wired": [
+    "found",
+    66,
+    254.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 261,
+   "mode": "U",
+   "harness": [
+    "found",
+    21,
+    64.5
+   ],
+   "wired": [
+    "found",
+    21,
+    64.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 265,
+   "mode": "R",
+   "harness": [
+    "found",
+    5,
+    10.2
+   ],
+   "wired": [
+    "found",
+    5,
+    10.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 265,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    12.3
+   ],
+   "wired": [
+    "found",
+    5,
+    12.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 266,
+   "mode": "R",
+   "harness": [
+    "found",
+    5,
+    18.0
+   ],
+   "wired": [
+    "found",
+    5,
+    18.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 266,
+   "mode": "U",
+   "harness": [
+    "found",
+    39,
+    147.3
+   ],
+   "wired": [
+    "found",
+    39,
+    147.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 270,
+   "mode": "R",
+   "harness": [
+    "found",
+    15,
+    50.1
+   ],
+   "wired": [
+    "found",
+    15,
+    50.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 270,
+   "mode": "U",
+   "harness": [
+    "found",
+    12,
+    39.9
+   ],
+   "wired": [
+    "found",
+    12,
+    39.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 271,
+   "mode": "R",
+   "harness": [
+    "found",
+    4,
+    13.2
+   ],
+   "wired": [
+    "found",
+    4,
+    13.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 271,
+   "mode": "U",
+   "harness": [
+    "found",
+    7,
+    16.2
+   ],
+   "wired": [
+    "found",
+    7,
+    16.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 272,
+   "mode": "R",
+   "harness": [
+    "found",
+    8,
+    30.0
+   ],
+   "wired": [
+    "found",
+    8,
+    30.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 272,
+   "mode": "U",
+   "harness": [
+    "found",
+    7,
+    27.3
+   ],
+   "wired": [
+    "found",
+    7,
+    27.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 273,
+   "mode": "R",
+   "harness": [
+    "found",
+    9,
+    27.0
+   ],
+   "wired": [
+    "found",
+    9,
+    27.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 273,
+   "mode": "U",
+   "harness": [
+    "found",
+    8,
+    24.6
+   ],
+   "wired": [
+    "found",
+    8,
+    24.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 274,
+   "mode": "R",
+   "harness": [
+    "found",
+    18,
+    78.3
+   ],
+   "wired": [
+    "found",
+    18,
+    78.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 274,
+   "mode": "U",
+   "harness": [
+    "found",
+    27,
+    123.3
+   ],
+   "wired": [
+    "found",
+    27,
+    123.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 277,
+   "mode": "R",
+   "harness": [
+    "found",
+    7,
+    21.6
+   ],
+   "wired": [
+    "found",
+    7,
+    21.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 277,
+   "mode": "U",
+   "harness": [
+    "found",
+    7,
+    21.0
+   ],
+   "wired": [
+    "found",
+    7,
+    21.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 278,
+   "mode": "R",
+   "harness": [
+    "found",
+    21,
+    86.7
+   ],
+   "wired": [
+    "found",
+    21,
+    86.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 278,
+   "mode": "U",
+   "harness": [
+    "found",
+    4,
+    13.2
+   ],
+   "wired": [
+    "found",
+    4,
+    13.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 282,
+   "mode": "R",
+   "harness": [
+    "found",
+    9,
+    24.0
+   ],
+   "wired": [
+    "found",
+    9,
+    24.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 282,
+   "mode": "U",
+   "harness": [
+    "found",
+    8,
+    21.3
+   ],
+   "wired": [
+    "found",
+    8,
+    21.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 285,
+   "mode": "R",
+   "harness": [
+    "found",
+    9,
+    26.1
+   ],
+   "wired": [
+    "found",
+    9,
+    26.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 285,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    13.5
+   ],
+   "wired": [
+    "found",
+    5,
+    13.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 286,
+   "mode": "R",
+   "harness": [
+    "found",
+    10,
+    30.6
+   ],
+   "wired": [
+    "found",
+    10,
+    30.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 286,
+   "mode": "U",
+   "harness": [
+    "found",
+    11,
+    31.24
+   ],
+   "wired": [
+    "found",
+    11,
+    31.24
+   ]
+  },
+  {
+   "split": "val",
+   "index": 290,
+   "mode": "R",
+   "harness": [
+    "found",
+    10,
+    39.0
+   ],
+   "wired": [
+    "found",
+    10,
+    39.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 290,
+   "mode": "U",
+   "harness": [
+    "found",
+    6,
+    16.8
+   ],
+   "wired": [
+    "found",
+    6,
+    16.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 292,
+   "mode": "R",
+   "harness": [
+    "found",
+    1,
+    3.3
+   ],
+   "wired": [
+    "found",
+    1,
+    3.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 292,
+   "mode": "U",
+   "harness": [
+    "found",
+    21,
+    75.0
+   ],
+   "wired": [
+    "found",
+    21,
+    75.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 293,
+   "mode": "R",
+   "harness": [
+    "found",
+    3,
+    7.5
+   ],
+   "wired": [
+    "found",
+    3,
+    7.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 293,
+   "mode": "U",
+   "harness": [
+    "found",
+    3,
+    10.5
+   ],
+   "wired": [
+    "found",
+    3,
+    10.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 296,
+   "mode": "R",
+   "harness": [
+    "found",
+    6,
+    15.0
+   ],
+   "wired": [
+    "found",
+    6,
+    15.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 296,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    10.2
+   ],
+   "wired": [
+    "found",
+    5,
+    10.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 297,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    6.0
+   ],
+   "wired": [
+    "found",
+    2,
+    6.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 297,
+   "mode": "U",
+   "harness": [
+    "found",
+    3,
+    8.1
+   ],
+   "wired": [
+    "found",
+    3,
+    8.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 298,
+   "mode": "R",
+   "harness": [
+    "found",
+    4,
+    9.0
+   ],
+   "wired": [
+    "found",
+    4,
+    9.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 298,
+   "mode": "U",
+   "harness": [
+    "found",
+    6,
+    18.3
+   ],
+   "wired": [
+    "found",
+    6,
+    18.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 300,
+   "mode": "R",
+   "harness": [
+    "found",
+    4,
+    8.4
+   ],
+   "wired": [
+    "found",
+    4,
+    8.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 300,
+   "mode": "U",
+   "harness": [
+    "found",
+    3,
+    7.5
+   ],
+   "wired": [
+    "found",
+    3,
+    7.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 302,
+   "mode": "R",
+   "harness": [
+    "found",
+    8,
+    22.5
+   ],
+   "wired": [
+    "found",
+    8,
+    22.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 302,
+   "mode": "U",
+   "harness": [
+    "found",
+    6,
+    15.3
+   ],
+   "wired": [
+    "found",
+    6,
+    15.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 305,
+   "mode": "R",
+   "harness": [
+    "found",
+    10,
+    30.0
+   ],
+   "wired": [
+    "found",
+    10,
+    30.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 305,
+   "mode": "U",
+   "harness": [
+    "found",
+    13,
+    49.8
+   ],
+   "wired": [
+    "found",
+    13,
+    49.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 306,
+   "mode": "R",
+   "harness": [
+    "found",
+    24,
+    79.5
+   ],
+   "wired": [
+    "found",
+    24,
+    79.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 306,
+   "mode": "U",
+   "harness": [
+    "found",
+    8,
+    26.4
+   ],
+   "wired": [
+    "found",
+    8,
+    26.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 308,
+   "mode": "R",
+   "harness": [
+    "found",
+    1,
+    1.5
+   ],
+   "wired": [
+    "found",
+    1,
+    1.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 308,
+   "mode": "U",
+   "harness": [
+    "found",
+    9,
+    26.1
+   ],
+   "wired": [
+    "found",
+    9,
+    26.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 309,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    9.6
+   ],
+   "wired": [
+    "found",
+    2,
+    9.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 309,
+   "mode": "U",
+   "harness": [
+    "found",
+    16,
+    60.0
+   ],
+   "wired": [
+    "found",
+    16,
+    60.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 310,
+   "mode": "R",
+   "harness": [
+    "found",
+    12,
+    28.5
+   ],
+   "wired": [
+    "found",
+    12,
+    28.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 310,
+   "mode": "U",
+   "harness": [
+    "found",
+    14,
+    44.4
+   ],
+   "wired": [
+    "found",
+    14,
+    44.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 311,
+   "mode": "R",
+   "harness": [
+    "found",
+    11,
+    39.0
+   ],
+   "wired": [
+    "found",
+    11,
+    39.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 311,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    23.1
+   ],
+   "wired": [
+    "found",
+    5,
+    23.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 312,
+   "mode": "R",
+   "harness": [
+    "found",
+    10,
+    39.0
+   ],
+   "wired": [
+    "found",
+    10,
+    39.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 312,
+   "mode": "U",
+   "harness": [
+    "found",
+    17,
+    61.8
+   ],
+   "wired": [
+    "found",
+    17,
+    61.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 313,
+   "mode": "R",
+   "harness": [
+    "found",
+    5,
+    17.7
+   ],
+   "wired": [
+    "found",
+    5,
+    17.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 313,
+   "mode": "U",
+   "harness": [
+    "found",
+    6,
+    24.3
+   ],
+   "wired": [
+    "found",
+    6,
+    24.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 314,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    6.9
+   ],
+   "wired": [
+    "found",
+    2,
+    6.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 314,
+   "mode": "U",
+   "harness": [
+    "found",
+    15,
+    60.3
+   ],
+   "wired": [
+    "found",
+    15,
+    60.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 317,
+   "mode": "R",
+   "harness": [
+    "found",
+    18,
+    74.1
+   ],
+   "wired": [
+    "found",
+    18,
+    74.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 317,
+   "mode": "U",
+   "harness": [
+    "found",
+    8,
+    35.7
+   ],
+   "wired": [
+    "found",
+    8,
+    35.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 318,
+   "mode": "R",
+   "harness": [
+    "found",
+    13,
+    49.2
+   ],
+   "wired": [
+    "found",
+    13,
+    49.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 318,
+   "mode": "U",
+   "harness": [
+    "found",
+    7,
+    18.0
+   ],
+   "wired": [
+    "found",
+    7,
+    18.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 319,
+   "mode": "R",
+   "harness": [
+    "found",
+    9,
+    33.9
+   ],
+   "wired": [
+    "found",
+    9,
+    33.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 319,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    22.04
+   ],
+   "wired": [
+    "found",
+    5,
+    22.04
+   ]
+  },
+  {
+   "split": "val",
+   "index": 320,
+   "mode": "R",
+   "harness": [
+    "found",
+    10,
+    36.9
+   ],
+   "wired": [
+    "found",
+    10,
+    36.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 320,
+   "mode": "U",
+   "harness": [
+    "found",
+    12,
+    42.3
+   ],
+   "wired": [
+    "found",
+    12,
+    42.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 322,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    4.2
+   ],
+   "wired": [
+    "found",
+    2,
+    4.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 322,
+   "mode": "U",
+   "harness": [
+    "found",
+    1,
+    4.5
+   ],
+   "wired": [
+    "found",
+    1,
+    4.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 323,
+   "mode": "R",
+   "harness": [
+    "found",
+    19,
+    48.3
+   ],
+   "wired": [
+    "found",
+    19,
+    48.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 323,
+   "mode": "U",
+   "harness": [
+    "found",
+    18,
+    48.0
+   ],
+   "wired": [
+    "found",
+    18,
+    48.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 324,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    3.9
+   ],
+   "wired": [
+    "found",
+    2,
+    3.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 324,
+   "mode": "U",
+   "harness": [
+    "found",
+    7,
+    21.0
+   ],
+   "wired": [
+    "found",
+    7,
+    21.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 325,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    5.1
+   ],
+   "wired": [
+    "found",
+    2,
+    5.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 325,
+   "mode": "U",
+   "harness": [
+    "found",
+    8,
+    23.1
+   ],
+   "wired": [
+    "found",
+    8,
+    23.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 326,
+   "mode": "R",
+   "harness": [
+    "found",
+    1,
+    4.2
+   ],
+   "wired": [
+    "found",
+    1,
+    4.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 326,
+   "mode": "U",
+   "harness": [
+    "found",
+    22,
+    79.5
+   ],
+   "wired": [
+    "found",
+    22,
+    79.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 327,
+   "mode": "R",
+   "harness": [
+    "found",
+    9,
+    32.4
+   ],
+   "wired": [
+    "found",
+    9,
+    32.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 327,
+   "mode": "U",
+   "harness": [
+    "found",
+    15,
+    55.2
+   ],
+   "wired": [
+    "found",
+    15,
+    55.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 329,
+   "mode": "R",
+   "harness": [
+    "found",
+    3,
+    9.3
+   ],
+   "wired": [
+    "found",
+    3,
+    9.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 329,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    10.5
+   ],
+   "wired": [
+    "found",
+    5,
+    10.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 330,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    6.6
+   ],
+   "wired": [
+    "found",
+    2,
+    6.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 330,
+   "mode": "U",
+   "harness": [
+    "found",
+    6,
+    16.5
+   ],
+   "wired": [
+    "found",
+    6,
+    16.5
+   ]
+  },
+  {
+   "split": "val",
+   "index": 334,
+   "mode": "R",
+   "harness": [
+    "found",
+    17,
+    49.2
+   ],
+   "wired": [
+    "found",
+    17,
+    49.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 334,
+   "mode": "U",
+   "harness": [
+    "found",
+    6,
+    16.8
+   ],
+   "wired": [
+    "found",
+    6,
+    16.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 335,
+   "mode": "R",
+   "harness": [
+    "found",
+    7,
+    17.7
+   ],
+   "wired": [
+    "found",
+    7,
+    17.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 335,
+   "mode": "U",
+   "harness": [
+    "found",
+    16,
+    41.4
+   ],
+   "wired": [
+    "found",
+    16,
+    41.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 337,
+   "mode": "R",
+   "harness": [
+    "found",
+    5,
+    15.9
+   ],
+   "wired": [
+    "found",
+    5,
+    15.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 337,
+   "mode": "U",
+   "harness": [
+    "found",
+    22,
+    83.4
+   ],
+   "wired": [
+    "found",
+    22,
+    83.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 338,
+   "mode": "R",
+   "harness": [
+    "found",
+    27,
+    119.1
+   ],
+   "wired": [
+    "found",
+    27,
+    119.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 338,
+   "mode": "U",
+   "harness": [
+    "found",
+    13,
+    59.7
+   ],
+   "wired": [
+    "found",
+    13,
+    59.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 339,
+   "mode": "R",
+   "harness": [
+    "found",
+    23,
+    85.8
+   ],
+   "wired": [
+    "found",
+    23,
+    85.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 339,
+   "mode": "U",
+   "harness": [
+    "found",
+    49,
+    194.4
+   ],
+   "wired": [
+    "found",
+    49,
+    194.4
+   ]
+  },
+  {
+   "split": "val",
+   "index": 340,
+   "mode": "R",
+   "harness": [
+    "found",
+    7,
+    23.7
+   ],
+   "wired": [
+    "found",
+    7,
+    23.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 340,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    15.0
+   ],
+   "wired": [
+    "found",
+    5,
+    15.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 342,
+   "mode": "R",
+   "harness": [
+    "found",
+    6,
+    19.2
+   ],
+   "wired": [
+    "found",
+    6,
+    19.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 342,
+   "mode": "U",
+   "harness": [
+    "found",
+    10,
+    36.6
+   ],
+   "wired": [
+    "found",
+    10,
+    36.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 344,
+   "mode": "R",
+   "harness": [
+    "found",
+    6,
+    18.3
+   ],
+   "wired": [
+    "found",
+    6,
+    18.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 344,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    17.1
+   ],
+   "wired": [
+    "found",
+    5,
+    17.1
+   ]
+  },
+  {
+   "split": "val",
+   "index": 345,
+   "mode": "R",
+   "harness": [
+    "found",
+    20,
+    72.0
+   ],
+   "wired": [
+    "found",
+    20,
+    72.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 345,
+   "mode": "U",
+   "harness": [
+    "found",
+    5,
+    12.3
+   ],
+   "wired": [
+    "found",
+    5,
+    12.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 346,
+   "mode": "R",
+   "harness": [
+    "found",
+    4,
+    9.9
+   ],
+   "wired": [
+    "found",
+    4,
+    9.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 346,
+   "mode": "U",
+   "harness": [
+    "found",
+    2,
+    6.6
+   ],
+   "wired": [
+    "found",
+    2,
+    6.6
+   ]
+  },
+  {
+   "split": "val",
+   "index": 348,
+   "mode": "R",
+   "harness": [
+    "found",
+    9,
+    27.0
+   ],
+   "wired": [
+    "found",
+    9,
+    27.0
+   ]
+  },
+  {
+   "split": "val",
+   "index": 348,
+   "mode": "U",
+   "harness": [
+    "found",
+    10,
+    27.9
+   ],
+   "wired": [
+    "found",
+    10,
+    27.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 349,
+   "mode": "R",
+   "harness": [
+    "found",
+    19,
+    70.8
+   ],
+   "wired": [
+    "found",
+    19,
+    70.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 349,
+   "mode": "U",
+   "harness": [
+    "found",
+    4,
+    8.7
+   ],
+   "wired": [
+    "found",
+    4,
+    8.7
+   ]
+  },
+  {
+   "split": "val",
+   "index": 350,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    3.9
+   ],
+   "wired": [
+    "found",
+    2,
+    3.9
+   ]
+  },
+  {
+   "split": "val",
+   "index": 350,
+   "mode": "U",
+   "harness": [
+    "found",
+    4,
+    10.2
+   ],
+   "wired": [
+    "found",
+    4,
+    10.2
+   ]
+  },
+  {
+   "split": "val",
+   "index": 351,
+   "mode": "R",
+   "harness": [
+    "found",
+    2,
+    4.8
+   ],
+   "wired": [
+    "found",
+    2,
+    4.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 351,
+   "mode": "U",
+   "harness": [
+    "found",
+    28,
+    91.8
+   ],
+   "wired": [
+    "found",
+    28,
+    91.8
+   ]
+  },
+  {
+   "split": "val",
+   "index": 352,
+   "mode": "R",
+   "harness": [
+    "found",
+    1,
+    3.3
+   ],
+   "wired": [
+    "found",
+    1,
+    3.3
+   ]
+  },
+  {
+   "split": "val",
+   "index": 352,
+   "mode": "U",
+   "harness": [
+    "found",
+    29,
+    86.7
+   ],
+   "wired": [
+    "found",
+    29,
+    86.7
+   ]
+  }
+ ]
+}

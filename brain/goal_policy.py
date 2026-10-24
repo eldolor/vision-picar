@@ -15,22 +15,31 @@ The weights are learned in simulation by the cross-entropy method
 Under `explore_goal_policy: network` (amendment 2) the score is that linear
 term plus a small network's, trained by PPO
 (`evaluations/explore-365/train_net.py`) and committed in
-`brain/explore_goal_net.json`. It imports nothing heavier than numpy, so the
-brain stays light.
+`brain/explore_goal_net.json`. Under `explore_goal_policy: rooms` (3.96) a
+network takes the ten features plus seven about rooms (`ROOM_FEATURES`: the
+candidate's room cut from the brain's own map by `segment()`, whether the
+robot has stood in it, and, where the map carries room labels, how likely
+the target is in a room of that type), trained by clone then PPO
+(`evaluations/goal-learn-396/train.py`, arm F-large) and committed in
+`brain/explore_goal_rooms.json`. It imports nothing heavier than numpy, so
+the brain stays light.
 """
 
 import json
 import math
+import re
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
 from brain.frontier import _cell_of
-from world.interface import CELL_FREE, CELL_UNKNOWN
+from brain.room_labels import segment
+from world.interface import CELL_FREE, CELL_OCCUPIED, CELL_UNKNOWN
 
 WEIGHTS_PATH = Path(__file__).resolve().parent / "explore_goal_weights.json"
 NET_PATH = Path(__file__).resolve().parent / "explore_goal_net.json"
+ROOMS_PATH = Path(__file__).resolve().parent / "explore_goal_rooms.json"
 
 # The order the weights are stored in. Each feature is scaled to roughly
 # 0..1 over a house, so a weight's size says how much it matters.
@@ -162,10 +171,162 @@ class NetGoalPolicy(LinearGoalPolicy):
         return cls(data["weights"], [(l["W"], l["b"]) for l in data["layers"]])
 
 
-POLICIES = ("rule", "learned", "network")
+# ---------- 3.96: rooms ----------
+
+# Appended after FEATURES, in this order.
+ROOM_FEATURES = (
+    "room_new",      # the candidate's room (a `segment()` piece) never stood in
+    "room_area",     # that room's known floor, / 20 m2
+    "room_other",    # a different room from the robot's
+    "room_share",    # share of the pool's candidates in the same room
+    "type_known",    # a room label names the candidate's room type
+    "prior",         # P(target | that type); 0 when the type is unknown
+    "prior_new",     # prior x room_new
+)
+ROOM_AREA_M2 = 20.0
+# Rooms are cut on the training grid's resolution (the simulator's 0.30 m
+# cells): a finer map (SLAM's 0.05 m) is resampled first, so the features
+# read as they did in training and `segment()` sees 36x fewer cells.
+ROOM_RES_M = 0.30
 
 
-def goal_policy_for(name: str) -> Optional[LinearGoalPolicy]:
+def coarse(m: dict, res_m: float = ROOM_RES_M) -> dict:
+    """`m` at `res_m` (an integer factor of its own resolution): a coarse
+    cell is occupied if any of its cells is, free if at least half are, and
+    unknown otherwise. A map already that coarse is returned as it is."""
+    k = int(round(res_m / m["resolution_m"]))
+    if k <= 1:
+        return m
+    w, h = m["width"], m["height"]
+    W, H = -(-w // k), -(-h // k)
+    cells = np.full((H * k, W * k), CELL_UNKNOWN, dtype=np.asarray(m["cells"]).dtype)
+    cells[:h, :w] = np.asarray(m["cells"]).reshape(h, w)
+    blocks = cells.reshape(H, k, W, k).swapaxes(1, 2).reshape(H, W, k * k)
+    out = np.full((H, W), CELL_UNKNOWN, dtype=cells.dtype)
+    out[(blocks == CELL_FREE).sum(axis=2) * 2 >= k * k] = CELL_FREE
+    out[(blocks == CELL_OCCUPIED).any(axis=2)] = CELL_OCCUPIED
+    return {**m, "width": W, "height": H, "resolution_m": m["resolution_m"] * k,
+            "cells": out.ravel().tolist()}
+
+
+def _seg_at(seg, m: dict, x_m: float, y_m: float) -> int:
+    """The segment id under a point, or of the nearest floor cell within one
+    cell (a goal can sit on a frontier's unknown edge); -1 if none."""
+    return _seg_at_cell(seg, *_cell_of(m, x_m, y_m))
+
+
+def _seg_at_cell(seg, cx: int, cy: int) -> int:
+    h, w = seg.shape
+    for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1), (1, -1), (-1, 1)):
+        i, j = cx + dx, cy + dy
+        if 0 <= i < w and 0 <= j < h and seg[j, i] >= 0:
+            return int(seg[j, i])
+    return -1
+
+
+def room_features(m: dict, pose: dict, goals: list, *, trail, types: list,
+                  prior: dict) -> list:
+    """Each candidate's ROOM_FEATURES. `goals`: the pool's (x_m, y_m) in
+    order; `trail`: map-frame points the robot has stood on; `types`: each
+    goal's room type from the labels, or None; `prior`: type -> P(target)."""
+    m = coarse(m)
+    seg, _ = segment(m)
+    res2 = m["resolution_m"] ** 2
+    ids, counts = np.unique(seg[seg >= 0], return_counts=True)
+    area = dict(zip(ids.tolist(), counts.tolist()))
+    here = _seg_at(seg, m, pose["x_m"], pose["y_m"])
+    # The trail once per map cell it touches, not once per point.
+    pts = np.asarray(list(trail), dtype=float).reshape(-1, 2)
+    cells = np.unique(np.floor((pts - (m["origin_x_m"], m["origin_y_m"]))
+                               / m["resolution_m"]).astype(int), axis=0)
+    stood = {_seg_at_cell(seg, int(i), int(j)) for i, j in cells} | {here}
+    rooms = [_seg_at(seg, m, x, y) for x, y in goals]
+    out = []
+    for r, t in zip(rooms, types):
+        new = 1.0 if r >= 0 and r not in stood else 0.0
+        p = float(prior.get(t, 0.0)) if t is not None else 0.0
+        out.append([
+            new,
+            (area.get(r, 0) * res2 / ROOM_AREA_M2) if r >= 0 else 0.0,
+            1.0 if r >= 0 and r != here else 0.0,
+            (sum(x == r for x in rooms) / len(rooms)) if r >= 0 else 0.0,
+            0.0 if t is None else 1.0,
+            p,
+            p * new,
+        ])
+    return out
+
+
+def room_type(name: str) -> str:
+    """'bedroom 2' -> 'bedroom'."""
+    return re.sub(r" \d+$", "", name)
+
+
+class RoomGoalPolicy:
+    """3.96's F-large: `score = w . f + MLP(f)` over the 17 features
+    (FEATURES then ROOM_FEATURES), MLP 17 -> 32 -> 32 -> 1 (tanh), scored in
+    float32 exactly as the test run scored it
+    (`evaluations/goal-learn-396/model.py` `score_np`). `prior`: target ->
+    room type -> P(target in a room of that type), from the training houses.
+    Explore calls `extend()` on the pool's ten features first (`rooms`)."""
+
+    rooms = True
+    N = len(FEATURES) + len(ROOM_FEATURES)
+    SHAPES = {"w": (N,), "W1": (32, N), "b1": (32,), "W2": (32, 32), "b2": (32,),
+              "W3": (1, 32), "b3": (1,)}
+
+    def __init__(self, params: dict, prior: dict):
+        self.P = {k: np.asarray(params[k], dtype=np.float32) for k in self.SHAPES}
+        for k, shape in self.SHAPES.items():
+            if self.P[k].shape != shape:
+                raise ValueError(f"{k}: shape {self.P[k].shape}, expected {shape}")
+        self.prior = {t.lower(): dict(p) for t, p in prior.items()}
+
+    def extend(self, m: dict, pose: dict, goals: list, feats: list, *, trail,
+               types: list, target: Optional[str]) -> list:
+        """The pool's ten features, each with its seven room features after."""
+        if not goals:
+            return []
+        prior = self.prior.get((target or "").lower(), {})
+        # A type the prior does not name reads as no type: in training every
+        # labelled type had a prior, so "known, P = 0" meant a real zero.
+        types = [t if t in prior else None for t in types]
+        room = room_features(m, pose, goals, trail=trail, types=types, prior=prior)
+        return [a + b for a, b in zip(feats, room)]
+
+    def scores(self, candidates: list) -> np.ndarray:
+        P, f = self.P, np.asarray(candidates, dtype=np.float32)
+        if f.ndim != 2 or f.shape[1] != self.N:
+            raise ValueError(f"expected rows of {self.N} features (extend() first); "
+                             f"got shape {f.shape}")
+        h = np.tanh(f @ P["W1"].T + P["b1"])
+        h = np.tanh(h @ P["W2"].T + P["b2"])
+        return f @ P["w"] + (h @ P["W3"].T + P["b3"]).ravel()
+
+    def score(self, f: list) -> float:
+        return float(self.scores([f])[0])
+
+    def best(self, candidates: list) -> Optional[int]:
+        """Index of the highest score, or None if none. Ties keep the earlier
+        one; a non-finite score ranks last (as the test run ranked it)."""
+        if not candidates:
+            return None
+        s = self.scores(candidates)
+        return int(np.argmax(np.where(np.isfinite(s), s, -1e9)))
+
+    @classmethod
+    def load(cls, path: Path = ROOMS_PATH) -> "RoomGoalPolicy":
+        data = json.loads(Path(path).read_text())
+        if list(data["features"]) != list(FEATURES) + list(ROOM_FEATURES):
+            raise ValueError(f"{path}: features {data['features']} do not match "
+                             f"this code's {list(FEATURES) + list(ROOM_FEATURES)}")
+        return cls(data["params"], data["prior"])
+
+
+POLICIES = ("rule", "learned", "network", "rooms")
+
+
+def goal_policy_for(name: str):
     """`explore_goal_policy` -> the policy object, or None for the rule."""
     if name == "rule":
         return None
@@ -173,4 +334,6 @@ def goal_policy_for(name: str) -> Optional[LinearGoalPolicy]:
         return LinearGoalPolicy.load()
     if name == "network":
         return NetGoalPolicy.load()
+    if name == "rooms":
+        return RoomGoalPolicy.load()
     raise ValueError(f"explore_goal_policy must be one of {POLICIES}; got {name!r}")
