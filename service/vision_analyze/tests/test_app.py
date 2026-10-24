@@ -1028,34 +1028,57 @@ def test_the_effort_field_goes_only_to_a_confirmed_model(monkeypatch, model_id):
     assert "additionalModelRequestFields" not in fake.kwargs
 
 
-def test_the_room_model_id_is_read_stripped(monkeypatch):
+@pytest.fixture
+def restore_vision_core(monkeypatch):
+    yield
+    monkeypatch.undo()
+    import importlib
+    import vision_core
+    importlib.reload(vision_core)
+
+
+@pytest.mark.parametrize("raw, expected", [
+    (" us.anthropic.claude-opus-5-5\n", "us.anthropic.claude-opus-5-5"),
+    ("", "us.anthropic.claude-opus-5-5"), ("  ", "us.anthropic.claude-opus-5-5"),
+])
+def test_the_room_model_id_is_read_stripped(monkeypatch, restore_vision_core, raw, expected):
     """A pasted id with a trailing newline is the id sent and the id the
-    effort list is checked against -- one value, not two."""
+    effort list is checked against -- one value, not two; an empty one is
+    the default, never a modelId of ''."""
     import importlib
     import vision_core
 
-    monkeypatch.setenv("BEDROCK_ROOM_MODEL_ID", " us.anthropic.claude-opus-5-5\n")
-    try:
+    monkeypatch.setenv("BEDROCK_ROOM_MODEL_ID", raw)
+    assert importlib.reload(vision_core).ROOM_MODEL_ID == expected
+
+
+def test_a_room_model_off_the_effort_list_is_said_at_start_up(monkeypatch, restore_vision_core, caplog):
+    import importlib
+    import vision_core
+
+    monkeypatch.setenv("BEDROCK_ROOM_MODEL_ID", "eu.anthropic.claude-opus-5-5")
+    with caplog.at_level("WARNING"):
         importlib.reload(vision_core)
-        assert vision_core.ROOM_MODEL_ID == "us.anthropic.claude-opus-5-5"
-        assert vision_core.ROOM_MODEL_ID in vision_core.ROOM_EFFORT_MODELS
-    finally:
-        monkeypatch.delenv("BEDROCK_ROOM_MODEL_ID")
-        importlib.reload(vision_core)
+    assert "eu.anthropic.claude-opus-5-5" in caplog.text and "ROOM_EFFORT_MODELS" in caplog.text
 
 
 def _template_parameter_default(template: str, name: str):
-    """The Default of one top-level Parameters entry, read from its own
-    indented block only (never a later parameter's)."""
+    """The Default of one entry under the template's top-level Parameters,
+    read from that entry's own indented block only (never a later one's)."""
     lines = template.replace("\r\n", "\n").split("\n")
-    head = next(i for i, line in enumerate(lines) if line.strip() == f"{name}:")
+    top = lines.index("Parameters:")
+    end = next((i for i in range(top + 1, len(lines)) if lines[i][:1].isalpha()), len(lines))
+    heads = [i for i in range(top + 1, end) if lines[i].strip() == f"{name}:"]
+    assert heads, f"serverless.yaml has no {name} parameter"
+    head = heads[0]
     indent = len(lines[head]) - len(lines[head].lstrip())
-    for line in lines[head + 1:]:
-        if line.strip() and len(line) - len(line.lstrip()) <= indent:
+    for line in lines[head + 1:end]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) <= indent:
             return None
-        key, _, value = line.strip().partition(":")
-        if key == "Default":
-            return value.strip().strip("'\"")
+        if len(line) - len(line.lstrip()) == indent + 2 and line.strip().startswith("Default:"):
+            return line.split("Default:", 1)[1].split(" #")[0].strip().strip("'\"")
     return None
 
 

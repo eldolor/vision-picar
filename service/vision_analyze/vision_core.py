@@ -84,7 +84,7 @@ GUIDANCE_MODEL_ID = os.environ.get("BEDROCK_GUIDANCE_MODEL_ID", "amazon.nova-lit
 # two real Converse calls on recorded walk frames from us-east-2 that day.
 # Keep in step with cloudformation/serverless.yaml's RoomModelId.
 # Stripped once here, so the id sent and the id the effort rule checks agree.
-ROOM_MODEL_ID = os.environ.get("BEDROCK_ROOM_MODEL_ID", "us.anthropic.claude-opus-5-5").strip()
+ROOM_MODEL_ID = (os.environ.get("BEDROCK_ROOM_MODEL_ID") or "").strip() or "us.anthropic.claude-opus-5-5"
 
 # /navigate's model A/B set -- a request may pick one of these by id (app.py
 # validates against this exact set before it ever reaches Bedrock, so an
@@ -1339,6 +1339,11 @@ ROOM_EFFORT = "low"
 ROOM_EFFORT_MODELS = frozenset({
     "us.anthropic.claude-opus-5-5",  # us-east-2, 2026-10-24: "bedroom", 57 tokens out
 })
+if ROOM_MODEL_ID not in ROOM_EFFORT_MODELS:
+    # Said at start-up, not only as each reply's _stop: a thinking model
+    # missing from the list labels every room "unclear".
+    logger.warning(f"/room's model {ROOM_MODEL_ID!r} gets no effort field (not in "
+                   f"ROOM_EFFORT_MODELS); if it thinks, its replies may be cut")
 ROOM_MAX_TOKENS = 256
 _CLEAN_STOPS = (None, "end_turn", "stop_sequence")
 _ROOM_NAME = re.compile(r"[a-z][a-z' -]{0,39}")
