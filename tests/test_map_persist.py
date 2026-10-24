@@ -681,7 +681,7 @@ def _run(saved_grid, scans_at, seconds=12.0, hz=10.0):
     for k in range(int(seconds * hz)):
         t = k / hz
         scan, pose = scans_at(t)
-        fired = tr.add(scan, pose, t)
+        fired = tr.add(scan, pose, t, still=True)
         if fired:
             return fired, tr, t
     return None, tr, None
@@ -857,7 +857,7 @@ def test_a_matched_reload_freezes_its_map_for_the_watch(bridge_mod, monkeypatch,
     assert b._remap_saved is not None and b._remap_saved.w == _room_grid()["width"]
     b.last_map = {**_room_grid(), "data": [0] * len(_room_grid()["data"])}    # /map fills in
     assert b._remap_saved.state.max() == remap.OCC                           # the frozen copy does not
-    assert b.health()[1]["slam"]["watch"] == {"scans": 0, "lost": 0}
+    assert b.health()[1]["slam"]["watch"] == {"scans": 0, "lost": 0, "moving": 0}
 
 
 def test_a_person_s_request_re_maps_from_the_current_pose(bridge_mod, monkeypatch, tmp_path):
@@ -1044,7 +1044,7 @@ def test_the_watch_re_maps_when_the_scans_contradict(bridge_mod, monkeypatch, tm
         stamps.append(at.nanoseconds)
         return pose
     monkeypatch.setattr(b, "_laser_in_map", laser)
-    _at_rest_for(b, 5.0)
+    _rest_clock_still(b)
     seen = None
     for k in range(120):
         b.last_scan = {**_scan(*pose, boxes=[BOX]), "stamp_ns": k * 10**8, "at": time.time()}
@@ -1056,29 +1056,54 @@ def test_the_watch_re_maps_when_the_scans_contradict(bridge_mod, monkeypatch, tm
     assert b.remap_step(seen) == seen                   # the same scan is not judged twice
 
 
-def _at_rest_for(b, seconds, moving=False):
-    """Fresh odometry; still for `seconds` (or moving)."""
-    b.last_odom = {"x_m": 0.0, "y_m": 0.0, "yaw_rad": 0.0, "linear_m_s": 0.2 if moving else 0.0,
-                   "angular_rad_s": 0.0, "at": time.time() + 3600}
-    b._rest_since_wall = None if moving else time.time() - seconds
+def _rest_clock_still(b):
+    """Odometry still since long before any scan, and well past each one."""
+    b._rest_clock.since, b._rest_clock.last = -1e9, 1e18
 
 
 def test_the_watch_judges_only_scans_taken_at_rest(bridge_mod, monkeypatch, tmp_path):
-    """Amendment 4: moving, or still for less than REMAP_REST_S before the
-    scan's revolution began, the scan is not judged (counted `moving`)."""
+    """Amendment 4: a scan is judged only if odometry was still from
+    REMAP_REST_S before its revolution to past its end; moving, or still
+    for too short a time before it, it is counted `moving`. On the scan's
+    own stamp, never the wall clock (the review: no timing in the test)."""
     pose = (0.0, 0.0, 0.0)
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
     asked = []
     monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append(trigger) or (200, {}))
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
-    for moving, still_s in ((True, 0.0), (False, 0.5)):
-        _at_rest_for(b, still_s, moving=moving)
-        seen = None
-        for k in range(150):
-            b.last_scan = {**_scan(*pose, boxes=[BOX]), "stamp_ns": k * 10**8, "at": time.time()}
-            seen = b.remap_step(seen)
-        assert asked == []
-    assert b._remap_tracker.moving == 300 and b._remap_tracker.scans == 0
+    rc = b._rest_clock
+    for k in range(150):
+        cap = 1000.0 + k * 0.1
+        rc.since, rc.last = (None if k % 2 else cap - 0.1 - 0.45), cap + 0.2  # moving, or 0.45 s still
+        b.last_scan = {**_scan(*pose, boxes=[BOX]), "stamp_ns": int(cap * 1e9), "at": time.time()}
+        b.remap_step(None)
+    assert asked == []
+    assert b._remap_tracker.moving == 150 and b._remap_tracker.scans == 0
+
+
+def test_the_watch_waits_for_odometry_past_the_scan():
+    """Odometry not yet past the scan's revolution: undecided (None)."""
+    rc = remap.RestClock(0.01, 0.02, 0.5, 0.1, 0.5)
+    for k in range(20):
+        rc.on_odom(100.0 + k * 0.05, 0.0, 0.0)           # still from 100.0 to 100.95
+    assert rc.still_for(100.9) is None                   # the revolution may end at 101.0
+    assert rc.still_for(100.88) is None
+    assert rc.still_for(100.6) is True                    # 100.5 - 100.0 >= 0.5
+    assert rc.still_for(100.55) is False
+    rc.on_odom(101.0, 0.2, 0.0)                           # moving
+    assert rc.still_for(100.6) is False
+    rc.on_odom(101.05, 0.0, 0.0)
+    assert rc.still_for(100.9) is False                   # restarted at 101.05
+
+
+def test_an_odometry_gap_restarts_the_rest_clock():
+    """The robot may have moved while odometry was silent."""
+    rc = remap.RestClock(0.01, 0.02, 0.5, 0.1, 0.5)
+    for k in range(20):
+        rc.on_odom(100.0 + k * 0.05, 0.0, 0.0)
+    rc.on_odom(102.0, 0.0, 0.0)                           # 1.05 s of silence
+    rc.on_odom(102.3, 0.0, 0.0)
+    assert rc.since == 102.0 and rc.still_for(102.0) is False
 
 
 def test_a_scan_whose_tf_is_late_is_retried_then_dropped(bridge_mod, monkeypatch, tmp_path):
@@ -1400,3 +1425,16 @@ def test_a_latched_bridge_refuses_a_trigger_but_not_a_person(bridge_mod, monkeyp
     assert b.remap("contradiction", {})[0] == 409
     assert b.remap("request")[0] == 200
     _settle(b)
+
+
+def test_the_replay_uses_the_bridges_rest_constants(bridge_mod):
+    """evaluations/map-350/d4_replay.py chose amendment 4's numbers on the
+    bridge's rest rule: its copies of the constants must be the bridge's."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(__file__), "..", "evaluations", "map-350", "d4_replay.py")
+    spec = importlib.util.spec_from_file_location("d4_replay", path)
+    rp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rp)
+    assert (rp.REST_LIN, rp.REST_ANG, rp.REST_S, rp.SCAN_HZ, rp.ODOM_MAX_AGE_S) == (
+        bridge_mod.REST_LINEAR_M_S, bridge_mod.REST_ANGULAR_RAD_S, bridge_mod.REMAP_REST_S,
+        bridge_mod.SCAN_HZ, bridge_mod.REST_ODOM_MAX_AGE_S)

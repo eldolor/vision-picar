@@ -27,7 +27,10 @@ from picar_bridge import remap  # noqa: E402
 CELL = 0.3
 NEAR_M = 0.6
 LIDAR_X_M = 0.04
-REST_LIN, REST_ANG, REST_S = 0.01, 0.02, 0.5      # the bridge's _at_rest
+# The bridge's REST_LINEAR_M_S, REST_ANGULAR_RAD_S, REMAP_REST_S, SCAN_HZ and
+# REST_ODOM_MAX_AGE_S (bridge.py needs rclpy, so they are repeated here;
+# tests/test_map_persist.py checks they agree).
+REST_LIN, REST_ANG, REST_S, SCAN_HZ, ODOM_MAX_AGE_S = 0.01, 0.02, 0.5, 10.0, 0.5
 
 
 def grid(m):
@@ -62,16 +65,20 @@ def fit_house(rec):
 
 
 def still_flags(rec):
-    """Per scan: odometry still for REST_S before its capture (host clock)."""
-    od = rec.get("odom") or []
-    t = np.array([o[0] for o in od])
-    moving = np.array([abs(o[1]) >= REST_LIN or abs(o[2]) >= REST_ANG for o in od])
-    out = []
-    for s in rec["scans"]:
-        at = s["at"] - 0.1                      # its revolution began one 10 Hz period before filing
-        lo, hi = np.searchsorted(t, at - REST_S), np.searchsorted(t, at)
-        out.append(hi > lo and not moving[lo:hi].any() and at - t[hi - 1] < 0.2)
-    return out
+    """Per scan: the bridge's own rest rule (remap.RestClock, with its
+    constants), fed the recorded odometry. A scan odometry never passed is
+    not at rest."""
+    rc = remap.RestClock(REST_LIN, REST_ANG, REST_S, 1.0 / SCAN_HZ, ODOM_MAX_AGE_S)
+    od = sorted(rec.get("odom") or [])
+    out, k = [], 0
+    for s in sorted(rec["scans"], key=lambda s: s["stamp_ns"]):
+        cap = s["stamp_ns"] * 1e-9
+        while k < len(od) and rc.still_for(cap) is None:
+            rc.on_odom(*od[k])
+            k += 1
+        out.append((s["stamp_ns"], bool(rc.still_for(cap))))
+    by = dict(out)
+    return [by[s["stamp_ns"]] for s in rec["scans"]]
 
 
 def changed_cells(rec_dir, name):

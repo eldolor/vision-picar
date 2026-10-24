@@ -133,6 +133,40 @@ class SavedMap:
         return (col >= 0) & (col < self.w) & (row >= 0) & (row < self.h)
 
 
+class RestClock:
+    """Amendment 4's rest rule, one copy for the bridge and the replay
+    (d4_replay.py): was the robot still over a scan's whole revolution?
+
+    Fed every odometry message (`on_odom`, on the scans' clock). A scan
+    captured at `capture_s` (its stamp) is at rest when odometry has been
+    still from at least `rest_s` before its revolution could have begun
+    (capture - period) to a message at or after it could have ended
+    (capture + period): the stamp's place in the revolution is not assumed.
+    Odometry silent for more than `max_gap_s` restarts the clock -- the
+    robot may have moved unseen."""
+
+    def __init__(self, lin_m_s, ang_rad_s, rest_s, period_s, max_gap_s):
+        self.lin, self.ang, self.rest_s = lin_m_s, ang_rad_s, rest_s
+        self.period, self.max_gap = period_s, max_gap_s
+        self.since = None           # still since (scans' clock), or None
+        self.last = None            # the newest message's time
+
+    def on_odom(self, at, linear_m_s, angular_rad_s):
+        still = abs(linear_m_s) < self.lin and abs(angular_rad_s) < self.ang
+        if not still or (self.last is not None and at - self.last > self.max_gap):
+            self.since = None
+        if still and self.since is None:
+            self.since = at
+        self.last = at
+
+    def still_for(self, capture_s) -> Optional[bool]:
+        """True or False, or None while odometry has not yet reached the
+        end of the revolution (ask again)."""
+        if self.last is None or self.last < capture_s + self.period:
+            return None
+        return self.since is not None and capture_s - self.period - self.since >= self.rest_s
+
+
 def run_widths(mask: np.ndarray, width: np.ndarray, gap: int, full_turn: bool) -> np.ndarray:
     """For each True beam, the summed `width` of the run it lies in: True
     beams joined across at most `gap` False ones (round the end on a full
@@ -231,10 +265,11 @@ def judge_scan(saved: SavedMap, scan: dict, laser_pose: Sequence[float]) -> dict
     # Incidence from the expected ranges of the neighbouring beams:
     # tan(incidence) = r / |dr/dtheta|.
     inc = abs(scan["angle_increment_rad"]) or 1e-9
+    full = abs(n * inc - 2 * math.pi) <= inc / 2
     e_fin = np.where(e_ok, e, np.nan)
     with np.errstate(invalid="ignore"):
         drdt = np.abs(np.roll(e_fin, -1) - np.roll(e_fin, 1)) / (2 * inc)
-        if abs(n * inc - 2 * math.pi) > inc / 2:
+        if not full:
             drdt[0] = drdt[-1] = np.nan      # not a full turn: the ends have one neighbour
         incidence = np.degrees(np.arctan2(e_fin, drdt))
     square = e_ok & np.isfinite(incidence) & (incidence >= MIN_INCIDENCE_DEG)
@@ -247,17 +282,18 @@ def judge_scan(saved: SavedMap, scan: dict, laser_pose: Sequence[float]) -> dict
     seen_e = valid & square & ((np.abs(r - e) <= NEW_TOL_M) | gone)
     if MIN_RUN_M > 0:
         # Amendment 4: an object's worth of beams, not a sliver beside an edge.
-        full = abs(n * inc - 2 * math.pi) <= inc / 2
         gone = gone & (run_widths(gone, np.where(gone, e, 0) * inc, RUN_GAP_BEAMS, full) >= MIN_RUN_M)
         new = new & (run_widths(new, np.where(new, r, 0) * inc, RUN_GAP_BEAMS, full) >= MIN_RUN_M)
 
     # Free cells a beam crossed clear of its own return: looked at, unchanged.
-    clear = pin & (st == FREE) & (d[None, :] < (np.where(valid, r, 0) - NEW_TOL_M)[:, None])
+    inside_range = d[None, :] <= MAX_RANGE_M
+    clear = (pin & (st == FREE) & inside_range
+             & (d[None, :] < (np.where(valid, r, 0) - NEW_TOL_M)[:, None]))
     flat_clear = (pr * saved.w + pc)[clear]
 
     # A beam that went past its expected hit passed through every occupied
     # cell from there to (GONE_SHORT_M short of) its own return.
-    through = (gone[:, None] & pin & (st == OCC) & (d[None, :] >= e[:, None])
+    through = (gone[:, None] & pin & (st == OCC) & inside_range & (d[None, :] >= e[:, None])
                & (d[None, :] < (np.where(valid, r, 0) - GONE_SHORT_M)[:, None]))
     flat_through = (pr * saved.w + pc)[through]
 
@@ -282,8 +318,8 @@ class Contradictions:
         self.moving = 0
         self.loose = 0
 
-    def add(self, scan: dict, laser_pose: Sequence[float], now: float,
-            still: bool = True) -> Optional[dict]:
+    def add(self, scan: dict, laser_pose: Sequence[float], now: float, *,
+            still: bool) -> Optional[dict]:
         """Fold one scan in; the trigger's record if it fires, else None.
         `still`: the robot was at rest when it was taken (REQUIRE_REST)."""
         while self.window and self.window[0][0] < now - WINDOW_S:

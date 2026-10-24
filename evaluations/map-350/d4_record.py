@@ -99,6 +99,7 @@ class Truth:
 
 
 MOUNTED = [None]
+ERRORS = []
 
 
 def mounted_ok():
@@ -110,12 +111,18 @@ def mounted_ok():
     got = r.stdout.split()[0] if r.stdout else r.stderr.strip()
     if got != want:
         subprocess.run(["docker", "rm", "-f", de.CONTAINER], capture_output=True)
-        raise SystemExit(f"the container's bridge.py is not the patched copy ({got[:80]})")
+        raise RuntimeError(f"the container's bridge.py is not the patched copy ({got[:80]})")
 
 
 def start_recorder(secs, out):
     """Wait for the container, then run the recorder in it (a thread)."""
     def run():
+        try:
+            record()
+        except Exception as e:  # noqa: BLE001 -- the session reports it (review)
+            ERRORS.append(f"{type(e).__name__}: {e}")
+
+    def record():
         while True:
             st = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", de.CONTAINER],
                                 capture_output=True, text=True).stdout.strip()
@@ -153,7 +160,7 @@ def session(house, kind, base, out_dir, pkg):
     shutil.rmtree(maps, ignore_errors=True)
     shutil.copytree(base, maps)
     pkl = os.path.join(out_dir, f"{kind}-{house}.pkl")
-    secs = WATCH_S + 120 if kind == "plain" else 420
+    secs = WATCH_S + 120 if kind == "plain" else 900     # changed: up to 780 s of goals and waits
     rec = start_recorder(secs, pkl + ".ros")
     info = {"house": house, "kind": kind, "events": []}
     movers = d4.MOVERS[house] if kind == "plain" else ""
@@ -190,8 +197,16 @@ def session(house, kind, base, out_dir, pkg):
     info["truth"] = tr.rows
     info["seconds"] = round(time.time() - t0)
     rec.join(secs + 300)
+    if ERRORS:
+        raise RuntimeError(f"recorder: {ERRORS.pop()}")
     with open(pkl + ".ros", "rb") as f:
         ros = pickle.load(f)
+    # The recorder counts from the container's start: a slow reload cuts the
+    # session's tail, which a replay could not see (review).
+    if ros["scans"] and ros["scans"][-1]["at"] < t0 + info["seconds"] - 1.0:
+        info["truncated_s"] = round(t0 + info["seconds"] - ros["scans"][-1]["at"], 1)
+        print(f"  WARNING {kind}-{house}: the recording ends {info['truncated_s']} s "
+              "before the session", flush=True)
     os.remove(pkl + ".ros")
     with open(pkl, "wb") as f:
         pickle.dump({**ros, **info}, f)

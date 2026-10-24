@@ -287,7 +287,8 @@ def outside(house, door, room):
     mid = door[len(door) // 2]
     for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
         c1, c2 = (mid[0] + dx, mid[1] + dy), (mid[0] + 2 * dx, mid[1] + 2 * dy)
-        if c1 in free and c2 in free and c1 not in inside and c2 not in inside:
+        # Across the door, never along its own line (review).
+        if c1 in free and c2 in free and not {c1, c2} & (inside | set(door)):
             return c2
     raise RuntimeError(f"no free cell outside {room}'s door {door}")
 
@@ -392,6 +393,9 @@ def run_a(house):
         "new_version": (out["saved"].get("last_version") or 0) >= 2,
         "contacts_0": out["sampler"]["contacts"] == 0}
     out["verdict"] = {"D4-a": "MET" if all(out["criteria"].values()) else "FAILED"}
+    if out["to_view"].get("state") != "succeeded" and not out["criteria"]["remapped"]:
+        # Amendment 4's setup never stood in view of the door (review).
+        out["verdict"] = {"D4-a": f"INVALID (the view goal ended {out['to_view'].get('state')})"}
     if entry is None and watch_errors[0]:
         out["verdict"] = {"D4-a": f"INVALID (the entry watch erred {watch_errors[0]} times "
                                   "and saw no entry)"}

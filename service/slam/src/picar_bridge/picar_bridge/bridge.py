@@ -322,7 +322,9 @@ class Bridge(Node):
         self._save_after_remap = None    # a mission end met during the swap: its reason
         self._reload_map = None          # the localisation node's FIRST /map (review)
         self._rest_since = None          # monotonic: odometry at rest since
-        self._rest_since_wall = None     # the same moment on the scans' clock (amendment 4)
+        # Amendment 4: rest over each scan's revolution, on the scans' clock.
+        self._rest_clock = remap.RestClock(REST_LINEAR_M_S, REST_ANGULAR_RAD_S, REMAP_REST_S,
+                                           1.0 / SCAN_HZ, REST_ODOM_MAX_AGE_S)
         self._remap_latched = False      # a re-map failed: no automatic one again (review)
         self._remap_deferrals = 0
         if self.map_store is None:
@@ -431,10 +433,11 @@ class Bridge(Node):
             still = (abs(msg.twist.twist.linear.x) < REST_LINEAR_M_S
                      and abs(msg.twist.twist.angular.z) < REST_ANGULAR_RAD_S)
             if not still:
-                self._rest_since = self._rest_since_wall = None
+                self._rest_since = None
             elif self._rest_since is None:
                 self._rest_since = time.monotonic()
-                self._rest_since_wall = time.time()
+            self._rest_clock.on_odom(time.time(), msg.twist.twist.linear.x,
+                                     msg.twist.twist.angular.z)
 
     def _on_map(self, msg):
         info = msg.info
@@ -1198,21 +1201,16 @@ class Bridge(Node):
             # TF at the capture time may not be in yet: try again next look,
             # until the scan is too old to wait for.
             return scan["stamp_ns"] if time.time() - scan["at"] > REMAP_SCAN_MAX_AGE_S else seen
-        fired = tracker.add(scan, laser, scan["stamp_ns"] * 1e-9, still=self._still_for(scan))
+        with self.lock:
+            still = self._rest_clock.still_for(scan["stamp_ns"] * 1e-9)
+        if still is None:
+            # Odometry has not reached the end of its revolution yet: next
+            # look, until the scan is too old to wait for (as for TF).
+            return scan["stamp_ns"] if time.time() - scan["at"] > REMAP_SCAN_MAX_AGE_S else seen
+        fired = tracker.add(scan, laser, scan["stamp_ns"] * 1e-9, still=still)
         if fired is not None:
             self._ask_remap("contradiction", fired)
         return scan["stamp_ns"]
-
-    def _still_for(self, scan) -> bool:
-        """Amendment 4: the robot at rest for REMAP_REST_S before the scan's
-        revolution began (filed at `at`, one SCAN_HZ period after its first
-        point), on fresh odometry. No goal condition: this is about where
-        the points were laid, not about a swap."""
-        with self.lock:
-            since, odom = self._rest_since_wall, self.last_odom
-        fresh = odom is not None and time.time() - odom["at"] <= REST_ODOM_MAX_AGE_S
-        return (fresh and since is not None
-                and scan["at"] - 1.0 / SCAN_HZ - since >= REMAP_REST_S)
 
     def _ask_remap(self, trigger, detail) -> None:
         """A trigger's request; one that could not start backs off
@@ -1550,7 +1548,8 @@ class Bridge(Node):
                                   "remap": dict(self.remap_record),
                                   "watch": None if self._remap_tracker is None else
                                   {"scans": self._remap_tracker.scans,
-                                   "lost": self._remap_tracker.lost},
+                                   "lost": self._remap_tracker.lost,
+                                   "moving": self._remap_tracker.moving},
                                   "remap_latched": self._remap_latched,
                                   "remap_deferrals": self._remap_deferrals}}
 
