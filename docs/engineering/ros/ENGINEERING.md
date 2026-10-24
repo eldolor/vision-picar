@@ -112,7 +112,7 @@ the `MAX_BRIDGE_ROUTES` budget.
 
 | Route | Request | Answer |
 |---|---|---|
-| `GET /health` | -- | `ok` (false when `slam.state` is `failed`, 3.50.D3; still HTTP 200 -- the robot server's probe reads the status code as "ROS up", and the D-pad drives without SLAM), `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `remapping` (3.50.D4), `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / checking / matched / fell_back / failed (with `before`, the result it replaced), map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`, `remap` (3.50.D4: `{result: none / waiting / deferred / starting / mapping / failed_localising / failed / not_started, trigger: entered_unknown / contradiction / request, at, map_id, version, detail, waited_s, cancelled_goal, at_rest, from_pose, took_s, error, relocalise_error}`), `watch` (3.50.D4: `{scans, lost, moving, no_tf, overflow}` while a matched reload is watched, else null; amendment 4: `moving` counts scans not taken at rest, `no_tf` and `overflow` scans the watch could not judge), `remap_latched` (automatic re-maps off after a failed one), `remap_deferrals` (swaps called off for want of rest)) |
+| `GET /health` | -- | `ok` (false when `slam.state` is `failed`, 3.50.D3; still HTTP 200 -- the robot server's probe reads the status code as "ROS up", and the D-pad drives without SLAM), `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `remapping` (3.50.D4), `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / checking / matched / fell_back / failed (with `before`, the result it replaced), map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`, `remap` (3.50.D4: `{result: none / waiting / deferred / starting / mapping / failed_localising / failed / not_started, trigger: entered_unknown / contradiction / request, at, map_id, version, detail, waited_s, cancelled_goal, at_rest, from_pose, took_s, error, relocalise_error}`), `watch` (3.50.D4: `{scans, lost, moving, no_tf, overflow}` while a matched reload is watched, else null; amendment 4: `moving` counts scans not taken at rest, `no_tf` and `overflow` scans the watch could not judge), `remap_latched` (automatic re-maps off after a failed one), `remap_stale_refused` (automatic triggers refused as stale, amendment 4), `remap_deferrals` (swaps called off for want of rest)) |
 | `POST /cmd_vel` | `{driver, linear_m_s, angular_rad_s}` | 200 `{published: <topic>}`, or 400 `unknown driver`. A non-zero `twin-dpad` twist also cancels the active goal. |
 | `GET /odom` | -- | The latest `/diff_drive_controller/odom` as `{x_m, y_m, yaw_rad, linear_m_s, angular_rad_s, at}`, or `{usable: false}` |
 | `GET /scan` | -- | The last LaserScan published, as `{angle_min_rad, angle_increment_rad, ranges_m (None = no return), at}` |
@@ -314,13 +314,15 @@ again (the user, 2026-10-23) on any of three triggers:
   it and the drop counts belong to one tracker and are reset with it
   (`_set_tracker`, the one place the tracker changes). A fire from a
   tracker replaced, or a watch stopped, while it judged is not acted on,
-  and `remap()` itself refuses an automatic trigger that names no tracker,
-  one whose tracker is no longer current, or one arriving during a
-  back-off -- answered `stale`, which starts or lengthens no back-off. Known limit: the robot
+  and `remap()` itself refuses an automatic trigger that
+  names no tracker, one whose tracker is no longer current, or one
+  arriving during a back-off -- answered `stale`, which starts or
+  lengthens no back-off and counts `slam.remap_stale_refused`. Known limit: the robot
   server stamps `/scan` at the request, so a lidar revolution served to two
-  polls is judged twice (one extra look; it cannot hold a contradiction
-  for `HOLD_S` alone). The fix is a revolution counter from the lidar
-  driver on `/scan`, a robot-server change left for its own step. (The swap's rest,
+  polls is judged twice (one extra look; it cannot hold a
+  contradiction for `HOLD_S` alone). The fix is a revolution counter
+  from the lidar driver on `/scan`, a robot-server change left for its
+  own step. (The swap's rest,
   `_at_rest` of amendment 2, is a different question -- still now, no goal
   live -- and keeps its own monotonic `_rest_since`.) Each judged scan is
   laid at `map -> laser` at its own capture stamp (`last_scan.stamp_ns`)

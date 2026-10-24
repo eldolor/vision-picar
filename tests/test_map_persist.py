@@ -1470,7 +1470,7 @@ def test_a_latched_bridge_refuses_a_trigger_but_not_a_person(bridge_mod, monkeyp
     b._remap_latched = True
     for trigger in ("entered_unknown", "contradiction"):
         code, body = b.remap(trigger, {}, b._remap_tracker)
-        assert code == 409 and "after a failed one" in body["error"]
+        assert code == 409 and "after a failed one" in body["error"] and "stale" not in body
     assert b.remap("request")[0] == 200
     _settle(b)
 
@@ -1665,12 +1665,38 @@ def test_a_stale_refusal_starts_no_back_off(bridge_mod, monkeypatch, tmp_path):
     """Review round 8: a trigger refused for a replaced tracker or a running
     back-off must not set, or lengthen, the current watch's back-off; and an
     automatic trigger that names no tracker is refused."""
-    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
-    monkeypatch.setattr(b, "_remap_run", lambda *a: None)
-    assert b.remap("contradiction", {})[0] == 409
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    code, body = b.remap("contradiction", {}, None)
+    assert code == 409 and body["stale"]
     b._ask_remap("contradiction", {}, remap.Contradictions(b._remap_saved))
     assert b._remap_retry_at <= time.monotonic()
     end = time.monotonic() + 0.5
     b._remap_retry_at = end
     b._ask_remap("entered_unknown", {}, b._remap_tracker)
     assert b._remap_retry_at == end
+    assert b.health()[1]["slam"]["remap_stale_refused"] == 2
+    # A refusal that is not stale still backs off (here: latched).
+    b._remap_retry_at, b._remap_latched = 0.0, True
+    b._ask_remap("contradiction", {}, b._remap_tracker)
+    assert b._remap_retry_at > time.monotonic()
+
+
+def test_a_tracker_replaced_mid_look_keeps_the_new_trackers_scans(bridge_mod, monkeypatch,
+                                                                  tmp_path):
+    """Review round 9: the loop's stop check must not empty a queue the
+    poll has already filled for the new tracker."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    _rest_clock_still(b)
+
+    def laser(at=None):
+        with b.lock:
+            if not getattr(b, "_swapped", False):
+                b._swapped = True
+                b._set_tracker(remap.Contradictions(b._remap_saved))
+        _queue(b, [2000.0])
+        return pose
+    monkeypatch.setattr(b, "_laser_in_map", laser)
+    _queue(b, [1000.0])
+    b.remap_step()
+    assert len(b._remap_pending) == 1 and b._remap_pending[0]["stamp_ns"] == int(2000.0 * 1e9)

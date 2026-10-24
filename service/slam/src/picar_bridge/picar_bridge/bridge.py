@@ -331,6 +331,7 @@ class Bridge(Node):
         # by the poll, once each, while the watch runs; under self.lock.
         self._remap_pending = collections.deque()
         self._remap_dropped = {"no_tf": 0, "overflow": 0}   # this tracker's
+        self._remap_stale_refused = 0        # automatic triggers refused as stale
         self._rest_clock = remap.RestClock(REST_LINEAR_M_S, REST_ANGULAR_RAD_S, REMAP_REST_S,
                                            1.0 / SCAN_HZ, REST_ODOM_MAX_AGE_S)
         self._remap_latched = False      # a re-map failed: no automatic one again (review)
@@ -1255,9 +1256,13 @@ class Bridge(Node):
                 # Taken off before it is judged, and only if still this
                 # tracker's head: one the poll pushed out meanwhile was
                 # counted `overflow` and is not judged as well (review round 4).
-                if not self._watching() or self._remap_tracker is not tracker:
-                    # Stopped or replaced while it judged (review rounds 7-8):
-                    # nothing filed before that is judged after it.
+                if self._remap_tracker is not tracker:
+                    # Replaced while it judged: _set_tracker emptied the old
+                    # queue; what is queued now is the new tracker's (round 9).
+                    break
+                if not self._watching():
+                    # Stopped while it judged (rounds 7-8): nothing filed
+                    # before that is judged after it.
                     self._remap_pending.clear()
                     break
                 if not self._remap_pending or self._remap_pending[0] is not s:
@@ -1278,13 +1283,16 @@ class Bridge(Node):
                     self._ask_remap("contradiction", fired, tracker)
                 break
 
-    def _ask_remap(self, trigger, detail, tracker=None) -> None:
+    def _ask_remap(self, trigger, detail, tracker) -> None:
         """A trigger's request; one that could not start backs off
         REMAP_RETRY_S (Thermos) rather than ask again on every look."""
         code, body = self.remap(trigger, detail, tracker)
         # A stale watch's refusal says nothing about the current one: no
         # back-off for it, nor a longer one (review round 8).
-        if code != 200 and not body.get("stale"):
+        if body.get("stale"):
+            with self.lock:
+                self._remap_stale_refused += 1      # visible on /health (round 9)
+        elif code != 200:
             with self.lock:
                 # Never shorten a longer back-off already set (a deferral's).
                 self._remap_retry_at = max(self._remap_retry_at, time.monotonic() + REMAP_RETRY_S)
@@ -1301,18 +1309,19 @@ class Bridge(Node):
                 return 409, {"error": "re-map only from a reloaded map being localised on "
                                       f"(slam {self.slam_state}, mode {mode})",
                              "slam": self.slam_state, "mode": mode}
+            if trigger in AUTOMATIC_TRIGGERS and (
+                    tracker is None or tracker is not self._remap_tracker or self._backing_off()):
+                # Review rounds 7-9: an automatic trigger names the tracker
+                # that judged it; one since replaced, or one arriving during
+                # a back-off, is not the bridge's view now. Checked before
+                # the latch, so a stale fire is always answered `stale`.
+                return 409, {"error": "the trigger's watch has since stopped or started over",
+                             "slam": self.slam_state, "mode": mode, "stale": True}
             if trigger in AUTOMATIC_TRIGGERS and self._remap_latched:
                 # Review: the watch read "not latched" before a failed re-map
                 # latched; a person may still ask, a trigger may not.
                 return 409, {"error": "automatic re-maps are off after a failed one",
                              "slam": self.slam_state, "mode": mode}
-            if trigger in AUTOMATIC_TRIGGERS and (
-                    tracker is None or tracker is not self._remap_tracker or self._backing_off()):
-                # Review rounds 7-8: an automatic trigger names the tracker
-                # that judged it; one since replaced, or one arriving during
-                # a back-off, is not the bridge's view now.
-                return 409, {"error": "the trigger's watch has since stopped or started over",
-                             "slam": self.slam_state, "mode": mode, "stale": True}
             self.slam_state = "remapping"
             version = self._remap_version
             record = {"trigger": trigger, "at": time.time(), "map_id": version.map_id,
@@ -1628,6 +1637,7 @@ class Bridge(Node):
                                    "moving": self._remap_tracker.moving,
                                    **self._remap_dropped},
                                   "remap_latched": self._remap_latched,
+                                  "remap_stale_refused": self._remap_stale_refused,
                                   "remap_deferrals": self._remap_deferrals}}
 
 
