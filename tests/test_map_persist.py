@@ -1332,3 +1332,4 @@ def test_a_latched_bridge_refuses_a_trigger_but_not_a_person(bridge_mod, monkeyp
     assert b.remap("entered_unknown", {})[0] == 409
     assert b.remap("contradiction", {})[0] == 409
     assert b.remap("request")[0] == 200
+    _settle(b)

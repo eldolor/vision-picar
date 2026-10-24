@@ -336,13 +336,11 @@ def run_a(house):
     out["watch_errors"] = watch_errors[0]
     first = s.remaps[0] if s.remaps else {}
     out["first_remap"] = first
-    # Entry: the truth's first point in the reloaded map's unknown (10 Hz).
-    # Start: the bridge's own time its mapping node placed the robot (one
-    # kernel clock with this host under host networking; else the sampler's).
     # Entry on the truth only (review, CLAUDE.md section 6): the bridge's own
     # entered-unknown report is the trigger under test, never its judge.
     entry = entered_at[0]
-    mapped = next((r for r in s.remaps if r.get("result") == "mapping"), {})
+    mapped = next((r for r in s.remaps if r.get("result") == "mapping"
+                   and r.get("trigger") in ("entered_unknown", "contradiction")), {})
     sampled = next((t for st, t in s.states if st == ("ready", "mapping")), None)
     from_bridge = mapped.get("mapping_at") if sys.platform.startswith("linux") else None
     mapping_at = from_bridge or sampled
@@ -374,6 +372,9 @@ def run_a(house):
         "new_version": (out["saved"].get("last_version") or 0) >= 2,
         "contacts_0": out["sampler"]["contacts"] == 0}
     out["verdict"] = {"D4-a": "MET" if all(out["criteria"].values()) else "FAILED"}
+    if entry is None and watch_errors[0]:
+        out["verdict"] = {"D4-a": f"INVALID (the entry watch erred {watch_errors[0]} times "
+                                  "and saw no entry)"}
     return out
 
 
@@ -454,8 +455,6 @@ def run_c(house="home_first_floor", base_maps=None):
             sess["error"] = "reload did not match"
             out["sessions"].append(sess)
             continue
-        m0 = health(bridge)["map"]
-        ends_before = m0["saved"] + m0["skipped"] + m0["failed"]
         with Sampler(robot, bridge, house) as s:
             r = robot.post("/world/remap", headers={"x-driver": "twin-dpad"})
             sess["remap_request"] = {"code": r.status_code, "body": r.json()}
@@ -465,6 +464,9 @@ def run_c(house="home_first_floor", base_maps=None):
                                                                                     "deferred"):
                 time.sleep(0.3)
             sess["remap"] = remap_rec(bridge)
+            # Counted once the re-map has settled (its own swap's saves are in).
+            m0 = health(bridge)["map"]
+            ends_before = m0["saved"] + m0["skipped"] + m0["failed"]
             de.MISSION_LIMIT_S = WATCH_S
             sess["mission"] = de.run_mission(robot, house, policy="explore", target=ABSENT,
                                              max_steps=100000)
@@ -556,8 +558,10 @@ def check_image():
                            capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise SystemExit(f"cannot read {d3.IMAGE}: {e}")
-    there = {ln.split()[1]: ln.split()[0] for ln in r.stdout.splitlines() if ln.strip()}
-    if r.returncode != 0 or there != here:
+    if r.returncode != 0:
+        raise SystemExit(f"cannot read {d3.IMAGE} (exit {r.returncode}): {r.stderr.strip()[:300]}")
+    there = {p[1]: p[0] for p in (ln.split(None, 1) for ln in r.stdout.splitlines()) if len(p) == 2}
+    if there != here:
         raise SystemExit(f"{d3.IMAGE} does not carry this checkout's picar_bridge: rebuild it "
                          "(docker build -t $ROS_IMAGE service/slam)")
 

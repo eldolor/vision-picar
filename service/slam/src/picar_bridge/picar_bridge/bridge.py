@@ -165,6 +165,8 @@ REMAP_SCAN_MAX_AGE_S = 0.5
 REMAP_READY_TIMEOUT_S = 15.0
 # A trigger whose re-map could not start waits this long before it asks again.
 REMAP_RETRY_S = 2.0
+# The bridge's own triggers; anything else (a person's request) is not latched.
+AUTOMATIC_TRIGGERS = frozenset({"entered_unknown", "contradiction"})
 # After a swap called off for want of rest, longer (review: a robot that never
 # reads still would otherwise lose its goal every ~10 s).
 REMAP_DEFER_BACKOFF_S = 30.0
@@ -1220,7 +1222,7 @@ class Bridge(Node):
                 return 409, {"error": "re-map only from a reloaded map being localised on "
                                       f"(slam {self.slam_state}, mode {mode})",
                              "slam": self.slam_state, "mode": mode}
-            if trigger != "request" and self._remap_latched:
+            if trigger in AUTOMATIC_TRIGGERS and self._remap_latched:
                 # Review: the watch read "not latched" before a failed re-map
                 # latched; a person may still ask, a trigger may not.
                 return 409, {"error": "automatic re-maps are off after a failed one",
