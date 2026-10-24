@@ -515,7 +515,7 @@ def test_the_cloud_label_source_asks_room_with_the_frame_and_the_secret():
     assert seen["url"] == "https://vision.example/room"
     assert seen["secret"] == "s3"
     assert seen["body"] == {"image_base64": "aW1n", "media_type": "image/png"}
-    assert seen["timeout"]["read"] == 12.0
+    assert sum(seen["timeout"].values()) <= 12.0 + 1e-9     # phases add up to the timeout
 
 
 @pytest.mark.parametrize("reply", [{"room": "unknown"}, {"room": "Unclear"}, {"room": ""},
@@ -697,3 +697,89 @@ def test_a_200_that_is_not_json_is_a_refused_source_not_an_outage():
         lambda r: httpx.Response(200, text="<html>not the api</html>")))
     with pytest.raises(SourceRefused):
         fn({"image_base64": "aW1n"})
+
+
+# ---------- review round 2 ----------
+
+@pytest.mark.parametrize("status", [400, 413])
+def test_one_bad_frame_backs_off_and_does_not_stop_the_labelling(status):
+    import httpx
+    from brain.navigate import room_label_fn_for
+    from brain.room_labels import SourceRefused
+
+    fn = room_label_fn_for("https://v", client=_room_client(lambda r: httpx.Response(status)))
+    with pytest.raises(RuntimeError) as e:
+        fn({"image_base64": "aW1n"})
+    assert not isinstance(e.value, SourceRefused)
+
+
+@pytest.mark.parametrize("status", [401, 403, 404])
+def test_a_refusal_no_retry_can_fix_is_a_refused_source(status):
+    import httpx
+    from brain.navigate import room_label_fn_for
+    from brain.room_labels import SourceRefused
+
+    fn = room_label_fn_for("https://v", client=_room_client(lambda r: httpx.Response(status)))
+    with pytest.raises(SourceRefused):
+        fn({"image_base64": "aW1n"})
+
+
+def test_an_odd_usage_field_still_names_the_room():
+    import httpx
+    from brain.navigate import room_label_fn_for
+
+    fn = room_label_fn_for("https://v", client=_room_client(
+        lambda r: httpx.Response(200, json={"room": "kitchen", "usage": "lots"})))
+    assert fn({"image_base64": "aW1n"}) == "kitchen"
+
+
+def test_the_tick_budget_is_checked_again_after_the_frame(monkeypatch):
+    """The pose, the map cut and the frame come after the first check: a
+    slow frame read leaves too little of the tick, and nobody is asked."""
+    asked = []
+    runner, robot, _grid = _survey(room_label_fn=lambda f: asked.append(1) or "kitchen",
+                                   room_label_timeout_s=15.0)
+    runner.tick_timeout_s = 30.0
+    real = runner._label_frame
+
+    def slow_frame():
+        runner._tick_began -= 20.0          # the frame read took 20 s
+        return real()
+
+    monkeypatch.setattr(runner, "_label_frame", slow_frame)
+    runner.start()
+    for _ in range(30):
+        runner.tick()
+    assert asked == []
+    runner.stop()
+
+
+@pytest.mark.parametrize("raw", ["Kitchen.", '"kitchen"', "kitchen!"])
+def test_punctuation_is_not_a_second_spelling(raw):
+    from brain.room_labels import clean_room_name
+    assert clean_room_name(raw) == "kitchen"
+    assert clean_room_name("None.") == "unclear"
+
+
+def test_asks_skipped_for_time_are_counted_on_the_status():
+    runner, _robot, _grid = _survey(room_label_fn=lambda f: "kitchen", room_label_timeout_s=15.0)
+    runner.tick_timeout_s = 3.0
+    runner.start()
+    for _ in range(10):
+        runner.tick()
+    assert runner.status()["survey"]["skipped_for_time"] > 0
+    runner.stop()
+
+
+def test_the_room_call_s_phases_add_up_to_its_timeout():
+    import httpx
+    from brain.navigate import room_label_fn_for
+
+    seen = {}
+
+    def handler(request):
+        seen.update(request.extensions["timeout"])
+        return httpx.Response(200, json={"room": "kitchen"})
+
+    room_label_fn_for("https://v", timeout_s=15.0, client=_room_client(handler))({"image_base64": "aW1n"})
+    assert sum(seen.values()) <= 15.0 + 1e-9

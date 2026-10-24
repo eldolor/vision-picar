@@ -90,6 +90,7 @@ def clean_room_name(name) -> str:
     ("The kitchen" and "kitchen" are one room, 3.76 L2); a reply naming no
     room is UNCLEAR."""
     name = " ".join(name.split()).lower() if isinstance(name, str) else ""
+    name = name.strip(" *_`\"'.,:;!?")
     for article in _ARTICLES:
         if name.startswith(article):
             name = name[len(article):]

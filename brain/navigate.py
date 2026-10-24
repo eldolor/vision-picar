@@ -95,6 +95,15 @@ class CloudUnavailable(RuntimeError):
     status and the body."""
 
 
+class ServiceRefused(RuntimeError):
+    """A 4xx other than 408/429: the service answered and refused the
+    request, our fault. `status` is the HTTP status."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
 class FrameHasNoImage(ValueError):
     """The backend returned a frame with no pixels in it. A vision policy
     has nothing to look at -- see this module's docstring."""
@@ -156,7 +165,7 @@ def navigate_scene(
     return to_scene(result, target_object)
 
 
-def _post(url: str, body: dict, headers: dict, timeout_s: float,
+def _post(url: str, body: dict, headers: dict, timeout_s,
           client: Optional[httpx.Client]) -> dict:
     """One POST to the vision service, its failures sorted: an outage is
     CloudUnavailable, our own fault (a bad URL, any other 4xx) a plain
@@ -175,7 +184,8 @@ def _post(url: str, body: dict, headers: dict, timeout_s: float,
         if response.status_code >= 500 or response.status_code in (408, 429):
             raise CloudUnavailable(f"HTTP {response.status_code}: {response.text[:200]}")
         if response.status_code != 200:
-            raise RuntimeError(f"HTTP {response.status_code}: {response.text[:200]}")
+            raise ServiceRefused(response.status_code,
+                                 f"HTTP {response.status_code}: {response.text[:200]}")
         return response.json()
     finally:
         if client is None:
@@ -328,12 +338,17 @@ def room_name(frame: dict, vision_url: str, secret: Optional[str] = None,
         headers["x-app-secret"] = secret
     from brain.room_labels import clean_room_name
 
-    result = _post(vision_url.rstrip("/") + "/room", body, headers, timeout_s, client)
+    # httpx times each phase on its own; split the budget so that waiting
+    # for a connection, connecting, sending and reading add up to timeout_s
+    # at most -- the runner budgets the tick on that total.
+    phases = httpx.Timeout(connect=0.2 * timeout_s, write=0.2 * timeout_s,
+                           pool=0.1 * timeout_s, read=0.5 * timeout_s)
+    result = _post(vision_url.rstrip("/") + "/room", body, headers, phases, client)
     if not isinstance(result, dict):
         raise ValueError(f"/room answered {type(result).__name__}, not an object")
     # Which model named the room, and what it cost: the survey's log is its
     # record (the labeller keeps names only).
-    usage = result.get("usage") or {}
+    usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
     logger.info("room %r from %s (%s in / %s out tokens)", result.get("room"),
                 result.get("model_id"), usage.get("input_tokens"), usage.get("output_tokens"))
     return clean_room_name(result.get("room"))
@@ -345,9 +360,11 @@ def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = 
     """A survey's paid room-label source, `label_fn(frame) -> name` in
     brain/room_labels.py's sense: each call is one /room call. A frame with
     no pixels is NOT_HERE (nothing asked, nothing counted). An outage
-    (CloudUnavailable) raises into the labeller's back-off; our own fault --
-    a 401, a /room not deployed, a reply that is not JSON -- is
-    SourceRefused, which stops the asking and names the reason."""
+    (CloudUnavailable) and a refusal of this frame (a 400 or 413: it did not
+    decode, or is too big) raise into the labeller's back-off; a refusal no
+    retry can fix -- a 401/403, a /room not deployed (404), a bad URL, a
+    reply that is not JSON -- is SourceRefused, which stops the asking and
+    names the reason."""
     from brain.room_labels import NOT_HERE, SourceRefused
 
     url = vision_url or os.environ.get("VISION_URL", "")
@@ -365,6 +382,10 @@ def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = 
             return NOT_HERE
         except CloudUnavailable:
             raise
+        except ServiceRefused as e:
+            if e.status not in (401, 403, 404):
+                raise              # this frame's fault: back off, ask again later
+            raise SourceRefused(f"/room: {e}") from e
         except (RuntimeError, ValueError) as e:
             raise SourceRefused(f"/room: {e}") from e
 
