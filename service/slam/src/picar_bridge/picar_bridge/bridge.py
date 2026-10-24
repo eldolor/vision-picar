@@ -1177,13 +1177,10 @@ class Bridge(Node):
         cells. Returns the stamp now judged."""
         with self.lock:
             watching = (self.slam_state == "ready" and self.slam is not None
-                        and self.slam.mode == "localisation" and self._remap_saved is not None)
+                        and self.slam.mode == "localisation" and self._remap_saved is not None
+                        and not self._remap_latched and time.monotonic() >= self._remap_retry_at)
             scan, saved, tracker = self.last_scan, self._remap_saved, self._remap_tracker
         if not watching:
-            return seen
-        with self.lock:
-            quiet = self._remap_latched or time.monotonic() < self._remap_retry_at
-        if quiet:
             return seen
         here = self._fresh_pose()
         if here is not None and remap.entered_unknown(saved, here["x_m"], here["y_m"]):
@@ -1367,7 +1364,8 @@ class Bridge(Node):
         graph the mapping node cannot load would otherwise loop)."""
         err = f"{type(e).__name__}: {e}"[:300]
         self.get_logger().error(f"re-map failed ({err}); localising on v{version.version} again")
-        self._remap_latched = True
+        with self.lock:
+            self._remap_latched = True
         try:
             self.slam.stop()
         except Exception:  # noqa: BLE001

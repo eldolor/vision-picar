@@ -228,7 +228,9 @@ def known_free_share(robot, cells, whole=False):
     if not m.get("usable"):
         return None
     res, w, h = m["resolution_m"], m["width"], m["height"]
-    offs = [(k + 0.5) / 5 for k in range(5)] if whole else [0.5]
+    # Inset from the cell's edges (review): a wall cell beside a jamb must
+    # not fail a door cell that is clear.
+    offs = [0.2, 0.35, 0.5, 0.65, 0.8] if whole else [0.5]
     free = 0
     for c in cells:
         ok = True
@@ -336,12 +338,19 @@ def run_a(house):
     # Entry: the truth's first point in the reloaded map's unknown (10 Hz).
     # Start: the bridge's own time its mapping node placed the robot (one
     # kernel clock with this host under host networking; else the sampler's).
-    entry = entered_at[0]
+    bridge_entry = next((r["at"] for r in s.remaps if r.get("trigger") == "entered_unknown"
+                         and r.get("at")), None)
+    # The bridge's own entry time only when the watcher saw none, and only on
+    # one clock with it (Linux, host networking).
+    entry = entered_at[0] or (bridge_entry if sys.platform.startswith("linux") else None)
     mapped = next((r for r in s.remaps if r.get("result") == "mapping"), {})
-    mapping_at = mapped.get("mapping_at") if sys.platform.startswith("linux") else \
-        next((t for st, t in s.states if st == ("ready", "mapping")), None)
+    sampled = next((t for st, t in s.states if st == ("ready", "mapping")), None)
+    mapping_at = (mapped.get("mapping_at") if sys.platform.startswith("linux") else None) or sampled
+    out["entry_from"] = "truth" if entered_at[0] else ("bridge" if entry else None)
+    out["saved_first_known_cells"] = sum(1 for v in saved_first["cells"] if v != -1)
     out["entered_unknown_at"], out["mapping_at"] = entry, mapping_at
     out["remap_after_entry_s"] = (round(mapping_at - entry, 2) if mapping_at and entry else None)
+    out["already_mapping_at_entry"] = bool(mapping_at and entry and mapping_at <= entry)
     # Run 2's save, read back through a reload.
     robot, brain, bridge, out["session3"] = reload(house, maps)
     out["room_known_free_saved"] = known_free_share(robot, room_cells)
@@ -453,11 +462,15 @@ def run_c(house="home_first_floor", base_maps=None):
                 time.sleep(0.3)
             sess["remap"] = remap_rec(bridge)
             de.MISSION_LIMIT_S = WATCH_S
-            saves_before = health(bridge)["map"]["saved"]
+            m0 = health(bridge)["map"]
+            ends_before = m0["saved"] + m0["skipped"] + m0["failed"]
             sess["mission"] = de.run_mission(robot, house, policy="explore", target=ABSENT,
                                              max_steps=100000)
         t = time.time()                         # this session's own save
-        while time.time() - t < 30 and health(bridge)["map"]["saved"] <= saves_before:
+        while time.time() - t < 30:             # any outcome of this session's save
+            m1 = health(bridge)["map"]
+            if m1["saved"] + m1["skipped"] + m1["failed"] > ends_before:
+                break
             time.sleep(0.3)
         sess["saved"] = health(bridge)["map"]
         sess["sampler"] = s.summary()
@@ -524,7 +537,21 @@ def run_d(house):
     return out
 
 
+def check_image():
+    """The image must carry this checkout's bridge (review): an older one has
+    no `mapping_at` (D4-a would read FAILED) and ignores BRIDGE_HOST."""
+    import subprocess
+    with open(os.path.join(ROOT, "service/slam/src/picar_bridge/picar_bridge/bridge.py"), "rb") as f:
+        here = f.read()
+    r = subprocess.run(["docker", "run", "--rm", "--entrypoint", "cat", d3.IMAGE,
+                        "/ws/src/picar_bridge/picar_bridge/bridge.py"], capture_output=True)
+    if r.returncode != 0 or r.stdout != here:
+        raise SystemExit(f"{d3.IMAGE} does not carry this checkout's bridge.py: rebuild it "
+                         "(docker build -t $ROS_IMAGE service/slam)")
+
+
 def main(argv):
+    check_image()
     kinds = [a for a in argv if a in ("a", "b", "c", "d")] or ["a", "b", "c", "d"]
     houses = [a for a in argv if a in MOVERS] or list(MOVERS)
     os.makedirs(OUT, exist_ok=True)
@@ -550,8 +577,11 @@ def main(argv):
 
 def subprocess_cleanup():
     import subprocess
-    with open(f"{de.RUN_DIR}/ros-final.log", "w") as f:
-        subprocess.run(["docker", "logs", de.CONTAINER], stdout=f, stderr=subprocess.STDOUT)
+    try:
+        with open(f"{de.RUN_DIR}/ros-final.log", "w") as f:
+            subprocess.run(["docker", "logs", de.CONTAINER], stdout=f, stderr=subprocess.STDOUT)
+    except OSError:
+        pass                                    # never blocks the clean-up below
     subprocess.run(["docker", "rm", "-f", de.CONTAINER], capture_output=True)
     de._kill_ports()
 

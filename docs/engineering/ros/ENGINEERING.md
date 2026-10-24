@@ -360,6 +360,7 @@ person's request still re-maps.
 | `TRACK_SCRUB` (container) | `1.0` | > 0 | `picar.launch.py` (`_controllers_with_scrub()`) | Skid steer's effective/geometric track (3.35). Not 1.0: the launch writes a copy of `controllers.yaml` with `wheel_separation_multiplier` set to it. The robot server reads the same variable (`hardware.track_scrub`); set both on the car. `[PLACEHOLDER]` until measured |
 | `BRAIN_URL` (container) | `http://host.docker.internal:8001/brain`; `""` turns it off | URL | bridge | The `/brain` prefix is what `service/tunnel/run.sh` sets. |
 | `BRIDGE_PORT` | 8090 | port | bridge | -- |
+| `BRIDGE_HOST` | `0.0.0.0` | address | bridge | 3.50.D4: the address the HTTP server binds. `127.0.0.1` under host networking on a laptop (the D3/D4 harnesses on Linux), so a run is not reachable from the LAN; the Jetson and Docker Desktop keep the default. |
 | `RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` | -- | image `ENV` | The architecture's D10. |
 | `GEOMETRY2_SHA`, `SLAM_TOOLBOX_SHA` | `404b722...`, `1729c0f...` | git SHA | `service/slam/Dockerfile` | The tf2 0.25.24 ABBA deadlock fix; slam_toolbox with `restamp_tf`. |
 | `ROS_SILENCE_S` | 0.5 | s | `robot/server.py` | Ten missed 20 Hz posts: well past jitter, and inside the 1 s watchdog (G3). |

@@ -232,6 +232,7 @@ network you do not own. Starting this and the robot server at boot is
 | `BRAIN_URL` | `http://host.docker.internal:8001/brain` (`""` = off) | bridge (`brain_view`) |
 | `APP_SHARED_SECRET` | empty (= no header sent, bridge accepts anything) | bridge (both directions), `picar_sim_hardware` |
 | `BRIDGE_PORT` | `8090` | bridge |
+| `BRIDGE_HOST` | `0.0.0.0` | bridge (3.50.D4: `127.0.0.1` under host networking on a laptop) |
 | `RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` (set in the image) | every node |
 
 And on the robot-server side: `ROBOT_DRIVE=ros` (or `drive: ros`),
