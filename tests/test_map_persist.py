@@ -626,3 +626,380 @@ def test_a_rejected_reload_survives_a_failed_fresh_spawn(bridge_mod, monkeypatch
     b.start_slam()
     r = b.health()[1]["slam"]["reload"]
     assert r["result"] == "failed" and r["before"] == "fell_back" and "agree" in r["reason"]
+
+
+# ---- 3.50.D4: the re-map triggers (picar_bridge/remap.py) ----
+
+from picar_bridge import remap  # noqa: E402
+
+ROOM = (-1 + RES / 2, 4 - RES / 2, -1 + RES / 2, 2 - RES / 2)    # wall centre lines
+
+
+def _ray_box(x, y, c, s, box):
+    """Distance along (c, s) from (x, y) to an axis-aligned box, or None."""
+    x0, x1, y0, y1 = box
+    tmin, tmax = -math.inf, math.inf
+    for o, dv, lo, hi in ((x, c, x0, x1), (y, s, y0, y1)):
+        if abs(dv) < 1e-12:
+            if not lo <= o <= hi:
+                return None
+            continue
+        t0, t1 = (lo - o) / dv, (hi - o) / dv
+        tmin, tmax = max(tmin, min(t0, t1)), min(tmax, max(t0, t1))
+    return tmin if tmax >= tmin > 0 else None
+
+
+def _scan(x, y, yaw, boxes=(), n=360):
+    """_room_scan with solid boxes (x0, x1, y0, y1) in the room."""
+    base = _room_scan(x, y, yaw, n)
+    ranges = []
+    for i, r in enumerate(base["ranges_m"]):
+        a = yaw - math.pi + i * 2 * math.pi / n
+        for b in boxes:
+            t = _ray_box(x, y, math.cos(a), math.sin(a), b)
+            if t is not None:
+                r = min(r, t)
+        ranges.append(r)
+    return {**base, "ranges_m": ranges}
+
+
+def _grid_with(boxes=(), unknown=()):
+    g = _room_grid()
+    data = list(g["data"])
+    for (x0, x1, y0, y1), v in [(b, 100) for b in boxes] + [(b, -1) for b in unknown]:
+        for r in range(g["height"]):
+            for c in range(g["width"]):
+                cx, cy = -1 + (c + 0.5) * RES, -1 + (r + 0.5) * RES
+                if x0 <= cx <= x1 and y0 <= cy <= y1:
+                    data[r * g["width"] + c] = v
+    return {**g, "data": data}
+
+
+def _run(saved_grid, scans_at, seconds=12.0, hz=10.0):
+    """Feed scans; the first trigger record (or None) and the tracker."""
+    tr = remap.Contradictions(remap.SavedMap(saved_grid))
+    for k in range(int(seconds * hz)):
+        t = k / hz
+        scan, pose = scans_at(t)
+        fired = tr.add(scan, pose, t)
+        if fired:
+            return fired, tr, t
+    return None, tr, None
+
+
+BOX = (1.0, 1.6, 0.6, 1.0)          # a 60 x 40 cm object in the room
+
+
+def test_an_unchanged_room_never_fires():
+    pose = (0.5, 0.4, 0.2)
+    fired, tr, _ = _run(_room_grid(), lambda t: (_scan(*pose), pose), seconds=20)
+    assert fired is None and tr.lost == 0 and tr.scans == 200
+    assert remap.judge_scan(remap.SavedMap(_room_grid()), _scan(*pose), pose)["contra"].size <= 2
+
+
+def test_something_new_fires_after_it_persists():
+    pose = (0.0, 0.0, 0.0)
+    fired, _, t = _run(_room_grid(), lambda t: (_scan(*pose, boxes=[BOX]), pose))
+    assert fired is not None and fired["trigger"] == "contradiction"
+    assert fired["cells"] >= remap.MIN_GROUP
+    # Not before MIN_LOOKS scans could have looked.
+    assert t >= (remap.MIN_LOOKS - 1) / 10.0
+    cx, cy = fired["centre_m"]
+    assert 0.9 <= cx <= 1.7 and 0.5 <= cy <= 1.1
+
+
+def test_something_gone_fires():
+    """The saved map has the object; the room no longer does."""
+    pose = (0.0, 0.0, 0.0)
+    fired, _, _ = _run(_grid_with(boxes=[BOX]), lambda t: (_scan(*pose), pose))
+    assert fired is not None and fired["trigger"] == "contradiction"
+
+
+def test_a_walker_passing_does_not_fire():
+    """SIM_MOVERS: a 30 cm thing hopping 30 cm a second across the room."""
+    pose = (0.0, 0.0, 0.0)
+
+    def at(t):
+        x = 0.6 + 0.3 * (int(t) % 10)
+        return _scan(*pose, boxes=[(x, x + 0.3, 1.1, 1.4)]), pose
+    fired, _, _ = _run(_room_grid(), at, seconds=30)
+    assert fired is None
+
+
+def test_a_slipped_frame_is_lost_and_never_fires():
+    """D4-g: scans laid a metre and 30 deg off are a lost robot, not a house
+    that changed."""
+    real, believed = (1.5, 0.4, math.radians(30)), (0.5, 0.4, 0.0)
+    fired, tr, _ = _run(_room_grid(), lambda t: (_scan(*real), believed), seconds=15)
+    assert fired is None and tr.lost == tr.scans > 0
+
+
+def test_a_small_pose_error_beside_a_wall_does_not_fire():
+    """Grazing beams along a wall, with the localised pose 2 cm and 1 deg out."""
+    real = (3.6, 1.75, 0.0)
+    believed = (3.62, 1.77, math.radians(1))
+    fired, tr, _ = _run(_room_grid(), lambda t: (_scan(*real), believed), seconds=20)
+    assert fired is None and tr.lost == 0
+
+
+def test_returns_into_unknown_are_not_new():
+    """An unmapped part of the saved map is trigger 1's, not trigger 2's."""
+    pose = (0.0, 0.0, 0.0)
+    unknown = (2.5, 4.0, -1.0, 2.0)
+    fired, _, _ = _run(_grid_with(unknown=[unknown]),
+                       lambda t: (_scan(*pose, boxes=[(3.0, 3.4, 0.0, 0.6)]), pose))
+    assert fired is None
+
+
+def test_entered_unknown_is_the_saved_maps_unknown_or_off_its_edge():
+    saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
+    assert not remap.entered_unknown(saved, 0.5, 0.5)
+    assert remap.entered_unknown(saved, 3.0, 0.5)
+    assert remap.entered_unknown(saved, 10.0, 0.5)
+
+
+# ---- 3.50.D4: the bridge's re-map ----
+
+from tests.test_review_376h1 import _Future  # noqa: E402
+
+
+class _LiveSlam(_FakeSlam):
+    def alive(self):
+        return self.mode is not None
+
+
+class _Serialise:
+    """slam_toolbox's serialize_map: writes the graph files, answers 0."""
+
+    def wait_for_service(self, timeout_sec):
+        return True
+
+    def call_async(self, req):
+        _fake_serialise(req.filename)
+        f = _Future()
+        f.complete(types.SimpleNamespace(result=0))
+        return f
+
+
+def _matched(bridge_mod, monkeypatch, tmp_path, here=(1.0, 0.5, 0.3)):
+    """A bridge localising on a matched reload of the room, at `here`."""
+    b, fake, store = _reload_bridge(bridge_mod, monkeypatch, tmp_path,
+                                    relocalise.judge([0.9] * 5, (0.0, 0.0, 0.0)))
+    live = _LiveSlam()
+    monkeypatch.setattr(bridge_mod.slam_process, "SlamProcess", lambda *a, **kw: live)
+    verdict = relocalise.judge([0.9] * 5, (0.0, 0.0, 0.0))
+
+    def check(deadline, dock=None):
+        # The localisation node's /map arrives while the reload is judged.
+        b.last_map = {**_room_grid(), "session": b.session, "version": 1}
+        return verdict
+    monkeypatch.setattr(b, "check_reload", check)
+    monkeypatch.setattr(b, "_fresh_pose",
+                        lambda: {"x_m": here[0], "y_m": here[1], "yaw_rad": here[2], "age_s": 0.0})
+    b.start_slam()
+    assert b.slam_state == "ready" and live.mode == "localisation"
+    return b, live, store
+
+
+def _settle(b, seconds=2.0):
+    end = time.monotonic() + seconds
+    while b.slam_state == "remapping" and time.monotonic() < end:
+        time.sleep(0.01)
+
+
+def test_a_matched_reload_freezes_its_map_for_the_watch(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    assert b._remap_saved is not None and b._remap_saved.w == _room_grid()["width"]
+    b.last_map = {**_room_grid(), "data": [0] * len(_room_grid()["data"])}    # /map fills in
+    assert b._remap_saved.state.max() == remap.OCC                           # the frozen copy does not
+    assert b.health()[1]["slam"]["watch"] == {"scans": 0, "lost": 0}
+
+
+def test_a_person_s_request_re_maps_from_the_current_pose(bridge_mod, monkeypatch, tmp_path):
+    """D4-e: the mapping node on the version localised on, from where the
+    robot is; the same map_id, and the next save is its next version."""
+    b, live, store = _matched(bridge_mod, monkeypatch, tmp_path)
+    code, body = b.remap("request", "twin")
+    assert code == 200 and body["remapping"] is True and body["trigger"] == "request"
+    _settle(b)
+    assert live.calls[-1] == ("mapping", store.current().prefix, (1.0, 0.5, 0.3))
+    assert b.slam_state == "ready" and live.mode == "mapping"
+    assert b.map_id == "map-0a1b2c3d"
+    r = b.health()[1]["slam"]["remap"]
+    assert r["result"] == "mapping" and r["version"] == 1 and r["detail"] == "twin"
+    assert b._remap_tracker is None                     # the watch is done
+    b.serialize_cli = _Serialise()
+    monkeypatch.setattr(bridge_mod, "SerializePoseGraph", types.SimpleNamespace(
+        Request=types.SimpleNamespace, Response=types.SimpleNamespace(RESULT_SUCCESS=0)))
+    b._save_map("mission_end")
+    assert b.map_saves["saved"] == 1 and store.versions("map-0a1b2c3d") == [1, 2]
+    assert store.current().meta["start_truth"] == {"x_m": 1.0, "y_m": 2.0, "heading_deg": 90.0}
+
+
+def test_a_re_map_is_refused_unless_localising_and_ready(bridge_mod, monkeypatch, tmp_path):
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b.slam_state = "checking"
+    assert b.remap("request")[0] == 409
+    b.slam_state = "ready"
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    code, body = b.remap("request")                     # already mapping
+    assert code == 409 and body["mode"] == "mapping"
+    fresh, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path / "f", None)
+    monkeypatch.setattr(bridge_mod, "MAP_RELOAD", False)
+    fresh.slam_state = "ready"
+    assert fresh.remap("request")[0] == 409             # a fresh map has nothing to re-map
+
+
+def test_goals_are_held_while_re_mapping(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b.nav = types.SimpleNamespace(futures=[])
+    b.slam_state = "remapping"
+    code, body = b.send_goal({"x_m": 1.0, "y_m": 0.0})
+    assert code == 503 and body["slam"] == "remapping" and b.nav.futures == []
+
+
+def test_a_mapping_node_that_dies_is_a_failed_re_map(bridge_mod, monkeypatch, tmp_path):
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    monkeypatch.setattr(b, "_fresh_pose", lambda: None if live.mode == "mapping" else
+                        {"x_m": 0.0, "y_m": 0.0, "yaw_rad": 0.0, "age_s": 0.0})
+    monkeypatch.setattr(live, "alive", lambda: False)
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    h = b.health()[1]
+    assert h["ok"] is False and h["slam"]["state"] == "failed"
+    assert h["slam"]["remap"]["result"] == "failed" and "exited" in h["slam"]["remap"]["error"]
+
+
+def test_the_watch_re_maps_on_entering_the_saved_map_s_unknown(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.5, 0.5, 0.0))
+    b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
+    asked = []
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append(trigger) or (200, {}))
+    b.remap_step(None)
+    assert asked == []
+    monkeypatch.setattr(b, "_fresh_pose",
+                        lambda: {"x_m": 3.0, "y_m": 0.5, "yaw_rad": 0.0, "age_s": 0.0})
+    b.remap_step(None)
+    assert asked == ["entered_unknown"]
+
+
+def test_the_watch_re_maps_when_the_scans_contradict(bridge_mod, monkeypatch, tmp_path):
+    """Each scan laid at the laser's pose at its own capture stamp."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    asked, stamps = [], []
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append((trigger, detail)) or (200, {}))
+
+    def laser(at=None):
+        stamps.append(at.nanoseconds)
+        return pose
+    monkeypatch.setattr(b, "_laser_in_map", laser)
+    seen = None
+    for k in range(120):
+        b.last_scan = {**_scan(*pose, boxes=[BOX]), "stamp_ns": k * 10**8, "at": time.time()}
+        seen = b.remap_step(seen)
+        if asked:
+            break
+    assert asked and asked[0][0] == "contradiction" and asked[0][1]["cells"] >= remap.MIN_GROUP
+    assert stamps[:3] == [0, 10**8, 2 * 10**8]
+    assert b.remap_step(seen) == seen                   # the same scan is not judged twice
+
+
+def test_a_scan_whose_tf_is_late_is_retried_then_dropped(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)
+    b.last_scan = {**_scan(0.0, 0.0, 0.0), "stamp_ns": 5, "at": time.time()}
+    assert b.remap_step(None) is None                   # not yet: try again
+    b.last_scan["at"] -= 1.0
+    assert b.remap_step(None) == 5                      # too old: given up
+
+
+def test_no_watch_without_a_matched_reload(bridge_mod, monkeypatch, tmp_path):
+    b, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path, None)
+    monkeypatch.setattr(bridge_mod, "MAP_RELOAD", False)
+    b.start_slam()
+    assert b._remap_saved is None and b.health()[1]["slam"]["watch"] is None
+    assert b.remap_step("x") == "x"
+
+
+def test_the_detector_has_a_hold_time():
+    """Amendment 1: a contradiction must last HOLD_S, not only MIN_LOOKS scans."""
+    pose = (0.0, 0.0, 0.0)
+    fired, _, t = _run(_room_grid(), lambda t: (_scan(*pose, boxes=[BOX]), pose))
+    assert fired is not None and t >= remap.HOLD_S
+
+
+# ---- 3.50.D4: a person's request, through the robot server ----
+
+import httpx  # noqa: E402
+
+
+def _ros_world(handler):
+    from world.ros_world import RosWorld
+    return RosWorld("http://bridge", client=httpx.Client(base_url="http://bridge",
+                                                         transport=httpx.MockTransport(handler)))
+
+
+def test_the_world_asks_the_bridge_and_reads_its_refusal_as_an_answer():
+    seen = []
+
+    def handler(request):
+        seen.append((request.method, request.url.path, json.loads(request.content)))
+        if len(seen) == 1:
+            return httpx.Response(200, json={"remapping": True, "trigger": "request"})
+        return httpx.Response(409, json={"error": "re-map only from a reloaded map",
+                                         "slam": "ready", "mode": "mapping"})
+    w = _ros_world(handler)
+    assert w.remap(by="twin-dpad") == {"remapping": True, "trigger": "request"}
+    assert seen[0] == ("POST", "/slam/remap", {"by": "twin-dpad"})
+    no = w.remap()
+    assert no["remapping"] is False and no["mode"] == "mapping" and "reloaded" in no["reason"]
+
+
+def test_a_bridge_error_is_not_read_as_a_refusal():
+    w = _ros_world(lambda request: httpx.Response(401, json={"error": "secret"}))
+    with pytest.raises(httpx.HTTPStatusError):
+        w.remap()
+
+
+def _server_with(monkeypatch, world):
+    import robot.server as server
+    from fastapi.testclient import TestClient
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    monkeypatch.setattr(server, "get_world", lambda *a, **kw: world)
+    return TestClient(server.create_app())
+
+
+class _RemapWorld:
+    def __init__(self, reply=None, error=None):
+        self.reply, self.error, self.calls = reply, error, []
+
+    def remap(self, by=""):
+        self.calls.append(by)
+        if self.error:
+            raise self.error
+        return self.reply
+
+    def __getattr__(self, name):          # the rest of a world, unused here
+        raise AttributeError(name)
+
+
+def test_the_robot_server_route(monkeypatch):
+    w = _RemapWorld({"remapping": True, "trigger": "request"})
+    client = _server_with(monkeypatch, w)
+    r = client.post("/world/remap", headers={"x-driver": "twin-dpad"})
+    assert r.status_code == 200 and r.json()["remapping"] is True and w.calls == ["twin-dpad"]
+    w.reply = {"remapping": False, "reason": "not localising"}
+    r = client.post("/world/remap")
+    assert r.status_code == 409 and "not localising" in r.json()["detail"] and w.calls[-1] == "unnamed"
+    w.error = httpx.ConnectError("down")
+    assert client.post("/world/remap").status_code == 503
+
+
+def test_a_world_without_slam_cannot_re_map(monkeypatch):
+    import robot.server as server
+    from fastapi.testclient import TestClient
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    r = TestClient(server.create_app()).post("/world/remap")       # the plain simulator
+    assert r.status_code == 501

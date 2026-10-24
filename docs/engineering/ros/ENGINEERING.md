@@ -31,7 +31,7 @@ tf2_ros and slam_toolbox, built from source), then `/ws/install`. It then
 |---|---|---|
 | `picar_description` | xacro | `service/slam/src/picar_description/urdf/picar.urdf.xacro`. Every dimension sits in one block at the top, tagged `[BOM]`, `[CAD]` or `[PLACEHOLDER]`. It declares the `ros2_control` system `picar`, whose plugin is `picar_sim_hardware/PicarSimHardware`, with velocity command and position/velocity state interfaces on `left_wheel_joint` and `right_wheel_joint`. |
 | `picar_sim_hardware` | C++ | `service/slam/src/picar_sim_hardware/src/picar_sim_hardware.cpp`, a `hardware_interface::SystemInterface`. `write()` sends `POST /wheels {left_rad_s, right_rad_s}` with `x-driver: ros` on every cycle, zeros included, because those posts are ROS's heartbeat to the robot server. `read()` does `GET /wheels` and reads `left` and `right` `position_rad` and `velocity_rad_s`. libcurl keeps one connection open. |
-| `picar_bridge` | Python | `bridge.py` is the `Bridge` node plus a `ThreadingHTTPServer` on `BRIDGE_PORT`. `convert.py` holds the wall's conversions (scan, quaternion, and since `PLAN-ros-alignment.md` 3.36 `odometry_zero_in_house()`) and imports no rclpy. The node runs on a `MultiThreadedExecutor`; the 10 Hz scan poll (a blocking HTTP read of the robot's `/scan`) has its own `MutuallyExclusiveCallbackGroup` (3.36), because in the node's default group it starved every subscription on the Jetson: a full scan took about one timer period, the timer was always due, rclpy serves due timers first, and `/odom` went unread for minutes (nav2's odom TF went stale and every goal stalled). The start truth is recorded by its own thread from node start (next paragraph). The HTTP handlers copy what they answer under the node's lock and serialise and write it outside (3.76 H1-6): every subscription callback, the scan poll and `/cmd_vel` take that lock, and a slow reader once held it for the whole write. `brain_view.py` maps brain status to diagnostics and markers, with no rclpy. `keepalive.py` holds one kept-open HTTP connection per thread, with no rclpy. `mapstore.py` is the saved-map store (3.50.D2, "The saved map" below), with no rclpy. `slam_process.py` starts and stops slam_toolbox, and `relocalise.py` judges a reloaded map (3.50.D3, "Reloading the map" below), both with no rclpy. |
+| `picar_bridge` | Python | `bridge.py` is the `Bridge` node plus a `ThreadingHTTPServer` on `BRIDGE_PORT`. `convert.py` holds the wall's conversions (scan, quaternion, and since `PLAN-ros-alignment.md` 3.36 `odometry_zero_in_house()`) and imports no rclpy. The node runs on a `MultiThreadedExecutor`; the 10 Hz scan poll (a blocking HTTP read of the robot's `/scan`) has its own `MutuallyExclusiveCallbackGroup` (3.36), because in the node's default group it starved every subscription on the Jetson: a full scan took about one timer period, the timer was always due, rclpy serves due timers first, and `/odom` went unread for minutes (nav2's odom TF went stale and every goal stalled). The start truth is recorded by its own thread from node start (next paragraph). The HTTP handlers copy what they answer under the node's lock and serialise and write it outside (3.76 H1-6): every subscription callback, the scan poll and `/cmd_vel` take that lock, and a slow reader once held it for the whole write. `brain_view.py` maps brain status to diagnostics and markers, with no rclpy. `keepalive.py` holds one kept-open HTTP connection per thread, with no rclpy. `mapstore.py` is the saved-map store (3.50.D2, "The saved map" below), with no rclpy. `slam_process.py` starts and stops slam_toolbox, and `relocalise.py` judges a reloaded map (3.50.D3, "Reloading the map" below), both with no rclpy. `remap.py` judges when a reloaded map needs re-mapping (3.50.D4, "Re-mapping a reloaded map" below), numpy and no rclpy. |
 | `picar_bringup` | launch + yaml | `service/slam/src/picar_bringup/launch/picar.launch.py` starts everything (next table). Its `config/` directory holds `controllers.yaml`, `twist_mux.yaml`, `slam.yaml` and `nav2.yaml`. |
 
 **The start truth** (`GET /slam/pose`'s `start_truth`, what
@@ -107,18 +107,19 @@ used.
 ### The bridge's HTTP routes (port 8090)
 
 All routes except `/health` require `x-app-secret` when `APP_SHARED_SECRET`
-is set, and answer 401 otherwise. There are 14 method+path pairs, exactly
+is set, and answer 401 otherwise. There are 15 method+path pairs, exactly
 the `MAX_BRIDGE_ROUTES` budget.
 
 | Route | Request | Answer |
 |---|---|---|
-| `GET /health` | -- | `ok` (false when `slam.state` is `failed`, 3.50.D3; still HTTP 200 -- the robot server's probe reads the status code as "ROS up", and the D-pad drives without SLAM), `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / checking / matched / fell_back / failed (with `before`, the result it replaced), map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`) |
+| `GET /health` | -- | `ok` (false when `slam.state` is `failed`, 3.50.D3; still HTTP 200 -- the robot server's probe reads the status code as "ROS up", and the D-pad drives without SLAM), `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `remapping` (3.50.D4), `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / checking / matched / fell_back / failed (with `before`, the result it replaced), map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`, `remap` (3.50.D4: `{result: none / starting / mapping / failed / not_started, trigger: entered_unknown / contradiction / request, at, map_id, version, from_pose, detail, took_s, error}`), `watch` (3.50.D4: `{scans, lost}` while a matched reload is watched, else null)) |
 | `POST /cmd_vel` | `{driver, linear_m_s, angular_rad_s}` | 200 `{published: <topic>}`, or 400 `unknown driver`. A non-zero `twin-dpad` twist also cancels the active goal. |
 | `GET /odom` | -- | The latest `/diff_drive_controller/odom` as `{x_m, y_m, yaw_rad, linear_m_s, angular_rad_s, at}`, or `{usable: false}` |
 | `GET /scan` | -- | The last LaserScan published, as `{angle_min_rad, angle_increment_rad, ranges_m (None = no return), at}` |
 | `GET /tf?target=&source=` | Defaults `base_link` and `laser` | `{translation_m, quaternion_xyzw, yaw_rad, pitch_rad, roll_rad}`, or 404 |
 | `POST /pan` | `{angle_rad}` | Holds the published `pan_joint` angle. A test hook for R3. |
 | `GET /slam/pose` | -- | `{session, start_truth, start_truth_pending, map, odom, at}`. `start_truth_pending` is true while the start-truth thread is still working (3.76 round 5); `world/ros_world.py` anchors nothing for the session until it is false or `start_truth` is set. `map` and `odom` are `{x_m, y_m, yaw_rad, age_s}` of `base_footprint` in that frame, or null. `age_s` is how old tf2's latest transform is (3.76 H1-13): the lookup answers the last transform however old, so a dead `slam_toolbox` or `ros2_control` would otherwise read as a live, frozen pose. `world/ros_world.py` reads a pose older than `POSE_STALE_S` (1 s) as unusable. Until `slam.state` is `ready` (3.50.D3), `map` is null and `start_truth_pending` true, so nothing anchors on a frame a reload may yet drop; after a matched reload `start_truth` is the saved map's (its frame is session 1's), otherwise this session's. |
+| `POST /slam/remap` | `{by}` (who asked; logged in `remap.detail`) | 3.50.D4: a person's "re-map now". 200 `{remapping: true, trigger: "request", ...}` and the re-map starts (below); 409 `{error, slam, mode}` unless `slam.state` is `ready` on a matched reload being localised on; 503 when the bridge has no current map pose. |
 | `GET /slam/map` | -- | `{session, version, resolution_m, width, height, origin_x_m, origin_y_m, origin_yaw_rad, data, at}`, ROS 0-100 / -1; `{session, version: 0, usable: false}` until `slam.state` is `ready` (3.50.D3) |
 | `POST /goal` | `{x_m, y_m, yaw_rad, [session]}`, map frame | 409 `{error, session}` if `session` is given and is not this bridge's (3.76 round 8: a goal converted for a container that has since restarted; nothing is cancelled), else 503 `{error, slam}` (`error` carrying a failed start's reason) while `slam.state` is not `ready` (3.50.D3: nav2 is held while slam_toolbox starts or a reload is judged), else 200 `{state: "pending"}`, or 503 when nav2's `navigate_to_pose` has no server within `NAV2_WAIT_S` (1 s, inside `RosWorld`'s 2 s client timeout so the 503 arrives; it was 2 s and the caller timed out first, 3.76 H1-8). It replaces any existing goal. |
 | `GET /goal` | -- | `{session, goal: {x_m, y_m, yaw_rad, state, since, [ended, cancel_reason, reason]}, plan: [[x, y], ...], cancelling}` (`since` and `ended` are wall time; the goal's internal `_`-prefixed monotonic fields are never published). `cancelling` counts the goals the bridge has asked nav2 to cancel and nav2 has not yet ended (3.76 Q3); while a SUPERSEDED one is among them, the current goal reads `active` with a `reason` saying so, so `goal_in_progress()` keeps refusing other autonomous drivers and a stop keeps its hold until nav2 confirms. `state` is one of `pending`, `active`, `succeeded`, `aborted`, `canceled`, `rejected`, `status_<n>`. A goal nav2 has not accepted or rejected within `GOAL_RESPONSE_TIMEOUT_S` (5 s) reads `aborted` with a `reason` (3.76 H1-2): while it read `pending` the robot server refused every other autonomous driver and a stop waited on it, for ever if nav2's navigator died after `wait_for_server`. If nav2 answers later, the goal is live again: `active`, with its handle kept and cancelled until it ends (3.76 R2). A cancelled goal with no result reads `aborted` only when nav2's `navigate_to_pose` server is GONE and nothing has driven on `cmd_vel/nav` for `CANCEL_RESULT_TIMEOUT_S` (10 s) since the first cancel (3.76 R6); the same rule gives up a superseded entry in `cancelling`. Never while the navigator is up (round 5 reverted F2's 30 s clause: nav2's recovery tree can be silent that long and then resume the goal); the robot server then settles its stop and lifts the `ros` hold over silent wheels. While the server is up it stays `active` (fail-safe). An unanswered goal stays plain `aborted` with a `reason` rather than a new state (3.76 R10): every consumer already treats `aborted` as ended, nav2 answers in milliseconds, and explore's stuck rule does not hold a goal the robot never moved toward against the place the first time. |
@@ -282,6 +283,49 @@ spins (its check reads scans and TF).
   again. A saved map whose meta has no `start_truth` keeps
   `start_truth_pending` until this session's own thread finishes.
 
+### Re-mapping a reloaded map (3.50.D4)
+
+In localisation mode slam_toolbox's `/map` keeps the saved map's obstacles
+and only fills in its unknown cells (3.50's D4 probe), so a localised robot
+never learns that something moved. A matched reload is therefore mapped
+again (the user, 2026-10-23) on any of three triggers:
+
+- **Entered unknown:** the robot's centre (`base_footprint` in `map`) is on
+  a cell the map **as reloaded** calls unknown, or off its edge. The
+  reloaded map is frozen at the verdict (`remap.SavedMap`), because the
+  live `/map` fills those cells as the robot drives.
+- **The scans contradict it** (`remap.Contradictions`): each scan, laid at
+  `map -> laser` at its own capture stamp (`last_scan.stamp_ns`), counts
+  *something new* (a return within `MAX_RANGE_M` with no occupied and no
+  unknown cell within `NEW_TOL_M`) and *something gone* (a beam whose
+  return lies `GONE_SHORT_M` past the first occupied cell the map puts on
+  its line, met at `MIN_INCIDENCE_DEG` or more; every occupied cell from
+  there to `GONE_SHORT_M` short of the return is contradicted). Returns
+  into unknown are the first trigger's. A cell is persistent when, over
+  `WINDOW_S`, `MIN_LOOKS` scans looked at it, `MIN_SHARE` of them
+  contradicted the map there, and those contradictions span `HOLD_S`; the
+  trigger fires on `MIN_GROUP` persistent cells chained within
+  `GROUP_GAP_M`. A scan whose returns agree with the map under `LOST_BELOW`
+  is not used and is counted `watch.lost`: a slipped frame must not be
+  saved as a changed house. Laptop cost per scan on a 20 x 20 m map: p50
+  4.6 ms, p90 7.7 ms (not yet measured on the Jetson).
+- **A person asks:** `POST /slam/remap`, reached as the robot server's
+  `POST /world/remap` (`RosWorld.remap()`).
+
+The watch (`_remap_watch`, its own thread, every `REMAP_WATCH_S`) runs only
+while `state` is `ready` and the node is the localisation node on a matched
+reload. **A re-map** (`Bridge.remap`): `state` `remapping` (goals 503, no map
+pose, as while `checking`), then `async_slam_toolbox_node` with
+`map_file_name` = the version localised on and `map_start_pose` = the
+robot's current map pose; maps stamped before its start are dropped as on a
+fall-back, and `state` is `ready` once this node publishes its own
+transform. The `map_id` and the frame stay (a matched reload's start truth
+is still the saved one), so the mission-end save writes the next version of
+the same map. The session maps to its end; the watch stops. A goal already
+in flight when the re-map starts is left to nav2. A mapping node that exits
+or gives no pose in `REMAP_READY_TIMEOUT_S` leaves `state` `failed` with
+`remap.error`, as a failed start.
+
 ## Parameters and configuration
 
 | Key or constant | Default | Unit | Where read | Why this value |
@@ -340,6 +384,10 @@ spins (its check reads scans and TF).
 | `DOCK_TOL_M`, `DOCK_TOL_DEG` | 0.5, 15 | m, deg | `relocalise.py` | ... and the localised pose is this close to the dock. |
 | `VERDICT_TIMEOUT_S` | 8 | s | `relocalise.py` | From the localisation node's start; no verdict by then is a bad match (criterion 8: a fresh map within 10 s). |
 | `STOP_TIMEOUT_S` | 5 | s | `slam_process.py` | After SIGINT, then SIGKILL. |
+| `MAX_RANGE_M`, `NEW_TOL_M`, `GONE_SHORT_M`, `MIN_INCIDENCE_DEG` | 4.0, 0.10, 0.15, 20 | m, m, m, deg | `remap.py` | 3.50.D4: which returns and beams may contradict the saved map ("Re-mapping a reloaded map"). Set before measurement. |
+| `WINDOW_S`, `MIN_LOOKS`, `MIN_SHARE`, `HOLD_S`, `MIN_GROUP`, `GROUP_GAP_M` | 10, 10, 0.8, 5, 10, 0.15 | s, scans, share, s, cells, m | `remap.py` | A cell is persistent when looked at by 10 scans in 10 s, 80% of them contradicting, over at least 5 s (amendment 1: 10 looks at 10 Hz is one second); 10 persistent cells within 0.15 m of each other fire. |
+| `LOST_BELOW` | 0.60 | share | `remap.py` | `relocalise.AGREE_MIN`: a scan agreeing less is a lost robot, counted, never a trigger. |
+| `REMAP_WATCH_S`, `REMAP_SCAN_MAX_AGE_S`, `REMAP_READY_TIMEOUT_S` | 0.05, 0.5, 15 | s | `bridge.py` | The watch's look interval; a scan whose TF at capture has not come within 0.5 s is skipped; a re-map's mapping node that gives no pose in 15 s is a failed re-map. |
 | `MAX_DUPLICATES`, `MAX_BRIDGE_ROUTES` | 11, 14 | count | `tests/test_wall_linters.py` | Raise only in a commit that says why. Eleven since 3.27's lidar offset; 14 routes since 3.68's `/nav/keepout`. |
 
 ## Procedures

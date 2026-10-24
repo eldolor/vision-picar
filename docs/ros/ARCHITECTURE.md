@@ -343,7 +343,12 @@ where noted.
   in 3.50.D: the bridge saves at every mission end into a private volume
   (D2); slam_toolbox maps with its async node and is restarted in
   localisation mode for a reload (D3), because the node that switches
-  without a restart mapped the furnished home worse (D2-b).
+  without a restart mapped the furnished home worse (D2-b). Localisation
+  keeps the saved obstacles on `/map`, so a moved object would never heal;
+  a reload is therefore mapped again (D4, the user, 2026-10-23) when the
+  robot enters space the saved map calls unknown, when its scans
+  persistently contradict the saved map (tolerant of people and pets, and
+  never on a robot whose scans no longer fit at all), or when a person asks.
 - **How the robot keeps its place in large furnished rooms** (3.39). This is
   a problem every indoor robot with a low 2D lidar meets: repeated features
   confuse scan matching, open space gives it little to hold, and SLAM must

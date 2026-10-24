@@ -93,6 +93,10 @@ INTENTIONALLY_UNROUTED = {
     # never through these stacks, which were deleted 2026-09-05.
     ("twin.yaml", "/world/keepout"),
     ("teleop-robot.yaml", "/teleop-robot/world/keepout"),
+    # 3.50.D4: a person's "re-map now" reaches the robot server through
+    # service/tunnel/, as every live route has since these stacks went.
+    ("twin.yaml", "/world/remap"),
+    ("teleop-robot.yaml", "/teleop-robot/world/remap"),
     # admin_server mounts control/recording_routes.py so the recordings
     # Lambda has the write path (the walks left EFS, and the brain is going
     # back to the Pi where it should not hold AWS credentials). In THIS

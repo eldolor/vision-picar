@@ -11,6 +11,7 @@
 FROM ros:humble-ros-base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-numpy \
         ros-humble-xacro \
         ros-humble-robot-state-publisher \
         ros-humble-joint-state-publisher \
