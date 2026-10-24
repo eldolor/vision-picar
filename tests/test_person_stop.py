@@ -221,8 +221,11 @@ def test_a_new_mission_lifts_a_persons_stop(plain, unpaced_config):
     app = brain_app(config_path=unpaced_config,
                     robot_factory=lambda: RemoteRobot(ASGI_BASE_URL, client=robot_client))
     with TestClient(app) as brain:
+        # A short budget: the test needs the mission to run, not to search.
+        # BUDGET's 400 steps outlast the 60 s wait on a loaded machine
+        # (5.6 ticks/s at load 14).
         r = brain.post("/mission/start", json={"target_object": "red backpack",
-                                                "max_steps": BUDGET})
+                                                "max_steps": 40})
         assert r.status_code == 200, r.text
         status = _wait_finished(brain)
     # It ran: never refused by the Stop pressed before it started.
