@@ -1,0 +1,82 @@
+{
+ "frames": 2261,
+ "walks": 21,
+ "rows": "evaluations/tier-calibration-392/perception.jsonl",
+ "sha256": "944fabe51a2e495a7adf2cc14807b0ab50b63da84abe28bf2c90391250737dbf",
+ "single": {
+  "tp": 426,
+  "fp": 5,
+  "fn": 109,
+  "precision": 98.84,
+  "recall": 79.63,
+  "false_positives": [
+   "blue-shoes-20260907-152528/frame-0017.jpg",
+   "grey-backpack-20260921-203627/frame-0000.jpg",
+   "grey-backpack-20260921-203627/frame-0001.jpg",
+   "grey-backpack-opus-4-5-20260921-210743/frame-0015.jpg",
+   "woven-laundry-basket-20260908-215351/frame-0070.jpg"
+  ],
+  "runs_caught": [
+   37,
+   44
+  ]
+ },
+ "votes": {
+  "2of2": {
+   "tp": 359,
+   "fp": 2,
+   "fn": 176,
+   "precision": 99.45,
+   "recall": 67.1,
+   "false_positives": [
+    "blue-shoes-20260907-152528/frame-0017.jpg",
+    "grey-backpack-20260921-203627/frame-0001.jpg"
+   ],
+   "runs_caught": [
+    30,
+    44
+   ],
+   "d_precision": 0.61,
+   "d_recall": -12.53,
+   "meets_bar": false
+  },
+  "2of3": {
+   "tp": 385,
+   "fp": 3,
+   "fn": 150,
+   "precision": 99.23,
+   "recall": 71.96,
+   "false_positives": [
+    "blue-shoes-20260907-152528/frame-0017.jpg",
+    "grey-backpack-20260921-203627/frame-0001.jpg",
+    "grey-backpack-opus-4-5-20260921-210743/frame-0015.jpg"
+   ],
+   "runs_caught": [
+    30,
+    44
+   ],
+   "d_precision": 0.39,
+   "d_recall": -7.67,
+   "meets_bar": false
+  },
+  "3of5": {
+   "tp": 361,
+   "fp": 2,
+   "fn": 174,
+   "precision": 99.45,
+   "recall": 67.48,
+   "false_positives": [
+    "blue-shoes-20260907-152528/frame-0017.jpg",
+    "grey-backpack-opus-4-5-20260921-210743/frame-0015.jpg"
+   ],
+   "runs_caught": [
+    24,
+    44
+   ],
+   "d_precision": 0.61,
+   "d_recall": -12.15,
+   "meets_bar": false
+  }
+ },
+ "criterion_6": "FAILED"
+}
