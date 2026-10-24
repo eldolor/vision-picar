@@ -302,20 +302,19 @@ again (the user, 2026-10-23) on any of three triggers:
   jumping back further than that starts it over), and a scan is at rest
   when one interval runs from `REMAP_REST_S` before its revolution could
   have begun to where it could have ended, one `SCAN_HZ` period either side
-  of the capture stamp -- the same answer whenever it is asked. Every scan
-  the poll files is queued (`_remap_pending`; the poll and the look both
-  offer `last_scan`, and the same scan object is filed once -- no stamp is
-  compared, so a clock stepping back cannot blind it; at most
-  `REMAP_PENDING_MAX`) and judged in order once TF and odometry have passed
-  it, taken off the queue before it is judged; one older than
+  of the capture stamp -- the same answer whenever it is asked. The poll
+  files each scan it publishes, once, while the watch runs
+  (`_remap_pending`, at most `REMAP_PENDING_MAX`; no stamp is compared, so
+  a clock stepping back cannot blind it), and the watch judges them in
+  order once TF and odometry have passed each, taking it off the queue
+  before it is judged; one older than
   `REMAP_SCAN_MAX_AGE_S` without TF is dropped (`watch.no_tf`), one without
   odometry past it counts `watch.moving`, and one pushed out of a full
-  queue `watch.overflow`. The queue empties whenever the watch stops
-  (scans filed then are discarded uncounted: never the watch's); it and the
-  drop counts belong to one tracker and are reset with it (`_set_tracker`,
-  the one place the tracker changes, which also leaves out the scan in
-  hand, taken under the node replaced). A fire from a tracker replaced
-  while it judged is not acted on. (The swap's rest,
+  queue `watch.overflow`. The queue empties whenever the watch stops;
+  it and the drop counts belong to one tracker and are reset with it
+  (`_set_tracker`, the one place the tracker changes). A fire from a
+  tracker replaced while it judged is not acted on (and `remap()` refuses
+  one that slips past, by its own state and latch checks). (The swap's rest,
   `_at_rest` of amendment 2, is a different question -- still now, no goal
   live -- and keeps its own monotonic `_rest_since`.) Each judged scan is
   laid at `map -> laser` at its own capture stamp (`last_scan.stamp_ns`)

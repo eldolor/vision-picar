@@ -327,10 +327,9 @@ class Bridge(Node):
         self._reload_map = None          # the localisation node's FIRST /map (review)
         self._rest_since = None          # monotonic: odometry at rest since
         # Amendment 4: rest over each scan's revolution, on the scans' clock.
-        # Scans waiting to be judged (amendment 4, review rounds 2-3): filed
-        # by the poll and the watch, once per stamp, under self.lock.
+        # Scans waiting to be judged (amendment 4, review rounds 2-6): filed
+        # by the poll, once each, while the watch runs; under self.lock.
         self._remap_pending = collections.deque()
-        self._remap_queued = None            # the scan filed last (the object)
         self._remap_dropped = {"no_tf": 0, "overflow": 0}   # this tracker's
         self._rest_clock = remap.RestClock(REST_LINEAR_M_S, REST_ANGULAR_RAD_S, REMAP_REST_S,
                                            1.0 / SCAN_HZ, REST_ODOM_MAX_AGE_S)
@@ -1197,42 +1196,37 @@ class Bridge(Node):
         it (review round 4)."""
         self._remap_tracker = tracker
         self._remap_pending.clear()
-        # The scan in hand now was taken before the switch: never this
-        # tracker's (review round 5).
-        self._remap_queued = self.last_scan
         self._remap_dropped = {"no_tf": 0, "overflow": 0}
 
+    def _watching(self) -> bool:
+        """The re-map watch runs (call under self.lock)."""
+        return (self.slam_state == "ready" and self.slam is not None
+                and self.slam.mode == "localisation" and self._remap_saved is not None
+                and self._remap_tracker is not None and not self._remap_latched
+                and time.monotonic() >= self._remap_retry_at)
+
     def _queue_scan(self, scan) -> None:
-        """File a scan for the watch (call under self.lock). The poll and the
-        look both offer last_scan; the same scan object is filed once. No
-        stamp is compared, so a clock stepping back cannot blind the watch
-        (review rounds 4-5)."""
-        if self._remap_tracker is None or scan is None or scan.get("stamp_ns") is None:
-            return
-        if scan is self._remap_queued:
+        """The poll files each scan it publishes, once, while the watch runs
+        (call under self.lock). No stamp is compared, so a clock stepping
+        back cannot blind the watch (review rounds 4-6)."""
+        if scan.get("stamp_ns") is None or not self._watching():
             return
         if len(self._remap_pending) >= REMAP_PENDING_MAX:
             self._remap_pending.popleft()
             self._remap_dropped["overflow"] += 1
         self._remap_pending.append(scan)
-        self._remap_queued = scan
 
     def remap_step(self) -> None:
         """One look: the robot's centre against the saved map's unknown,
         then the queued scans, oldest first, against its cells, as far as TF
-        and odometry have passed them. Scans filed while the watch is
-        stopped are discarded, uncounted: they were never the watch's."""
+        and odometry have passed them (the poll files them)."""
         with self.lock:
-            watching = (self.slam_state == "ready" and self.slam is not None
-                        and self.slam.mode == "localisation" and self._remap_saved is not None
-                        and not self._remap_latched and time.monotonic() >= self._remap_retry_at)
+            watching = self._watching()
             saved, tracker = self._remap_saved, self._remap_tracker
             if not watching:
                 # Review round 3: nothing queued before a stop or a back-off
-                # is judged after it.
+                # is judged after it (and the poll files nothing meanwhile).
                 self._remap_pending.clear()
-            else:
-                self._queue_scan(self.last_scan)
         if not watching:
             return
         here = self._fresh_pose()
