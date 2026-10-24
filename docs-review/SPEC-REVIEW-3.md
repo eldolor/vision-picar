@@ -367,7 +367,7 @@ Still open:
 
 - **Fix 7.** A paid live run, and the user's decision on confirming sim
   frames from geometry, now an Open question in simulator ARCH.
-- **Fix 11.** The user decides whether a person's verb cancels a goal.
+- **Fix 11.** The user decides whether a person's verb cancels a goal. **Decided 2026-10-24: yes, under every drive** (`PLAN-ros-alignment.md` 3.97).
 - **Fix 15.** 3.33 criterion 2's comparison procedure; left to the Jetson
   session, which owns `tools/jetson/`.
 

@@ -161,6 +161,18 @@ arbitrated, and sets `last_command_at` and `last_ros_post_at`, never
 authority. `POST /world/goal` arbitrates as `ros` and does not feed the
 watchdog.
 
+**A person's move ends a nav2 goal too** (3.97, the user 2026-10-24:
+one rule under every drive). `do_action` calls `begin_goal_end()` for a
+person's (`DRIVER_MANUAL`) `FORWARD`, `REVERSE`, `LEFT` or `RIGHT`
+(`BODY_MOVES`; never `LOOK_*`) before it reads `goal_stop["stops"]`: on a
+world with `cancel_goal` and only while `goal_in_progress()` (the read
+arbitration already makes), it counts a stop and starts the same loop as
+`/stop` below (`_count_goal_end()`, `_start_goal_end()`), without the
+latch or `robot.stop()` -- the move itself runs. Counted before the verb's
+own count is read, so its own loop never reads as a stop that overtook it.
+Under `drive: ros` the bridge's cancel on a `twin-dpad` twist (3.15) is
+kept; the two cancels are harmless together.
+
 **Stop ends a nav2 goal** (handoff 2026-10-02 1b; completed after
 `docs-review/SPEC-REVIEW-3.md` V1-V2). After `robot.stop()` returns,
 `POST /stop` -- unless its `x-driver` is autonomous and not `ros` (the

@@ -790,8 +790,9 @@ it sends `POST /world/goal` with the tapped point in the house frame
 `collision_monitor` and `robot/safety.py`. `GET /world/goal` is polled to
 draw the goal and its state. A person's STOP ends it (since 2026-10-02:
 the server cancels it and holds nav2 at zero until it is over; the brain's
-stop spares it), and under `drive: ros` a non-zero D-pad move cancels it
-too -- under direct drive only STOP does. **Since
+stop spares it), and a person's D-pad move (forward, reverse or a turn;
+not a camera pan) ends it too, under either drive (3.97, the user
+2026-10-24) -- tap the goal again to resume. **Since
 `PLAN-ros-alignment.md` 3.23 a goal is an autonomous driver**
 (`ros`), arbitrated like the brain: while a mission holds the robot the
 goal is refused with `accepted: false` and reason `preempted`, and the twin

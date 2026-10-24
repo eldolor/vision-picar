@@ -225,6 +225,20 @@ which is the opposite of what the top of this order promises. **Trade-off:**
 an interrupted goal is lost, and resuming it is one more action for a
 person (`docs-review/SPEC-REVIEW-2.md` H1).
 
+**A person's move ends a navigation goal too, under every drive.** Decided
+by the user 2026-10-24 (`docs-review/SPEC-REVIEW-3.md` fix 11,
+`PLAN-ros-alignment.md` 3.97). Under `drive: ros` a person's twist already
+cancelled the goal (3.15); under `drive: direct` a person's verb won only
+while it ran, and the planner drove on to the goal once their authority
+lapsed. Now a person's FORWARD, REVERSE or turn ends the goal as a Stop
+does, without a Stop's latch on the brain; panning the camera does not.
+**Rejected:** nudge-and-resume (a person steers round something and the
+goal carries on). It needs no re-tap, but the robot sets off by itself
+after a release, changing one's mind takes a Stop, and nav2's progress
+checker can abort a goal under a long, still take-over anyway, so "resume"
+was never sure. **Trade-off:** a person who nudges the robot taps the goal
+again.
+
 **"Ended" means nav2 says so.** The goal lives in the planner, not in the
 link to it, so a cancel that fails, or that reaches a goal the planner has
 not yet accepted, ends nothing by itself. Until the planner reports the goal
@@ -356,6 +370,7 @@ are commitments, not tuning.
 | Two autonomous drivers at once | The second is refused | One autonomous writer at a time |
 | ROS container dies under ROS drive | Autonomy refused. A person drives on the direct path | The mission ends within **3 s**. A person drives within **2 s**. ROS is back without a restart (3.24 G3) |
 | Part of the container dies while the actuator lives (the bridge, or the velocity multiplexer or controller), under ROS drive | With the bridge gone, the first send that finds it dead is refused as ROS-unavailable and marks ROS down; from then a person drives on the direct path and autonomy is refused, until the bridge answers again. With the multiplexer or controller gone, ROS still reads as alive; a verb achieves nothing and comes back as a safety refusal | **Met for the bridge** (Decisions, "When ROS dies, only a person drives"; built 2026-10-02): a person can drive and autonomy is refused, as for a dead container. A dead multiplexer or controller behind a live bridge is left as is: it fails toward stop |
+| A person's move while a navigation goal is active | The move runs and the goal is ended, under either drive, as a person's stop ends it but with no latch on the brain; a camera pan leaves the goal | **Met** in process (3.97, `tests/test_person_verb_ends_goal.py`, against a fake planner); live under `drive: ros` it is 3.15's bridge cancel |
 | A stop while a navigation goal is active | The wheels stop and, for a person's stop, the goal is ended: the planner's wheel commands are held at zero until it reports the goal over, through a slow or failed cancel and a goal not yet accepted; a person can set a new one. The brain's stop leaves the goal running | **Met** (Decisions, "Who drives"; built 2026-10-02, completed 2026-10-03 after `docs-review/SPEC-REVIEW-3.md` V1-V2). The not-yet-accepted case is pinned against a fake planner only; the real bridge's side of it is unverified live |
 | The robot server process dies | The board's heartbeat stops the motors | Motors stop without the host |
 | A person or pet crosses the path | Same vet, same bars | The static-obstacle bars above hold with something moving (3.30) |

@@ -143,6 +143,11 @@ def require_secret(x_app_secret: str = Header(default="")):
 Finite = Annotated[float, Field(allow_inf_nan=False)]
 
 
+# The verbs that move the body (`robot/safety.py`'s), as against LOOK_* (the
+# camera only) and STOP: a person's move ends a nav2 goal (3.97).
+BODY_MOVES = frozenset({"FORWARD", "REVERSE", "LEFT", "RIGHT"})
+
+
 class ActionRequest(BaseModel):
     action: str
     speed: int = 50
@@ -713,6 +718,15 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
             # all as POST /stop. Through the verb path a person's only zeroed
             # the wheels, and the brain's could be refused.
             return stop(x_driver)
+        # 3.97 (the user, 2026-10-24): a person's MOVE ends a nav2 goal under
+        # every drive, as a Stop does, so the robot never sets off on its own
+        # once they let go. (`drive: ros`'s bridge already cancelled on a
+        # person's twist; `drive: direct` let nav2 drive on.) Unlike a Stop it
+        # latches nothing and zeroes nothing: the move itself runs. Begun
+        # before the stops are read, so this verb is not "overtaken" by its
+        # own ending loop.
+        if req.action in BODY_MOVES and driver_priority(driver) == DRIVER_MANUAL:
+            begin_goal_end()
         # The stops as the request ARRIVED (3.84, as the goal route since
         # 3.82): a stop pressed after this verb was arbitrated keeps its hold.
         with goal_gen_lock:
@@ -1108,19 +1122,40 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
                 # goal taking the lock after this is stale, whoever sent it --
                 # counted after robot.stop(), one in between was accepted (a
                 # brain goal under the latch, a tap the Stop then cancelled).
-                goal_stop["gen"] += 1
-                goal_stop["stops"] += 1
-                goal_stop["hold"] = True
-                gen = goal_stop["gen"]
-                goal_stop["ending"] = gen
+                gen = _count_goal_end()
         try:
             result = robot.stop()
         finally:
             if gen is not None:
                 # Even if robot.stop() raised (3.76 K1): the goal still ends.
-                threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
-                                 name="stop-end-goal").start()
+                _start_goal_end(gen)
         return {"executed": True, "result": result, "driver": driver}
+
+    def _count_goal_end() -> int:
+        """Under goal_gen_lock: a stop counted, the hold set, and a new
+        generation of the goal-ending loop (superseding any older one)."""
+        goal_stop["gen"] += 1
+        goal_stop["stops"] += 1
+        goal_stop["hold"] = True
+        goal_stop["ending"] = goal_stop["gen"]
+        return goal_stop["gen"]
+
+    def _start_goal_end(gen: int) -> None:
+        threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
+                         name="stop-end-goal").start()
+
+    def begin_goal_end() -> None:
+        """3.97: end a nav2 goal for a person's move -- a Stop's goal-ending
+        loop (re-cancels until nav2 reports it over; `ros` wheel posts held
+        at zero meanwhile and lifted for a verb's length, 3.84) without its
+        latch or its `robot.stop()`. Only while a goal is pending or active
+        (the same bridge read arbitration makes): a move with no goal counts
+        no stop, so it never refuses a goal or verb sent alongside it."""
+        if not hasattr(world_model, "cancel_goal") or goal_in_progress() is None:
+            return
+        with goal_gen_lock:
+            gen = _count_goal_end()
+        _start_goal_end(gen)
 
     @app.post(prefix + "/autonomy/resume", dependencies=[Depends(require_secret)])
     def autonomy_resume(x_driver: str = Header(default="")):
