@@ -151,18 +151,24 @@ class Sampler:
 
 # ---------- goals ----------
 
+INSTANT_S = 1.0                           # an abort this soon: nav2 not yet active
+
+
 def goal(robot, x_m, y_m, timeout_s=120.0, retry_s=30.0):
     """A nav2 goal in the house frame; refusals (a re-map holds goals) are
     retried for `retry_s`, and so is nav2's own rejection: right after a
     reload the bridge is `ready` before nav2 is active, and nav2 rejects the
     goal at once (the cloud run, 2026-10-24: both D4-b view goals rejected
-    at 0.0 s, so the robot never stopped in view). Returns the terminal
-    state."""
-    t0 = time.time()
+    at 0.0 s, so the robot never stopped in view). An abort within
+    `INSTANT_S` of acceptance is the same not-yet-active nav2 (review) and
+    is retried too. Returns the terminal state, the last attempt's seconds,
+    the attempts sent and the seconds since the first send."""
+    t0, attempts = time.time(), 0
     while True:
         r = robot.post("/world/goal", json={"x_m": x_m, "y_m": y_m})
         ok = r.status_code == 200 and r.json().get("accepted")
         if ok:
+            attempts += 1
             t1, state = time.time(), "pending"
             while time.time() - t1 < timeout_s:
                 g = robot.get("/world/goal").json()
@@ -172,8 +178,10 @@ def goal(robot, x_m, y_m, timeout_s=120.0, retry_s=30.0):
                 time.sleep(0.3)
             else:
                 robot.delete("/world/goal")
-            if state != "rejected" or time.time() - t0 > retry_s:
-                return {"state": state, "seconds": round(time.time() - t1, 1)}
+            instant = state == "rejected" or (state == "aborted" and time.time() - t1 < INSTANT_S)
+            if not instant or time.time() - t0 > retry_s:
+                return {"state": state, "seconds": round(time.time() - t1, 1),
+                        "attempts": attempts, "total_s": round(time.time() - t0, 1)}
         elif time.time() - t0 > retry_s:
             return {"state": "not_sent", "reply": r.text[:200]}
         time.sleep(1.0)
@@ -468,6 +476,8 @@ def run_b(house):
     out["verdict"] = {"D4-b": "MET" if all(out["criteria"].values()) else "FAILED"}
     if out["to_view"].get("state") != "succeeded":
         # As D4-a: never at rest in view, the trigger under test saw nothing.
+        # The criteria's own reading is kept beside it (review).
+        out["criteria_verdict"] = out["verdict"]["D4-b"]
         out["verdict"] = {"D4-b": f"INVALID (the view goal ended {out['to_view'].get('state')})"}
     return out
 
@@ -550,8 +560,9 @@ def run_d(house):
                                              max_steps=100000)
             tour, k = [], 0
             while time.time() - t0 < WATCH_S and spots:
+                left = WATCH_S - (time.time() - t0)
                 tour.append(goal(robot, *cell_m(spots[k % len(spots)]),
-                                 timeout_s=min(120, max(5, WATCH_S - (time.time() - t0)))))
+                                 timeout_s=min(120, max(5, left)), retry_s=min(30, max(0, left))))
                 k += 1
             sess["tour"] = tour
             sess["watch"] = health(bridge)["slam"].get("watch")

@@ -52,11 +52,13 @@ if [ ! -f venv/.ok ]; then
   python3 -m venv venv
   ./venv/bin/pip install -q --upgrade pip
   ./venv/bin/pip install -q -r repo/requirements.txt
-  # The harness's contact check (tests/chassis_fit.py) needs scipy, which
-  # only requirements-perception.txt names (3.50.D4's first cloud run).
-  ./venv/bin/pip install -q "scipy>=1.11"
   touch venv/.ok
 fi
+# The harness's contact check (tests/chassis_fit.py) needs scipy, which only
+# requirements-perception.txt names (3.50.D4's first cloud run). Outside the
+# .ok guard, so a venv made before this line gets it too (review).
+./venv/bin/python -c "import scipy" 2>/dev/null \
+  || ./venv/bin/pip install -q "$(grep '^scipy' repo/requirements-perception.txt)"
 mkdir -p out logs logdir
 # What is done: a failed sync must stop here, or a finished run would run again.
 aws s3 sync --only-show-errors "$S3/out/" out/
