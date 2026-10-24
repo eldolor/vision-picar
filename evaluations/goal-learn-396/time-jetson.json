@@ -2,15 +2,16 @@
  "host": "picar-jetson",
  "machine": "aarch64",
  "poses": 120,
+ "no_candidates": 0,
  "candidates_median": 85.0,
  "whole_choice": {
-  "p50_ms": 294.2,
-  "p90_ms": 324.5,
-  "max_ms": 347.2
+  "p50_ms": 282.6,
+  "p90_ms": 312.9,
+  "max_ms": 338.9
  },
  "room_features": {
-  "p50_ms": 49.7,
-  "p90_ms": 50.8,
-  "max_ms": 51.4
+  "p50_ms": 39.2,
+  "p90_ms": 40.2,
+  "max_ms": 40.5
  }
 }
