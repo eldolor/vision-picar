@@ -53,6 +53,9 @@ def main(arms: str) -> None:
     out_dir.mkdir(exist_ok=True)
     for arm in arms:
         env = dict(os.environ, EXPLORE_GOAL_POLICY=POLICY[arm])
+        # Run as a script, demo_explore.py has tests/ on its path, not the
+        # repo: `import sim` needs the root (3.79's runner does the same).
+        env["PYTHONPATH"] = os.pathsep.join([str(ROOT)] + [p for p in [env.get("PYTHONPATH")] if p])
         load = wait_quiet()
         started = time.strftime("%Y-%m-%dT%H:%M:%S")
         out = subprocess.run([sys.executable, "tests/demo_explore.py", "one"], cwd=ROOT,
