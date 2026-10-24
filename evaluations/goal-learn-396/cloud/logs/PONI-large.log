@@ -1,0 +1,76 @@
+clone epoch 4: held-out loss 0.5696
+clone epoch 9: held-out loss 0.5605
+clone epoch 14: held-out loss 0.5559
+clone epoch 19: held-out loss 0.5546
+clone epoch 24: held-out loss 0.5541
+clone epoch 29: held-out loss 0.5513
+clone: 37064 choices, held-out agreement 0.2151
+selection (clone): {'R': {'n': 100, 'found': 93, 'exceptions': 0, 'capped': 0, 'median_goals_found': 10.0, 'median_metres_found': 26.1, 'mean_reward': 0.0252}, 'U': {'n': 100, 'found': 98, 'exceptions': 0, 'capped': 0, 'median_goals_found': 16.0, 'median_metres_found': 46.35, 'mean_reward': -0.2327}}
+it 0: {'it': 0, 'mean_reward': -0.3815, 'found': 360, 'n': 384, 's': 157, 'choices': 6030, 'loss': 0.4387, 'entropy': 2.332, 'clipped': 0.203}
+it 1: {'it': 1, 'mean_reward': 0.0109, 'found': 377, 'n': 384, 's': 298, 'choices': 4695, 'loss': 0.4099, 'entropy': 2.323, 'clipped': 0.136}
+it 2: {'it': 2, 'mean_reward': -0.2727, 'found': 373, 'n': 384, 's': 449, 'choices': 5422, 'loss': 0.4264, 'entropy': 2.397, 'clipped': 0.09}
+it 3: {'it': 3, 'mean_reward': -0.2045, 'found': 366, 'n': 382, 's': 605, 'choices': 5259, 'loss': 0.5341, 'entropy': 2.391, 'clipped': 0.122}
+it 4: {'it': 4, 'mean_reward': -0.0775, 'found': 371, 'n': 384, 's': 743, 'choices': 4854, 'loss': 0.5429, 'entropy': 2.41, 'clipped': 0.027}
+it 5: {'it': 5, 'mean_reward': -0.1873, 'found': 362, 'n': 381, 's': 905, 'choices': 5187, 'loss': 0.5367, 'entropy': 2.422, 'clipped': 0.028}
+it 6: {'it': 6, 'mean_reward': -0.1545, 'found': 363, 'n': 384, 's': 1080, 'choices': 5177, 'loss': 0.5024, 'entropy': 2.386, 'clipped': 0.024}
+it 7: {'it': 7, 'mean_reward': 0.1792, 'found': 375, 'n': 384, 's': 1195, 'choices': 3764, 'loss': 0.5491, 'entropy': 2.355, 'clipped': 0.054}
+it 8: {'it': 8, 'mean_reward': -0.0098, 'found': 360, 'n': 384, 's': 1326, 'choices': 4499, 'loss': 0.5128, 'entropy': 2.307, 'clipped': 0.149}
+it 9: {'it': 9, 'mean_reward': 0.2566, 'found': 368, 'n': 384, 's': 1420, 'choices': 3596, 'loss': 0.5041, 'entropy': 2.214, 'clipped': 0.044}
+selection it 9: {'R': {'n': 100, 'found': 99, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 17.7, 'mean_reward': 0.4672}, 'U': {'n': 100, 'found': 97, 'exceptions': 0, 'capped': 0, 'median_goals_found': 6.0, 'median_metres_found': 20.4, 'mean_reward': 0.2544}}
+it 10: {'it': 10, 'mean_reward': -0.0415, 'found': 370, 'n': 377, 's': 1636, 'choices': 4363, 'loss': 0.4717, 'entropy': 2.384, 'clipped': 0.09}
+it 11: {'it': 11, 'mean_reward': 0.1342, 'found': 375, 'n': 384, 's': 1759, 'choices': 3721, 'loss': 0.5087, 'entropy': 2.339, 'clipped': 0.028}
+it 12: {'it': 12, 'mean_reward': 0.1416, 'found': 368, 'n': 375, 's': 1876, 'choices': 3821, 'loss': 0.4508, 'entropy': 2.258, 'clipped': 0.115}
+it 13: {'it': 13, 'mean_reward': 0.3361, 'found': 373, 'n': 384, 's': 1991, 'choices': 2984, 'loss': 0.5816, 'entropy': 2.134, 'clipped': 0.131}
+it 14: {'it': 14, 'mean_reward': -0.023, 'found': 368, 'n': 384, 's': 2139, 'choices': 4402, 'loss': 0.5339, 'entropy': 2.223, 'clipped': 0.06}
+it 15: {'it': 15, 'mean_reward': 0.1261, 'found': 352, 'n': 375, 's': 2271, 'choices': 3828, 'loss': 0.5648, 'entropy': 2.068, 'clipped': 0.113}
+it 16: {'it': 16, 'mean_reward': 0.0291, 'found': 363, 'n': 384, 's': 2404, 'choices': 4273, 'loss': 0.4921, 'entropy': 2.059, 'clipped': 0.044}
+it 17: {'it': 17, 'mean_reward': 0.2659, 'found': 369, 'n': 384, 's': 2519, 'choices': 3551, 'loss': 0.4274, 'entropy': 1.985, 'clipped': 0.085}
+it 18: {'it': 18, 'mean_reward': 0.2337, 'found': 372, 'n': 384, 's': 2641, 'choices': 3636, 'loss': 0.5286, 'entropy': 2.02, 'clipped': 0.094}
+it 19: {'it': 19, 'mean_reward': 0.0269, 'found': 374, 'n': 384, 's': 2794, 'choices': 4465, 'loss': 0.4967, 'entropy': 2.096, 'clipped': 0.09}
+selection it 19: {'R': {'n': 100, 'found': 98, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 16.2, 'mean_reward': 0.5311}, 'U': {'n': 100, 'found': 100, 'exceptions': 0, 'capped': 0, 'median_goals_found': 7.0, 'median_metres_found': 21.15, 'mean_reward': 0.3718}}
+it 20: {'it': 20, 'mean_reward': 0.1601, 'found': 375, 'n': 384, 's': 2969, 'choices': 3978, 'loss': 0.5123, 'entropy': 2.047, 'clipped': 0.081}
+it 21: {'it': 21, 'mean_reward': 0.2294, 'found': 376, 'n': 384, 's': 3120, 'choices': 3541, 'loss': 0.4885, 'entropy': 2.102, 'clipped': 0.151}
+it 22: {'it': 22, 'mean_reward': -0.0163, 'found': 353, 'n': 384, 's': 3257, 'choices': 4340, 'loss': 0.4914, 'entropy': 2.045, 'clipped': 0.105}
+it 23: {'it': 23, 'mean_reward': 0.1003, 'found': 371, 'n': 376, 's': 3408, 'choices': 4160, 'loss': 0.4992, 'entropy': 2.13, 'clipped': 0.104}
+it 24: {'it': 24, 'mean_reward': 0.1506, 'found': 377, 'n': 384, 's': 3524, 'choices': 4019, 'loss': 0.5506, 'entropy': 2.13, 'clipped': 0.082}
+it 25: {'it': 25, 'mean_reward': 0.1794, 'found': 371, 'n': 378, 's': 3666, 'choices': 3638, 'loss': 0.5511, 'entropy': 2.158, 'clipped': 0.064}
+it 26: {'it': 26, 'mean_reward': 0.3338, 'found': 369, 'n': 378, 's': 3791, 'choices': 3090, 'loss': 0.5672, 'entropy': 2.137, 'clipped': 0.133}
+it 27: {'it': 27, 'mean_reward': 0.2263, 'found': 375, 'n': 384, 's': 3914, 'choices': 3601, 'loss': 0.4927, 'entropy': 2.042, 'clipped': 0.126}
+it 28: {'it': 28, 'mean_reward': 0.1567, 'found': 370, 'n': 384, 's': 4044, 'choices': 3635, 'loss': 0.5219, 'entropy': 2.175, 'clipped': 0.035}
+it 29: {'it': 29, 'mean_reward': 0.3737, 'found': 378, 'n': 384, 's': 4141, 'choices': 2966, 'loss': 0.4945, 'entropy': 1.936, 'clipped': 0.161}
+selection it 29: {'R': {'n': 100, 'found': 97, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 18.3, 'mean_reward': 0.5041}, 'U': {'n': 100, 'found': 98, 'exceptions': 0, 'capped': 0, 'median_goals_found': 6.0, 'median_metres_found': 22.5, 'mean_reward': 0.3636}}
+it 30: {'it': 30, 'mean_reward': -0.1686, 'found': 351, 'n': 380, 's': 4320, 'choices': 4253, 'loss': 0.472, 'entropy': 2.192, 'clipped': 0.118}
+it 31: {'it': 31, 'mean_reward': 0.2469, 'found': 379, 'n': 384, 's': 4614, 'choices': 3330, 'loss': 0.5109, 'entropy': 2.066, 'clipped': 0.048}
+it 32: {'it': 32, 'mean_reward': 0.03, 'found': 366, 'n': 378, 's': 4742, 'choices': 4058, 'loss': 0.5264, 'entropy': 2.09, 'clipped': 0.104}
+it 33: {'it': 33, 'mean_reward': 0.2707, 'found': 371, 'n': 384, 's': 4836, 'choices': 3291, 'loss': 0.4461, 'entropy': 1.977, 'clipped': 0.033}
+it 34: {'it': 34, 'mean_reward': 0.3832, 'found': 371, 'n': 384, 's': 4920, 'choices': 2845, 'loss': 0.3945, 'entropy': 1.937, 'clipped': 0.027}
+it 35: {'it': 35, 'mean_reward': 0.3464, 'found': 373, 'n': 379, 's': 5000, 'choices': 3177, 'loss': 0.4346, 'entropy': 1.838, 'clipped': 0.173}
+it 36: {'it': 36, 'mean_reward': 0.4345, 'found': 377, 'n': 384, 's': 5078, 'choices': 2780, 'loss': 0.4811, 'entropy': 1.895, 'clipped': 0.171}
+it 37: {'it': 37, 'mean_reward': 0.2369, 'found': 376, 'n': 384, 's': 5181, 'choices': 3483, 'loss': 0.5029, 'entropy': 2.0, 'clipped': 0.1}
+it 38: {'it': 38, 'mean_reward': 0.1697, 'found': 373, 'n': 384, 's': 5281, 'choices': 3653, 'loss': 0.5191, 'entropy': 2.036, 'clipped': 0.127}
+it 39: {'it': 39, 'mean_reward': 0.1859, 'found': 368, 'n': 378, 's': 5389, 'choices': 3354, 'loss': 0.5017, 'entropy': 2.041, 'clipped': 0.109}
+selection it 39: {'R': {'n': 100, 'found': 99, 'exceptions': 0, 'capped': 0, 'median_goals_found': 6.0, 'median_metres_found': 22.5, 'mean_reward': 0.431}, 'U': {'n': 100, 'found': 99, 'exceptions': 0, 'capped': 0, 'median_goals_found': 6.0, 'median_metres_found': 23.7, 'mean_reward': 0.3736}}
+it 40: {'it': 40, 'mean_reward': 0.3762, 'found': 377, 'n': 384, 's': 5530, 'choices': 3081, 'loss': 0.3626, 'entropy': 2.001, 'clipped': 0.047}
+it 41: {'it': 41, 'mean_reward': 0.1537, 'found': 371, 'n': 380, 's': 5644, 'choices': 3705, 'loss': 0.4681, 'entropy': 2.052, 'clipped': 0.026}
+it 42: {'it': 42, 'mean_reward': 0.4469, 'found': 376, 'n': 381, 's': 5722, 'choices': 2608, 'loss': 0.4765, 'entropy': 1.87, 'clipped': 0.056}
+it 43: {'it': 43, 'mean_reward': 0.272, 'found': 372, 'n': 380, 's': 5808, 'choices': 3118, 'loss': 0.5184, 'entropy': 2.011, 'clipped': 0.089}
+it 44: {'it': 44, 'mean_reward': 0.0237, 'found': 355, 'n': 378, 's': 5937, 'choices': 4163, 'loss': 0.4481, 'entropy': 2.054, 'clipped': 0.063}
+it 45: {'it': 45, 'mean_reward': 0.2342, 'found': 374, 'n': 384, 's': 6040, 'choices': 3535, 'loss': 0.3862, 'entropy': 2.022, 'clipped': 0.096}
+resuming at iteration 47
+it 47: {'it': 47, 'mean_reward': 0.424, 'found': 371, 'n': 376, 's': 97, 'choices': 2813, 'loss': 0.3641, 'entropy': 1.843, 'clipped': 0.053}
+it 48: {'it': 48, 'mean_reward': 0.3905, 'found': 374, 'n': 381, 's': 161, 'choices': 2830, 'loss': 0.4712, 'entropy': 1.901, 'clipped': 0.131}
+it 49: {'it': 49, 'mean_reward': 0.2647, 'found': 375, 'n': 384, 's': 246, 'choices': 3464, 'loss': 0.4787, 'entropy': 1.922, 'clipped': 0.049}
+selection it 49: {'R': {'n': 100, 'found': 98, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 18.15, 'mean_reward': 0.537}, 'U': {'n': 100, 'found': 99, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 20.7, 'mean_reward': 0.4558}}
+it 50: {'it': 50, 'mean_reward': 0.2507, 'found': 368, 'n': 378, 's': 387, 'choices': 3288, 'loss': 0.5134, 'entropy': 2.017, 'clipped': 0.071}
+it 51: {'it': 51, 'mean_reward': 0.3166, 'found': 371, 'n': 384, 's': 493, 'choices': 3179, 'loss': 0.4948, 'entropy': 1.94, 'clipped': 0.078}
+it 52: {'it': 52, 'mean_reward': 0.379, 'found': 376, 'n': 384, 's': 574, 'choices': 3068, 'loss': 0.5114, 'entropy': 1.853, 'clipped': 0.131}
+--- finished on the MacBook (2026-10-23), from the S3 checkpoint
+resuming at iteration 54
+it 54: {'it': 54, 'mean_reward': 0.2276, 'found': 376, 'n': 384, 's': 262, 'choices': 3542, 'loss': 0.5013, 'entropy': 1.969, 'clipped': 0.086}
+it 55: {'it': 55, 'mean_reward': 0.3981, 'found': 364, 'n': 377, 's': 490, 'choices': 2683, 'loss': 0.4985, 'entropy': 1.857, 'clipped': 0.056}
+it 56: {'it': 56, 'mean_reward': 0.2818, 'found': 376, 'n': 381, 's': 765, 'choices': 3176, 'loss': 0.4782, 'entropy': 2.017, 'clipped': 0.063}
+it 57: {'it': 57, 'mean_reward': 0.477, 'found': 376, 'n': 384, 's': 966, 'choices': 2533, 'loss': 0.4626, 'entropy': 1.786, 'clipped': 0.131}
+it 58: {'it': 58, 'mean_reward': 0.273, 'found': 372, 'n': 384, 's': 1232, 'choices': 3062, 'loss': 0.5109, 'entropy': 1.976, 'clipped': 0.108}
+it 59: {'it': 59, 'mean_reward': 0.3278, 'found': 372, 'n': 384, 's': 1491, 'choices': 3021, 'loss': 0.4234, 'entropy': 1.89, 'clipped': 0.119}
+selection it 59: {'R': {'n': 100, 'found': 98, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 17.4, 'mean_reward': 0.5149}, 'U': {'n': 100, 'found': 99, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 19.8, 'mean_reward': 0.2999}}
+done: best it 49 {'R': {'n': 100, 'found': 98, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 18.15, 'mean_reward': 0.537}, 'U': {'n': 100, 'found': 99, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 20.7, 'mean_reward': 0.4558}}

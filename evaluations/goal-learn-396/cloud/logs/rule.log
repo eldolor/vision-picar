@@ -1,0 +1,1 @@
+rule: {'R': {'n': 100, 'found': 100, 'exceptions': 0, 'capped': 0, 'median_goals_found': 7.0, 'median_metres_found': 18.9, 'mean_reward': 0.4738}, 'U': {'n': 100, 'found': 99, 'exceptions': 0, 'capped': 0, 'median_goals_found': 10.0, 'median_metres_found': 27.6, 'mean_reward': 0.3311}}
