@@ -159,7 +159,12 @@ class RestClock:
 
     def on_odom(self, at, linear_m_s, angular_rad_s):
         still = abs(linear_m_s) < self.lin and abs(angular_rad_s) < self.ang
-        if self.last is not None and at <= self.last:
+        if self.last is not None and at < self.last - self.max_gap:
+            # The stamps jumped back (a controller restarted on another
+            # clock): start over rather than ignore every later message.
+            self.done.clear()
+            self.start = self.last = self.last_still = None
+        elif self.last is not None and at <= self.last:
             return                  # out of order or repeated: not evidence
         if self.start is not None and (not still or at - self.last > self.max_gap):
             self.done.append((self.start, self.last_still))
@@ -179,10 +184,9 @@ class RestClock:
         if self.last is None or self.last < hi:
             return None
         lo = capture_s - self.period - self.rest_s
-        spans = list(self.done)
-        if self.start is not None:
-            spans.append((self.start, self.last_still))
-        return any(a <= lo and b >= hi for a, b in spans)
+        if self.start is not None and self.start <= lo and self.last_still >= hi:
+            return True
+        return any(a <= lo and b >= hi for a, b in self.done)
 
 
 def run_widths(mask: np.ndarray, width: np.ndarray, gap: int, full_turn: bool) -> np.ndarray:

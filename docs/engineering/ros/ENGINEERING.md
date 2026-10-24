@@ -112,7 +112,7 @@ the `MAX_BRIDGE_ROUTES` budget.
 
 | Route | Request | Answer |
 |---|---|---|
-| `GET /health` | -- | `ok` (false when `slam.state` is `failed`, 3.50.D3; still HTTP 200 -- the robot server's probe reads the status code as "ROS up", and the D-pad drives without SLAM), `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `remapping` (3.50.D4), `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / checking / matched / fell_back / failed (with `before`, the result it replaced), map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`, `remap` (3.50.D4: `{result: none / waiting / deferred / starting / mapping / failed_localising / failed / not_started, trigger: entered_unknown / contradiction / request, at, map_id, version, detail, waited_s, cancelled_goal, at_rest, from_pose, took_s, error, relocalise_error}`), `watch` (3.50.D4: `{scans, lost, moving}` while a matched reload is watched, else null; `moving` counts scans not taken at rest, amendment 4), `remap_latched` (automatic re-maps off after a failed one), `remap_deferrals` (swaps called off for want of rest)) |
+| `GET /health` | -- | `ok` (false when `slam.state` is `failed`, 3.50.D3; still HTTP 200 -- the robot server's probe reads the status code as "ROS up", and the D-pad drives without SLAM), `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `remapping` (3.50.D4), `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / checking / matched / fell_back / failed (with `before`, the result it replaced), map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`, `remap` (3.50.D4: `{result: none / waiting / deferred / starting / mapping / failed_localising / failed / not_started, trigger: entered_unknown / contradiction / request, at, map_id, version, detail, waited_s, cancelled_goal, at_rest, from_pose, took_s, error, relocalise_error}`), `watch` (3.50.D4: `{scans, lost, moving, no_tf, overflow}` while a matched reload is watched, else null; amendment 4: `moving` counts scans not taken at rest, `no_tf` and `overflow` scans the watch could not judge), `remap_latched` (automatic re-maps off after a failed one), `remap_deferrals` (swaps called off for want of rest)) |
 | `POST /cmd_vel` | `{driver, linear_m_s, angular_rad_s}` | 200 `{published: <topic>}`, or 400 `unknown driver`. A non-zero `twin-dpad` twist also cancels the active goal. |
 | `GET /odom` | -- | The latest `/diff_drive_controller/odom` as `{x_m, y_m, yaw_rad, linear_m_s, angular_rad_s, at}`, or `{usable: false}` |
 | `GET /scan` | -- | The last LaserScan published, as `{angle_min_rad, angle_increment_rad, ranges_m (None = no return), at}` |
@@ -295,31 +295,34 @@ again (the user, 2026-10-23) on any of three triggers:
   reloaded map is the localisation node's first `/map` (`_reload_map`),
   frozen (`remap.SavedMap`), because the live `/map` fills those cells as
   the robot drives.
-- **The scans contradict it** (`remap.Contradictions`): each scan taken
-  with the robot at rest (`remap.RestClock`, fed every odometry message at
-  its header stamp: it keeps the still intervals, closed by a moving
-  message or a gap over `REST_ODOM_MAX_AGE_S`, and a scan is at rest when
-  one interval runs from `REMAP_REST_S` before its revolution could have
-  begun to where it could have ended, one `SCAN_HZ` period either side of
-  the capture stamp -- the same answer whenever it is asked; others count
-  `moving`, amendment 4). New scans queue (`_remap_pending`, at most
-  `REMAP_PENDING_MAX`) and are judged in order once TF and odometry have
-  passed them, because the 10 Hz poll replaces `last_scan` before either
-  has; a scan older than `REMAP_SCAN_MAX_AGE_S` without TF is dropped, one
-  without odometry past it counts `moving`. The swap's rest
-  (`_at_rest`, amendment 2) is a different question -- still now, no goal
-  live -- and keeps its own monotonic `_rest_since`, laid at `map -> laser` at its own capture stamp
-  (`last_scan.stamp_ns`), counts *something new* (a return within
-  `MAX_RANGE_M` with no occupied and no unknown cell within `NEW_TOL_M`)
-  and *something gone* (a beam whose return lies `GONE_SHORT_M` past the
-  first occupied cell the map puts on its line, that cell within
-  `MAX_RANGE_M` and met at `MIN_INCIDENCE_DEG` or more, whatever the
-  return's own range; every occupied cell from there to `GONE_SHORT_M`
-  short of the return is contradicted). Only such beams in a run at least
-  `MIN_RUN_M` wide count (`remap.run_widths`: neighbouring beams joined
-  across `RUN_GAP_BEAMS` quiet ones, the width measured at the saved
-  surface for gone and at the return for new): a jamb or a leg seen a few
-  centimetres off gives a sliver, a moved object a face. Returns into
+- **The scans contradict it** (`remap.Contradictions`). Only scans taken
+  with the robot at rest are judged (amendment 4): `remap.RestClock`, fed
+  every odometry message at its header stamp, keeps the still intervals
+  (closed by a moving message or a gap over `REST_ODOM_MAX_AGE_S`; a stamp
+  jumping back further than that starts it over), and a scan is at rest
+  when one interval runs from `REMAP_REST_S` before its revolution could
+  have begun to where it could have ended, one `SCAN_HZ` period either side
+  of the capture stamp -- the same answer whenever it is asked. Every scan
+  the poll files is queued (`_remap_pending`, once per stamp, at most
+  `REMAP_PENDING_MAX`) and judged in order once TF and odometry have passed
+  it; one older than `REMAP_SCAN_MAX_AGE_S` without TF is dropped
+  (`watch.no_tf`), one without odometry past it counts `watch.moving`, and
+  one pushed out of a full queue `watch.overflow`. The queue empties
+  whenever the watch stops or its tracker is replaced. (The swap's rest,
+  `_at_rest` of amendment 2, is a different question -- still now, no goal
+  live -- and keeps its own monotonic `_rest_since`.) Each judged scan is
+  laid at `map -> laser` at its own capture stamp (`last_scan.stamp_ns`)
+  and counts *something new* (a return within `MAX_RANGE_M` with no
+  occupied and no unknown cell within `NEW_TOL_M`) and *something gone* (a
+  beam whose return lies `GONE_SHORT_M` past the first occupied cell the
+  map puts on its line, that cell within `MAX_RANGE_M` and met at
+  `MIN_INCIDENCE_DEG` or more, whatever the return's own range; every
+  occupied cell from there to `GONE_SHORT_M` short of the return is
+  contradicted). Only such beams in a run at least `MIN_RUN_M` wide count
+  (`remap.run_widths`: neighbouring beams joined across `RUN_GAP_BEAMS`
+  quiet ones, the width measured at the saved surface for gone and at the
+  return for new): a jamb or a leg seen a few centimetres off gives a
+  sliver, a moved object a face. Returns into
   unknown are the first trigger's. A cell is persistent when, over
   `WINDOW_S`, `MIN_LOOKS` scans looked at it, `MIN_SHARE` of them
   contradicted the map there, and those contradictions span `HOLD_S`; the

@@ -28,9 +28,10 @@ CELL = 0.3
 NEAR_M = 0.6
 LIDAR_X_M = 0.04
 # The bridge's REST_LINEAR_M_S, REST_ANGULAR_RAD_S, REMAP_REST_S, SCAN_HZ and
-# REST_ODOM_MAX_AGE_S (bridge.py needs rclpy, so they are repeated here;
-# tests/test_map_persist.py checks they agree).
+# REST_ODOM_MAX_AGE_S, REMAP_SCAN_MAX_AGE_S (bridge.py needs rclpy, so they
+# are repeated here; tests/test_map_persist.py checks they agree).
 REST_LIN, REST_ANG, REST_S, SCAN_HZ, ODOM_MAX_AGE_S = 0.01, 0.02, 0.5, 10.0, 0.5
+SCAN_MAX_AGE_S = 0.5
 
 
 def grid(m):
@@ -66,24 +67,25 @@ def fit_house(rec):
 
 def still_flags(rec):
     """Per scan: the bridge's own rest rule (remap.RestClock, with its
-    constants), fed the recorded odometry. A scan odometry never passed is
-    not at rest."""
+    constants), fed the recorded odometry, with the bridge's deadline: a
+    scan odometry has not passed within SCAN_MAX_AGE_S of its arrival is
+    not at rest (review round 3), nor one odometry never passes."""
     rc = remap.RestClock(REST_LIN, REST_ANG, REST_S, 1.0 / SCAN_HZ, ODOM_MAX_AGE_S)
     # The bridge times odometry by its own stamp; recordings before review
     # round 2 kept only the receipt time (the same host's clock, ms apart).
-    od = sorted((o[3] if len(o) > 3 and o[3] > 0 else o[0], o[1], o[2])
+    od = sorted((o[3] if len(o) > 3 and o[3] > 0 else o[0], o[1], o[2], o[0])
                 for o in rec.get("odom") or [])
-    out, k = [], 0
+    out, k, got = {}, 0, -math.inf
     for s in sorted(rec["scans"], key=lambda s: s["stamp_ns"]):
         cap = s["stamp_ns"] * 1e-9
         while k < len(od) and rc.still_for(cap) is None:
-            rc.on_odom(*od[k])
+            rc.on_odom(*od[k][:3])
+            got = od[k][3]                       # when that message reached the bridge
             k += 1
-        # Never passed by odometry: not known to be at rest (the bridge's
-        # aged-out scan, counted `moving`).
-        out.append((s["stamp_ns"], bool(rc.still_for(cap))))
-    by = dict(out)
-    return [by[s["stamp_ns"]] for s in rec["scans"]]
+        decided = rc.still_for(cap)
+        # The deciding message had to arrive before the bridge gave up.
+        out[s["stamp_ns"]] = bool(decided) and got <= s["at"] + SCAN_MAX_AGE_S
+    return [out[s["stamp_ns"]] for s in rec["scans"]]
 
 
 def changed_cells(rec_dir, name):

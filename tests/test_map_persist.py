@@ -857,7 +857,8 @@ def test_a_matched_reload_freezes_its_map_for_the_watch(bridge_mod, monkeypatch,
     assert b._remap_saved is not None and b._remap_saved.w == _room_grid()["width"]
     b.last_map = {**_room_grid(), "data": [0] * len(_room_grid()["data"])}    # /map fills in
     assert b._remap_saved.state.max() == remap.OCC                           # the frozen copy does not
-    assert b.health()[1]["slam"]["watch"] == {"scans": 0, "lost": 0, "moving": 0}
+    assert b.health()[1]["slam"]["watch"] == {"scans": 0, "lost": 0, "moving": 0,
+                                              "no_tf": 0, "overflow": 0}
 
 
 def test_a_person_s_request_re_maps_from_the_current_pose(bridge_mod, monkeypatch, tmp_path):
@@ -1476,6 +1477,68 @@ def test_the_replay_uses_the_bridges_rest_constants(bridge_mod):
     spec = importlib.util.spec_from_file_location("d4_replay", path)
     rp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(rp)
-    assert (rp.REST_LIN, rp.REST_ANG, rp.REST_S, rp.SCAN_HZ, rp.ODOM_MAX_AGE_S) == (
+    assert (rp.REST_LIN, rp.REST_ANG, rp.REST_S, rp.SCAN_HZ, rp.ODOM_MAX_AGE_S,
+            rp.SCAN_MAX_AGE_S) == (
         bridge_mod.REST_LINEAR_M_S, bridge_mod.REST_ANGULAR_RAD_S, bridge_mod.REMAP_REST_S,
-        bridge_mod.SCAN_HZ, bridge_mod.REST_ODOM_MAX_AGE_S)
+        bridge_mod.SCAN_HZ, bridge_mod.REST_ODOM_MAX_AGE_S, bridge_mod.REMAP_SCAN_MAX_AGE_S)
+
+
+def _queue(b, stamps_s, pose=(0.0, 0.0, 0.0), age_s=0.0):
+    with b.lock:
+        for t in stamps_s:
+            b._queue_scan({**_scan(*pose), "stamp_ns": int(t * 1e9), "at": time.time() - age_s})
+
+
+def test_every_scan_the_poll_files_is_judged_once(bridge_mod, monkeypatch, tmp_path):
+    """Review round 3: scans filed between two looks are all judged, and a
+    stamp filed twice (the poll, then the look) only once."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    _queue(b, [1000.0, 1000.1, 1000.2])
+    b.last_scan = {**_scan(*pose), "stamp_ns": int(1000.2 * 1e9), "at": time.time()}
+    b.remap_step(None)
+    assert b._remap_tracker.scans == 3 and not b._remap_pending
+
+
+def test_the_queue_empties_when_the_watch_stops_or_its_tracker_changes(bridge_mod, monkeypatch,
+                                                                       tmp_path):
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)    # nothing judged yet
+    _queue(b, [1000.0, 1000.1])
+    b._remap_retry_at = time.monotonic() + 60                        # a back-off
+    b.remap_step(None)
+    assert not b._remap_pending
+    b._remap_retry_at = 0.0
+    _queue(b, [1000.2, 1000.3])
+    old = b._remap_tracker
+    b._remap_tracker = remap.Contradictions(b._remap_saved)          # a re-map's fall-back
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    b.remap_step(None)
+    assert b._remap_tracker is not old and b._remap_tracker.scans == 0 and not b._remap_pending
+
+
+def test_scans_the_watch_could_not_judge_are_counted(bridge_mod, monkeypatch, tmp_path):
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)
+    _queue(b, [1000.0 + 0.1 * k for k in range(bridge_mod.REMAP_PENDING_MAX + 3)], age_s=1.0)
+    b.remap_step(None)
+    w = b.health()[1]["slam"]["watch"]
+    assert w["overflow"] == 3 and w["no_tf"] == bridge_mod.REMAP_PENDING_MAX and w["scans"] == 0
+
+
+def test_a_stamp_jumping_back_starts_the_rest_clock_over():
+    """Review round 3: ignoring every message older than the newest would
+    blind the clock for good after a controller restarts on another clock."""
+    rc = remap.RestClock(0.01, 0.02, 0.5, 0.1, 0.5)
+    for k in range(20):
+        rc.on_odom(100.0 + k * 0.05, 0.0, 0.0)
+    rc.on_odom(100.9, 0.0, 0.0)                           # a repeat inside the gap: ignored
+    assert rc.last == 100.95
+    for k in range(20):
+        rc.on_odom(50.0 + k * 0.05, 0.0, 0.0)             # back 51 s
+    assert rc.start == 50.0 and rc.still_for(50.6) is True and not rc.done
