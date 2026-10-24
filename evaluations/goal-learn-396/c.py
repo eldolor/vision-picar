@@ -46,7 +46,12 @@ def _spec(arm: str):
 
 def _job(args):
     s, h, mode, spec, drop = args
-    r = T.mission(s, h, mode, spec, 0, drop)
+    try:
+        r = T.mission(s, h, mode, spec, 0, drop)
+    except Exception as e:  # noqa: BLE001 -- a house that cannot even start is a row, not a lost run
+        r = {"split": s, "index": h, "mode": mode, "outcome": "exception",
+             "error": f"{type(e).__name__}: {e}", "goals": 0, "metres": 0.0,
+             "reward": -T.CRASH_COST}
     r.pop("choices", None)
     return r
 
@@ -67,32 +72,57 @@ def cmd_run(out: str) -> None:
                 print(f"{arm} {mode}: {T.summary(rows)}", flush=True)
 
 
+def _saving(new, rule):
+    """1 - new/rule, rounded so a saving exactly at a bar (4 vs 5 goals)
+    reads as the bar; None when either side found nothing."""
+    if new is None or not rule:
+        return None
+    return round(1 - new / rule, 6)
+
+
 def cmd_score(out: str) -> dict:
     rows = {(a, m): json.load(open(os.path.join(out, f"{a}-{m}.json")))
             for a in ARMS for m in ("R", "U")}
+    # Run once: every file must hold the same houses, the whole test set.
+    want = sorted(h for _, h in test_houses())
+    for k, rs in rows.items():
+        got = sorted(r["index"] for r in rs)
+        if got != want:
+            raise SystemExit(f"{k}: {len(got)} houses, not the {len(want)} test houses -- not scoring")
     res = {f"{a}-{m}": T.summary(r) for (a, m), r in rows.items()}
     verdict = {}
-    for arm, saving in (("F-large", 0.20), ("F-large-drop", 0.10)):
-        for m in ("R", "U"):
-            rule, new = res[f"rule-{m}"], res[f"{arm}-{m}"]
+    for m in ("R", "U"):
+        rule = res[f"rule-{m}"]
+        for arm in ("F-large", "F-large-drop"):
+            new = res[f"{arm}-{m}"]
+            g = _saving(new["median_goals_found"], rule["median_goals_found"])
+            d = _saving(new["median_metres_found"], rule["median_metres_found"])
             found_ok = new["found"] >= 0.99 * rule["found"]
-            g = 1 - new["median_goals_found"] / rule["median_goals_found"]
-            d = 1 - new["median_metres_found"] / rule["median_metres_found"]
-            # Mode U asks only for no more median goals (amendment 2);
-            # criterion 3 asks for its saving in mode R.
-            fewer = (g >= saving or d >= saving) if m == "R" else g >= 0
-            verdict[f"{arm}-{m}"] = {"found_ok": found_ok, "goal_saving": round(g, 4),
-                                     "metre_saving": round(d, 4), "saving_ok": fewer,
-                                     "met": found_ok and fewer}
+            if arm == "F-large":
+                # Criterion 2 (amendment 2): R saves 20% of goals or metres; U no more goals.
+                saving_ok = (((g or -1) >= 0.20 or (d or -1) >= 0.20) if m == "R"
+                             else g is not None and g >= 0)
+            else:
+                # Criterion 3 (amendment 4): the found bar in both modes; a 10% goal
+                # saving in mode R; mode U's goals reported only.
+                saving_ok = (g is not None and g >= 0.10) if m == "R" else None
+            verdict[f"{arm}-{m}"] = {"found_ok": found_ok, "goal_saving": g, "metre_saving": d,
+                                     "saving_ok": saving_ok,
+                                     "met": found_ok and saving_ok is not False}
     # Criterion 4: houses the rule finds and F-large does not.
+
     def found(arm, m):
         return {r["index"] for r in rows[(arm, m)] if r["outcome"] == "found"}
     lost = {m: sorted(found("rule", m) - found("F-large", m)) for m in ("R", "U")}
-    # Criterion 5: every mission ends with an outcome under the tick cap.
-    clean = all(r["outcome"] and r["outcome"] != "exception" and not r.get("capped")
-                for rs in rows.values() for r in rs if r["outcome"] != "no_target")
-    report = {"summary": res, "verdict": verdict, "lost_vs_rule": lost, "clean": clean}
-    json.dump(report, open(os.path.join(out, "score.json"), "w"), indent=1)
+    # Criterion 5, per arm: every mission ends with an outcome under the tick cap.
+    clean = {a: sum(1 for m in ("R", "U") for r in rows[(a, m)] if r["outcome"] != "no_target"
+                    and (not r["outcome"] or r["outcome"] == "exception" or r.get("capped")))
+             for a in ARMS}
+    drop_rows = [r for m in ("R", "U") for r in rows[("F-large-drop", m)] if r.get("rooms")]
+    dropped = round(sum(r["dropped"] for r in drop_rows) / max(1, sum(r["rooms"] for r in drop_rows)), 4)
+    report = {"summary": res, "verdict": verdict, "lost_vs_rule": lost,
+              "unclean_missions": clean, "dropped_room_share": dropped}
+    T.save_atomic(os.path.join(out, "score.json"), lambda p: json.dump(report, open(p, "w"), indent=1))
     print(json.dumps(report, indent=1))
     return report
 

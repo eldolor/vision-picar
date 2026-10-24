@@ -97,12 +97,16 @@ def select_houses() -> list:
 # ---------- one mission under any chooser ----------
 
 def dropped_rooms(grid, index: int, share: float) -> frozenset:
-    """Criterion 3: `share` of the house's rooms (rounded) whose labels are
-    withheld, chosen by a draw seeded by the house index."""
+    """Criterion 3: the rooms whose labels are withheld, `share` of them on
+    average. A draw seeded by the house index, rounded at random (3 rooms
+    drop 1 or 2, half and half), so odd and one-room houses average `share`
+    too."""
     if share <= 0:
         return frozenset()
     names = sorted(grid.rooms)
-    return frozenset(random.Random(SEED * 7919 + index).sample(names, round(share * len(names))))
+    rng = random.Random(SEED * 7919 + index)
+    k = min(len(names), math.floor(share * len(names) + rng.random()))
+    return frozenset(rng.sample(names, k))
 
 
 def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float = 0.0) -> dict:
@@ -126,7 +130,9 @@ def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float 
     elif spec != "rule":
         agent = runner.agent
         agent.goal_policy = LinearGoalPolicy([0.0] * len(FEATURES))
-        labeller = Labeller(grid, CELL, drop=dropped_rooms(grid, index, drop))
+        dropped = dropped_rooms(grid, index, drop)
+        labeller = Labeller(grid, CELL, drop=dropped)
+        row.update(rooms=len(grid.rooms), dropped=len(dropped))
         prior = PRIOR.get(target, {})
         kind = None if spec == "oracle" else spec[1]
         params = None if spec == "oracle" else to_np(spec[2])
