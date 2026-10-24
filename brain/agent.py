@@ -420,6 +420,8 @@ class MissionAgent(ConstrainedAgent):
             self._arrival_t0 = None
             entry = {k: verdict.get(k) for k in
                      ("tier", "confirmed", "verdict_s", "local_score", "cloud_called")}
+            # A running number, so a reader can tell new ones past the cap.
+            entry["n"] = (self.arrival_verdicts[-1]["n"] + 1) if self.arrival_verdicts else 1
             self.arrival_verdicts = (*self.arrival_verdicts, entry)[-ARRIVAL_VERDICTS_KEPT:]
         readout = {**readout, "identity": verdict}
         if verdict.get("confirmed"):

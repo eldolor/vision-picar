@@ -224,8 +224,10 @@ with open(f"{out}/status.log", "w") as f, open(f"{out}/arrivals.jsonl", "w") as 
         f.write(json.dumps(line) + "\n"); f.flush()
         # 3.80.E: the brain keeps every decided identity (`arrival_verdicts`);
         # each new one is a line, whatever the poll's timing.
-        for v in (s.get("arrival_verdicts") or [])[len(seen):]:
-            seen.add(len(seen))
+        for v in s.get("arrival_verdicts") or []:
+            if v.get("n") in seen:
+                continue
+            seen.add(v.get("n"))
             a.write(json.dumps({"t": round(time.time(), 1), "step": s.get("step"), **v}) + "\n")
             a.flush()
         if not s.get("running") and s.get("outcome") not in (None, "idle", "running"):

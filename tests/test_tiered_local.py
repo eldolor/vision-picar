@@ -661,7 +661,7 @@ def test_e3_a_decided_verdict_carries_the_time_from_arrival_and_undecided_does_n
     assert 0 <= second["identity"]["verdict_s"] < 5
     assert agent._arrival_t0 is None, "a decided verdict ends the clock"
     assert t0 is not None
-    assert [v["confirmed"] for v in agent.arrival_verdicts] == [True]
+    assert [(v["n"], v["confirmed"]) for v in agent.arrival_verdicts] == [(1, True)]
 
 
 def test_e3_a_flicker_keeps_the_arrival_clock_and_three_frames_off_end_it():
@@ -696,3 +696,16 @@ def test_e3_a_whole_mission_reports_verdict_s_on_found():
     status, _, _ = _run(local, cloud)
     assert status["outcome"] == FOUND
     assert status["arrival"]["identity"]["verdict_s"] >= 0
+
+
+def test_e3_verdicts_past_the_cap_keep_counting():
+    from brain.agent import ARRIVAL_VERDICTS_KEPT, MissionAgent
+    agent = MissionAgent.__new__(MissionAgent)
+    agent.arrival_confirm_fn = lambda frame: {"confirmed": False, "tier": "local"}
+    agent.vision_fn = None
+    agent._refused_local = []
+    for _ in range(ARRIVAL_VERDICTS_KEPT + 5):
+        agent._identity_refused, agent._refusal = False, None
+        agent._confirm_identity({"state": "arrived"}, {})
+    assert len(agent.arrival_verdicts) == ARRIVAL_VERDICTS_KEPT
+    assert agent.arrival_verdicts[-1]["n"] == ARRIVAL_VERDICTS_KEPT + 5
