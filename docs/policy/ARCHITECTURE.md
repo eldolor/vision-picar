@@ -413,7 +413,7 @@ mostly a guess. With the target in view the same models steer well (Astra
 | Source of the answer | What it adds | State |
 |---|---|---|
 | **A map of what's unexplored** -- explore's frontier, view and approach goals over SLAM's map | the candidate places to go; coverage that eventually finds anything reachable | **built, the design** (3.80.G: arrivals 2 -> 16, cloud calls 765 -> 6) |
-| **A learned choice among those frontiers** -- `explore_goal_policy` (3.65) | the order in which the frontier's candidates are visited | built; default `rule` (the network saved 11% of median goals on fresh houses, bar 20%) |
+| **A learned choice among those frontiers** -- `explore_goal_policy` (3.65) | the order in which the frontier's candidates are visited | built; default `rule` (3.65's network saved 11% of median goals on fresh houses, bar 20%; 3.96's room-feature network, `rooms`, saved 43% with room labels but almost nothing without them, and a find mission has none until a survey's labels reach its map) |
 | **Memory of where things were seen** -- the object inventory (3.46) | a candidate's distance to the last place the target, or something like it, was seen | built; empty on real frames until a namer for camera frames passes |
 | **Common sense about rooms** -- one language-model call ranks room types for the target ("a charger: office, kitchen, bedroom") | a candidate's room prior | rooms from CLIP (3.51) built, not wired; the ranking not built |
 | **What is visible toward a frontier** -- a model rates how promising each unexplored edge looks for this target (published object-goal navigation work) | a candidate's visual promise | not built |
