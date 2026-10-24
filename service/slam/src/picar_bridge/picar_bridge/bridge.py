@@ -57,6 +57,7 @@ counter-clockwise (REP-103), and a beam with no return is None on our side
 and +inf on ROS's (REP-117).
 """
 
+import collections
 import json
 import math
 import os
@@ -162,6 +163,9 @@ SLAM_TF_LEAD_S = 0.25
 # mapping node may take to place the robot before the re-map has failed.
 REMAP_WATCH_S = 0.05
 REMAP_SCAN_MAX_AGE_S = 0.5
+# Scans waiting for TF and odometry to pass them (amendment 4, review round
+# 2): 0.5 s of them at 10 Hz, with room to spare.
+REMAP_PENDING_MAX = 20
 REMAP_READY_TIMEOUT_S = 15.0
 # A trigger whose re-map could not start waits this long before it asks again.
 REMAP_RETRY_S = 2.0
@@ -323,6 +327,7 @@ class Bridge(Node):
         self._reload_map = None          # the localisation node's FIRST /map (review)
         self._rest_since = None          # monotonic: odometry at rest since
         # Amendment 4: rest over each scan's revolution, on the scans' clock.
+        self._remap_pending = collections.deque(maxlen=REMAP_PENDING_MAX)
         self._rest_clock = remap.RestClock(REST_LINEAR_M_S, REST_ANGULAR_RAD_S, REMAP_REST_S,
                                            1.0 / SCAN_HZ, REST_ODOM_MAX_AGE_S)
         self._remap_latched = False      # a re-map failed: no automatic one again (review)
@@ -436,8 +441,11 @@ class Bridge(Node):
                 self._rest_since = None
             elif self._rest_since is None:
                 self._rest_since = time.monotonic()
-            self._rest_clock.on_odom(time.time(), msg.twist.twist.linear.x,
-                                     msg.twist.twist.angular.z)
+            # On the message's own stamp, the scans' clock (review round 2:
+            # receipt time shifts the rest window by the transport delay).
+            stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+            self._rest_clock.on_odom(stamp if stamp > 0 else time.time(),
+                                     msg.twist.twist.linear.x, msg.twist.twist.angular.z)
 
     def _on_map(self, msg):
         info = msg.info
@@ -1194,23 +1202,35 @@ class Bridge(Node):
             self._ask_remap("entered_unknown",
                             {"pose_m": [round(here["x_m"], 3), round(here["y_m"], 3)]})
             return seen
-        if scan is None or scan.get("stamp_ns") is None or scan["stamp_ns"] == seen:
-            return seen
-        laser = self._laser_in_map(Time(nanoseconds=scan["stamp_ns"]))
-        if laser is None:
-            # TF at the capture time may not be in yet: try again next look,
-            # until the scan is too old to wait for.
-            return scan["stamp_ns"] if time.time() - scan["at"] > REMAP_SCAN_MAX_AGE_S else seen
-        with self.lock:
-            still = self._rest_clock.still_for(scan["stamp_ns"] * 1e-9)
-        if still is None:
-            # Odometry has not reached the end of its revolution yet: next
-            # look, until the scan is too old to wait for (as for TF).
-            return scan["stamp_ns"] if time.time() - scan["at"] > REMAP_SCAN_MAX_AGE_S else seen
-        fired = tracker.add(scan, laser, scan["stamp_ns"] * 1e-9, still=still)
-        if fired is not None:
-            self._ask_remap("contradiction", fired)
-        return scan["stamp_ns"]
+        # Review round 2: a scan is decided only once TF and odometry have
+        # passed it, by which time the 10 Hz poll has usually replaced
+        # last_scan -- so new scans queue here and are judged in order.
+        if scan is not None and scan.get("stamp_ns") is not None and scan["stamp_ns"] != seen:
+            self._remap_pending.append(scan)
+            seen = scan["stamp_ns"]
+        while self._remap_pending:
+            s = self._remap_pending[0]
+            old = time.time() - s["at"] > REMAP_SCAN_MAX_AGE_S
+            laser = self._laser_in_map(Time(nanoseconds=s["stamp_ns"]))
+            if laser is None:
+                # TF at the capture time may not be in yet: next look, until
+                # the scan is too old to wait for (then dropped, as before).
+                if not old:
+                    break
+                self._remap_pending.popleft()
+                continue
+            with self.lock:
+                still = self._rest_clock.still_for(s["stamp_ns"] * 1e-9)
+            if still is None and not old:
+                break                       # odometry not past its revolution yet
+            self._remap_pending.popleft()
+            # Never passed by odometry in time: not known to be at rest.
+            fired = tracker.add(s, laser, s["stamp_ns"] * 1e-9, still=bool(still))
+            if fired is not None:
+                self._remap_pending.clear()
+                self._ask_remap("contradiction", fired)
+                break
+        return seen
 
     def _ask_remap(self, trigger, detail) -> None:
         """A trigger's request; one that could not start backs off

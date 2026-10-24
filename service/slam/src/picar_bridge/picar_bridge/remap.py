@@ -137,34 +137,52 @@ class RestClock:
     """Amendment 4's rest rule, one copy for the bridge and the replay
     (d4_replay.py): was the robot still over a scan's whole revolution?
 
-    Fed every odometry message (`on_odom`, on the scans' clock). A scan
-    captured at `capture_s` (its stamp) is at rest when odometry has been
-    still from at least `rest_s` before its revolution could have begun
-    (capture - period) to a message at or after it could have ended
-    (capture + period): the stamp's place in the revolution is not assumed.
-    Odometry silent for more than `max_gap_s` restarts the clock -- the
-    robot may have moved unseen."""
+    Fed every odometry message (`on_odom`, at its own stamp, on the scans'
+    clock). It keeps the still intervals (first to last still message,
+    closed by a moving one or by a gap over `max_gap_s`, when the robot may
+    have moved unseen), so the answer for a scan never depends on when it
+    is asked (review round 2). A scan captured at `capture_s` is at rest
+    when one interval runs from at least `rest_s` before its revolution
+    could have begun (capture - period) to at least where it could have
+    ended (capture + period): the stamp's place in the revolution is not
+    assumed."""
+
+    KEEP_S = 30.0
 
     def __init__(self, lin_m_s, ang_rad_s, rest_s, period_s, max_gap_s):
         self.lin, self.ang, self.rest_s = lin_m_s, ang_rad_s, rest_s
         self.period, self.max_gap = period_s, max_gap_s
-        self.since = None           # still since (scans' clock), or None
-        self.last = None            # the newest message's time
+        self.done = deque()         # closed still intervals (start, last still message)
+        self.start = None           # the open interval's start, or None
+        self.last = None            # the newest message's stamp
+        self.last_still = None      # the newest still message's stamp
 
     def on_odom(self, at, linear_m_s, angular_rad_s):
         still = abs(linear_m_s) < self.lin and abs(angular_rad_s) < self.ang
-        if not still or (self.last is not None and at - self.last > self.max_gap):
-            self.since = None
-        if still and self.since is None:
-            self.since = at
+        if self.last is not None and at <= self.last:
+            return                  # out of order or repeated: not evidence
+        if self.start is not None and (not still or at - self.last > self.max_gap):
+            self.done.append((self.start, self.last_still))
+            self.start = None
+        if still:
+            if self.start is None:
+                self.start = at
+            self.last_still = at
         self.last = at
+        while self.done and self.done[0][1] < at - self.KEEP_S:
+            self.done.popleft()
 
     def still_for(self, capture_s) -> Optional[bool]:
         """True or False, or None while odometry has not yet reached the
         end of the revolution (ask again)."""
-        if self.last is None or self.last < capture_s + self.period:
+        hi = capture_s + self.period
+        if self.last is None or self.last < hi:
             return None
-        return self.since is not None and capture_s - self.period - self.since >= self.rest_s
+        lo = capture_s - self.period - self.rest_s
+        spans = list(self.done)
+        if self.start is not None:
+            spans.append((self.start, self.last_still))
+        return any(a <= lo and b >= hi for a, b in spans)
 
 
 def run_widths(mask: np.ndarray, width: np.ndarray, gap: int, full_turn: bool) -> np.ndarray:

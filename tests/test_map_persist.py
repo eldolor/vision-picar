@@ -973,7 +973,8 @@ def test_odometry_sets_rest(bridge_mod):
     b = _bridge(bridge_mod)
 
     def odom(v, w):
-        return _Msg(pose=_Msg(pose=_Msg(position=_Msg(x=0.0, y=0.0),
+        return _Msg(header=_Msg(stamp=_Msg(sec=int(time.time()), nanosec=0)),
+                    pose=_Msg(pose=_Msg(position=_Msg(x=0.0, y=0.0),
                                         orientation=_Msg(x=0.0, y=0.0, z=0.0, w=1.0))),
                     twist=_Msg(twist=_Msg(linear=_Msg(x=v), angular=_Msg(z=w))))
     b._on_odom(odom(0.2, 0.0))
@@ -1058,7 +1059,7 @@ def test_the_watch_re_maps_when_the_scans_contradict(bridge_mod, monkeypatch, tm
 
 def _rest_clock_still(b):
     """Odometry still since long before any scan, and well past each one."""
-    b._rest_clock.since, b._rest_clock.last = -1e9, 1e18
+    b._rest_clock.start, b._rest_clock.last_still, b._rest_clock.last = -1e9, 1e18, 1e18
 
 
 def test_the_watch_judges_only_scans_taken_at_rest(bridge_mod, monkeypatch, tmp_path):
@@ -1074,7 +1075,10 @@ def test_the_watch_judges_only_scans_taken_at_rest(bridge_mod, monkeypatch, tmp_
     rc = b._rest_clock
     for k in range(150):
         cap = 1000.0 + k * 0.1
-        rc.since, rc.last = (None if k % 2 else cap - 0.1 - 0.45), cap + 0.2  # moving, or 0.45 s still
+        # Moving, or still for 0.45 s before the revolution.
+        rc.done.clear()
+        rc.start = None if k % 2 else cap - 0.1 - 0.45
+        rc.last_still = rc.last = cap + 0.2
         b.last_scan = {**_scan(*pose, boxes=[BOX]), "stamp_ns": int(cap * 1e9), "at": time.time()}
         b.remap_step(None)
     assert asked == []
@@ -1091,9 +1095,12 @@ def test_the_watch_waits_for_odometry_past_the_scan():
     assert rc.still_for(100.6) is True                    # 100.5 - 100.0 >= 0.5
     assert rc.still_for(100.55) is False
     rc.on_odom(101.0, 0.2, 0.0)                           # moving
-    assert rc.still_for(100.6) is False
+    # Review round 2: the answer for a scan never depends on when it is
+    # asked -- 100.6's revolution was still before the robot moved.
+    assert rc.still_for(100.6) is True
+    assert rc.still_for(100.9) is False                   # its revolution may reach 101.0
     rc.on_odom(101.05, 0.0, 0.0)
-    assert rc.still_for(100.9) is False                   # restarted at 101.05
+    assert rc.still_for(100.95) is False                  # restarted at 101.05
 
 
 def test_an_odometry_gap_restarts_the_rest_clock():
@@ -1103,16 +1110,50 @@ def test_an_odometry_gap_restarts_the_rest_clock():
         rc.on_odom(100.0 + k * 0.05, 0.0, 0.0)
     rc.on_odom(102.0, 0.0, 0.0)                           # 1.05 s of silence
     rc.on_odom(102.3, 0.0, 0.0)
-    assert rc.since == 102.0 and rc.still_for(102.0) is False
+    assert rc.start == 102.0 and list(rc.done) == [(100.0, 100.95)]
+    assert rc.still_for(101.5) is False                   # inside the gap: unseen
+    assert rc.still_for(102.1) is False                   # not 0.5 s after the restart
 
 
 def test_a_scan_whose_tf_is_late_is_retried_then_dropped(bridge_mod, monkeypatch, tmp_path):
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)
     b.last_scan = {**_scan(0.0, 0.0, 0.0), "stamp_ns": 5, "at": time.time()}
-    assert b.remap_step(None) is None                   # not yet: try again
-    b.last_scan["at"] -= 1.0
-    assert b.remap_step(None) == 5                      # too old: given up
+    assert b.remap_step(None) == 5 and len(b._remap_pending) == 1   # queued: try again
+    assert b.remap_step(5) == 5 and len(b._remap_pending) == 1      # still waiting, not twice
+    b._remap_pending[0]["at"] -= 1.0
+    assert b.remap_step(5) == 5 and len(b._remap_pending) == 0      # too old: given up
+    assert b._remap_tracker.scans == 0 and b._remap_tracker.moving == 0
+
+
+def test_scans_wait_in_order_for_odometry_to_pass_them(bridge_mod, monkeypatch, tmp_path):
+    """Review round 2: the 10 Hz poll replaces last_scan before odometry has
+    passed it, so each new scan queues and is judged once odometry passes
+    its revolution -- none is dropped for being replaced."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    rc, seen = b._rest_clock, None
+    rc.on_odom(999.0, 0.0, 0.0)
+    for k in range(5):                                   # five scans, odometry behind them
+        b.last_scan = {**_scan(*pose), "stamp_ns": int((1000.0 + 0.1 * k) * 1e9), "at": time.time()}
+        seen = b.remap_step(seen)
+    assert len(b._remap_pending) == 5 and b._remap_tracker.scans == 0
+    for k in range(40):                                  # odometry catches up, still throughout
+        rc.on_odom(999.05 + 0.05 * k, 0.0, 0.0)
+    b.remap_step(seen)
+    assert len(b._remap_pending) == 0 and b._remap_tracker.scans == 5
+
+
+def test_a_scan_odometry_never_passes_counts_moving(bridge_mod, monkeypatch, tmp_path):
+    """Odometry stalled: the scan is not known to be at rest, and /health's
+    watch shows it (review round 2), as the replay counts it."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    b.last_scan = {**_scan(*pose), "stamp_ns": int(1000.0 * 1e9), "at": time.time() - 1.0}
+    b.remap_step(None)
+    assert b.health()[1]["slam"]["watch"]["moving"] == 1
 
 
 def test_no_watch_without_a_matched_reload(bridge_mod, monkeypatch, tmp_path):

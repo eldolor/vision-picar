@@ -393,12 +393,13 @@ def run_a(house):
         "new_version": (out["saved"].get("last_version") or 0) >= 2,
         "contacts_0": out["sampler"]["contacts"] == 0}
     out["verdict"] = {"D4-a": "MET" if all(out["criteria"].values()) else "FAILED"}
-    if out["to_view"].get("state") != "succeeded" and not out["criteria"]["remapped"]:
-        # Amendment 4's setup never stood in view of the door (review).
-        out["verdict"] = {"D4-a": f"INVALID (the view goal ended {out['to_view'].get('state')})"}
     if entry is None and watch_errors[0]:
         out["verdict"] = {"D4-a": f"INVALID (the entry watch erred {watch_errors[0]} times "
                                   "and saw no entry)"}
+    if out["to_view"].get("state") != "succeeded":
+        # Amendment 4's setup never stood in view of the door (review rounds
+        # 1-2): whatever happened after, it is not the run the plan wrote.
+        out["verdict"] = {"D4-a": f"INVALID (the view goal ended {out['to_view'].get('state')})"}
     return out
 
 

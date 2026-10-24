@@ -41,7 +41,9 @@ class Rec(Node):
                           "data": bytes(bytearray((v & 0xff) for v in m.data))})
 
     def on_odom(self, o):
-        self.odom.append((time.time(), o.twist.twist.linear.x, o.twist.twist.angular.z))
+        # (receipt, linear, angular, the message's own stamp: the bridge's clock)
+        self.odom.append((time.time(), o.twist.twist.linear.x, o.twist.twist.angular.z,
+                          o.header.stamp.sec + o.header.stamp.nanosec * 1e-9))
 
     def on_scan(self, s):
         self.pending.append({"angle_min_rad": s.angle_min, "angle_increment_rad": s.angle_increment,

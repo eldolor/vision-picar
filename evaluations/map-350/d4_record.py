@@ -99,7 +99,6 @@ class Truth:
 
 
 MOUNTED = [None]
-ERRORS = []
 
 
 def mounted_ok():
@@ -115,12 +114,15 @@ def mounted_ok():
 
 
 def start_recorder(secs, out):
-    """Wait for the container, then run the recorder in it (a thread)."""
+    """Wait for the container, then run the recorder in it (a thread; its
+    own `errors`, so a late one is never another session's)."""
+    errors = []
+
     def run():
         try:
             record()
         except Exception as e:  # noqa: BLE001 -- the session reports it (review)
-            ERRORS.append(f"{type(e).__name__}: {e}")
+            errors.append(f"{type(e).__name__}: {e}")
 
     def record():
         while True:
@@ -138,9 +140,12 @@ def start_recorder(secs, out):
                             f"python3 /tmp/d4_rec_node.py {secs} /tmp/rec.pkl"],
                            capture_output=True, text=True)
         print("recorder:", r.stdout.strip(), r.stderr.strip()[-1500:], flush=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"the recorder node exited {r.returncode}: {r.stderr.strip()[-300:]}")
         subprocess.run(["docker", "cp", f"{de.CONTAINER}:/tmp/rec.pkl", out], check=True)
     subprocess.run(["docker", "rm", "-f", de.CONTAINER], capture_output=True)
-    th = threading.Thread(target=run)
+    th = threading.Thread(target=run, daemon=True)
+    th.errors = errors
     th.start()
     return th
 
@@ -197,13 +202,17 @@ def session(house, kind, base, out_dir, pkg):
     info["truth"] = tr.rows
     info["seconds"] = round(time.time() - t0)
     rec.join(secs + 300)
-    if ERRORS:
-        raise RuntimeError(f"recorder: {ERRORS.pop()}")
+    if rec.is_alive():
+        raise RuntimeError(f"the recorder did not finish within {secs + 300} s")
+    if rec.errors:
+        raise RuntimeError(f"recorder: {rec.errors[0]}")
     with open(pkl + ".ros", "rb") as f:
         ros = pickle.load(f)
     # The recorder counts from the container's start: a slow reload cuts the
     # session's tail, which a replay could not see (review).
-    if ros["scans"] and ros["scans"][-1]["at"] < t0 + info["seconds"] - 1.0:
+    if not ros["scans"]:
+        raise RuntimeError("the recording holds no scans")
+    if ros["scans"][-1]["at"] < t0 + info["seconds"] - 1.0:
         info["truncated_s"] = round(t0 + info["seconds"] - ros["scans"][-1]["at"], 1)
         print(f"  WARNING {kind}-{house}: the recording ends {info['truncated_s']} s "
               "before the session", flush=True)

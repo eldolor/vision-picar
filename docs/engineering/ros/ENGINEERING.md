@@ -296,12 +296,19 @@ again (the user, 2026-10-23) on any of three triggers:
   frozen (`remap.SavedMap`), because the live `/map` fills those cells as
   the robot drives.
 - **The scans contradict it** (`remap.Contradictions`): each scan taken
-  with the robot at rest (`remap.RestClock`, fed every odometry message:
-  still from `REMAP_REST_S` before the revolution could have begun to a
-  message after it could have ended, one `SCAN_HZ` period either side of
-  the capture stamp; a gap over `REST_ODOM_MAX_AGE_S` restarts it; until
-  odometry passes the scan the watch asks again, as for TF; others count
-  `moving`, amendment 4), laid at `map -> laser` at its own capture stamp
+  with the robot at rest (`remap.RestClock`, fed every odometry message at
+  its header stamp: it keeps the still intervals, closed by a moving
+  message or a gap over `REST_ODOM_MAX_AGE_S`, and a scan is at rest when
+  one interval runs from `REMAP_REST_S` before its revolution could have
+  begun to where it could have ended, one `SCAN_HZ` period either side of
+  the capture stamp -- the same answer whenever it is asked; others count
+  `moving`, amendment 4). New scans queue (`_remap_pending`, at most
+  `REMAP_PENDING_MAX`) and are judged in order once TF and odometry have
+  passed them, because the 10 Hz poll replaces `last_scan` before either
+  has; a scan older than `REMAP_SCAN_MAX_AGE_S` without TF is dropped, one
+  without odometry past it counts `moving`. The swap's rest
+  (`_at_rest`, amendment 2) is a different question -- still now, no goal
+  live -- and keeps its own monotonic `_rest_since`, laid at `map -> laser` at its own capture stamp
   (`last_scan.stamp_ns`), counts *something new* (a return within
   `MAX_RANGE_M` with no occupied and no unknown cell within `NEW_TOL_M`)
   and *something gone* (a beam whose return lies `GONE_SHORT_M` past the

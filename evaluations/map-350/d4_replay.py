@@ -69,13 +69,18 @@ def still_flags(rec):
     constants), fed the recorded odometry. A scan odometry never passed is
     not at rest."""
     rc = remap.RestClock(REST_LIN, REST_ANG, REST_S, 1.0 / SCAN_HZ, ODOM_MAX_AGE_S)
-    od = sorted(rec.get("odom") or [])
+    # The bridge times odometry by its own stamp; recordings before review
+    # round 2 kept only the receipt time (the same host's clock, ms apart).
+    od = sorted((o[3] if len(o) > 3 and o[3] > 0 else o[0], o[1], o[2])
+                for o in rec.get("odom") or [])
     out, k = [], 0
     for s in sorted(rec["scans"], key=lambda s: s["stamp_ns"]):
         cap = s["stamp_ns"] * 1e-9
         while k < len(od) and rc.still_for(cap) is None:
             rc.on_odom(*od[k])
             k += 1
+        # Never passed by odometry: not known to be at rest (the bridge's
+        # aged-out scan, counted `moving`).
         out.append((s["stamp_ns"], bool(rc.still_for(cap))))
     by = dict(out)
     return [by[s["stamp_ns"]] for s in rec["scans"]]
