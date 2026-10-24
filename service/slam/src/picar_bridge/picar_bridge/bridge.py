@@ -165,6 +165,9 @@ REMAP_SCAN_MAX_AGE_S = 0.5
 REMAP_READY_TIMEOUT_S = 15.0
 # A trigger whose re-map could not start waits this long before it asks again.
 REMAP_RETRY_S = 2.0
+# After a swap called off for want of rest, longer (review: a robot that never
+# reads still would otherwise lose its goal every ~10 s).
+REMAP_DEFER_BACKOFF_S = 30.0
 # The swap waits for no live goal and odometry at rest for REMAP_REST_S, at
 # most REMAP_DEFER_MAX_S; then a live goal is cancelled and rest is waited
 # for up to REMAP_REST_WAIT_S more (amendment 2: the pose the mapping node
@@ -318,6 +321,8 @@ class Bridge(Node):
         self._reload_map = None          # the localisation node's FIRST /map (review)
         self._rest_since = None          # monotonic: odometry at rest since
         self._remap_latched = False      # a re-map failed: no automatic one again (review)
+        self._remap_deferrals = 0
+        self._remap_mo = None            # the localisation node's map -> odom at the swap
         if self.map_store is None:
             self.get_logger().warning(f"no {MAP_DIR}: maps are not saved this session")
         if self.brain_url:
@@ -1075,6 +1080,7 @@ class Bridge(Node):
             self.reload_matched = False
             self.reload_start_truth = None
             self._remap_version = self._remap_saved = self._remap_tracker = None
+            self._reload_map = None
             # A fallen-back reload's map_id is not this map's: a new one
             # before the swap, so no save can file a fresh graph under it.
             self.map_id = mapstore.new_map_id()
@@ -1230,6 +1236,9 @@ class Bridge(Node):
                 self.slam_state = "ready"
                 self.remap_record = {**record, "result": "not_started",
                                      "error": f"{type(e).__name__}: {e}"[:300]}
+                why, self._save_after_remap = self._save_after_remap, None
+            if why is not None:
+                self.save_map_async(why)          # localising: recorded as a skip
             return 503, {"error": f"re-map not started: {e}"}
         return 200, {"remapping": True, **record}
 
@@ -1257,29 +1266,41 @@ class Bridge(Node):
                         "at_rest": True}
             time.sleep(0.05)
         cancelled = self.cancel_goal("re-map")
-        t1 = time.monotonic()
+        t1, rested = time.monotonic(), False
         while time.monotonic() - t1 < REMAP_REST_WAIT_S:
             if self._at_rest(time.monotonic()):
+                rested = True                    # the check that ended the wait (review)
                 break
             time.sleep(0.05)
         return {"waited_s": round(time.monotonic() - t0, 2), "cancelled_goal": bool(cancelled),
-                "at_rest": self._at_rest(time.monotonic())}
+                "at_rest": rested}
 
-    def _pose_now(self):
-        """The robot's map pose after the localisation node has stopped:
-        its last map -> odom (it moves only on a scan match) composed with
-        the current odom -> base_footprint, which ros2_control keeps live."""
+    def _map_to_odom(self):
+        """The latest map -> odom as (x, y, yaw), or None."""
         try:
             mo = self.tf_buffer.lookup_transform("map", "odom", Time())
+        except Exception:  # noqa: BLE001
+            return None
+        yaw, _, _ = _yaw_pitch_roll(mo.transform.rotation)
+        return (mo.transform.translation.x, mo.transform.translation.y, yaw)
+
+    def _pose_now(self, mo=None):
+        """The robot's map pose after the localisation node has stopped:
+        its last map -> odom (`mo`, else the latest; it moves only on a scan
+        match) composed with the current odom -> base_footprint, which
+        ros2_control keeps live."""
+        mo = mo or self._map_to_odom()
+        try:
             ob = self.tf_buffer.lookup_transform("odom", "base_footprint", Time())
         except Exception:  # noqa: BLE001
             return None
-        myaw, _, _ = _yaw_pitch_roll(mo.transform.rotation)
+        if mo is None:
+            return None
+        mx, my, myaw = mo
         oyaw, _, _ = _yaw_pitch_roll(ob.transform.rotation)
         c, s_ = math.cos(myaw), math.sin(myaw)
         ox, oy = ob.transform.translation.x, ob.transform.translation.y
-        return (mo.transform.translation.x + c * ox - s_ * oy,
-                mo.transform.translation.y + s_ * ox + c * oy,
+        return (mx + c * ox - s_ * oy, my + s_ * ox + c * oy,
                 math.atan2(math.sin(myaw + oyaw), math.cos(myaw + oyaw)))
 
     def _remap_run(self, version, record) -> None:
@@ -1292,8 +1313,11 @@ class Bridge(Node):
                 self.remap_record = {**record, "result": "deferred"}
                 self.slam_state = "ready"
                 why, self._save_after_remap = self._save_after_remap, None
-            self._remap_retry_at = time.monotonic() + REMAP_RETRY_S
-            self.get_logger().warning("re-map called off: the robot did not come to rest")
+            self._remap_deferrals += 1
+            self._remap_retry_at = time.monotonic() + REMAP_DEFER_BACKOFF_S
+            self.get_logger().warning("re-map called off: the robot did not come to rest "
+                                      f"({self._remap_deferrals} so far); asked again in "
+                                      f"{REMAP_DEFER_BACKOFF_S:.0f} s")
             if why is not None:
                 self.save_map_async(why)          # localising: recorded as a skip
             return
@@ -1301,7 +1325,10 @@ class Bridge(Node):
         pose = None
         try:
             self.slam.stop()
-            pose = self._pose_now()
+            # Kept (review): a failed mapping node's own map -> odom must
+            # not seed the localisation node that replaces it.
+            self._remap_mo = self._map_to_odom()
+            pose = self._pose_now(self._remap_mo)
             if pose is None:
                 raise RuntimeError("no map -> odom -> base_footprint to re-map from")
             record["from_pose"] = [round(v, 4) for v in pose]
@@ -1341,7 +1368,7 @@ class Bridge(Node):
             self.slam.stop()
         except Exception:  # noqa: BLE001
             pass
-        start = self._pose_now() or pose
+        start = (self._pose_now(self._remap_mo) if self._remap_mo else None) or pose
         try:
             if start is None:
                 raise RuntimeError("no pose to localise from")
@@ -1501,7 +1528,9 @@ class Bridge(Node):
                                   "remap": dict(self.remap_record),
                                   "watch": None if self._remap_tracker is None else
                                   {"scans": self._remap_tracker.scans,
-                                   "lost": self._remap_tracker.lost}}}
+                                   "lost": self._remap_tracker.lost},
+                                  "remap_latched": self._remap_latched,
+                                  "remap_deferrals": self._remap_deferrals}}
 
 
 def _handler(bridge):

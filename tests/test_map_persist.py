@@ -796,7 +796,8 @@ def _matched(bridge_mod, monkeypatch, tmp_path, here=(1.0, 0.5, 0.3)):
     monkeypatch.setattr(b, "check_reload", check)
     monkeypatch.setattr(b, "_fresh_pose",
                         lambda: {"x_m": here[0], "y_m": here[1], "yaw_rad": here[2], "age_s": 0.0})
-    monkeypatch.setattr(b, "_pose_now", lambda: tuple(here))
+    monkeypatch.setattr(b, "_pose_now", lambda mo=None: tuple(here))
+    monkeypatch.setattr(b, "_map_to_odom", lambda: (0.0, 0.0, 0.0))
     b._rest_since = time.monotonic() - 1.0              # standing still
     b.last_odom = {"at": time.time() + 3600}            # and odometry that stays fresh
     b.start_slam()
@@ -1247,3 +1248,60 @@ def test_a_save_lost_to_a_failed_re_map_is_counted(bridge_mod, monkeypatch, tmp_
     assert b.remap("request")[0] == 200
     _settle(b)
     assert b.slam_state == "failed" and b.map_saves["skipped"] == 1 and b._save_after_remap is None
+
+
+# ---- 3.50.D4 review round 3 ----
+
+def test_a_deferral_backs_off_longer_and_is_counted(bridge_mod, monkeypatch, tmp_path):
+    monkeypatch.setattr(bridge_mod, "REMAP_DEFER_MAX_S", 0.1)
+    monkeypatch.setattr(bridge_mod, "REMAP_REST_WAIT_S", 0.1)
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b._rest_since = None
+    monkeypatch.setattr(b, "cancel_goal", lambda why="cancelled": False)
+    assert b.remap("contradiction", {"cells": 12})[0] == 200
+    _settle(b)
+    h = b.health()[1]["slam"]
+    assert h["remap"]["result"] == "deferred" and h["remap_deferrals"] == 1
+    assert b._remap_retry_at - time.monotonic() > bridge_mod.REMAP_RETRY_S + 1
+
+
+def test_rest_reached_in_the_wait_is_rest(bridge_mod, monkeypatch, tmp_path):
+    """Review: the check that ended the wait decides, not a later one."""
+    monkeypatch.setattr(bridge_mod, "REMAP_DEFER_MAX_S", 0.05)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    calls = iter([False] * 3 + [True] + [False] * 100)
+    monkeypatch.setattr(b, "_at_rest", lambda now: next(calls))
+    monkeypatch.setattr(b, "cancel_goal", lambda why="cancelled": True)
+    assert b._await_rest()["at_rest"] is True
+
+
+def test_the_latch_shows_on_health(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    assert b.health()[1]["slam"]["remap_latched"] is False
+    b._remap_latched = True
+    assert b.health()[1]["slam"]["remap_latched"] is True
+
+
+def test_the_fall_back_starts_from_the_localisation_node_s_frame(bridge_mod, monkeypatch, tmp_path):
+    """Review: not from a map -> odom the failed mapping node published."""
+    monkeypatch.setitem(bridge_mod._test_ok, "value", True)
+    b, live, store = _matched(bridge_mod, monkeypatch, tmp_path)
+    frames = iter([(1.0, 2.0, 0.0), (9.0, 9.0, 0.0)])          # localisation's, then mapping's
+    monkeypatch.setattr(b, "_map_to_odom", lambda: next(frames))
+    seen = []
+    monkeypatch.setattr(b, "_pose_now", lambda mo=None: seen.append(mo) or (mo[0], mo[1], 0.0))
+    monkeypatch.setattr(b, "_fresh_pose", lambda: None if live.mode == "mapping" else
+                        {"x_m": 1.0, "y_m": 2.0, "yaw_rad": 0.0, "age_s": 0.0})
+    monkeypatch.setattr(live, "alive", lambda: live.mode != "mapping")
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    assert live.calls[-1] == ("localisation", store.current().prefix, (1.0, 2.0, 0.0))
+    assert all(mo == (1.0, 2.0, 0.0) for mo in seen)
+
+
+def test_a_fall_back_frees_the_reload_map(bridge_mod, monkeypatch, tmp_path):
+    b, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path,
+                                relocalise.judge([0.2] * 5, (0.0, 0.0, 0.0)))
+    b._reload_map = {"data": [0]}
+    b.start_slam()
+    assert b._reload_map is None
