@@ -884,10 +884,18 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   (`begin_goal_end()`); a pan does not. `drive: ros`'s bridge already
   cancelled; `drive: direct` let nav2 drive on. In process only; the live
   check under both drives is owed (criterion 4).
+* **A sim arrival is confirmed from geometry (3.98), merged 2026-10-24**
+  (`SPEC-REVIEW-3.md` fix 7, the user): on the simulator's frames the
+  arrival's cloud step is `brain/arrival.py` `geometry_identity()` -- the
+  nearest object within 10 deg of the centre must be the target -- with no
+  paid call; `brain.sim_arrival_confirm: cloud` (env `SIM_ARRIVAL_CONFIRM`)
+  keeps the call for a run that tests it (Stage 1, 3.80.O-style blind
+  evaluations). Real frames always ask the tiers. Offline in the sim a
+  tiered mission now ends `found` (3.49's `arrived_unconfirmed` is the
+  `cloud` arm's). Live: `found` on `scaled_house`, no arrival call.
 * **Decisions still open:** `PLAN-ros-alignment.md` section 6's gyro
   heading, floor band and speed by clearance all wait on the car's numbers
-  (their triggers are written); review 3's fix 7 (arrival confirmation
-  against the real cloud). Decided 2026-10-24: 3.50.D4's re-map trigger
+  (their triggers are written). Decided 2026-10-24: fix 7 (3.98), 3.50.D4's re-map trigger
   (scan contradiction, beside entered-unknown) and fix 11 (3.97); the
   spec-review handoff's 3a-3c were decided 2026-10-05.
 * **Not built:** `brain/planner.py`, room-level planning over

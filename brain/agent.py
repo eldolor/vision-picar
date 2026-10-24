@@ -361,7 +361,8 @@ class MissionAgent(ConstrainedAgent):
 
     def _confirm_identity(self, readout: dict, frame: dict) -> dict:
         """Returns the readout; sets `self._confirmed_this_frame` when this
-        frame asked the cloud."""
+        frame got a verdict (from the cloud, the local tier or, 3.98, the
+        simulator's geometry)."""
         if self._identity_refused:
             who = ("the local model" if (self._refusal or {}).get("tier") == "local"
                    else "the cloud")
