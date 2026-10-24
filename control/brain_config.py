@@ -269,7 +269,7 @@ DEFAULTS = {
     # 3.99: every mission's end, one line each -- whether a person stepped in
     # (a Stop, a D-pad takeover) and what the mission was doing then -- in
     # <intervention_dir>/interventions.jsonl. Local only; never uploaded.
-    # `python -m brain.intervention_log` reports interventions per hour.
+    # `python -m control.intervention_report` reports interventions per hour.
     "intervention_dir": "recordings/interventions",
     # Replaying a recorded walk (control/walk_replay.py) is a different
     # question from a live mission's vision call, and it wants a different

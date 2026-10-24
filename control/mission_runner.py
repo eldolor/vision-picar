@@ -240,6 +240,7 @@ _PREEMPTED_BY = re.compile(r"^(\S+) (?:is driving|took over)\b")
 # written without it.
 POSE_READ_S = 2.0
 
+
 def derived_max_steps(time_limit_s: Optional[float]) -> int:
     """3.70 E4's step backstop: `time_limit_s / 0.5 s x 2` (a 30 min limit
     gives 7,200). With no time limit, `DEFAULT_MAX_STEPS`."""
@@ -1898,27 +1899,18 @@ class MissionRunner:
         }
 
     def _pose_for_line(self) -> tuple:
-        """3.99: (pose, why it is missing). The read runs on a daemon thread
-        of its own, waited for at most `POSE_READ_S`: the writer is not a
-        daemon, and a hung world must not hold the process's exit for a
+        """3.99: (pose, why it is missing). The read is abandoned after
+        `POSE_READ_S` (`call_with_timeout`'s daemon thread): the writer is not
+        a daemon, and a hung world must not hold the process's exit for a
         client's whole timeout (review round 2)."""
-        box: dict = {}
-
-        def read():
-            try:
-                box["pose"] = self.world.get_pose()
-            except Exception as e:  # noqa: BLE001 -- the line without it
-                box["error"] = e
-
-        reader = threading.Thread(target=read, daemon=True, name="mission-intervention-pose")
-        reader.start()
-        reader.join(POSE_READ_S)
-        if reader.is_alive():
+        try:
+            p = call_with_timeout(self.world.get_pose, timeout_s=POSE_READ_S)
+        except TimeoutError:
+            logger.warning("intervention pose read timed out after %g s", POSE_READ_S)
             return None, f"read timed out after {POSE_READ_S:g} s"
-        if "error" in box:
-            logger.warning("intervention pose unreadable: %s", box["error"])
-            return None, f"read failed: {box['error']}"
-        p = box.get("pose")
+        except Exception as e:  # noqa: BLE001 -- the line without it
+            logger.warning("intervention pose unreadable: %s", e)
+            return None, f"read failed: {e}"
         if isinstance(p, dict) and p.get("usable"):
             return {k: p.get(k) for k in ("map_id", "x_m", "y_m", "heading_deg")}, None
         return None, "unusable" + (f": {p.get('reason')}" if isinstance(p, dict)

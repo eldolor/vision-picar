@@ -379,12 +379,15 @@ def test_a_hung_pose_read_holds_the_writer_only_its_own_deadline(tmp_path, monke
     runner.start()
     runner.tick()
     Hung.armed = True
-    t0 = time.monotonic()
-    runner.stop()
-    _wait(runner)
-    runner._intervention_writer.join(5)
-    assert time.monotonic() - t0 < 2.0
-    release.set()
+    try:
+        t0 = time.monotonic()
+        runner.stop()
+        _wait(runner)
+        runner._intervention_writer.join(5)
+        assert not runner._intervention_writer.is_alive()
+        assert time.monotonic() - t0 < 2.0
+    finally:
+        release.set()       # the abandoned reader, never left hanging in the suite
     iv = _lines(path)[0]["intervention"]
     assert iv["pose_after_stop"] is None and iv["pose_note"].startswith("read timed out")
 

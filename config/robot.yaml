@@ -458,7 +458,7 @@ brain:
   # 3.99 -- every mission's end, one line each in
   # <intervention_dir>/interventions.jsonl: whether a person stepped in (a Stop,
   # a D-pad takeover) and what it was doing then. Local only, never uploaded;
-  # `python -m brain.intervention_log` reports interventions per hour.
+  # `python -m control.intervention_report` reports interventions per hour.
   intervention_dir: recordings/interventions
 
   # Replaying a recorded walk, which is NOT a mission and wants a longer
