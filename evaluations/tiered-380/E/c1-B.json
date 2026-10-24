@@ -1,0 +1,3016 @@
+{
+ "summary": {
+  "records": "../B/B1.json",
+  "frames": 299,
+  "visible": 74,
+  "thresholds": {
+   "tier_local_no_below": 0.1,
+   "tier_local_max_unable": 2
+  },
+  "yes": 72,
+  "tp": 70,
+  "fp": 2,
+  "precision": 0.9722222222222222,
+  "recall": 0.9459459459459459,
+  "decided_by": {
+   "local": 298,
+   "cloud": 1
+  },
+  "cloud_escalations": 1,
+  "cloud_unknown": [],
+  "teal_bin_walk_yes": 1,
+  "met": true
+ },
+ "rows": [
+  {
+   "key": "blue-bottle-20260907-142454/frame-0000.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0001.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0002.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0003.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0004.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9830571474774097,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0005.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0006.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0007.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0008.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0009.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0010.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0011.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0012.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9935706700509362,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0013.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9975744094977644,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0014.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0015.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0016.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0017.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0018.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9782920783494675,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0019.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9970532423279981,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0020.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9983138958851959,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0021.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9984598049504205,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0022.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9993420758932078,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0023.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9976477460183673,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0024.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9986763792839625,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0025.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9971620656556867,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0026.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9962939986831799,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0027.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9986763536252122,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0028.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9967637039557277,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0029.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9927500371826496,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0030.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9888214464531148,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0031.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9872014346573209,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0032.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9885999342511685,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0002.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0003.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0004.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0005.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0006.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0007.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0008.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0009.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0010.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0011.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0012.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0013.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0014.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0006163894216090749,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0015.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0016.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0017.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0018.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0019.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.5548080836123557,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0020.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0007564227508523448,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0021.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0022.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0023.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0024.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0025.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0026.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0027.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0028.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0029.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0030.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0031.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0032.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0033.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0034.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0035.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0036.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0037.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0038.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0039.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0040.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0041.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0042.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0043.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0010090594196618368,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0044.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0008900867800316288,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0045.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0046.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0047.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0048.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0049.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0050.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0051.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0052.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0053.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0054.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0055.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0056.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0057.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0058.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0059.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0007372708224188255,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0060.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0005706967182934492,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0061.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.000774649008907544,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0062.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0006860697916871374,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0063.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0011386647855981063,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0064.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0065.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0066.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0067.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0010473947329903532,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0068.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0069.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0007590699565704938,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0070.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0007008442760389126,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0071.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0072.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0073.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0074.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0007616669706684922,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0075.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0076.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0009626105267983671,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0077.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0078.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0079.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0080.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.001050351562998531,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0081.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0005806430762332052,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0082.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0083.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0084.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0085.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0086.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0087.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0088.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0089.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0010376890873628304,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0090.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0007124248884214456,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0091.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0092.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0093.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0095.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0096.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0097.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0009884330711960267,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0098.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.000933219451579162,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0099.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0100.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0101.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0102.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00154001872326727,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0103.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0104.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0005750749392090804,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0105.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00047826402346740955,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0106.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0107.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0108.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0109.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0110.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0111.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0112.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00032569981613015693,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0113.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.001334256605322583,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0114.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0115.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0116.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0117.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0118.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0119.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0120.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0121.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0122.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0123.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00021158402082620866,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0124.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0125.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0007505012598347546,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0126.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0127.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.000283971640125754,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0128.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00021501644466206992,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0129.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0004007001447456984,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0130.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0131.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0002397289725127513,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0132.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0133.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0134.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0135.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0002519937425201362,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0136.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00031623137294630783,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0137.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00032890583092344517,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0138.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0003498268101733935,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0139.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0140.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0002553672693074995,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0141.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.000821874463431805,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0142.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00047766293679129217,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0143.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0005645503617283589,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0144.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0145.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0146.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0004444320430460123,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0147.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0008409821098929811,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0148.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0149.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0150.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0151.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0152.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00021825720521406636,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0153.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0004100147378682127,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0154.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00013551018679384115,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0155.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0156.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0157.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0158.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0159.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0160.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0161.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0162.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0163.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0164.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0165.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00023727712969918654,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0166.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0167.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00029976637761059067,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0168.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.000390881992586236,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0169.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0170.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0007042960601929424,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0171.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0172.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0173.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0174.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0005582759557494617,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0175.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0176.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0177.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0178.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0179.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0180.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.000320662493983796,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0181.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0182.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0183.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0184.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0185.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0186.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0187.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0188.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0189.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0190.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0191.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0192.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0193.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0194.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0195.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0196.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0197.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0198.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0002136958247828323,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0199.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.00036221185466710616,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0200.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0201.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0202.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.6168059209578939,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0203.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9923323304369841,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0204.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9052561602251672,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0205.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9935937683064688,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0206.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9977120590057921,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0207.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9972516763427087,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0208.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9972647428698572,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0209.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9967843987843783,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0211.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9954911386989891,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0212.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9850265155629715,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0000.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0001.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0002.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0003.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0004.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.5263836066106853,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0005.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.998021198335277,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0006.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0007.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0008.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9974601225569757,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0009.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.999455668613179,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0010.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.663728509547794,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0011.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9994713660412207,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0012.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9998227262061807,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0013.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9987543456088481,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0014.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9996910513097078,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0015.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9984611559166809,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0016.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9988114425784715,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0017.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.9987652862691407,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0018.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9993528308213031,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0000.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0001.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0002.jpg",
+   "visible": false,
+   "local_status": "unparsed",
+   "local_score": 0.0,
+   "by": "cloud",
+   "yes": false,
+   "local_asks": 2,
+   "cloud_asks": 1
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0003.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.999849554070028,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0004.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9991329994848955,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0005.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0006.jpg",
+   "visible": false,
+   "local_status": "answered",
+   "local_score": 0.0,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0007.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9996247688018776,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0008.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9995044962132693,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0009.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9998142060536869,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0010.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9998198621504337,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0011.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.732529171454344,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0012.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.839428745034268,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0013.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9999354096990768,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0014.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.8422749120849271,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0015.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.8140532879348279,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0016.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.0018035478241950878,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0017.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.0019511316270714458,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0018.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.998603954300499,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0019.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.001229738096893467,
+   "by": "local",
+   "yes": false,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0020.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9990183385210197,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0021.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9997023884197752,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0022.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9996622788951127,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0023.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9980979578787318,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0024.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9997397673276518,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0025.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.999685587596206,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0026.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9995954313316608,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0027.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9996671647861497,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0028.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9993576123845308,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0029.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9960152729612387,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0030.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9996585232143411,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0031.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9997098901896194,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0032.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9990980446634826,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0033.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9999694730795606,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0034.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9998787970797903,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0035.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9995749083029996,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0036.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9993661419481503,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0037.jpg",
+   "visible": true,
+   "local_status": "answered",
+   "local_score": 0.9992224944685218,
+   "by": "local",
+   "yes": true,
+   "local_asks": 1,
+   "cloud_asks": 0
+  }
+ ]
+}
