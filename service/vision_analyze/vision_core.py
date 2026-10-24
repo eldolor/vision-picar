@@ -1324,7 +1324,13 @@ ROOM_PROMPT = """You are the camera of a small indoor robot mapping a house, abo
 
 Answer with the room's name only, lowercase, at most three words. Use one of these if one fits: kitchen, living room, family room, dining room, bedroom, bathroom, hallway, foyer, office, laundry room, pantry, closet, garage. Otherwise give another short room-type name. If the photo does not show enough to tell, answer: unclear"""
 
-ROOM_MAX_TOKENS = 16
+# Opus 5.5 always thinks -- Bedrock refuses to turn it off -- and the thinking
+# counts against maxTokens. At 16 every real call stopped on max_tokens before
+# any text, so every room was "unclear" (3.70 S2b, 2026-10-24). Low effort
+# keeps the thinking short (57 tokens out with the answer, on a real call);
+# the cap only bounds a call's cost (~$0.006 of output at most).
+ROOM_EFFORT = "low"
+ROOM_MAX_TOKENS = 256
 _ROOM_NAME = re.compile(r"[a-z][a-z' -]{0,39}")
 _ROOM_UNCLEAR = ("unclear", "unknown", "none", "n/a")
 
@@ -1351,11 +1357,18 @@ def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg"
             }
         ],
         inferenceConfig={"maxTokens": ROOM_MAX_TOKENS},
+        additionalModelRequestFields={"output_config": {"effort": ROOM_EFFORT}},
     )
 
     content_blocks = response["output"]["message"]["content"]
     text = "".join(b["text"] for b in content_blocks if "text" in b)
     result = _parse_room_name(text)
+    stop = response.get("stopReason")
+    if stop not in (None, "end_turn"):
+        # A cut reply reads as "unclear"; say why, or a survey's rooms all
+        # go unlabelled with nothing in the log (as they did before S2b).
+        logger.warning(f"Room reply stopped on {stop}: {text[:200]!r}")
+        result["_stop"] = stop
     # Carried on the reply for the same reason /navigate's are: a survey's
     # record has to say which model named its rooms, and at what cost.
     result["model_id"] = ROOM_MODEL_ID

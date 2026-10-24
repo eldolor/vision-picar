@@ -968,9 +968,56 @@ def test_the_room_call_is_short_and_asks_the_room_model(monkeypatch):
     assert out["room"] == "dining room"
     assert out["model_id"] == vision_core.ROOM_MODEL_ID
     assert fake.kwargs["modelId"] == vision_core.ROOM_MODEL_ID
-    # A name, not /navigate's reply: a few tokens out, not 300.
-    assert fake.kwargs["inferenceConfig"]["maxTokens"] <= 20
     assert out["usage"] == {"input_tokens": 1, "output_tokens": 2}
+
+
+def _stub_room_converse(monkeypatch, content, stop):
+    """A Converse reply shaped like Opus 5.5's on 2026-10-24: a reasoning
+    block (its text empty, as Bedrock returns it) before any text."""
+    import vision_core
+
+    class FakeClient:
+        def converse(self, **kwargs):
+            self.kwargs = kwargs
+            return {"output": {"message": {"content": content}}, "stopReason": stop,
+                    "usage": {"inputTokens": 1364, "outputTokens": 57}}
+
+    fake = FakeClient()
+    monkeypatch.setattr(vision_core, "_get_client", lambda *a, **kw: fake)
+    monkeypatch.setattr(vision_core, "_prepare_image", lambda b, m: (b, "jpeg"))
+    return fake
+
+
+_REASONING = {"reasoningContent": {"reasoningText": {"text": "", "signature": "x"}}}
+
+
+def test_the_room_call_leaves_room_for_the_models_thinking(monkeypatch):
+    """3.70 S2b: Opus 5.5 always thinks (it cannot be turned off), and its
+    thinking counts against maxTokens. At 16 every real call stopped on
+    max_tokens with no text, so every room came back "unclear". Low effort
+    keeps the thinking short (57 tokens out on a real call); the cap is a
+    ceiling on cost, not the answer's length."""
+    import vision_core
+
+    fake = _stub_room_converse(monkeypatch, [_REASONING, {"text": "bedroom"}], "end_turn")
+    out = vision_core.describe_image_bytes_room(b"x", "image/jpeg")
+    assert out["room"] == "bedroom"
+    assert "_stop" not in out
+    assert fake.kwargs["additionalModelRequestFields"] == {"output_config": {"effort": "low"}}
+    assert fake.kwargs["inferenceConfig"]["maxTokens"] >= 256
+
+
+def test_a_cut_room_reply_says_so(monkeypatch, caplog):
+    """A reply cut off before its text is "unclear" -- but said, with the
+    stop reason, never silently, as every call was before S2b."""
+    import vision_core
+
+    _stub_room_converse(monkeypatch, [_REASONING], "max_tokens")
+    with caplog.at_level("WARNING"):
+        out = vision_core.describe_image_bytes_room(b"x", "image/jpeg")
+    assert out["room"] == "unclear"
+    assert out["_stop"] == "max_tokens"
+    assert "max_tokens" in caplog.text
 
 
 def test_an_unusable_room_reply_keeps_what_the_model_said():
