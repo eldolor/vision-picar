@@ -1329,14 +1329,20 @@ Answer with the room's name only, lowercase, at most three words. Use one of the
 # any text, so every room was "unclear" (3.70 S2b, 2026-10-24). Low effort
 # keeps the thinking short (57 tokens out with the answer, on a real call);
 # the cap only bounds a call's cost (~$0.006 of output at most). The effort
-# field is sent only to models confirmed to take it: older Claude models and
-# other vendors' models refuse it, which would make every /room a 502.
+# field goes to a model by its name, whatever the region prefix or version
+# suffix, and only to the models confirmed to take it (Opus 5.5, from
+# us-east-2): older Claude models and other vendors' models refuse it, which
+# would make every /room a 502.
 ROOM_EFFORT = "low"
-ROOM_EFFORT_MODELS = frozenset({"us.anthropic.claude-opus-5-5", "global.anthropic.claude-opus-5-5"})
+ROOM_EFFORT_MODELS = ("anthropic.claude-opus-5-5",)
 ROOM_MAX_TOKENS = 256
 _CLEAN_STOPS = (None, "end_turn", "stop_sequence")
 _ROOM_NAME = re.compile(r"[a-z][a-z' -]{0,39}")
 _ROOM_UNCLEAR = ("unclear", "unknown", "none", "n/a")
+
+
+def _takes_room_effort(model_id: str) -> bool:
+    return any(name in model_id for name in ROOM_EFFORT_MODELS)
 
 
 def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
@@ -1345,7 +1351,7 @@ def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg"
     image_bytes, fmt = _prepare_image(image_bytes, media_type)
 
     extra = {}
-    if ROOM_MODEL_ID in ROOM_EFFORT_MODELS:
+    if _takes_room_effort(ROOM_MODEL_ID):
         extra["additionalModelRequestFields"] = {"output_config": {"effort": ROOM_EFFORT}}
     response = _converse(client,
         modelId=ROOM_MODEL_ID,
@@ -1373,12 +1379,14 @@ def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg"
     if stop in _CLEAN_STOPS:
         result = _parse_room_name(text)
     else:
-        # A cut reply is never a name, even when its first word passes as
-        # one ("dining" of "dining room"); and it is said, with why, or a
-        # survey's rooms all go unlabelled with nothing in the log (as they
-        # did before S2b).
-        logger.warning(f"Room reply stopped on {stop}: {text[:200]!r}")
-        result = {"room": "unclear", "_raw": text[:200], "_stop": stop}
+        # A reply that did not end cleanly (cut on max_tokens, a guardrail)
+        # is never a name, even when its first word passes as one ("dining"
+        # of "dining room"); and it is said, with why, or a survey's rooms
+        # all go unlabelled with nothing in the log (as they did before S2b).
+        logger.warning(f"Room reply did not end cleanly ({stop}): {text[:200]!r}")
+        result = {"room": "unclear", "_stop": stop}
+        if text.strip():
+            result["_raw"] = text[:200]
     # Carried on the reply for the same reason /navigate's are: a survey's
     # record has to say which model named its rooms, and at what cost.
     result["model_id"] = ROOM_MODEL_ID

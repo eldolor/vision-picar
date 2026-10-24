@@ -1020,6 +1020,34 @@ def test_the_effort_field_goes_only_to_a_model_that_takes_it(monkeypatch):
     assert "additionalModelRequestFields" not in fake.kwargs
 
 
+@pytest.mark.parametrize("model_id", [
+    "us.anthropic.claude-opus-5-5", "global.anthropic.claude-opus-5-5",
+    "eu.anthropic.claude-opus-5-5", "anthropic.claude-opus-5-5", "us.anthropic.claude-opus-5-5-v1:0",
+])
+def test_opus_5_5_gets_the_effort_field_under_any_spelling(monkeypatch, model_id):
+    """Matched by name: an id spelled another way that missed the effort
+    field would bring S2b's every-room-unclear back, silently."""
+    import vision_core
+
+    monkeypatch.setattr(vision_core, "ROOM_MODEL_ID", model_id)
+    fake = _stub_room_converse(monkeypatch, [_REASONING, {"text": "hallway"}], "end_turn")
+    vision_core.describe_image_bytes_room(b"x", "image/jpeg")
+    assert fake.kwargs["additionalModelRequestFields"] == {"output_config": {"effort": "low"}}
+
+
+def test_the_deployed_room_model_gets_the_effort_field():
+    """The code's default and the template's RoomModelId (the env var that
+    wins when deployed) both name a model the effort field goes to."""
+    import re
+    from pathlib import Path
+    import vision_core
+
+    template = (Path(__file__).resolve().parents[3] / "cloudformation" / "serverless.yaml").read_text()
+    deployed = re.search(r"RoomModelId:\s*\n\s*Type: String\s*\n\s*Default: (\S+)", template).group(1)
+    for model_id in (vision_core.ROOM_MODEL_ID, deployed):
+        assert vision_core._takes_room_effort(model_id), model_id
+
+
 @pytest.mark.parametrize("content", [[_REASONING], [_REASONING, {"text": "dining"}]])
 def test_a_cut_room_reply_is_never_a_name_and_says_so(monkeypatch, caplog, content):
     """A reply cut off is "unclear" -- even when its first word passes as a
@@ -1032,6 +1060,8 @@ def test_a_cut_room_reply_is_never_a_name_and_says_so(monkeypatch, caplog, conte
         out = vision_core.describe_image_bytes_room(b"x", "image/jpeg")
     assert out["room"] == "unclear"
     assert out["_stop"] == "max_tokens"
+    # _raw only when the model wrote something (the spec's contract).
+    assert ("_raw" in out) == (len(content) > 1)
     assert len([r for r in caplog.records if r.levelname == "WARNING"]) == 1
     assert "max_tokens" in caplog.text
 
