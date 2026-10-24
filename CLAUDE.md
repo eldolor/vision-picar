@@ -268,9 +268,11 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     but one wheel tick ran late (0.127 s) as memory ran out -- FAILED as
     written; D10 met (box p90 2.86 s). Status now reports `verdict_s` and
     `arrival_verdicts`. `evaluations/tiered-380/E/board/`.
+  * H, done 2026-10-24: with 3.87 merged, G3's configuration has 0 late
+    wheel ticks (E's `A1-noload`: 0 of 12,367, max 85 ms; G3 before: 1,196).
   * Open: a person's D-pad Stop during a local-led arrival's cloud confirm
-    can still end `found` (the brain cannot read 3.84's latch); 3.80.H
-    criterion 4. `vision-picar-ros:latest` rebuilt from `dev` 778846d on 2026-10-18.
+    can still end `found` (the brain cannot read 3.84's latch).
+    `vision-picar-ros:latest` rebuilt from `dev` 778846d on 2026-10-18.
 * **Calibrating the tiers (3.92), merged 2026-10-22; nothing changed in
   the code.** VE and YOLOE + CLIP on all 2,261 labelled frames (free):
   * The raw scores are already calibrated on average (VE ECE 0.034), but
