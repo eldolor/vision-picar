@@ -798,6 +798,7 @@ def _matched(bridge_mod, monkeypatch, tmp_path, here=(1.0, 0.5, 0.3)):
                         lambda: {"x_m": here[0], "y_m": here[1], "yaw_rad": here[2], "age_s": 0.0})
     monkeypatch.setattr(b, "_pose_now", lambda: tuple(here))
     b._rest_since = time.monotonic() - 1.0              # standing still
+    b.last_odom = {"at": time.time() + 3600}            # and odometry that stays fresh
     b.start_slam()
     assert b.slam_state == "ready" and live.mode == "localisation"
     return b, live, store
@@ -901,7 +902,11 @@ def test_the_swap_waits_for_rest_and_no_live_goal(bridge_mod, monkeypatch, tmp_p
     b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
     b.goal = {"state": "active", "x_m": 1.0, "y_m": 0.0}
     cancels = []
-    monkeypatch.setattr(b, "cancel_goal", lambda why="cancelled": cancels.append(why) or True)
+    def cancel(why="cancelled"):        # nav2 ends it, as its result would
+        cancels.append(why)
+        b.goal = {**b.goal, "state": "cancelled"}
+        return True
+    monkeypatch.setattr(b, "cancel_goal", cancel)
     assert b.remap("contradiction", {"cells": 12})[0] == 200
     time.sleep(0.15)
     assert live.mode == "localisation" and b.slam_state == "remapping"      # not yet
@@ -1143,3 +1148,102 @@ def test_a_mission_end_during_the_swap_saves_once_it_is_mapping(bridge_mod, monk
     while store.versions("map-0a1b2c3d") == [1] and time.monotonic() < end:
         time.sleep(0.01)
     assert store.versions("map-0a1b2c3d") == [1, 2]
+
+
+# ---- 3.50.D4 review round 2 ----
+
+def test_lost_is_judged_as_relocalise_judges_a_reload():
+    """Review: the same share on the same scans, so a reload that matched is
+    not read as lost by a stricter measure."""
+    g = _room_grid()
+    pad = 20                                   # 1 m of free cells round the room:
+    w, h = g["width"] + 2 * pad, g["height"] + 2 * pad   # every return lands on the grid
+    data = [0] * (w * h)
+    for r in range(g["height"]):
+        data[(r + pad) * w + pad:(r + pad) * w + pad + g["width"]] = g["data"][r * g["width"]:(r + 1) * g["width"]]
+    grid = {**g, "width": w, "height": h, "data": data,
+            "origin_x_m": g["origin_x_m"] - pad * RES, "origin_y_m": g["origin_y_m"] - pad * RES}
+    saved = remap.SavedMap(grid)
+    for real, believed in (((0.5, 0.4, 0.2), (0.5, 0.4, 0.2)),
+                           ((0.5, 0.4, 0.2), (0.57, 0.46, 0.23))):
+        scan = _scan(*real)
+        a = remap.judge_scan(saved, scan, believed)["agreement"]
+        b = relocalise.scan_agreement(scan, believed, grid)
+        assert a == pytest.approx(b, abs=1e-9), (real, believed)
+    # Slipped, some returns land off even the padded grid (unknown to the
+    # watch, a miss to relocalise): the shares differ a little, the verdict not.
+    scan = _scan(1.5, 0.4, math.radians(30))
+    a = remap.judge_scan(saved, scan, (0.5, 0.4, 0.0))["agreement"]
+    b = relocalise.scan_agreement(scan, (0.5, 0.4, 0.0), grid)
+    assert a < remap.LOST_BELOW and b < relocalise.AGREE_MIN
+
+
+def test_a_goal_registered_after_a_re_map_began_is_refused(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    from tests.test_review_376h1 import _Nav
+    b.nav = _Nav()
+
+    def wait(timeout_sec):              # the re-map begins while nav2 is awaited
+        b.slam_state = "remapping"
+        return True
+    b.nav.wait_for_server = wait
+    code, body = b.send_goal({"x_m": 1.0, "y_m": 0.0})
+    assert code == 503 and body["slam"] == "remapping" and b.nav.futures == []
+
+
+def test_a_robot_that_never_rests_calls_the_swap_off(bridge_mod, monkeypatch, tmp_path):
+    monkeypatch.setattr(bridge_mod, "REMAP_DEFER_MAX_S", 0.2)
+    monkeypatch.setattr(bridge_mod, "REMAP_REST_WAIT_S", 0.2)
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b._rest_since = None                                   # a person driving
+    monkeypatch.setattr(b, "cancel_goal", lambda why="cancelled": False)
+    assert b.remap("contradiction", {"cells": 12})[0] == 200
+    _settle(b)
+    assert live.mode == "localisation" and b.slam_state == "ready"
+    assert b.health()[1]["slam"]["remap"]["result"] == "deferred"
+    assert b._remap_retry_at > time.monotonic()
+
+
+def test_rest_needs_fresh_odometry_and_no_goal_still_cancelling(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b.last_odom = {"at": time.time()}
+    now = time.monotonic()
+    assert b._at_rest(now)
+    b.last_odom = {"at": time.time() - 2.0}                # ros2_control hung
+    assert not b._at_rest(now)
+    b.last_odom = {"at": time.time()}
+    other = {"state": "cancelled"}
+    b.goal = {"state": "cancelled"}
+    b.cancelling = {1: {"record": other, "handle": None, "since": 0, "last": 0}}
+    assert not b._at_rest(now)                             # superseded, still driving
+
+
+def test_a_failed_re_map_latches_the_automatic_triggers(bridge_mod, monkeypatch, tmp_path):
+    """Both reviewers: a graph the mapping node cannot load must not loop."""
+    monkeypatch.setitem(bridge_mod._test_ok, "value", True)
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(3.0, 0.5, 0.0))
+    b.last_odom = {"at": time.time()}
+    monkeypatch.setattr(b, "_fresh_pose", lambda: None if live.mode == "mapping" else
+                        {"x_m": 3.0, "y_m": 0.5, "yaw_rad": 0.0, "age_s": 0.0})
+    monkeypatch.setattr(live, "alive", lambda: live.mode != "mapping")
+    b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
+    b.remap_step(None)
+    _settle(b)
+    assert b.health()[1]["slam"]["remap"]["result"] == "failed_localising"
+    starts = len(live.calls)
+    for _ in range(5):
+        b.remap_step(None)                                  # still in unknown
+    assert len(live.calls) == starts and b.slam_state == "ready"
+    assert b.remap("request")[0] == 200                     # a person may still ask
+
+
+def test_a_save_lost_to_a_failed_re_map_is_counted(bridge_mod, monkeypatch, tmp_path):
+    monkeypatch.setitem(bridge_mod._test_ok, "value", True)
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b.last_odom = {"at": time.time()}
+    monkeypatch.setattr(b, "_fresh_pose", lambda: None)
+    monkeypatch.setattr(live, "alive", lambda: False)
+    monkeypatch.setattr(b, "_await_rest", lambda: (b._save_map("mission_end"), {"at_rest": True})[1])
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    assert b.slam_state == "failed" and b.map_saves["skipped"] == 1 and b._save_after_remap is None

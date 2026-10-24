@@ -112,7 +112,7 @@ the `MAX_BRIDGE_ROUTES` budget.
 
 | Route | Request | Answer |
 |---|---|---|
-| `GET /health` | -- | `ok` (false when `slam.state` is `failed`, 3.50.D3; still HTTP 200 -- the robot server's probe reads the status code as "ROS up", and the D-pad drives without SLAM), `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `remapping` (3.50.D4), `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / checking / matched / fell_back / failed (with `before`, the result it replaced), map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`, `remap` (3.50.D4: `{result: none / waiting / starting / mapping / failed_localising / failed / not_started, trigger: entered_unknown / contradiction / request, at, map_id, version, detail, waited_s, cancelled_goal, at_rest, from_pose, took_s, error, relocalise_error}`), `watch` (3.50.D4: `{scans, lost}` while a matched reload is watched, else null)) |
+| `GET /health` | -- | `ok` (false when `slam.state` is `failed`, 3.50.D3; still HTTP 200 -- the robot server's probe reads the status code as "ROS up", and the D-pad drives without SLAM), `robot_url`, `odom_age_s`, `scan_age_s`, `scans_published`, `twists` (per driver), `pan_rad`, `session`, `map_version`, `brain_url`, `brain_polls`, `brain_age_s`, `brain_error`, `map` (3.50.D2: `{map_id, saving, store, saved, failed, skipped, last_version, last_at, last_error}`; `store` is false when `PICAR_MAP_DIR` does not exist, and then nothing is saved; `skipped` counts mission ends while localising, 3.50.D3), `slam` (3.50.D3: `{state, mode, starts, reload}`; `state` is `starting`, `checking`, `remapping` (3.50.D4), `ready` or `failed` (the start raised, or the fresh node exited before its first pose: `reload.error` says why; no SLAM, goals held), `mode` `mapping` or `localisation`, `reload` `{result: none / off / checking / matched / fell_back / failed (with `before`, the result it replaced), map_id, version, took_s, ok, reason, agreement, dock_error_m, dock_error_deg}`, `remap` (3.50.D4: `{result: none / waiting / deferred / starting / mapping / failed_localising / failed / not_started, trigger: entered_unknown / contradiction / request, at, map_id, version, detail, waited_s, cancelled_goal, at_rest, from_pose, took_s, error, relocalise_error}`), `watch` (3.50.D4: `{scans, lost}` while a matched reload is watched, else null)) |
 | `POST /cmd_vel` | `{driver, linear_m_s, angular_rad_s}` | 200 `{published: <topic>}`, or 400 `unknown driver`. A non-zero `twin-dpad` twist also cancels the active goal. |
 | `GET /odom` | -- | The latest `/diff_drive_controller/odom` as `{x_m, y_m, yaw_rad, linear_m_s, angular_rad_s, at}`, or `{usable: false}` |
 | `GET /scan` | -- | The last LaserScan published, as `{angle_min_rad, angle_increment_rad, ranges_m (None = no return), at}` |
@@ -319,10 +319,14 @@ while `state` is `ready` and the node is the localisation node on a matched
 reload; a trigger whose re-map could not start backs off `REMAP_RETRY_S`.
 **A re-map** (`Bridge.remap`): `state` `remapping` at once (goals 503, no
 map pose, as while `checking`). The swap (`_remap_run`) first waits for no
-live goal and odometry at rest for `REMAP_REST_S` (`_rest_since`, set in
-`_on_odom`), at most `REMAP_DEFER_MAX_S`; then a live goal is cancelled
-(`re-map`) and rest awaited up to `REMAP_REST_WAIT_S`, and the swap goes
-ahead. The localisation node is stopped, the pose composed from its last
+live goal (nor a superseded one still being cancelled) and fresh odometry
+(under `REST_ODOM_MAX_AGE_S`) at rest for `REMAP_REST_S` (`_rest_since`, set
+in `_on_odom`), at most `REMAP_DEFER_MAX_S`; then a live goal is cancelled
+(`re-map`) and rest awaited up to `REMAP_REST_WAIT_S`. A robot still moving
+then (a lost cancel, a person driving) calls the swap off (`deferred`,
+localising as before, asked again after `REMAP_RETRY_S`). A goal that passed
+`send_goal`'s first check is refused when it registers if a re-map began in
+between, so the rest wait sees every goal. The localisation node is stopped, the pose composed from its last
 `map -> odom` and the current `odom -> base_footprint` (`_pose_now`), and
 `async_slam_toolbox_node` started with `map_file_name` = the version
 localised on and `map_start_pose` = that pose; maps stamped before its
@@ -335,8 +339,12 @@ being driven when the trigger fires is given `REMAP_DEFER_MAX_S` to end
 before it is cancelled. A mission end during the swap saves once the
 mapping node is up. A mapping node that exits or gives no pose in
 `REMAP_READY_TIMEOUT_S` is replaced by the localisation node on the same
-version from the same pose (`remap.result` `failed_localising`, the watch
-started over); only if that fails too is `state` `failed`.
+version from the pose read again after the mapping node stops
+(`remap.result` `failed_localising`, the watch started over); only if that
+fails too is `state` `failed` (a save queued during the swap is counted
+`skipped`). After a failed re-map the automatic triggers are latched off
+for the session, so a graph the mapping node cannot load does not loop; a
+person's request still re-maps.
 
 ## Parameters and configuration
 
@@ -400,7 +408,7 @@ started over); only if that fails too is `state` `failed`.
 | `WINDOW_S`, `MIN_LOOKS`, `MIN_SHARE`, `HOLD_S`, `MIN_GROUP`, `GROUP_GAP_M` | 10, 10, 0.8, 5, 10, 0.15 | s, scans, share, s, cells, m | `remap.py` | A cell is persistent when looked at by 10 scans in 10 s, 80% of them contradicting, over at least 5 s (amendment 1: 10 looks at 10 Hz is one second); 10 persistent cells within 0.15 m of each other fire. |
 | `LOST_BELOW` | 0.60 | share | `remap.py` | `relocalise.AGREE_MIN`: a scan agreeing less is a lost robot, counted, never a trigger. |
 | `REMAP_WATCH_S`, `REMAP_SCAN_MAX_AGE_S`, `REMAP_READY_TIMEOUT_S`, `REMAP_RETRY_S` | 0.05, 0.5, 15, 2 | s | `bridge.py` | The watch's look interval; a scan whose TF at capture has not come within 0.5 s is skipped; a re-map's node that gives no pose in 15 s has failed; a trigger whose re-map did not start waits 2 s. |
-| `REMAP_REST_S`, `REMAP_DEFER_MAX_S`, `REMAP_REST_WAIT_S`, `REST_LINEAR_M_S`, `REST_ANGULAR_RAD_S` | 0.5, 5, 3, 0.01, 0.02 | s, s, s, m/s, rad/s | `bridge.py` | Amendment 2: the swap waits for no live goal and rest, then cancels the goal; within D4-a's 10 s bar. |
+| `REMAP_REST_S`, `REMAP_DEFER_MAX_S`, `REMAP_REST_WAIT_S`, `REST_LINEAR_M_S`, `REST_ANGULAR_RAD_S`, `REST_ODOM_MAX_AGE_S` | 0.5, 5, 3, 0.01, 0.02, 0.5 | s, s, s, m/s, rad/s, s | `bridge.py` | Amendment 2: the swap waits for no live goal and rest, then cancels the goal; within D4-a's 10 s bar. |
 | `MAX_DUPLICATES`, `MAX_BRIDGE_ROUTES` | 11, 14 | count | `tests/test_wall_linters.py` | Raise only in a commit that says why. Eleven since 3.27's lidar offset; 14 routes since 3.68's `/nav/keepout`. |
 
 ## Procedures

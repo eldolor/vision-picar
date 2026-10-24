@@ -174,6 +174,8 @@ REMAP_DEFER_MAX_S = 5.0
 REMAP_REST_WAIT_S = 3.0
 REST_LINEAR_M_S = 0.01
 REST_ANGULAR_RAD_S = 0.02
+# Odometry older than this says nothing about rest (review: a hung ros2_control).
+REST_ODOM_MAX_AGE_S = 0.5
 
 
 def _yaw_pitch_roll(q):
@@ -315,6 +317,7 @@ class Bridge(Node):
         self._save_after_remap = None    # a mission end met during the swap: its reason
         self._reload_map = None          # the localisation node's FIRST /map (review)
         self._rest_since = None          # monotonic: odometry at rest since
+        self._remap_latched = False      # a re-map failed: no automatic one again (review)
         if self.map_store is None:
             self.get_logger().warning(f"no {MAP_DIR}: maps are not saved this session")
         if self.brain_url:
@@ -480,6 +483,11 @@ class Bridge(Node):
         goal = NavigateToPose.Goal()
         goal.pose = ps
         with self.lock:
+            if self.slam_state != "ready":
+                # 3.50.D4 (review): a re-map began after the check above; its
+                # rest wait must see every goal, so none is sent past it.
+                return 503, {"error": f"SLAM is not ready ({self.slam_state})",
+                             "slam": self.slam_state}
             self.plan = []
             # The superseded goal was sent its cancel above, and nav2's
             # navigator preempts it for this one anyway; its handle must not
@@ -1050,6 +1058,7 @@ class Bridge(Node):
             reloaded = self._reload_map or self.last_map
         frozen = remap.SavedMap(reloaded) if reloaded else None
         with self.lock:
+            self._reload_map = None          # copied into `frozen` (review: memory)
             self.reload = {**record, "result": "matched"}
             self.reload_start_truth = saved.meta.get("start_truth")
             self.reload_matched = True
@@ -1167,7 +1176,7 @@ class Bridge(Node):
             scan, saved, tracker = self.last_scan, self._remap_saved, self._remap_tracker
         if not watching:
             return seen
-        if time.monotonic() < self._remap_retry_at:
+        if self._remap_latched or time.monotonic() < self._remap_retry_at:
             return seen
         here = self._fresh_pose()
         if here is not None and remap.entered_unknown(saved, here["x_m"], here["y_m"]):
@@ -1225,10 +1234,16 @@ class Bridge(Node):
         return 200, {"remapping": True, **record}
 
     def _at_rest(self, now: float) -> bool:
+        """No goal live (the current one, or a superseded one still being
+        cancelled, as goal_state() counts them), and fresh odometry still
+        for REMAP_REST_S."""
         with self.lock:
-            since = self._rest_since
-            live = bool(self.goal and self.goal["state"] in ("pending", "active"))
-        return not live and since is not None and now - since >= REMAP_REST_S
+            self._expire_pending()
+            since, odom = self._rest_since, self.last_odom
+            live = bool(self.goal and self.goal["state"] in ("pending", "active")) \
+                or self._superseded_live() > 0
+        fresh = odom is not None and time.time() - odom["at"] <= REST_ODOM_MAX_AGE_S
+        return not live and fresh and since is not None and now - since >= REMAP_REST_S
 
     def _await_rest(self) -> dict:
         """Amendment 2: no live goal and the robot still before the swap.
@@ -1268,9 +1283,21 @@ class Bridge(Node):
                 math.atan2(math.sin(myaw + oyaw), math.cos(myaw + oyaw)))
 
     def _remap_run(self, version, record) -> None:
-        t0 = time.monotonic()
         rest = self._await_rest()
         record = {**record, **rest}
+        if not rest["at_rest"]:
+            # Review: never swap under a moving robot (a lost cancel, a person
+            # driving): called off, localising as before, asked again later.
+            with self.lock:
+                self.remap_record = {**record, "result": "deferred"}
+                self.slam_state = "ready"
+                why, self._save_after_remap = self._save_after_remap, None
+            self._remap_retry_at = time.monotonic() + REMAP_RETRY_S
+            self.get_logger().warning("re-map called off: the robot did not come to rest")
+            if why is not None:
+                self.save_map_async(why)          # localising: recorded as a skip
+            return
+        t0 = time.monotonic()
         pose = None
         try:
             self.slam.stop()
@@ -1304,11 +1331,17 @@ class Bridge(Node):
     def _remap_failed(self, version, record, pose, e) -> None:
         """Both reviewers: a re-map that fails must not leave a working
         robot with no SLAM. Localise on the same version again, from where
-        the robot is (or the dock, if no pose was read); `failed` only if
-        that fails too."""
+        the robot is now; `failed` only if that fails too, or no pose can be
+        read. Either way automatic re-maps stop for the session (review: a
+        graph the mapping node cannot load would otherwise loop)."""
         err = f"{type(e).__name__}: {e}"[:300]
         self.get_logger().error(f"re-map failed ({err}); localising on v{version.version} again")
-        start = pose if pose is not None else self._pose_now()
+        self._remap_latched = True
+        try:
+            self.slam.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        start = self._pose_now() or pose
         try:
             if start is None:
                 raise RuntimeError("no pose to localise from")
@@ -1322,6 +1355,9 @@ class Bridge(Node):
                 self.slam_state = "failed"
                 self.remap_record = {**record, "result": "failed", "error": err,
                                      "relocalise_error": f"{type(e2).__name__}: {e2}"[:300]}
+                if self._save_after_remap is not None:
+                    self.map_saves["skipped"] += 1        # no SLAM: nothing to save
+                    self._save_after_remap = None
             self.get_logger().error(f"localising again failed too: {e2}")
             try:
                 self.slam.stop()
@@ -1385,11 +1421,12 @@ class Bridge(Node):
         with self.lock:
             localising = self.slam is not None and self.slam.mode == "localisation"
             state, map_id = self.slam_state, self.map_id
-        if state == "remapping":
-            # 3.50.D4: the swap takes about a second; the save follows it
-            # (_remap_run) rather than be lost to a skip.
-            with self.lock:
+            if state == "remapping":
+                # 3.50.D4: the save follows the swap (_remap_run) rather than
+                # be lost to a skip; queued in the same critical section as
+                # the check (review), so the swap's end cannot slip between.
                 self._save_after_remap = why
+        if state == "remapping":
             self.get_logger().info(f"map {map_id}: save ({why}) after the re-map's swap")
             return
         if localising or state != "ready":

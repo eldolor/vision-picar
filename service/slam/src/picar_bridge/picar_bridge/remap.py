@@ -80,12 +80,30 @@ class SavedMap:
         self.state = np.full(data.shape, FREE, dtype=np.int8)
         self.state[data >= OCCUPIED_AT] = OCC
         self.state[data < 0] = UNKNOWN
-        # The tolerance relocalise judges a reload with (review): a return
-        # within NEW_TOL_M of an occupied cell's square, i.e. its centre
-        # within NEW_TOL_M + res/sqrt(2).
-        reach = NEW_TOL_M / self.res + 1 / math.sqrt(2)
-        self.near_occ = _dilate(self.state == OCC, reach)
-        self.near_unknown = _dilate(self.state == UNKNOWN, reach)
+        # Unknown within the tolerance relocalise uses for occupied cells
+        # (near_occupied), on cell centres: returns there are not judged.
+        self.near_unknown = _dilate(self.state == UNKNOWN, NEW_TOL_M / self.res + 1 / math.sqrt(2))
+
+    def near_occupied(self, x, y, col, row) -> np.ndarray:
+        """Points within NEW_TOL_M + res/sqrt(2) of an occupied cell's
+        centre: relocalise.scan_agreement's exact test (review), so a reload
+        that matched is not read as lost by a stricter measure."""
+        x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+        c, s = math.cos(-self.oyaw), math.sin(-self.oyaw)
+        dx, dy = x - self.ox, y - self.oy
+        gx, gy = c * dx - s * dy, s * dx + c * dy
+        lim = NEW_TOL_M + self.res / math.sqrt(2)
+        reach = int(math.ceil(NEW_TOL_M / self.res - 1e-9))
+        out = np.zeros(x.shape, dtype=bool)
+        for dc in range(-reach, reach + 1):
+            for dr in range(-reach, reach + 1):
+                cc, rr = col + dc, row + dr
+                ok = self.inside(cc, rr)
+                occ = np.zeros(x.shape, dtype=bool)
+                occ[ok] = self.state[rr[ok], cc[ok]] == OCC
+                d = np.hypot((cc + 0.5) * self.res - gx, (rr + 0.5) * self.res - gy)
+                out |= occ & (d <= lim)
+        return out
 
     def cells(self, x, y):
         """(col, row) arrays of world points; off the grid stays off it."""
@@ -127,7 +145,7 @@ def judge_scan(saved: SavedMap, scan: dict, laser_pose: Sequence[float]) -> dict
     hc, hr = saved.cells(hx, hy)
     hin = valid & saved.inside(hc, hr)
     hcc, hrr = np.where(hin, hc, 0), np.where(hin, hr, 0)
-    near_occ = hin & saved.near_occ[hrr, hcc]
+    near_occ = hin & saved.near_occupied(hx, hy, hc, hr)
     judgeable = valid & ~(hin & saved.near_unknown[hrr, hcc]) & hin
     if judgeable.sum() == 0:
         return out
