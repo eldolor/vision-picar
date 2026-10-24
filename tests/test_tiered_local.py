@@ -639,3 +639,33 @@ def test_rebase_review_a_vision_drill_closes_the_policy_it_replaced(monkeypatch)
         assert r.status_code == 200, r.text
         assert closed == [True]
         c.post("/mission/stop")
+
+
+def test_e3_a_decided_verdict_carries_the_time_from_arrival_and_undecided_does_not():
+    """3.80.E criterion 3: `verdict_s` runs from the arrival's first question
+    to the decided verdict, across its undecided frames; a new arrival
+    starts the clock again."""
+    from brain.agent import MissionAgent
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        local_identity_fn=Local(unable(), yes()))
+    agent = MissionAgent.__new__(MissionAgent)
+    agent.arrival_confirm_fn = None
+    agent.vision_fn = tier
+    agent._identity_refused = False
+    agent._refusal = None
+    first = agent._confirm_identity({"state": "arrived"}, {})
+    assert first["state"] == CHECKING and "verdict_s" not in first["identity"]
+    t0 = agent._arrival_t0
+    second = agent._confirm_identity({"state": "arrived"}, {})
+    assert second["identity"]["confirmed"]
+    assert 0 <= second["identity"]["verdict_s"] < 5
+    assert agent._arrival_t0 is None, "a decided verdict ends the clock"
+    agent._confirm_identity({"state": "arrived"}, {})
+    assert agent._arrival_t0 is None or agent._arrival_t0 > t0
+
+
+def test_e3_a_whole_mission_reports_verdict_s_on_found():
+    local, cloud = Local(yes()), Cloud()
+    status, _, _ = _run(local, cloud)
+    assert status["outcome"] == FOUND
+    assert status["arrival"]["identity"]["verdict_s"] >= 0

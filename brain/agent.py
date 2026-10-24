@@ -20,6 +20,7 @@ robot/safety.py before it reaches the robot, so even a bad decision here
 import inspect
 import logging
 import math
+import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -76,6 +77,9 @@ SHORT_MOVES = ("timeout", "stalled")
 # 3.80.O review: a local-led arrival this close to one the cloud refused is
 # the same object.
 LOCAL_REFUSED_RADIUS_M = 0.5
+# 3.80.E: frames off the arrival rule that end an arrival for `verdict_s`'s
+# clock -- brain/tiered.py's LOCAL_RESET_FRAMES, the local tier's own rule.
+ARRIVAL_GONE_FRAMES = 3
 
 
 def _takes_local_ok(fn) -> bool:
@@ -285,6 +289,14 @@ class MissionAgent(ConstrainedAgent):
     sweep happens yet. That's Phase 6's job (active object search).
     """
 
+    # 3.80.E criterion 3: when this arrival's first identity question was
+    # put, so a decided verdict carries `verdict_s` (arrival to verdict,
+    # across undecided frames). A flicker shorter than ARRIVAL_GONE_FRAMES is
+    # the same arrival, as in brain/tiered.py. Class defaults, set per
+    # instance once used.
+    _arrival_t0: Optional[float] = None
+    _frames_off_arrival = 0
+
     def __init__(
         self,
         robot: RobotInterface,
@@ -374,6 +386,8 @@ class MissionAgent(ConstrainedAgent):
                     "identity": {"confirmed": False, "undecided": True, "cloud_called": False,
                                  "reason": "no cloud-only confirmer for a local-led arrival"},
                     "reason": "arrived on the local box; no cloud-only confirmer"}
+        if self._arrival_t0 is None:
+            self._arrival_t0 = time.monotonic()
         try:
             verdict = ((confirm(frame) if local_ok else confirm(frame, local_ok=False))
                        if confirm is not None
@@ -396,6 +410,9 @@ class MissionAgent(ConstrainedAgent):
             raise
         self._confirmed_this_frame = bool(verdict.get("cloud_called")
                                           or verdict.get("local_called"))
+        if not verdict.get("undecided"):
+            verdict = {**verdict, "verdict_s": round(time.monotonic() - self._arrival_t0, 3)}
+            self._arrival_t0 = None
         readout = {**readout, "identity": verdict}
         if verdict.get("confirmed"):
             return readout
@@ -419,11 +436,15 @@ class MissionAgent(ConstrainedAgent):
             return scene  # a policy with no local perception: nothing to say
         self._confirmed_this_frame = False
         if readout["state"] == ARRIVED:
+            self._frames_off_arrival = 0
             try:
                 readout = self._confirm_identity(readout, frame)
             finally:
                 self.arrival.refresh()
         else:
+            self._frames_off_arrival += 1
+            if self._frames_off_arrival >= ARRIVAL_GONE_FRAMES:
+                self._arrival_t0 = None
             self._identity_refused = False
             self._refusal = None
             ended = getattr(self.vision_fn, "arrival_ended", None)

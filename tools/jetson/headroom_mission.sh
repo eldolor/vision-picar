@@ -28,6 +28,16 @@
 # with the local VLM is paced by TIER_LOCAL_COLD_SEARCH_AFTER (default 1);
 # P@6 is now reproduced with TIER_LOCAL_COLD_SEARCH_AFTER=6.
 #
+# 3.80.E: CLOUD=standin answers /navigate from a local stand-in
+# (evaluations/tiered-380/E/standin_cloud.py, $0, "not visible, RIGHT"),
+# logging each call to cloud_calls.jsonl. DRILL=kill:<s> SIGKILLs the local
+# VLM (service and driver) <s> seconds into the mission (criterion 5);
+# DRILL=oom:<s> instead starts a memory hog then, which grows until the
+# kernel's OOM killer acts (or 180 s), so dmesg names who it kills
+# (criterion 6). The status is polled every 0.5 s, and each decided arrival
+# identity (with brain/agent.py's `verdict_s`) is one line of arrivals.jsonl
+# (criterion 3). The robot server's and brain's /health are read at the end.
+#
 # --- the shared harness header follows ---
 # 3.58 (docs/plans/ros-alignment/3.58-local-identity-decision.md), run L:
 # 3.33's headroom conditions (~/headroom20.sh on the board: the split
@@ -79,7 +89,8 @@ waitfor() {  # seconds what cmd...
 
 teardown() {
   # Only this run's VLM: its server closes its own driver on the way out.
-  kill $PERC $MEM $WHL $NAV $VLMP 2>/dev/null; sudo pkill tegrastats 2>/dev/null
+  kill $PERC $MEM $WHL $NAV $VLMP $CLD $DRL 2>/dev/null; sudo pkill tegrastats 2>/dev/null
+  pkill -f "tools/jetson/memory_hog.py" 2>/dev/null
   docker rm -f "$NAME" >/dev/null 2>&1
   pids="$(pgrep -f 'bash service/tunnel/run.sh'; for p in 8000 8001 8002 8003 8004 8080; do lsof -nP -tiTCP:$p -sTCP:LISTEN; done)"
   [ -n "$pids" ] && kill $pids 2>/dev/null; sleep 3
@@ -98,7 +109,7 @@ teardown() {
   case "$VLM_WAS" in active|activating) sudo systemctl start picar-local-vlm;; esac
   echo "== torn down; desktop: $(systemctl is-active gdm)" | tee -a "$OUT/run.log"
 }
-PERC=; MEM=; WHL=; NAV=; VLMP=
+PERC=; MEM=; WHL=; NAV=; VLMP=; CLD=; DRL=
 # Read before the isolate, which itself stops a unit that is not enabled.
 VLM_WAS=$(systemctl is-active picar-local-vlm 2>/dev/null)
 trap teardown EXIT
@@ -113,6 +124,13 @@ OOM0=$(oom)
 
 docker rm -f "$NAME" >/dev/null 2>&1
 [ "$CLOUD" = off ] && export VISION_URL=http://127.0.0.1:9
+if [ "$CLOUD" = standin ]; then
+  { ! command -v ss >/dev/null || ss -ltnH "sport = :8099" | grep -q .; } && { echo "STOP: :8099 is already in use" | tee -a "$OUT/run.log"; exit 2; }
+  python evaluations/tiered-380/E/standin_cloud.py 8099 "$OUT/cloud_calls.jsonl" > "$OUT/standin.log" 2>&1 &
+  CLD=$!
+  export VISION_URL=http://127.0.0.1:8099
+  waitfor 30 "stand-in cloud" curl -sf localhost:8099/health -o /dev/null
+fi
 if [ "${TEXT_CACHE:-}" = empty ]; then
   export PICAR_TEXT_CACHE="$OUT/text-cache"; rm -rf "$PICAR_TEXT_CACHE"
 fi
@@ -163,6 +181,24 @@ fi
 WHL=$!
 W0=$(wheel); T0=$(date +%s)
 echo "== mission start $(date +%T); wheel: $W0" | tee -a "$OUT/run.log"
+case "${DRILL:-}" in
+  kill:*|oom:*)
+    ( sleep "${DRILL#*:}"
+      echo "== drill ${DRILL%%:*} $(date +%T) $(date +%s); vlm pid $VLMP; MemAvailable $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) MB" >> "$OUT/run.log"
+      if [ "${DRILL%%:*}" = kill ]; then
+        pkill -9 -P "$VLMP"; kill -9 "$VLMP"
+      else
+        # The stack at picar-stack's own OOMScoreAdjust (-900), as in
+        # production; restart.sh by hand leaves it at 0.
+        for p in 8000 8001 8002 8003 8004 8080; do
+          for q in $(lsof -nP -tiTCP:$p -sTCP:LISTEN); do echo -900 | sudo tee /proc/$q/oom_score_adj >/dev/null; done
+        done
+        python tools/jetson/memory_hog.py 180 > "$OUT/hog.log" 2>&1
+      fi
+      echo "== drill done $(date +%T); vlm alive: $(kill -0 $VLMP 2>/dev/null && echo yes || echo no)" >> "$OUT/run.log"
+    ) &
+    DRL=$!;;
+esac
 POLICY="$POLICY" python - "$OUT" "$LIMIT" <<'PY' >> "$OUT/run.log" 2>&1
 import json, sys, time, httpx, os
 out, limit = sys.argv[1], int(sys.argv[2])
@@ -174,16 +210,24 @@ r = b.post("/mission/start", json={"target_object": "red backpack", "policy": os
 print("start", r.status_code, r.text[:200], flush=True)
 if r.status_code != 200:
     raise SystemExit("mission did not start")
-t0, last = time.time(), None
-with open(f"{out}/status.log", "w") as f:
+t0, last, seen = time.time(), None, set()
+with open(f"{out}/status.log", "w") as f, open(f"{out}/arrivals.jsonl", "w") as a:
     while time.time() - t0 < limit + 120:
         s = b.get("/mission/status").json()
         line = {"t": round(time.time()), "running": s.get("running"), "outcome": s.get("outcome"),
                 "step": s.get("step")}
         f.write(json.dumps(line) + "\n"); f.flush()
+        # 3.80.E: each decided identity once (a refused one stays in the
+        # readout for the frames that follow it).
+        ident = (s.get("arrival") or {}).get("identity") or {}
+        key = (ident.get("verdict_s"), ident.get("reason"))
+        if ident.get("verdict_s") is not None and key not in seen:
+            seen.add(key)
+            a.write(json.dumps({"t": round(time.time(), 1), "step": s.get("step"), **ident}) + "\n")
+            a.flush()
         if not s.get("running") and s.get("outcome") not in (None, "idle", "running"):
             break
-        time.sleep(2)
+        time.sleep(0.5)
 end = {k: s.get(k) for k in ("running", "outcome", "step", "end_reason", "arrival", "tier", "error")}
 json.dump(end, open(f"{out}/mission_end.json", "w"))
 print("mission end", json.dumps({k: s.get(k) for k in ("outcome", "step", "report")})[:600], flush=True)
@@ -197,9 +241,14 @@ echo "== mission end $(date +%T); wheel: $W1" | tee -a "$OUT/run.log"
 VLM_ALIVE=none
 [ -n "$VLMP" ] && { kill -0 $VLMP 2>/dev/null && VLM_ALIVE=alive || VLM_ALIVE=dead; }
 echo "== local VLM at the end: $VLM_ALIVE $(curl -s localhost:8005/health 2>/dev/null)" | tee -a "$OUT/run.log"
-kill $PERC $MEM $WHL $VLMP 2>/dev/null; PERC=; MEM=; WHL=; VLMP=; sudo pkill tegrastats
+ROBOT_UP=$(curl -s -o /dev/null -w '%{http_code}' localhost:8000/health)
+BRAIN_UP=$(curl -s -o /dev/null -w '%{http_code}' localhost:8001/brain/health)
+echo "== at the end: robot /health $ROBOT_UP, brain /health $BRAIN_UP" | tee -a "$OUT/run.log"
+kill $PERC $MEM $WHL $VLMP $CLD $DRL 2>/dev/null; PERC=; MEM=; WHL=; VLMP=; CLD=; DRL=; sudo pkill tegrastats
+pkill -f "tools/jetson/memory_hog.py" 2>/dev/null
 OOM1=$(oom)
-python3 - "$OUT" "$T0" "$T1" "$W0" "$W1" "$OOM0" "$OOM1" "$MISSION_EXIT" <<'PY' | tee -a "$OUT/run.log"
+sudo dmesg | grep -iE "killed process|oom-kill" | tail -20 > "$OUT/oom.log"
+python3 - "$OUT" "$T0" "$T1" "$W0" "$W1" "$OOM0" "$OOM1" "$MISSION_EXIT" "$ROBOT_UP" "$BRAIN_UP" <<'PY' | tee -a "$OUT/run.log"
 import json, os, statistics as st, sys
 out, t0, t1 = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 w0, w1 = sys.argv[4].split(), sys.argv[5].split()
@@ -238,6 +287,14 @@ if ms:
 if os.path.exists(f"{out}/local_vlm.log"):
     calls = sum('"POST /' in l for l in open(f"{out}/local_vlm.log"))
     s.update(vlm_calls=calls, vlm_calls_per_min=round(calls * 60 / max(1, t1 - t0), 1))
+# 3.80.E: the servers at the end, the stand-in's calls, the arrivals.
+s.update(robot_health=sys.argv[9], brain_health=sys.argv[10])
+if os.path.exists(f"{out}/cloud_calls.jsonl"):
+    s.update(cloud_calls=sum(1 for _ in open(f"{out}/cloud_calls.jsonl")))
+if os.path.exists(f"{out}/arrivals.jsonl"):
+    arr = [json.loads(l) for l in open(f"{out}/arrivals.jsonl")]
+    s.update(arrivals=[{k: a.get(k) for k in ("tier", "confirmed", "verdict_s", "local_score")}
+                       for a in arr])
 json.dump(s, open(f"{out}/summary.json", "w"), indent=1)
 print("== summary:", json.dumps(s))
 if not valid:

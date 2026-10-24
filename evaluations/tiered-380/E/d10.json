@@ -1,0 +1,2895 @@
+{
+ "summary": {
+  "frames": 299,
+  "missing_from_392": [],
+  "hfov_deg": 66.0,
+  "max_score_diff": 0.0,
+  "over_0.01": [],
+  "flips": [],
+  "unanswered_with_box": [],
+  "bearing_pairs": 62,
+  "bearing_diff_median_deg": 0.0600000000000005,
+  "bearing_diff_p90_deg": 0.68,
+  "scores_met": true,
+  "bearing_met": true
+ },
+ "rows": [
+  {
+   "key": "blue-bottle-20260907-142454/frame-0000.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0001.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0002.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0003.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0004.jpg",
+   "visible": true,
+   "score": 0.9830571474774097,
+   "score_box": 0.9830571474774097,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 29.67,
+   "bearing_perception_deg": 29.71,
+   "bearing_diff_deg": 0.03999999999999915
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0005.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0006.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0007.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0008.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0009.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0010.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0011.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0012.jpg",
+   "visible": true,
+   "score": 0.9935706700509362,
+   "score_box": 0.9935706700509362,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 24.9,
+   "bearing_perception_deg": 25.03,
+   "bearing_diff_deg": 0.13000000000000256
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0013.jpg",
+   "visible": true,
+   "score": 0.9975744094977644,
+   "score_box": 0.9975744094977644,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 27.72,
+   "bearing_perception_deg": 27.72,
+   "bearing_diff_deg": 0.0
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0014.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0015.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0016.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0017.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0018.jpg",
+   "visible": true,
+   "score": 0.9782920783494675,
+   "score_box": 0.9782920783494675,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 25.01,
+   "bearing_perception_deg": 25.09,
+   "bearing_diff_deg": 0.0799999999999983
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0019.jpg",
+   "visible": true,
+   "score": 0.9970532423279981,
+   "score_box": 0.9970532423279981,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 17.63,
+   "bearing_perception_deg": 17.54,
+   "bearing_diff_deg": 0.08999999999999986
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0020.jpg",
+   "visible": true,
+   "score": 0.9983138958851959,
+   "score_box": 0.9983138958851959,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 4.46,
+   "bearing_perception_deg": 4.42,
+   "bearing_diff_deg": 0.040000000000000036
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0021.jpg",
+   "visible": true,
+   "score": 0.9984598049504205,
+   "score_box": 0.9984598049504205,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 2.61,
+   "bearing_perception_deg": 2.66,
+   "bearing_diff_deg": 0.050000000000000266
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0022.jpg",
+   "visible": true,
+   "score": 0.9993420758932078,
+   "score_box": 0.9993420758932078,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 0.56,
+   "bearing_perception_deg": 0.58,
+   "bearing_diff_deg": 0.019999999999999907
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0023.jpg",
+   "visible": true,
+   "score": 0.9976477460183673,
+   "score_box": 0.9976477460183673,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -0.72,
+   "bearing_perception_deg": -0.79,
+   "bearing_diff_deg": 0.07000000000000006
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0024.jpg",
+   "visible": true,
+   "score": 0.9986763792839625,
+   "score_box": 0.9986763792839625,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 0.05,
+   "bearing_perception_deg": 0.11,
+   "bearing_diff_deg": 0.06
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0025.jpg",
+   "visible": true,
+   "score": 0.9971620656556867,
+   "score_box": 0.9971620656556867,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 2.46,
+   "bearing_perception_deg": 2.55,
+   "bearing_diff_deg": 0.08999999999999986
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0026.jpg",
+   "visible": true,
+   "score": 0.9962939986831799,
+   "score_box": 0.9962939986831799,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 1.33,
+   "bearing_perception_deg": 1.35,
+   "bearing_diff_deg": 0.020000000000000018
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0027.jpg",
+   "visible": true,
+   "score": 0.9986763536252122,
+   "score_box": 0.9986763536252122,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 0.82,
+   "bearing_perception_deg": 0.7,
+   "bearing_diff_deg": 0.12
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0028.jpg",
+   "visible": true,
+   "score": 0.9967637039557277,
+   "score_box": 0.9967637039557277,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 2.72,
+   "bearing_perception_deg": 2.57,
+   "bearing_diff_deg": 0.15000000000000036
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0029.jpg",
+   "visible": true,
+   "score": 0.9927500371826496,
+   "score_box": 0.9927500371826496,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 2.56,
+   "bearing_perception_deg": 2.51,
+   "bearing_diff_deg": 0.050000000000000266
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0030.jpg",
+   "visible": true,
+   "score": 0.9888214464531148,
+   "score_box": 0.9888214464531148,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 1.43,
+   "bearing_perception_deg": 1.52,
+   "bearing_diff_deg": 0.09000000000000008
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0031.jpg",
+   "visible": true,
+   "score": 0.9872014346573209,
+   "score_box": 0.9872014346573209,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 6.46,
+   "bearing_perception_deg": 6.25,
+   "bearing_diff_deg": 0.20999999999999996
+  },
+  {
+   "key": "blue-bottle-20260907-142454/frame-0032.jpg",
+   "visible": true,
+   "score": 0.9885999342511685,
+   "score_box": 0.9885999342511685,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 7.99,
+   "bearing_perception_deg": 7.98,
+   "bearing_diff_deg": 0.009999999999999787
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0002.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0003.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0004.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0005.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0006.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0007.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0008.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0009.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0010.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0011.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0012.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0013.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0014.jpg",
+   "visible": false,
+   "score": 0.0006163894216090749,
+   "score_box": 0.0006163894216090749,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0015.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0016.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0017.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0018.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0019.jpg",
+   "visible": false,
+   "score": 0.5548080836123557,
+   "score_box": 0.5548080836123557,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0020.jpg",
+   "visible": false,
+   "score": 0.0007564227508523448,
+   "score_box": 0.0007564227508523448,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0021.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0022.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0023.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0024.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0025.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0026.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0027.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0028.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0029.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0030.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0031.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0032.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0033.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0034.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0035.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0036.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0037.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0038.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0039.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0040.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0041.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0042.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0043.jpg",
+   "visible": false,
+   "score": 0.0010090594196618368,
+   "score_box": 0.0010090594196618368,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0044.jpg",
+   "visible": false,
+   "score": 0.0008900867800316288,
+   "score_box": 0.0008900867800316288,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0045.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0046.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0047.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0048.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0049.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0050.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0051.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0052.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0053.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0054.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0055.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0056.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0057.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0058.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0059.jpg",
+   "visible": false,
+   "score": 0.0007372708224188255,
+   "score_box": 0.0007372708224188255,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0060.jpg",
+   "visible": false,
+   "score": 0.0005706967182934492,
+   "score_box": 0.0005706967182934492,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0061.jpg",
+   "visible": false,
+   "score": 0.000774649008907544,
+   "score_box": 0.000774649008907544,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0062.jpg",
+   "visible": false,
+   "score": 0.0006860697916871374,
+   "score_box": 0.0006860697916871374,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0063.jpg",
+   "visible": false,
+   "score": 0.0011386647855981063,
+   "score_box": 0.0011386647855981063,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0064.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0065.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0066.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0067.jpg",
+   "visible": false,
+   "score": 0.0010473947329903532,
+   "score_box": 0.0010473947329903532,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0068.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0069.jpg",
+   "visible": false,
+   "score": 0.0007590699565704938,
+   "score_box": 0.0007590699565704938,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0070.jpg",
+   "visible": false,
+   "score": 0.0007008442760389126,
+   "score_box": 0.0007008442760389126,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0071.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0072.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0073.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0074.jpg",
+   "visible": false,
+   "score": 0.0007616669706684922,
+   "score_box": 0.0007616669706684922,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0075.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0076.jpg",
+   "visible": false,
+   "score": 0.0009626105267983671,
+   "score_box": 0.0009626105267983671,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0077.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0078.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0079.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0080.jpg",
+   "visible": false,
+   "score": 0.001050351562998531,
+   "score_box": 0.001050351562998531,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0081.jpg",
+   "visible": false,
+   "score": 0.0005806430762332052,
+   "score_box": 0.0005806430762332052,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0082.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0083.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0084.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0085.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0086.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0087.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0088.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0089.jpg",
+   "visible": false,
+   "score": 0.0010376890873628304,
+   "score_box": 0.0010376890873628304,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0090.jpg",
+   "visible": false,
+   "score": 0.0007124248884214456,
+   "score_box": 0.0007124248884214456,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0091.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0092.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0093.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0095.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0096.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0097.jpg",
+   "visible": false,
+   "score": 0.0009884330711960267,
+   "score_box": 0.0009884330711960267,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0098.jpg",
+   "visible": false,
+   "score": 0.000933219451579162,
+   "score_box": 0.000933219451579162,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0099.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0100.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0101.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0102.jpg",
+   "visible": false,
+   "score": 0.00154001872326727,
+   "score_box": 0.00154001872326727,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0103.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0104.jpg",
+   "visible": false,
+   "score": 0.0005750749392090804,
+   "score_box": 0.0005750749392090804,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0105.jpg",
+   "visible": false,
+   "score": 0.00047826402346740955,
+   "score_box": 0.00047826402346740955,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0106.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0107.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0108.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0109.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0110.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0111.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0112.jpg",
+   "visible": false,
+   "score": 0.00032569981613015693,
+   "score_box": 0.00032569981613015693,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0113.jpg",
+   "visible": false,
+   "score": 0.001334256605322583,
+   "score_box": 0.001334256605322583,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0114.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0115.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0116.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0117.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0118.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0119.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0120.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0121.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0122.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0123.jpg",
+   "visible": false,
+   "score": 0.00021158402082620866,
+   "score_box": 0.00021158402082620866,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0124.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0125.jpg",
+   "visible": false,
+   "score": 0.0007505012598347546,
+   "score_box": 0.0007505012598347546,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0126.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0127.jpg",
+   "visible": false,
+   "score": 0.000283971640125754,
+   "score_box": 0.000283971640125754,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0128.jpg",
+   "visible": false,
+   "score": 0.00021501644466206992,
+   "score_box": 0.00021501644466206992,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0129.jpg",
+   "visible": false,
+   "score": 0.0004007001447456984,
+   "score_box": 0.0004007001447456984,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0130.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0131.jpg",
+   "visible": false,
+   "score": 0.0002397289725127513,
+   "score_box": 0.0002397289725127513,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0132.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0133.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0134.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0135.jpg",
+   "visible": false,
+   "score": 0.0002519937425201362,
+   "score_box": 0.0002519937425201362,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0136.jpg",
+   "visible": false,
+   "score": 0.00031623137294630783,
+   "score_box": 0.00031623137294630783,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0137.jpg",
+   "visible": false,
+   "score": 0.00032890583092344517,
+   "score_box": 0.00032890583092344517,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0138.jpg",
+   "visible": false,
+   "score": 0.0003498268101733935,
+   "score_box": 0.0003498268101733935,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0139.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0140.jpg",
+   "visible": false,
+   "score": 0.0002553672693074995,
+   "score_box": 0.0002553672693074995,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0141.jpg",
+   "visible": false,
+   "score": 0.000821874463431805,
+   "score_box": 0.000821874463431805,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0142.jpg",
+   "visible": false,
+   "score": 0.00047766293679129217,
+   "score_box": 0.00047766293679129217,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0143.jpg",
+   "visible": false,
+   "score": 0.0005645503617283589,
+   "score_box": 0.0005645503617283589,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0144.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0145.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0146.jpg",
+   "visible": false,
+   "score": 0.0004444320430460123,
+   "score_box": 0.0004444320430460123,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0147.jpg",
+   "visible": false,
+   "score": 0.0008409821098929811,
+   "score_box": 0.0008409821098929811,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0148.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0149.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0150.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0151.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0152.jpg",
+   "visible": false,
+   "score": 0.00021825720521406636,
+   "score_box": 0.00021825720521406636,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0153.jpg",
+   "visible": false,
+   "score": 0.0004100147378682127,
+   "score_box": 0.0004100147378682127,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0154.jpg",
+   "visible": false,
+   "score": 0.00013551018679384115,
+   "score_box": 0.00013551018679384115,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0155.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0156.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0157.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0158.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0159.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0160.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0161.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0162.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0163.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0164.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0165.jpg",
+   "visible": false,
+   "score": 0.00023727712969918654,
+   "score_box": 0.00023727712969918654,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0166.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0167.jpg",
+   "visible": false,
+   "score": 0.00029976637761059067,
+   "score_box": 0.00029976637761059067,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0168.jpg",
+   "visible": false,
+   "score": 0.000390881992586236,
+   "score_box": 0.000390881992586236,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0169.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0170.jpg",
+   "visible": false,
+   "score": 0.0007042960601929424,
+   "score_box": 0.0007042960601929424,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0171.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0172.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0173.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0174.jpg",
+   "visible": false,
+   "score": 0.0005582759557494617,
+   "score_box": 0.0005582759557494617,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0175.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0176.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0177.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0178.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0179.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0180.jpg",
+   "visible": false,
+   "score": 0.000320662493983796,
+   "score_box": 0.000320662493983796,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0181.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0182.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0183.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0184.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0185.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0186.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0187.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0188.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0189.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0190.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0191.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0192.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0193.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0194.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0195.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0196.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0197.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0198.jpg",
+   "visible": false,
+   "score": 0.0002136958247828323,
+   "score_box": 0.0002136958247828323,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0199.jpg",
+   "visible": false,
+   "score": 0.00036221185466710616,
+   "score_box": 0.00036221185466710616,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0200.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0201.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0202.jpg",
+   "visible": true,
+   "score": 0.6168059209578939,
+   "score_box": 0.6168059209578939,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0203.jpg",
+   "visible": true,
+   "score": 0.9923323304369841,
+   "score_box": 0.9923323304369841,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0204.jpg",
+   "visible": true,
+   "score": 0.9052561602251672,
+   "score_box": 0.9052561602251672,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0205.jpg",
+   "visible": true,
+   "score": 0.9935937683064688,
+   "score_box": 0.9935937683064688,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0206.jpg",
+   "visible": true,
+   "score": 0.9977120590057921,
+   "score_box": 0.9977120590057921,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0207.jpg",
+   "visible": true,
+   "score": 0.9972516763427087,
+   "score_box": 0.9972516763427087,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0208.jpg",
+   "visible": true,
+   "score": 0.9972647428698572,
+   "score_box": 0.9972647428698572,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 1.08,
+   "bearing_perception_deg": 1.18,
+   "bearing_diff_deg": 0.09999999999999987
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0209.jpg",
+   "visible": true,
+   "score": 0.9967843987843783,
+   "score_box": 0.9967843987843783,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 2.31,
+   "bearing_perception_deg": 2.3,
+   "bearing_diff_deg": 0.010000000000000231
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0211.jpg",
+   "visible": true,
+   "score": 0.9954911386989891,
+   "score_box": 0.9954911386989891,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-bottle-20260907-185007/frame-0212.jpg",
+   "visible": true,
+   "score": 0.9850265155629715,
+   "score_box": 0.9850265155629715,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0000.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0001.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0002.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0003.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0004.jpg",
+   "visible": true,
+   "score": 0.5263836066106853,
+   "score_box": 0.5263836066106853,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 17.78,
+   "bearing_perception_deg": 17.78,
+   "bearing_diff_deg": 0.0
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0005.jpg",
+   "visible": true,
+   "score": 0.998021198335277,
+   "score_box": 0.998021198335277,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 14.6,
+   "bearing_perception_deg": 13.37,
+   "bearing_diff_deg": 1.2300000000000004
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0006.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0007.jpg",
+   "visible": true,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0008.jpg",
+   "visible": true,
+   "score": 0.9974601225569757,
+   "score_box": 0.9974601225569757,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 14.04,
+   "bearing_perception_deg": 14.0,
+   "bearing_diff_deg": 0.03999999999999915
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0009.jpg",
+   "visible": true,
+   "score": 0.999455668613179,
+   "score_box": 0.999455668613179,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 5.07,
+   "bearing_perception_deg": 5.15,
+   "bearing_diff_deg": 0.08000000000000007
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0010.jpg",
+   "visible": true,
+   "score": 0.663728509547794,
+   "score_box": 0.663728509547794,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -6.87,
+   "bearing_perception_deg": -6.81,
+   "bearing_diff_deg": 0.0600000000000005
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0011.jpg",
+   "visible": true,
+   "score": 0.9994713660412207,
+   "score_box": 0.9994713660412207,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -1.49,
+   "bearing_perception_deg": -1.38,
+   "bearing_diff_deg": 0.1100000000000001
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0012.jpg",
+   "visible": true,
+   "score": 0.9998227262061807,
+   "score_box": 0.9998227262061807,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -0.1,
+   "bearing_perception_deg": -0.19,
+   "bearing_diff_deg": 0.09
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0013.jpg",
+   "visible": true,
+   "score": 0.9987543456088481,
+   "score_box": 0.9987543456088481,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 1.84,
+   "bearing_perception_deg": 1.74,
+   "bearing_diff_deg": 0.10000000000000009
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0014.jpg",
+   "visible": true,
+   "score": 0.9996910513097078,
+   "score_box": 0.9996910513097078,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -2.05,
+   "bearing_perception_deg": -0.37,
+   "bearing_diff_deg": 1.6799999999999997
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0015.jpg",
+   "visible": true,
+   "score": 0.9984611559166809,
+   "score_box": 0.9984611559166809,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -1.54,
+   "bearing_perception_deg": 0.48,
+   "bearing_diff_deg": 2.02
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0016.jpg",
+   "visible": true,
+   "score": 0.9988114425784715,
+   "score_box": 0.9988114425784715,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -0.46,
+   "bearing_perception_deg": -0.43,
+   "bearing_diff_deg": 0.030000000000000027
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0017.jpg",
+   "visible": false,
+   "score": 0.9987652862691407,
+   "score_box": 0.9987652862691407,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 0.92,
+   "bearing_perception_deg": 0.24,
+   "bearing_diff_deg": 0.68
+  },
+  {
+   "key": "blue-shoes-20260907-152528/frame-0018.jpg",
+   "visible": true,
+   "score": 0.9993528308213031,
+   "score_box": 0.9993528308213031,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -3.38,
+   "bearing_perception_deg": 1.39,
+   "bearing_diff_deg": 4.77
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0000.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0001.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0002.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0003.jpg",
+   "visible": true,
+   "score": 0.999849554070028,
+   "score_box": 0.999849554070028,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 27.41,
+   "bearing_perception_deg": 27.42,
+   "bearing_diff_deg": 0.010000000000001563
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0004.jpg",
+   "visible": true,
+   "score": 0.9991329994848955,
+   "score_box": 0.9991329994848955,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 25.21,
+   "bearing_perception_deg": 25.17,
+   "bearing_diff_deg": 0.03999999999999915
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0005.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0006.jpg",
+   "visible": false,
+   "score": 0.0,
+   "score_box": 0.0,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0007.jpg",
+   "visible": true,
+   "score": 0.9996247688018776,
+   "score_box": 0.9996247688018776,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 22.8,
+   "bearing_perception_deg": 22.72,
+   "bearing_diff_deg": 0.08000000000000185
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0008.jpg",
+   "visible": true,
+   "score": 0.9995044962132693,
+   "score_box": 0.9995044962132693,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 21.37,
+   "bearing_perception_deg": 21.41,
+   "bearing_diff_deg": 0.03999999999999915
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0009.jpg",
+   "visible": true,
+   "score": 0.9998142060536869,
+   "score_box": 0.9998142060536869,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 8.76,
+   "bearing_perception_deg": 8.9,
+   "bearing_diff_deg": 0.14000000000000057
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0010.jpg",
+   "visible": true,
+   "score": 0.9998198621504337,
+   "score_box": 0.9998198621504337,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 6.3,
+   "bearing_perception_deg": 6.36,
+   "bearing_diff_deg": 0.0600000000000005
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0011.jpg",
+   "visible": true,
+   "score": 0.732529171454344,
+   "score_box": 0.732529171454344,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -5.69,
+   "bearing_perception_deg": -5.71,
+   "bearing_diff_deg": 0.019999999999999574
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0012.jpg",
+   "visible": true,
+   "score": 0.839428745034268,
+   "score_box": 0.839428745034268,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0013.jpg",
+   "visible": true,
+   "score": 0.9999354096990768,
+   "score_box": 0.9999354096990768,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -14.66,
+   "bearing_perception_deg": -14.6,
+   "bearing_diff_deg": 0.0600000000000005
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0014.jpg",
+   "visible": true,
+   "score": 0.8422749120849271,
+   "score_box": 0.8422749120849271,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -5.38,
+   "bearing_perception_deg": -5.35,
+   "bearing_diff_deg": 0.03000000000000025
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0015.jpg",
+   "visible": true,
+   "score": 0.8140532879348279,
+   "score_box": 0.8140532879348279,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 5.64,
+   "bearing_perception_deg": 5.6,
+   "bearing_diff_deg": 0.040000000000000036
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0016.jpg",
+   "visible": true,
+   "score": 0.0018035478241950878,
+   "score_box": 0.0018035478241950878,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0017.jpg",
+   "visible": true,
+   "score": 0.0019511316270714458,
+   "score_box": 0.0019511316270714458,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0018.jpg",
+   "visible": true,
+   "score": 0.998603954300499,
+   "score_box": 0.998603954300499,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 25.47,
+   "bearing_perception_deg": 25.55,
+   "bearing_diff_deg": 0.08000000000000185
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0019.jpg",
+   "visible": true,
+   "score": 0.001229738096893467,
+   "score_box": 0.001229738096893467,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0020.jpg",
+   "visible": true,
+   "score": 0.9990183385210197,
+   "score_box": 0.9990183385210197,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 1.38,
+   "bearing_perception_deg": 1.42,
+   "bearing_diff_deg": 0.040000000000000036
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0021.jpg",
+   "visible": true,
+   "score": 0.9997023884197752,
+   "score_box": 0.9997023884197752,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -2.72,
+   "bearing_perception_deg": -2.77,
+   "bearing_diff_deg": 0.04999999999999982
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0022.jpg",
+   "visible": true,
+   "score": 0.9996622788951127,
+   "score_box": 0.9996622788951127,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -22.65,
+   "bearing_perception_deg": -22.63,
+   "bearing_diff_deg": 0.019999999999999574
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0023.jpg",
+   "visible": true,
+   "score": 0.9980979578787318,
+   "score_box": 0.9980979578787318,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -19.83,
+   "bearing_perception_deg": -19.75,
+   "bearing_diff_deg": 0.0799999999999983
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0024.jpg",
+   "visible": true,
+   "score": 0.9997397673276518,
+   "score_box": 0.9997397673276518,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -15.63,
+   "bearing_perception_deg": -15.67,
+   "bearing_diff_deg": 0.03999999999999915
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0025.jpg",
+   "visible": true,
+   "score": 0.999685587596206,
+   "score_box": 0.999685587596206,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -17.06,
+   "bearing_perception_deg": -17.02,
+   "bearing_diff_deg": 0.03999999999999915
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0026.jpg",
+   "visible": true,
+   "score": 0.9995954313316608,
+   "score_box": 0.9995954313316608,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -2.87,
+   "bearing_perception_deg": -2.87,
+   "bearing_diff_deg": 0.0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0027.jpg",
+   "visible": true,
+   "score": 0.9996671647861497,
+   "score_box": 0.9996671647861497,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -0.31,
+   "bearing_perception_deg": -0.39,
+   "bearing_diff_deg": 0.08000000000000002
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0028.jpg",
+   "visible": true,
+   "score": 0.9993576123845308,
+   "score_box": 0.9993576123845308,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 17.27,
+   "bearing_perception_deg": 17.21,
+   "bearing_diff_deg": 0.05999999999999872
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0029.jpg",
+   "visible": true,
+   "score": 0.9960152729612387,
+   "score_box": 0.9960152729612387,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 13.17,
+   "bearing_perception_deg": 13.13,
+   "bearing_diff_deg": 0.03999999999999915
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0030.jpg",
+   "visible": true,
+   "score": 0.9996585232143411,
+   "score_box": 0.9996585232143411,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 9.89,
+   "bearing_perception_deg": 9.89,
+   "bearing_diff_deg": 0.0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0031.jpg",
+   "visible": true,
+   "score": 0.9997098901896194,
+   "score_box": 0.9997098901896194,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 3.95,
+   "bearing_perception_deg": 3.88,
+   "bearing_diff_deg": 0.07000000000000028
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0032.jpg",
+   "visible": true,
+   "score": 0.9990980446634826,
+   "score_box": 0.9990980446634826,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 1.95,
+   "bearing_perception_deg": 13.52,
+   "bearing_diff_deg": 11.57
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0033.jpg",
+   "visible": true,
+   "score": 0.9999694730795606,
+   "score_box": 0.9999694730795606,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -10.91,
+   "bearing_perception_deg": -11.04,
+   "bearing_diff_deg": 0.129999999999999
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0034.jpg",
+   "visible": true,
+   "score": 0.9998787970797903,
+   "score_box": 0.9998787970797903,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": -0.26,
+   "bearing_perception_deg": 15.89,
+   "bearing_diff_deg": 16.150000000000002
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0035.jpg",
+   "visible": true,
+   "score": 0.9995749083029996,
+   "score_box": 0.9995749083029996,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 0.0,
+   "bearing_perception_deg": -0.0,
+   "bearing_diff_deg": 0.0
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0036.jpg",
+   "visible": true,
+   "score": 0.9993661419481503,
+   "score_box": 0.9993661419481503,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 16.24,
+   "bearing_perception_deg": 0.08,
+   "bearing_diff_deg": 16.16
+  },
+  {
+   "key": "red-backpack-20260907-144856/frame-0037.jpg",
+   "visible": true,
+   "score": 0.9992224944685218,
+   "score_box": 0.9992224944685218,
+   "status_box": "answered",
+   "diff": 0.0,
+   "flip": false,
+   "bearing_vlm_deg": 0.0,
+   "bearing_perception_deg": 0.15,
+   "bearing_diff_deg": 0.15
+  }
+ ]
+}
