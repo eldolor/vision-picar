@@ -45,6 +45,16 @@ ROS_DOMAIN = os.environ.get("ROS_DOMAIN_ID", "73")
 TARGET = "red backpack"
 MISSION_LIMIT_S = 1800
 LOGDIR = os.environ.get("EXPLORE_LOGDIR", "/tmp")
+# PICAR_ROS_NETWORK=host: the container on the host's network, both URLs on
+# loopback and the bridge on BRIDGE -- plain Docker on Linux has no
+# host.docker.internal (service/slam/README.md, "On the car"). The bridge
+# then listens on every interface with no secret (this script strips it):
+# only where nothing can reach in, such as an EC2 instance with no inbound
+# rules (evaluations/goal-learn-396/live_cloud.sh), never on a shared LAN.
+# Off the container's own network, only ROS_DOMAIN_ID keeps two stacks'
+# nodes apart: set it per section (`plan_section.py env`). Unset, the Docker
+# Desktop wiring below.
+HOST_NETWORK = os.environ.get("PICAR_ROS_NETWORK") == "host"
 # 3.45: each stack's robot, brain and ROS logs in a directory of their own.
 # They were overwritten at every new stack, so a batch of three kept only
 # the last run's -- and the brain's held nothing at INFO anyway.
@@ -153,10 +163,16 @@ def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None):
              if slam_yaml else [])
     if nav_yaml:
         mount += ["-v", f"{os.path.abspath(nav_yaml)}:/ws/src/picar_bringup/config/nav2.yaml:ro"]
-    subprocess.run(["docker", "run", "-d", "--name", CONTAINER, *mount,
-                    "-p", f"127.0.0.1:{BRIDGE}:8090", "-e", f"ROS_DOMAIN_ID={ROS_DOMAIN}",
-                    "-e", f"ROBOT_URL=http://host.docker.internal:{ROBOT}",
-                    "-e", f"BRAIN_URL=http://host.docker.internal:{BRAIN}",
+    if HOST_NETWORK:
+        net = ["--network", "host", "-e", f"BRIDGE_PORT={BRIDGE}",
+               "-e", f"ROBOT_URL=http://127.0.0.1:{ROBOT}",
+               "-e", f"BRAIN_URL=http://127.0.0.1:{BRAIN}"]
+    else:
+        net = ["-p", f"127.0.0.1:{BRIDGE}:8090",
+               "-e", f"ROBOT_URL=http://host.docker.internal:{ROBOT}",
+               "-e", f"BRAIN_URL=http://host.docker.internal:{BRAIN}"]
+    subprocess.run(["docker", "run", "-d", "--name", CONTAINER, *mount, *net,
+                    "-e", f"ROS_DOMAIN_ID={ROS_DOMAIN}",
                     os.environ.get("ROS_IMAGE", "vision-picar-ros:latest"), "ros2", "launch", "picar_bringup",
                     "picar.launch.py"], capture_output=True, check=True)
     robot = httpx.Client(base_url=f"http://127.0.0.1:{ROBOT}", timeout=30)

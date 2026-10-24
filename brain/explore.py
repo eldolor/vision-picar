@@ -997,8 +997,10 @@ class ExploreAgent(MissionAgent):
 
     def _goal_types(self, m: dict, goals: list) -> list:
         """3.96: each goal's room type by the map's room labels ('bedroom 2'
-        -> 'bedroom'), from its cell or the nearest labelled cell within
-        ROOM_RES_M (one training-grid cell, whatever this map's resolution);
+        -> 'bedroom'), from its cell or the nearest labelled cell in the
+        square ROOM_RES_M to each side, whatever this map's resolution
+        (training's stand-in labeller looked one 0.30 m house cell around,
+        first match in a fixed order: the two differ only at room edges);
         None off every labelled room, and for all of them on a map with no
         labels (a find mission without a survey)."""
         labels = self._labels(m)
