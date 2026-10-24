@@ -80,7 +80,7 @@ def _network():
     there the container shares the host's network, as on the Jetson
     (tools/jetson/README.md), with the bridge on this section's own port."""
     if sys.platform.startswith("linux"):
-        return ["--network", "host", "-e", f"BRIDGE_PORT={de.BRIDGE}",
+        return ["--network", "host", "-e", f"BRIDGE_PORT={de.BRIDGE}", "-e", "BRIDGE_HOST=127.0.0.1",
                 "-e", f"ROBOT_URL=http://127.0.0.1:{de.ROBOT}",
                 "-e", f"BRAIN_URL=http://127.0.0.1:{de.BRAIN}"]
     return ["-p", f"127.0.0.1:{de.BRIDGE}:8090",

@@ -322,7 +322,6 @@ class Bridge(Node):
         self._rest_since = None          # monotonic: odometry at rest since
         self._remap_latched = False      # a re-map failed: no automatic one again (review)
         self._remap_deferrals = 0
-        self._remap_mo = None            # the localisation node's map -> odom at the swap
         if self.map_store is None:
             self.get_logger().warning(f"no {MAP_DIR}: maps are not saved this session")
         if self.brain_url:
@@ -1182,7 +1181,9 @@ class Bridge(Node):
             scan, saved, tracker = self.last_scan, self._remap_saved, self._remap_tracker
         if not watching:
             return seen
-        if self._remap_latched or time.monotonic() < self._remap_retry_at:
+        with self.lock:
+            quiet = self._remap_latched or time.monotonic() < self._remap_retry_at
+        if quiet:
             return seen
         here = self._fresh_pose()
         if here is not None and remap.entered_unknown(saved, here["x_m"], here["y_m"]):
@@ -1206,7 +1207,9 @@ class Bridge(Node):
         REMAP_RETRY_S (Thermos) rather than ask again on every look."""
         code, _ = self.remap(trigger, detail)
         if code != 200:
-            self._remap_retry_at = time.monotonic() + REMAP_RETRY_S
+            with self.lock:
+                # Never shorten a longer back-off already set (a deferral's).
+                self._remap_retry_at = max(self._remap_retry_at, time.monotonic() + REMAP_RETRY_S)
 
     def remap(self, trigger: str, detail=None):
         """Re-map (D4): slam_toolbox restarted as the mapping node on the
@@ -1304,7 +1307,7 @@ class Bridge(Node):
                 math.atan2(math.sin(myaw + oyaw), math.cos(myaw + oyaw)))
 
     def _remap_run(self, version, record) -> None:
-        self._remap_mo = None                # this re-map's own, set at its swap (review)
+        mo = None                            # this re-map's own map -> odom, at its swap
         rest = self._await_rest()
         record = {**record, **rest}
         if not rest["at_rest"]:
@@ -1328,8 +1331,8 @@ class Bridge(Node):
             self.slam.stop()
             # Kept (review): a failed mapping node's own map -> odom must
             # not seed the localisation node that replaces it.
-            self._remap_mo = self._map_to_odom()
-            pose = self._pose_now(self._remap_mo)
+            mo = self._map_to_odom()
+            pose = self._pose_now(mo)
             if pose is None:
                 raise RuntimeError("no map -> odom -> base_footprint to re-map from")
             record["from_pose"] = [round(v, 4) for v in pose]
@@ -1342,11 +1345,11 @@ class Bridge(Node):
                 self.last_map = None
             self._wait_first_pose("mapping", REMAP_READY_TIMEOUT_S)
         except Exception as e:  # noqa: BLE001 -- back to localising, or a shown failure
-            self._remap_failed(version, record, pose, e)
+            self._remap_failed(version, record, pose, mo, e)
             return
         with self.lock:
             self._remap_saved = self._remap_tracker = None
-            self.remap_record = {**record, "result": "mapping",
+            self.remap_record = {**record, "result": "mapping", "mapping_at": time.time(),
                                  "took_s": round(time.monotonic() - t0, 2)}
             self.slam_state = "ready"
             why, self._save_after_remap = self._save_after_remap, None
@@ -1356,7 +1359,7 @@ class Bridge(Node):
             # there is a mapping node to serialise.
             self.save_map_async(why)
 
-    def _remap_failed(self, version, record, pose, e) -> None:
+    def _remap_failed(self, version, record, pose, mo, e) -> None:
         """Both reviewers: a re-map that fails must not leave a working
         robot with no SLAM. Localise on the same version again, from where
         the robot is now; `failed` only if that fails too, or no pose can be
@@ -1369,7 +1372,7 @@ class Bridge(Node):
             self.slam.stop()
         except Exception:  # noqa: BLE001
             pass
-        start = (self._pose_now(self._remap_mo) if self._remap_mo else None) or pose
+        start = (self._pose_now(mo) if mo else None) or pose
         try:
             if start is None:
                 raise RuntimeError("no pose to localise from")
@@ -1631,7 +1634,10 @@ def main():
     rclpy.init()
     bridge = Bridge()
     port = int(os.environ.get("BRIDGE_PORT", "8090"))
-    server = ThreadingHTTPServer(("0.0.0.0", port), _handler(bridge))
+    # 0.0.0.0 inside its own network namespace (Docker publishes the port);
+    # 127.0.0.1 under host networking, so a run on a laptop is not on the LAN.
+    host = os.environ.get("BRIDGE_HOST", "0.0.0.0")
+    server = ThreadingHTTPServer((host, port), _handler(bridge))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     bridge.get_logger().info(f"bridge on :{port}, robot at {bridge.robot_url}")
     executor = MultiThreadedExecutor()

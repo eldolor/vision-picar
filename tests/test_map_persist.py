@@ -1305,3 +1305,22 @@ def test_a_fall_back_frees_the_reload_map(bridge_mod, monkeypatch, tmp_path):
     b._reload_map = {"data": [0]}
     b.start_slam()
     assert b._reload_map is None
+
+
+# ---- 3.50.D4 review round 5 ----
+
+def test_the_re_map_record_says_when_mapping_began(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    t0 = time.time()
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    r = b.health()[1]["slam"]["remap"]
+    assert r["result"] == "mapping" and t0 <= r["mapping_at"] <= time.time()
+
+
+def test_the_bridge_can_bind_loopback_only():
+    """Review: under host networking a laptop run must not be on the LAN."""
+    with open(os.path.join(ROOT, "service/slam/src/picar_bridge/picar_bridge/bridge.py")) as f:
+        src = f.read()
+    assert 'os.environ.get("BRIDGE_HOST", "0.0.0.0")' in src
+    assert "ThreadingHTTPServer((host, port)" in src
