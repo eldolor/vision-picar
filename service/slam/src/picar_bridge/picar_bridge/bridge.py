@@ -330,7 +330,7 @@ class Bridge(Node):
         # Scans waiting to be judged (amendment 4, review rounds 2-3): filed
         # by the poll and the watch, once per stamp, under self.lock.
         self._remap_pending = collections.deque()
-        self._remap_queued_ns = None         # the newest stamp queued
+        self._remap_queued = None            # the scan filed last (the object)
         self._remap_dropped = {"no_tf": 0, "overflow": 0}   # this tracker's
         self._rest_clock = remap.RestClock(REST_LINEAR_M_S, REST_ANGULAR_RAD_S, REMAP_REST_S,
                                            1.0 / SCAN_HZ, REST_ODOM_MAX_AGE_S)
@@ -1183,10 +1183,9 @@ class Bridge(Node):
         """Triggers 1 and 2 (remap.py), judged on each new scan while a
         matched reload localises. Its own thread (main): a scan's judgement
         is numpy work that must not hold an executor thread."""
-        seen = None
         while rclpy.ok():
             try:
-                seen = self.remap_step(seen)
+                self.remap_step()
             except Exception as e:  # noqa: BLE001 -- a watch that dies re-maps nothing, silently
                 self.get_logger().error(f"re-map watch: {type(e).__name__}: {e}",
                                         throttle_duration_sec=10.0)
@@ -1198,28 +1197,31 @@ class Bridge(Node):
         it (review round 4)."""
         self._remap_tracker = tracker
         self._remap_pending.clear()
-        self._remap_queued_ns = None
+        # The scan in hand now was taken before the switch: never this
+        # tracker's (review round 5).
+        self._remap_queued = self.last_scan
         self._remap_dropped = {"no_tf": 0, "overflow": 0}
 
     def _queue_scan(self, scan) -> None:
-        """File a scan for the watch (call under self.lock). Only a repeat of
-        the stamp just filed is refused: a clock stepping back must not
-        blind the watch (review round 4)."""
+        """File a scan for the watch (call under self.lock). The poll and the
+        look both offer last_scan; the same scan object is filed once. No
+        stamp is compared, so a clock stepping back cannot blind the watch
+        (review rounds 4-5)."""
         if self._remap_tracker is None or scan is None or scan.get("stamp_ns") is None:
             return
-        if scan["stamp_ns"] == self._remap_queued_ns:
+        if scan is self._remap_queued:
             return
         if len(self._remap_pending) >= REMAP_PENDING_MAX:
             self._remap_pending.popleft()
             self._remap_dropped["overflow"] += 1
         self._remap_pending.append(scan)
-        self._remap_queued_ns = scan["stamp_ns"]
+        self._remap_queued = scan
 
-    def remap_step(self, seen):
+    def remap_step(self) -> None:
         """One look: the robot's centre against the saved map's unknown,
         then the queued scans, oldest first, against its cells, as far as TF
-        and odometry have passed them. Returns the newest stamp queued, on
-        every path (`seen` is the caller's last answer, unused)."""
+        and odometry have passed them. Scans filed while the watch is
+        stopped are discarded, uncounted: they were never the watch's."""
         with self.lock:
             watching = (self.slam_state == "ready" and self.slam is not None
                         and self.slam.mode == "localisation" and self._remap_saved is not None
@@ -1231,14 +1233,13 @@ class Bridge(Node):
                 self._remap_pending.clear()
             else:
                 self._queue_scan(self.last_scan)
-            queued = self._remap_queued_ns
         if not watching:
-            return queued
+            return
         here = self._fresh_pose()
         if here is not None and remap.entered_unknown(saved, here["x_m"], here["y_m"]):
             self._ask_remap("entered_unknown",
                             {"pose_m": [round(here["x_m"], 3), round(here["y_m"], 3)]})
-            return queued
+            return
         while True:
             with self.lock:
                 if self._remap_tracker is not tracker or not self._remap_pending:
@@ -1268,10 +1269,12 @@ class Bridge(Node):
             fired = tracker.add(s, laser, s["stamp_ns"] * 1e-9, still=bool(still))
             if fired is not None:
                 with self.lock:
-                    self._remap_pending.clear()
-                self._ask_remap("contradiction", fired)
+                    current = self._remap_tracker is tracker
+                    if current:
+                        self._remap_pending.clear()
+                if current:                 # a replaced tracker's fire is not the new one's
+                    self._ask_remap("contradiction", fired)
                 break
-        return queued
 
     def _ask_remap(self, trigger, detail) -> None:
         """A trigger's request; one that could not start backs off

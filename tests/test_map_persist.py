@@ -1027,11 +1027,11 @@ def test_the_watch_re_maps_on_entering_the_saved_map_s_unknown(bridge_mod, monke
     b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
     asked = []
     monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append(trigger) or (200, {}))
-    b.remap_step(None)
+    b.remap_step()
     assert asked == []
     monkeypatch.setattr(b, "_fresh_pose",
                         lambda: {"x_m": 3.0, "y_m": 0.5, "yaw_rad": 0.0, "age_s": 0.0})
-    b.remap_step(None)
+    b.remap_step()
     assert asked == ["entered_unknown"]
 
 
@@ -1047,15 +1047,16 @@ def test_the_watch_re_maps_when_the_scans_contradict(bridge_mod, monkeypatch, tm
         return pose
     monkeypatch.setattr(b, "_laser_in_map", laser)
     _rest_clock_still(b)
-    seen = None
     for k in range(120):
         b.last_scan = {**_scan(*pose, boxes=[BOX]), "stamp_ns": k * 10**8, "at": time.time()}
-        seen = b.remap_step(seen)
+        b.remap_step()
         if asked:
             break
     assert asked and asked[0][0] == "contradiction" and asked[0][1]["cells"] >= remap.MIN_GROUP
     assert stamps[:3] == [0, 10**8, 2 * 10**8]
-    assert b.remap_step(seen) == seen                   # the same scan is not judged twice
+    n = b._remap_tracker.scans
+    b.remap_step()
+    assert b._remap_tracker.scans == n                  # the same scan is not judged twice
 
 
 def _rest_clock_still(b):
@@ -1081,7 +1082,7 @@ def test_the_watch_judges_only_scans_taken_at_rest(bridge_mod, monkeypatch, tmp_
         rc.start = None if k % 2 else cap - 0.1 - 0.45
         rc.last_still = rc.last = cap + 0.2
         b.last_scan = {**_scan(*pose, boxes=[BOX]), "stamp_ns": int(cap * 1e9), "at": time.time()}
-        b.remap_step(None)
+        b.remap_step()
     assert asked == []
     assert b._remap_tracker.moving == 150 and b._remap_tracker.scans == 0
 
@@ -1120,10 +1121,13 @@ def test_a_scan_whose_tf_is_late_is_retried_then_dropped(bridge_mod, monkeypatch
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)
     b.last_scan = {**_scan(0.0, 0.0, 0.0), "stamp_ns": 5, "at": time.time()}
-    assert b.remap_step(None) == 5 and len(b._remap_pending) == 1   # queued: try again
-    assert b.remap_step(5) == 5 and len(b._remap_pending) == 1      # still waiting, not twice
+    b.remap_step()
+    assert len(b._remap_pending) == 1                   # queued: try again
+    b.remap_step()
+    assert len(b._remap_pending) == 1                   # still waiting, not filed twice
     b._remap_pending[0]["at"] -= 1.0
-    assert b.remap_step(5) == 5 and len(b._remap_pending) == 0      # too old: given up
+    b.remap_step()
+    assert len(b._remap_pending) == 0                   # too old: given up
     assert b._remap_tracker.scans == 0 and b._remap_tracker.moving == 0
 
 
@@ -1134,15 +1138,15 @@ def test_scans_wait_in_order_for_odometry_to_pass_them(bridge_mod, monkeypatch, 
     pose = (0.0, 0.0, 0.0)
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
-    rc, seen = b._rest_clock, None
+    rc = b._rest_clock
     rc.on_odom(999.0, 0.0, 0.0)
     for k in range(5):                                   # five scans, odometry behind them
         b.last_scan = {**_scan(*pose), "stamp_ns": int((1000.0 + 0.1 * k) * 1e9), "at": time.time()}
-        seen = b.remap_step(seen)
+        b.remap_step()
     assert len(b._remap_pending) == 5 and b._remap_tracker.scans == 0
     for k in range(40):                                  # odometry catches up, still throughout
         rc.on_odom(999.05 + 0.05 * k, 0.0, 0.0)
-    b.remap_step(seen)
+    b.remap_step()
     assert len(b._remap_pending) == 0 and b._remap_tracker.scans == 5
 
 
@@ -1153,7 +1157,7 @@ def test_a_scan_odometry_never_passes_counts_moving(bridge_mod, monkeypatch, tmp
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
     b.last_scan = {**_scan(*pose), "stamp_ns": int(1000.0 * 1e9), "at": time.time() - 1.0}
-    b.remap_step(None)
+    b.remap_step()
     assert b.health()[1]["slam"]["watch"]["moving"] == 1
 
 
@@ -1162,7 +1166,8 @@ def test_no_watch_without_a_matched_reload(bridge_mod, monkeypatch, tmp_path):
     monkeypatch.setattr(bridge_mod, "MAP_RELOAD", False)
     b.start_slam()
     assert b._remap_saved is None and b.health()[1]["slam"]["watch"] is None
-    assert b.remap_step("x") is None                    # nothing queued, nothing judged
+    b.remap_step()
+    assert not b._remap_pending                         # nothing queued, nothing judged
 
 
 def test_the_detector_has_a_hold_time():
@@ -1254,10 +1259,10 @@ def test_a_trigger_that_cannot_start_a_re_map_backs_off(bridge_mod, monkeypatch,
     asked = []
     monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append(trigger) or (503, {}))
     for _ in range(5):
-        b.remap_step(None)
+        b.remap_step()
     assert asked == ["entered_unknown"]
     b._remap_retry_at -= bridge_mod.REMAP_RETRY_S
-    b.remap_step(None)
+    b.remap_step()
     assert len(asked) == 2
 
 
@@ -1362,12 +1367,12 @@ def test_a_failed_re_map_latches_the_automatic_triggers(bridge_mod, monkeypatch,
                         {"x_m": 3.0, "y_m": 0.5, "yaw_rad": 0.0, "age_s": 0.0})
     monkeypatch.setattr(live, "alive", lambda: live.mode != "mapping")
     b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
-    b.remap_step(None)
+    b.remap_step()
     _settle(b)
     assert b.health()[1]["slam"]["remap"]["result"] == "failed_localising"
     starts = len(live.calls)
     for _ in range(5):
-        b.remap_step(None)                                  # still in unknown
+        b.remap_step()                                  # still in unknown
     assert len(live.calls) == starts and b.slam_state == "ready"
     assert b.remap("request")[0] == 200                     # a person may still ask
 
@@ -1498,8 +1503,8 @@ def test_every_scan_the_poll_files_is_judged_once(bridge_mod, monkeypatch, tmp_p
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
     _rest_clock_still(b)
     _queue(b, [1000.0, 1000.1, 1000.2])
-    b.last_scan = {**_scan(*pose), "stamp_ns": int(1000.2 * 1e9), "at": time.time()}
-    b.remap_step(None)
+    b.last_scan = b._remap_pending[-1]                   # the poll's own object, offered again
+    b.remap_step()
     assert b._remap_tracker.scans == 3 and not b._remap_pending
 
 
@@ -1510,7 +1515,7 @@ def test_the_queue_empties_when_the_watch_stops_or_its_tracker_changes(bridge_mo
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)    # nothing judged yet
     _queue(b, [1000.0, 1000.1])
     b._remap_retry_at = time.monotonic() + 60                        # a back-off
-    b.remap_step(None)
+    b.remap_step()
     assert not b._remap_pending
     b._remap_retry_at = 0.0
     _queue(b, [1000.2, 1000.3])
@@ -1519,7 +1524,7 @@ def test_the_queue_empties_when_the_watch_stops_or_its_tracker_changes(bridge_mo
         b._set_tracker(remap.Contradictions(b._remap_saved))         # a re-map's fall-back
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
     _rest_clock_still(b)
-    b.remap_step(None)
+    b.remap_step()
     assert b._remap_tracker is not old and b._remap_tracker.scans == 0 and not b._remap_pending
 
 
@@ -1528,7 +1533,7 @@ def test_scans_the_watch_could_not_judge_are_counted(bridge_mod, monkeypatch, tm
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)
     _queue(b, [1000.0 + 0.1 * k for k in range(bridge_mod.REMAP_PENDING_MAX + 3)], age_s=1.0)
-    b.remap_step(None)
+    b.remap_step()
     w = b.health()[1]["slam"]["watch"]
     assert w["overflow"] == 3 and w["no_tf"] == bridge_mod.REMAP_PENDING_MAX and w["scans"] == 0
 
@@ -1552,8 +1557,10 @@ def test_a_clock_stepping_back_does_not_blind_the_watch(bridge_mod, monkeypatch,
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
     _rest_clock_still(b)
-    _queue(b, [1000.0, 1000.0, 970.0, 970.1])            # a repeat, then 30 s back
-    b.remap_step(None)
+    _queue(b, [1000.0, 970.0, 970.1])                    # 30 s back
+    with b.lock:
+        b._queue_scan(b._remap_pending[-1])              # the same scan offered again
+    b.remap_step()
     assert b._remap_tracker.scans == 3
 
 
@@ -1562,9 +1569,26 @@ def test_a_new_tracker_starts_its_own_counts(bridge_mod, monkeypatch, tmp_path):
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)
     _queue(b, [1000.0, 1000.1], age_s=1.0)
-    b.remap_step(None)
+    b.remap_step()
     assert b.health()[1]["slam"]["watch"]["no_tf"] == 2
     with b.lock:
         b._set_tracker(remap.Contradictions(b._remap_saved))
     w = b.health()[1]["slam"]["watch"]
     assert (w["scans"], w["no_tf"], w["overflow"]) == (0, 0, 0)
+
+
+def test_a_new_tracker_never_takes_the_scan_in_hand(bridge_mod, monkeypatch, tmp_path):
+    """Review round 5: the scan held when the tracker changes was taken
+    under the node just replaced; the new tracker starts with the next."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    b.last_scan = {**_scan(*pose), "stamp_ns": int(1000.0 * 1e9), "at": time.time()}
+    with b.lock:
+        b._set_tracker(remap.Contradictions(b._remap_saved))
+    b.remap_step()
+    assert b._remap_tracker.scans == 0
+    b.last_scan = {**_scan(*pose), "stamp_ns": int(1000.1 * 1e9), "at": time.time()}
+    b.remap_step()
+    assert b._remap_tracker.scans == 1
