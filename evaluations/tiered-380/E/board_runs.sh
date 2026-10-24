@@ -8,7 +8,8 @@
 # Runs: A1 (home_first_floor, the loaded window), A2-A6 (the five houses that
 # arrive soonest), B (kill drill), C (OOM drill), D (VE's box latency under
 # load). Default: all, in that order. A run's directory that exists is kept
-# and the run skipped.
+# and the run skipped (move a partial one aside to re-run it); each run's
+# exit status is printed at its end.
 set -uo pipefail
 ROOT="${1:?out root}"; shift
 RUNS=("$@"); [ ${#RUNS[@]} -eq 0 ] && RUNS=(A1 A2 A3 A4 A5 A6 B C D)
@@ -21,12 +22,11 @@ for run in "${RUNS[@]}"; do
   out="$ROOT/$run"
   [ -e "$out" ] && { echo "== $run: $out exists, skipped"; continue; }
   echo "== $run start $(date +%T)"
-  rc=0
   case "$run" in
-    A1) HOUSE=home_first_floor POLICY=tiered CLOUD=off bash tools/jetson/headroom_mission.sh "$out";;
-    A[2-6]) HOUSE="${HOUSES[$run]}" POLICY=tiered CLOUD=off bash tools/jetson/headroom_mission.sh "$out";;
-    B) HOUSE=home_first_floor POLICY=tiered CLOUD=standin DRILL=kill:120 bash tools/jetson/headroom_mission.sh "$out";;
-    C) HOUSE=home_first_floor POLICY=tiered CLOUD=standin DRILL=oom:120 bash tools/jetson/headroom_mission.sh "$out";;
+    A1) HOUSE=home_first_floor POLICY=tiered CLOUD=off bash tools/jetson/headroom_mission.sh "$out"; rc=$?;;
+    A[2-6]) HOUSE="${HOUSES[$run]}" POLICY=tiered CLOUD=off bash tools/jetson/headroom_mission.sh "$out"; rc=$?;;
+    B) HOUSE=home_first_floor POLICY=tiered CLOUD=standin DRILL=kill:120 bash tools/jetson/headroom_mission.sh "$out"; rc=$?;;
+    C) HOUSE=home_first_floor POLICY=tiered CLOUD=standin DRILL=oom:120 bash tools/jetson/headroom_mission.sh "$out"; rc=$?;;
     D)
       # The box question under load: the mission is plain explore (it asks
       # VE nothing), and the client starts once the mission has.
@@ -36,9 +36,9 @@ for run in "${RUNS[@]}"; do
           .venv/bin/python evaluations/tiered-380/E/d10_latency.py 900 "$out/d10_latency.jsonl" \
           > "$out/d10_latency.log" 2>&1 ) &
       CLIENT=$!
-      HOUSE=home_first_floor POLICY=explore CLOUD=off LIMIT=1200 bash tools/jetson/headroom_mission.sh "$out"
+      HOUSE=home_first_floor POLICY=explore CLOUD=off LIMIT=1200 bash tools/jetson/headroom_mission.sh "$out"; rc=$?
       kill $CLIENT 2>/dev/null; pkill -f "E/d10_latency.py" 2>/dev/null;;
     *) echo "== $run: unknown run"; continue;;
   esac
-  echo "== $run end $(date +%T)"
+  echo "== $run end $(date +%T) exit $rc"
 done
