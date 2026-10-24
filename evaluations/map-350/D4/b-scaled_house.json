@@ -26,52 +26,52 @@
    "outcome": "running",
    "seconds": 420,
    "target_at": [],
-   "status_file": "explore_status_explore-purple_unicorn-1792813210.json",
-   "steps": 15,
+   "status_file": "explore_status_explore-purple_unicorn-1792869949.json",
+   "steps": 18,
    "explore": {
-    "goals_sent": 15,
+    "goals_sent": 18,
     "goals_failed": 7,
-    "last_event": "frontier goal stalled (0.45 m from its start); backing out",
-    "camera_seen_m2": 21.81,
+    "last_event": "goal sent (frontier) to (5.46, 0.57)",
+    "camera_seen_m2": 21.11,
     "choice_ms": {
-     "n": 40,
-     "p50_ms": 13.6,
-     "p90_ms": 26.0,
-     "max_ms": 48.2
+     "n": 42,
+     "p50_ms": 9.3,
+     "p90_ms": 11.3,
+     "max_ms": 15.4
     },
     "asks": false,
     "ask": null,
     "choices": 0
    },
    "stuck_episodes": 0,
-   "travel_m": 25.5,
-   "min_gap_cm": 4.3,
+   "travel_m": 29.4,
+   "min_gap_cm": 5.8,
    "contact_samples": 0,
    "inside_samples": 0,
-   "samples": 824,
+   "samples": 831,
    "last_log": [
-    "waiting -- nav2 active: frontier -- hallway, facing ?, free space none, sees red backpack",
-    "waiting -- nav2 active: frontier -- hallway, facing ?, free space some, sees red backpack",
-    "waiting -- REVERSE waits: the mission's own goal still holds the robot -- hallway, facing ?, free space some, sees red backpack"
+    "waiting -- nav2 active: frontier -- hallway, facing ?, free space clear, sees nothing of note",
+    "waiting -- nav2 active: frontier -- hallway, facing ?, free space some, sees nothing of note",
+    "waiting -- nav2 active: frontier -- hallway, facing ?, free space clear, sees nothing of note"
    ]
   },
   "saved": {
-   "map_id": "map-62911d54",
+   "map_id": "map-c6804bb0",
    "saving": false,
    "store": true,
    "saved": 1,
    "failed": 0,
    "skipped": 0,
    "last_version": 1,
-   "last_at": 1792813630.9050386,
+   "last_at": 1792870370.0164018,
    "last_error": null
   },
   "sampler": {
    "contacts": 0,
-   "min_gap_cm": 4.5,
+   "min_gap_cm": 5.2,
    "jumps": [],
-   "error_samples": 413,
-   "max_error_m": 0.026,
+   "error_samples": 417,
+   "max_error_m": 0.034,
    "remaps": [],
    "states": [
     [
@@ -79,19 +79,19 @@
       "ready",
       "mapping"
      ],
-     1792813210.32
+     1792869949.71
     ]
    ]
   }
  },
  "session2": {
   "reload": {
-   "map_id": "map-62911d54",
+   "map_id": "map-c6804bb0",
    "version": 1,
-   "took_s": 1.77,
-   "agreement": 0.964,
+   "took_s": 1.71,
+   "agreement": 0.7,
    "dock_error_m": 0.0,
-   "dock_error_deg": 0.2,
+   "dock_error_deg": 0.07,
    "ok": true,
    "reason": "matched",
    "result": "matched"
@@ -103,189 +103,78 @@
    "states": [
     [
      "checking",
-     2.62
+     1.12
     ],
     [
      "ready",
-     4.43
+     2.8
     ]
    ],
-   "ready_at": 1792813642.35383
+   "ready_at": 1792870379.992868
   }
  },
  "to_view": {
-  "state": "succeeded",
-  "seconds": 13.0
+  "state": "rejected",
+  "seconds": 0.0
  },
  "remap_before_passes": {
-  "trigger": "contradiction",
-  "at": 1792813652.5873773,
-  "map_id": "map-62911d54",
-  "version": 1,
-  "detail": {
-   "trigger": "contradiction",
-   "cells": 10,
-   "centre_m": [
-    3.037,
-    -0.104
-   ],
-   "agreement": 0.822
-  },
-  "waited_s": 3.67,
-  "cancelled_goal": false,
-  "at_rest": true,
-  "from_pose": [
-   2.3108,
-   -0.0043,
-   0.0421
-  ],
-  "result": "mapping",
-  "mapping_at": 1792813656.6713142,
-  "took_s": 0.41
+  "result": "none"
  },
  "passes": [
   {
    "goal": {
     "state": "succeeded",
-    "seconds": 11.1
+    "seconds": 29.5
+   },
+   "door_free": 0.0
+  },
+  {
+   "goal": {
+    "state": "aborted",
+    "seconds": 49.3
    },
    "door_free": 0.0
   },
   {
    "goal": {
     "state": "succeeded",
-    "seconds": 13.3
-   },
-   "door_free": 0.0
-  },
-  {
-   "goal": {
-    "state": "succeeded",
-    "seconds": 10.5
+    "seconds": 6.7
    },
    "door_free": 0.0
   }
  ],
  "saved": {
-  "map_id": "map-62911d54",
+  "map_id": "map-c6804bb0",
   "saving": false,
   "store": true,
-  "saved": 1,
+  "saved": 0,
   "failed": 0,
-  "skipped": 0,
-  "last_version": 2,
-  "last_at": 1792813694.6440647,
+  "skipped": 1,
+  "last_version": null,
+  "last_at": null,
   "last_error": null
  },
  "sampler": {
   "contacts": 0,
-  "min_gap_cm": 5.9,
+  "min_gap_cm": 5.6,
   "jumps": [],
-  "error_samples": 48,
-  "max_error_m": 0.026,
-  "remaps": [
-   {
-    "trigger": "contradiction",
-    "at": 1792813652.5873773,
-    "map_id": "map-62911d54",
-    "version": 1,
-    "detail": {
-     "trigger": "contradiction",
-     "cells": 10,
-     "centre_m": [
-      3.037,
-      -0.104
-     ],
-     "agreement": 0.822
-    },
-    "result": "waiting"
-   },
-   {
-    "trigger": "contradiction",
-    "at": 1792813652.5873773,
-    "map_id": "map-62911d54",
-    "version": 1,
-    "detail": {
-     "trigger": "contradiction",
-     "cells": 10,
-     "centre_m": [
-      3.037,
-      -0.104
-     ],
-     "agreement": 0.822
-    },
-    "waited_s": 3.67,
-    "cancelled_goal": false,
-    "at_rest": true,
-    "from_pose": [
-     2.3108,
-     -0.0043,
-     0.0421
-    ],
-    "result": "starting"
-   },
-   {
-    "trigger": "contradiction",
-    "at": 1792813652.5873773,
-    "map_id": "map-62911d54",
-    "version": 1,
-    "detail": {
-     "trigger": "contradiction",
-     "cells": 10,
-     "centre_m": [
-      3.037,
-      -0.104
-     ],
-     "agreement": 0.822
-    },
-    "waited_s": 3.67,
-    "cancelled_goal": false,
-    "at_rest": true,
-    "from_pose": [
-     2.3108,
-     -0.0043,
-     0.0421
-    ],
-    "result": "mapping",
-    "mapping_at": 1792813656.6713142,
-    "took_s": 0.41
-   }
-  ],
+  "error_samples": 146,
+  "max_error_m": 0.016,
+  "remaps": [],
   "states": [
    [
     [
      "ready",
      "localisation"
     ],
-    1792813642.38
-   ],
-   [
-    [
-     "remapping",
-     "localisation"
-    ],
-    1792813653.57
-   ],
-   [
-    [
-     "remapping",
-     "mapping"
-    ],
-    1792813656.62
-   ],
-   [
-    [
-     "ready",
-     "mapping"
-    ],
-    1792813657.63
+    1792870380.03
    ]
   ]
  },
  "criteria": {
-  "remap_by_contradiction": true,
+  "remap_by_contradiction": false,
   "door_free_within_3": false,
-  "goals_3_of_3": true,
+  "goals_3_of_3": false,
   "contacts_0": true
  },
  "verdict": {

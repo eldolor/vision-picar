@@ -26,52 +26,52 @@
    "outcome": "running",
    "seconds": 900,
    "target_at": [],
-   "status_file": "explore_status_explore-purple_unicorn-1792813704.json",
-   "steps": 43,
+   "status_file": "explore_status_explore-purple_unicorn-1792870540.json",
+   "steps": 40,
    "explore": {
-    "goals_sent": 43,
-    "goals_failed": 4,
-    "last_event": "goal sent (frontier) to (13.01, 13.70)",
-    "camera_seen_m2": 104.79,
+    "goals_sent": 40,
+    "goals_failed": 6,
+    "last_event": "goal sent (frontier) to (4.27, 0.80)",
+    "camera_seen_m2": 101.72,
     "choice_ms": {
-     "n": 96,
-     "p50_ms": 37.4,
-     "p90_ms": 60.7,
-     "max_ms": 138.6
+     "n": 109,
+     "p50_ms": 31.9,
+     "p90_ms": 37.4,
+     "max_ms": 48.7
     },
     "asks": false,
     "ask": null,
     "choices": 0
    },
    "stuck_episodes": 0,
-   "travel_m": 94.1,
-   "min_gap_cm": 7.6,
+   "travel_m": 98.0,
+   "min_gap_cm": 1.3,
    "contact_samples": 0,
    "inside_samples": 0,
-   "samples": 1752,
+   "samples": 1765,
    "last_log": [
-    "waiting -- nav2 active: frontier -- garage, facing ?, free space some, sees car, car",
-    "waiting -- nav2 active: frontier -- garage, facing ?, free space some, sees car",
-    "waiting -- nav2 active: frontier -- garage, facing ?, free space some, sees nothing of note"
+    "waiting -- nav2 active: frontier -- hall, facing ?, free space clear, sees nothing of note",
+    "waiting -- nav2 active: frontier -- breakfast, facing ?, free space clear, sees nothing of note",
+    "waiting -- nav2 active: frontier -- family room, facing ?, free space clear, sees nothing of note"
    ]
   },
   "saved": {
-   "map_id": "map-e605b387",
+   "map_id": "map-32c4f1b3",
    "saving": false,
    "store": true,
    "saved": 1,
    "failed": 0,
    "skipped": 0,
    "last_version": 1,
-   "last_at": 1792814605.4534428,
+   "last_at": 1792871441.3802001,
    "last_error": null
   },
   "sampler": {
    "contacts": 0,
-   "min_gap_cm": 7.6,
+   "min_gap_cm": 1.3,
    "jumps": [],
-   "error_samples": 883,
-   "max_error_m": 0.115,
+   "error_samples": 888,
+   "max_error_m": 0.071,
    "remaps": [],
    "states": [
     [
@@ -79,19 +79,19 @@
       "ready",
       "mapping"
      ],
-     1792813704.63
+     1792870540.92
     ]
    ]
   }
  },
  "session2": {
   "reload": {
-   "map_id": "map-e605b387",
+   "map_id": "map-32c4f1b3",
    "version": 1,
-   "took_s": 1.82,
+   "took_s": 1.72,
    "agreement": 1.0,
    "dock_error_m": 0.0,
-   "dock_error_deg": 0.07,
+   "dock_error_deg": 0.0,
    "ok": true,
    "reason": "matched",
    "result": "matched"
@@ -103,152 +103,129 @@
    "states": [
     [
      "checking",
-     1.62
+     1.11
     ],
     [
      "ready",
-     3.5
+     2.79
     ]
    ],
-   "ready_at": 1792814615.8783112
+   "ready_at": 1792871451.1457045
   }
  },
  "to_view": {
-  "state": "canceled",
-  "seconds": 12.9
+  "state": "rejected",
+  "seconds": 0.0
  },
  "remap_before_passes": {
-  "trigger": "contradiction",
-  "at": 1792814623.6617484,
-  "map_id": "map-e605b387",
-  "version": 1,
-  "detail": {
-   "trigger": "contradiction",
-   "cells": 12,
-   "centre_m": [
-    1.924,
-    -0.71
-   ],
-   "agreement": 0.615
-  },
-  "waited_s": 6.12,
-  "cancelled_goal": true,
-  "at_rest": true,
-  "from_pose": [
-   2.5308,
-   0.0223,
-   -0.1419
-  ],
-  "result": "mapping",
-  "mapping_at": 1792814630.5042424,
-  "took_s": 0.72
+  "result": "none"
  },
  "passes": [
   {
    "goal": {
-    "state": "active",
-    "seconds": 120.2
+    "state": "canceled",
+    "seconds": 50.5
+   },
+   "door_free": null
+  },
+  {
+   "goal": {
+    "state": "aborted",
+    "seconds": 27.3
    },
    "door_free": 0.0
   },
   {
    "goal": {
-    "state": "succeeded",
-    "seconds": 10.7
+    "state": "aborted",
+    "seconds": 31.0
    },
-   "door_free": 1.0
-  },
-  {
-   "goal": {
-    "state": "active",
-    "seconds": 120.1
-   },
-   "door_free": 1.0
+   "door_free": 0.0
   }
  ],
  "saved": {
-  "map_id": "map-e605b387",
+  "map_id": "map-32c4f1b3",
   "saving": false,
   "store": true,
   "saved": 1,
   "failed": 0,
   "skipped": 0,
   "last_version": 2,
-  "last_at": 1792814884.414298,
+  "last_at": 1792871593.2664976,
   "last_error": null
  },
  "sampler": {
   "contacts": 0,
-  "min_gap_cm": 7.8,
+  "min_gap_cm": 9.1,
   "jumps": [],
-  "error_samples": 258,
-  "max_error_m": 0.026,
+  "error_samples": 135,
+  "max_error_m": 0.128,
   "remaps": [
    {
     "trigger": "contradiction",
-    "at": 1792814623.6617484,
-    "map_id": "map-e605b387",
+    "at": 1792871526.5841048,
+    "map_id": "map-32c4f1b3",
     "version": 1,
     "detail": {
      "trigger": "contradiction",
-     "cells": 12,
+     "cells": 29,
      "centre_m": [
-      1.924,
-      -0.71
+      2.45,
+      -2.997
      ],
-     "agreement": 0.615
+     "agreement": 0.818
     },
     "result": "waiting"
    },
    {
     "trigger": "contradiction",
-    "at": 1792814623.6617484,
-    "map_id": "map-e605b387",
+    "at": 1792871526.5841048,
+    "map_id": "map-32c4f1b3",
     "version": 1,
     "detail": {
      "trigger": "contradiction",
-     "cells": 12,
+     "cells": 29,
      "centre_m": [
-      1.924,
-      -0.71
+      2.45,
+      -2.997
      ],
-     "agreement": 0.615
+     "agreement": 0.818
     },
-    "waited_s": 6.12,
+    "waited_s": 5.06,
     "cancelled_goal": true,
     "at_rest": true,
     "from_pose": [
-     2.5308,
-     0.0223,
-     -0.1419
+     1.9265,
+     -2.7871,
+     -2.0098
     ],
     "result": "starting"
    },
    {
     "trigger": "contradiction",
-    "at": 1792814623.6617484,
-    "map_id": "map-e605b387",
+    "at": 1792871526.5841048,
+    "map_id": "map-32c4f1b3",
     "version": 1,
     "detail": {
      "trigger": "contradiction",
-     "cells": 12,
+     "cells": 29,
      "centre_m": [
-      1.924,
-      -0.71
+      2.45,
+      -2.997
      ],
-     "agreement": 0.615
+     "agreement": 0.818
     },
-    "waited_s": 6.12,
+    "waited_s": 5.06,
     "cancelled_goal": true,
     "at_rest": true,
     "from_pose": [
-     2.5308,
-     0.0223,
-     -0.1419
+     1.9265,
+     -2.7871,
+     -2.0098
     ],
     "result": "mapping",
-    "mapping_at": 1792814630.5042424,
-    "took_s": 0.72
+    "mapping_at": 1792871532.266382,
+    "took_s": 0.62
    }
   ],
   "states": [
@@ -257,34 +234,34 @@
      "ready",
      "localisation"
     ],
-    1792814615.91
+    1792871451.19
    ],
    [
     [
      "remapping",
      "localisation"
     ],
-    1792814624.05
+    1792871527.19
    ],
    [
     [
      "remapping",
      "mapping"
     ],
-    1792814630.17
+    1792871532.25
    ],
    [
     [
      "ready",
      "mapping"
     ],
-    1792814631.2
+    1792871533.26
    ]
   ]
  },
  "criteria": {
   "remap_by_contradiction": true,
-  "door_free_within_3": true,
+  "door_free_within_3": false,
   "goals_3_of_3": false,
   "contacts_0": true
  },
