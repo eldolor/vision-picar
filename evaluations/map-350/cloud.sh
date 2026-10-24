@@ -55,8 +55,10 @@ push_code() {
   local tmp; tmp="$(mktemp -d)"
   git archive --format=tar.gz -o "$tmp/code.tar.gz" HEAD
   git rev-parse HEAD > "$tmp/HEAD"
+  echo "$RUNS" > "$tmp/runs"
   aws --region "$REGION" s3 cp --only-show-errors "$tmp/code.tar.gz" "$S3/code.tar.gz"
   aws --region "$REGION" s3 cp --only-show-errors "$tmp/HEAD" "$S3/HEAD"
+  aws --region "$REGION" s3 cp --only-show-errors "$tmp/runs" "$S3/runs"
   aws --region "$REGION" s3 cp --only-show-errors "$HERE/remote.sh" "$S3/remote.sh"
   rm -rf "$tmp"
 }
@@ -68,12 +70,24 @@ run_remote() {
 
 case "${1:-}" in
   # A new launch makes any earlier pull stale, so `down` must see a new one.
-  start)  # A fresh run must not count an earlier run's results as done.
-          if aws --region "$REGION" s3 ls "$S3/out/" >/dev/null 2>&1; then
-            echo "$S3/out/ holds an earlier run -- pull + down first (or resume it)" >&2; exit 1
+  start)  # A fresh run must not mix with an earlier one: anything under the
+          # prefix (results, logs, code) stops it. A listing that fails (no
+          # access, no session) stops it too -- exit 1 is "nothing there".
+          rc=0; aws --region "$REGION" s3 ls "$S3/" >/dev/null 2>&1 || rc=$?
+          if [ $rc = 0 ]; then
+            echo "$S3/ holds an earlier run -- pull + down first (or resume it)" >&2; exit 1
+          elif [ $rc != 1 ]; then
+            echo "cannot list $S3/ (exit $rc) -- check the AWS profile" >&2; exit 1
           fi
           ami; push_code; rm -f "$HERE/D4/cloud/.pulled"; bash "$EC2" up; run_remote ;;
-  resume) ami; rm -f "$HERE/D4/cloud/.pulled"; bash "$EC2" up; run_remote ;;
+  resume) # The rest must run on the code the finished runs ran on.
+          pushed="$(aws --region "$REGION" s3 cp --only-show-errors "$S3/HEAD" -)" \
+            || { echo "no $S3/HEAD -- nothing to resume (start instead)" >&2; exit 1; }
+          if [ "$pushed" != "$(git rev-parse HEAD)" ]; then
+            echo "$S3 holds $pushed, HEAD is $(git rev-parse HEAD) -- resume runs the pushed code;" \
+                 "check it out, or pull + down and start again" >&2; exit 1
+          fi
+          ami; rm -f "$HERE/D4/cloud/.pulled"; bash "$EC2" up; run_remote ;;
   status) bash "$EC2" status
           for f in build drive; do
             echo "== $f"; aws --region "$REGION" s3 cp --only-show-errors "$S3/logs/$f.log" - 2>/dev/null \
@@ -84,10 +98,14 @@ case "${1:-}" in
             aws --region "$REGION" s3 ls "$S3/out/$r.json" >/dev/null 2>&1 || exit 1
           done ;;
   pull)   mkdir -p "$HERE/D4/cloud"
+          # Pulled logs (a SIM house's poses among them) never reach a commit.
+          echo "*" > "$HERE/D4/cloud/.gitignore"
           # Checked BEFORE the download, so nothing can land in S3 unseen
           # between the copy and the mark.
           complete=0; bash "$SELF" done && complete=1
-          aws --region "$REGION" s3 sync --only-show-errors "$S3/out/" "$HERE/D4/"
+          # cp, not sync: D4/ holds HEAD's results under the same names, and
+          # sync keeps a local file of the same size with a newer mtime.
+          aws --region "$REGION" s3 cp --recursive --only-show-errors "$S3/out/" "$HERE/D4/"
           aws --region "$REGION" s3 sync --only-show-errors "$S3/logs/" "$HERE/D4/cloud/"
           if [ $complete = 1 ]; then touch "$HERE/D4/cloud/.pulled"; else echo "not all results in yet -- pull again when done"; fi
           ls -la "$HERE/D4" ;;
