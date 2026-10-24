@@ -530,3 +530,19 @@ def test_391c_through_the_runner_nothing_spoken_asks_the_local_vlm_first():
         assert identity.asked == 1 and cloud.calls == 0
     finally:
         runner.stop()
+
+
+
+def test_391c_through_the_runner_a_spent_cap_with_the_clouds_no_held_waits():
+    runner, robot, tier, identity, cloud = _runner_at_rest(max_calls=1)
+    try:
+        tier._lost, tier._episode = 0, 1
+        tier._reject("cloud", None, 1)
+        tier._episode = 2                     # a later run, the no still held
+        tier._perception_this_frame = _detected()
+        tier.stats.cloud_calls = 1
+        verdict = runner._guarded_confirm(robot.get_camera_frame())
+        assert verdict.get("undecided") is True and verdict["confirmed"] is False
+        assert identity.asked == 0 and cloud.calls == 0
+    finally:
+        runner.stop()

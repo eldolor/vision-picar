@@ -390,6 +390,11 @@ class MissionAgent(ConstrainedAgent):
         said = spoke() if spoke is not None else None
         if said == "ask":
             local_ok = False
+        if said == "wait":
+            return {**readout, "state": CHECKING,
+                    "identity": {"confirmed": False, "undecided": True, "cloud_called": False,
+                                 "reason": "the cloud's no stands and the call cap is spent"},
+                    "reason": "the cloud's no stands; the call cap is spent"}
         if said == "no":
             # The cloud's own no about this run, held: refused, no call.
             confirm = lambda frame, local_ok=True: {  # noqa: E731

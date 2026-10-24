@@ -1498,17 +1498,18 @@ class TieredVision:
         reversals 1 -> 3). On the cloud's probation it is a disagreement,
         and the cloud is asked."""
         with self._reject_lock:
-            if episode != self._episode:
-                # A yes about a run that has ended (an abandoned arrival call,
-                # an answer landing late) says nothing about what is in view
-                # now: it lifts nothing (review round 7).
-                return False
             r = self._rejection
-            if by == "cloud" and self.remember_no:
-                self._cloud_yes_episode = episode
             no_outranks = r is not None and TIER_RANK[r["rank"]] > TIER_RANK[by]
             probation_outranks = (self._probation
                                   and TIER_RANK[self._probation_by] > TIER_RANK[by])
+            if episode != self._episode:
+                # A yes about a run that has ended (an abandoned arrival call,
+                # an answer landing late) says nothing about what is in view
+                # now: it lifts nothing (review round 7) -- but still steers,
+                # as on `dev`, unless a higher tier's answer stands (round 8).
+                return not (no_outranks or probation_outranks)
+            if by == "cloud" and self.remember_no:
+                self._cloud_yes_episode = episode
             if no_outranks or probation_outranks:
                 if probation_outranks and episode == self._probation_episode:
                     self._escalate_episode = episode
@@ -1550,8 +1551,10 @@ class TieredVision:
         the arrival is refused without a call (round 5: each flicker of the
         arrival paid the cloud again). "ask": a yes about this run, or its
         probation -- the identity check is the cloud's, not the local VLM's.
-        None: it has not, or the cap is spent (no answer can come; the local
-        tier is the best left), or `remember_no` is off (`dev`)."""
+        "wait": the cap is spent and a cloud-ranked no is held -- undecided
+        until it is released. None: it has not, the cap is spent with nothing
+        of the cloud's held (the local tier is the best left), or
+        `remember_no` is off (`dev`)."""
         if not self.remember_no:
             return None
         with self._reject_lock:
@@ -1566,9 +1569,11 @@ class TieredVision:
                 # another thread after the tick leaves that stale (round 7).
                 return "no"
             if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
-                # Before "ask" (round 7): with the cap spent the cloud cannot
-                # answer, and its refusal would drop the place.
-                return None
+                # The cap spent: the cloud cannot answer. A cloud-ranked no it
+                # holds still outranks the local VLM, so the arrival waits,
+                # undecided, until the no is released (round 8); refusing it
+                # would drop the place (round 7). Otherwise the local tier.
+                return "wait" if (r is not None and r["rank"] == "cloud") else None
             if r is not None and r["rank"] == "cloud":
                 return "ask"
             if (self._cloud_yes_episode == self._episode

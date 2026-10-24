@@ -1560,6 +1560,10 @@ class MissionRunner:
             return {"confirmed": False, "cloud_called": False, "tier": "cloud",
                     "reason": "the cloud said this candidate is not the target; "
                               "not asked again"}
+        if verdict == "wait":
+            return {"confirmed": False, "undecided": True, "cloud_called": False,
+                    "reason": "the cloud's no stands and the call cap is spent; "
+                              "waiting for it to be released"}
         if verdict == "ask":
             local_ok = False
         # 3.56: the whole step -- waiting for calls still out, then the call

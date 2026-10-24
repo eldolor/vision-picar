@@ -920,8 +920,9 @@ def test_a_late_yes_about_an_ended_run_lifts_nothing():
     tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()))
     tier._lost, tier._episode = 0, 2
     tier._reject("cloud", None, 2)
-    assert tier._on_yes("cloud", 1) is False          # about run 1, landing in run 2
+    tier._on_yes("cloud", 1)                          # about run 1, landing in run 2
     assert tier._rejection is not None and tier.stats.releases == {}
+    assert tier._cloud_yes_episode is None
 
 
 def test_a_far_no_ends_only_the_probation_of_its_own_run():
@@ -940,11 +941,37 @@ def test_the_arrival_refusal_reads_this_frames_perception_not_a_stale_mask():
     assert tier._masked is False and tier.cloud_spoke() == "no"
 
 
-def test_with_the_cap_spent_a_cloud_ranked_no_from_another_run_asks_the_local_tier():
+def test_with_the_cap_spent_a_cloud_ranked_no_from_another_run_waits():
+    # Round 7: not "ask" (the spent cloud would refuse, dropping the place);
+    # round 8: not the local tier either (it may not overrule the cloud's
+    # no) -- undecided until the no is released.
     tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()), max_calls=1)
     tier._lost, tier._episode = 0, 1
     tier._reject("cloud", None, 1)
     tier._episode = 2                       # a new run, the no held (odometry)
     tier._perception_this_frame = D()
     tier.stats.cloud_calls = 1
-    assert tier.cloud_spoke() is None
+    assert tier.cloud_spoke() == "wait"
+    tier._release("moved")
+    assert tier.cloud_spoke() is None       # released: the local tier decides
+
+
+
+# --- review round 8 -------------------------------------------------------------
+
+def test_with_remember_no_off_a_late_located_yes_still_steers():
+    # Round 8: "off is dev's behaviour" -- a yes landing in a later run still
+    # steers by its box (it lifts nothing, there being nothing to lift).
+    tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(yes()),
+                        remember_no=False)
+    tier._episode = 2
+    tier._apply_local(_local_answer(yes(frac=[0.6, 0.4, 0.8, 0.6]), episode=1))
+    assert tier._local_held == "FORWARD" and tier._local_turn is not None
+
+
+def test_a_late_yes_under_a_higher_tiers_no_steers_nothing():
+    tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(yes()))
+    tier._lost, tier._episode = 0, 2
+    tier._reject("cloud", None, 2)
+    tier._apply_local(_local_answer(yes(frac=[0.6, 0.4, 0.8, 0.6]), episode=1))
+    assert tier._local_held is None and tier._rejection is not None
