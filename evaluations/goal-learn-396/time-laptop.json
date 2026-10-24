@@ -2,15 +2,16 @@
  "host": "macbookair.lan",
  "machine": "arm64",
  "poses": 120,
+ "no_candidates": 0,
  "candidates_median": 85.0,
  "whole_choice": {
-  "p50_ms": 62.6,
-  "p90_ms": 67.3,
-  "max_ms": 69.4
+  "p50_ms": 57.4,
+  "p90_ms": 62.8,
+  "max_ms": 69.0
  },
  "room_features": {
-  "p50_ms": 16.7,
-  "p90_ms": 17.3,
-  "max_ms": 18.3
+  "p50_ms": 12.1,
+  "p90_ms": 12.4,
+  "max_ms": 12.9
  }
 }
