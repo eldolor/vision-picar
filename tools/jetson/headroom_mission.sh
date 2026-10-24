@@ -114,6 +114,10 @@ PERC=; MEM=; WHL=; NAV=; VLMP=; CLD=; DRL=
 VLM_WAS=$(systemctl is-active picar-local-vlm 2>/dev/null)
 trap teardown EXIT
 
+case "${DRILL:-}" in
+  ""|kill:[0-9]*|oom:[0-9]*) ;;
+  *) echo "STOP: DRILL must be kill:<s> or oom:<s>, got '$DRILL'"; exit 2;;
+esac
 sudo systemctl isolate multi-user.target; sleep 5
 sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3
 { echo "== desktop: $(systemctl is-active gdm); twin units: $(systemctl is-active picar-stack) $(systemctl is-active picar-ngrok); runtime $RUNTIME"
@@ -121,6 +125,7 @@ sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3
   echo "== policy $POLICY; vlm $VLM; cloud $CLOUD; ros from tree ${ROS_FROM_TREE:-0}; text cache ${TEXT_CACHE:-default}"
   echo "== MemAvailable before anything: $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo) MB"; } | tee "$OUT/run.log"
 OOM0=$(oom)
+BOOT_S0=$(awk '{print int($1)}' /proc/uptime)   # this run's kills only (oom.log)
 
 docker rm -f "$NAME" >/dev/null 2>&1
 [ "$CLOUD" = off ] && export VISION_URL=http://127.0.0.1:9
@@ -193,7 +198,7 @@ case "${DRILL:-}" in
         for p in 8000 8001 8002 8003 8004 8080; do
           for q in $(lsof -nP -tiTCP:$p -sTCP:LISTEN); do echo -900 | sudo tee /proc/$q/oom_score_adj >/dev/null; done
         done
-        python tools/jetson/memory_hog.py 180 > "$OUT/hog.log" 2>&1
+        python tools/jetson/memory_hog.py 180 "$VLMP" > "$OUT/hog.log" 2>&1
       fi
       echo "== drill done $(date +%T); vlm alive: $(kill -0 $VLMP 2>/dev/null && echo yes || echo no)" >> "$OUT/run.log"
     ) &
@@ -217,13 +222,11 @@ with open(f"{out}/status.log", "w") as f, open(f"{out}/arrivals.jsonl", "w") as 
         line = {"t": round(time.time()), "running": s.get("running"), "outcome": s.get("outcome"),
                 "step": s.get("step")}
         f.write(json.dumps(line) + "\n"); f.flush()
-        # 3.80.E: each decided identity once (a refused one stays in the
-        # readout for the frames that follow it).
-        ident = (s.get("arrival") or {}).get("identity") or {}
-        key = (ident.get("verdict_s"), ident.get("reason"))
-        if ident.get("verdict_s") is not None and key not in seen:
-            seen.add(key)
-            a.write(json.dumps({"t": round(time.time(), 1), "step": s.get("step"), **ident}) + "\n")
+        # 3.80.E: the brain keeps every decided identity (`arrival_verdicts`);
+        # each new one is a line, whatever the poll's timing.
+        for v in (s.get("arrival_verdicts") or [])[len(seen):]:
+            seen.add(len(seen))
+            a.write(json.dumps({"t": round(time.time(), 1), "step": s.get("step"), **v}) + "\n")
             a.flush()
         if not s.get("running") and s.get("outcome") not in (None, "idle", "running"):
             break
@@ -236,6 +239,8 @@ if s.get("running"):
     raise SystemExit("mission still running at the poll bound")
 PY
 MISSION_EXIT=$?
+# A drill not yet fired never fires after the mission (review).
+kill $DRL 2>/dev/null; DRL=; pkill -f "tools/jetson/memory_hog.py" 2>/dev/null
 W1=$(wheel); T1=$(date +%s)
 echo "== mission end $(date +%T); wheel: $W1" | tee -a "$OUT/run.log"
 VLM_ALIVE=none
@@ -247,7 +252,8 @@ echo "== at the end: robot /health $ROBOT_UP, brain /health $BRAIN_UP" | tee -a 
 kill $PERC $MEM $WHL $VLMP $CLD $DRL 2>/dev/null; PERC=; MEM=; WHL=; VLMP=; CLD=; DRL=; sudo pkill tegrastats
 pkill -f "tools/jetson/memory_hog.py" 2>/dev/null
 OOM1=$(oom)
-sudo dmesg | grep -iE "killed process|oom-kill" | tail -20 > "$OUT/oom.log"
+sudo dmesg | awk -v s="$BOOT_S0" '{t=$0; sub(/^\[ */, "", t); if (t+0 >= s) print}' \
+  | grep -iE "killed process|oom-kill|invoked oom-killer" > "$OUT/oom.log"
 python3 - "$OUT" "$T0" "$T1" "$W0" "$W1" "$OOM0" "$OOM1" "$MISSION_EXIT" "$ROBOT_UP" "$BRAIN_UP" <<'PY' | tee -a "$OUT/run.log"
 import json, os, statistics as st, sys
 out, t0, t1 = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])

@@ -80,6 +80,7 @@ LOCAL_REFUSED_RADIUS_M = 0.5
 # 3.80.E: frames off the arrival rule that end an arrival for `verdict_s`'s
 # clock -- brain/tiered.py's LOCAL_RESET_FRAMES, the local tier's own rule.
 ARRIVAL_GONE_FRAMES = 3
+ARRIVAL_VERDICTS_KEPT = 50
 
 
 def _takes_local_ok(fn) -> bool:
@@ -296,6 +297,10 @@ class MissionAgent(ConstrainedAgent):
     # instance once used.
     _arrival_t0: Optional[float] = None
     _frames_off_arrival = 0
+    # Every decided arrival identity this mission, newest last (at most
+    # ARRIVAL_VERDICTS_KEPT), so a status reader misses none that lasted a
+    # single frame. Rebound, never appended to: the class default is shared.
+    arrival_verdicts: tuple = ()
 
     def __init__(
         self,
@@ -413,6 +418,9 @@ class MissionAgent(ConstrainedAgent):
         if not verdict.get("undecided"):
             verdict = {**verdict, "verdict_s": round(time.monotonic() - self._arrival_t0, 3)}
             self._arrival_t0 = None
+            entry = {k: verdict.get(k) for k in
+                     ("tier", "confirmed", "verdict_s", "local_score", "cloud_called")}
+            self.arrival_verdicts = (*self.arrival_verdicts, entry)[-ARRIVAL_VERDICTS_KEPT:]
         readout = {**readout, "identity": verdict}
         if verdict.get("confirmed"):
             return readout

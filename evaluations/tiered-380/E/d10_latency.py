@@ -22,11 +22,14 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "tier-calibration-392"))
 from common import b64, items  # noqa: E402
 
-WALKS = {r["walk"] for r in json.load(open(HERE.parent / "C/driver/B1.json"))["records"]}
+PINNED = {f"{r['walk']}/{r['frame']}"
+          for r in json.load(open(HERE.parent / "C/driver/B1.json"))["records"]}
 
 
 def main(seconds, out, url="http://127.0.0.1:8005"):
-    frames = [(k, p, t) for k, p, t, v in items() if v and k.split("/")[0] in WALKS]
+    frames = [(k, p, t) for k, p, t, v in items() if v and k in PINNED]
+    if not frames:
+        raise SystemExit("no visible pinned frames under PICAR_RECORDINGS")
     secret = os.environ.get("APP_SHARED_SECRET")
     headers = {"x-app-secret": secret} if secret else {}
     end, n = time.time() + float(seconds), 0

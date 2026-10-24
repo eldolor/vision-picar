@@ -27,10 +27,10 @@ ROOT = HERE.parents[2]
 sys.path.insert(0, str(ROOT))
 
 from brain.local_vlm import model_size  # noqa: E402
-from brain.tiered import DEFAULT_HFOV_DEG, LOCAL_YES_AT  # noqa: E402
+from brain.tiered import DEFAULT_HFOV_DEG, DEFAULT_LOCAL_NO_BELOW, LOCAL_YES_AT  # noqa: E402
 
 CAL = ROOT / "evaluations/tier-calibration-392"
-NO_BELOW = 0.1        # tier_local_no_below
+NO_BELOW = DEFAULT_LOCAL_NO_BELOW
 GATE_P = 0.8          # perception's match gate
 SCORE_BAR, BEARING_BAR = 0.01, 5.0
 
@@ -65,7 +65,8 @@ def main():
         if (b.get("box") and q.get("box") and q.get("status") == "detected"
                 and (q.get("p") or 0) >= GATE_P and (b.get("score") or 0) >= LOCAL_YES_AT):
             mw, _ = model_size(q["w"], q["h"])
-            vx = (float(b["box"][0]) + float(b["box"][2])) / 2 / mw
+            # Clipped to the frame, as brain/local_vlm._box_frac does.
+            vx = sum(min(1.0, max(0.0, float(v) / mw)) for v in (b["box"][0], b["box"][2])) / 2
             px = (q["box"][0] + q["box"][2]) / 2 / q["w"]
             row["bearing_vlm_deg"] = round((vx - 0.5) * DEFAULT_HFOV_DEG, 2)
             row["bearing_perception_deg"] = round((px - 0.5) * DEFAULT_HFOV_DEG, 2)

@@ -1380,6 +1380,8 @@ class MissionRunner:
                 "tier": self._tier,
                 "perception": self._perception,
                 "arrival": self._arrival,
+                # 3.80.E: every decided arrival identity, with `verdict_s`.
+                "arrival_verdicts": list(getattr(self.agent, "arrival_verdicts", ())),
                 # 3.53: the cloud's answer to the identity question asked
                 # AFTER an `arrived_unconfirmed` ending, once it was back.
                 # Beside the outcome, never instead of it. None otherwise.

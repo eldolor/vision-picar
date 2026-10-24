@@ -1,5 +1,5 @@
 """3.80.E: pilot.py's stand-in cloud as its own server, $0 -- every /navigate
-answered "not visible, RIGHT" -- logging each request as one JSON line, so a
+answered "not visible, RIGHT" -- logging each /navigate request as one JSON line, so a
 board run (tools/jetson/headroom_mission.sh CLOUD=standin) can count the
 escalations that reached the cloud and when.
 
@@ -24,7 +24,8 @@ def main():
         mode = "standin"
 
         def do_POST(self):
-            out.write(json.dumps({"t": round(time.time(), 3), "path": self.path}) + "\n")
+            if self.path == "/navigate":
+                out.write(json.dumps({"t": round(time.time(), 3), "path": self.path}) + "\n")
             super().do_POST()
 
     ThreadingHTTPServer(("127.0.0.1", port), Logged).serve_forever()

@@ -660,8 +660,35 @@ def test_e3_a_decided_verdict_carries_the_time_from_arrival_and_undecided_does_n
     assert second["identity"]["confirmed"]
     assert 0 <= second["identity"]["verdict_s"] < 5
     assert agent._arrival_t0 is None, "a decided verdict ends the clock"
-    agent._confirm_identity({"state": "arrived"}, {})
-    assert agent._arrival_t0 is None or agent._arrival_t0 > t0
+    assert t0 is not None
+    assert [v["confirmed"] for v in agent.arrival_verdicts] == [True]
+
+
+def test_e3_a_flicker_keeps_the_arrival_clock_and_three_frames_off_end_it():
+    from brain.agent import MissionAgent
+    states = iter(["arrived", "approaching", "approaching", "arrived",
+                   "approaching", "approaching", "approaching"])
+    tier = TieredVision(FrameReportedPipeline(TARGET), _quiet_cloud,
+                        local_identity_fn=Local(unable("band", 0.3)), local_max_unable=99)
+    agent = MissionAgent.__new__(MissionAgent)
+    agent.memory = type("M", (), {"target_object": TARGET, "is_complete": lambda s: False})()
+    agent.arrival = type("A", (), {
+        "observe": lambda s, scene, robot, stamp=None: {"state": next(states)},
+        "refresh": lambda s: None})()
+    agent.robot, agent.arrival_confirm_fn, agent.vision_fn = None, None, tier
+    agent._identity_refused, agent._refusal, agent._refused_local = False, None, []
+    scene = {"_perception": {"status": "detected"}}
+    agent._review_scene(scene, {})
+    t0 = agent._arrival_t0
+    assert t0 is not None
+    agent._review_scene(scene, {})
+    agent._review_scene(scene, {})
+    agent._review_scene(scene, {})
+    assert agent._arrival_t0 == t0, "two frames off is the same arrival"
+    for _ in range(3):
+        agent._review_scene(scene, {})
+    assert agent._arrival_t0 is None, "three frames off end it"
+    assert agent.arrival_verdicts == ()
 
 
 def test_e3_a_whole_mission_reports_verdict_s_on_found():
