@@ -1,0 +1,295 @@
+{
+ "house": "home_first_floor",
+ "door": [
+  27,
+  29
+ ],
+ "object": [
+  [
+   28,
+   30
+  ],
+  "chair"
+ ],
+ "sides": [
+  [
+   27,
+   27
+  ],
+  [
+   27,
+   31
+  ]
+ ],
+ "map_run": {
+  "mission": {
+   "outcome": "running",
+   "seconds": 900,
+   "target_at": [],
+   "status_file": "explore_status_explore-purple_unicorn-1792813704.json",
+   "steps": 43,
+   "explore": {
+    "goals_sent": 43,
+    "goals_failed": 4,
+    "last_event": "goal sent (frontier) to (13.01, 13.70)",
+    "camera_seen_m2": 104.79,
+    "choice_ms": {
+     "n": 96,
+     "p50_ms": 37.4,
+     "p90_ms": 60.7,
+     "max_ms": 138.6
+    },
+    "asks": false,
+    "ask": null,
+    "choices": 0
+   },
+   "stuck_episodes": 0,
+   "travel_m": 94.1,
+   "min_gap_cm": 7.6,
+   "contact_samples": 0,
+   "inside_samples": 0,
+   "samples": 1752,
+   "last_log": [
+    "waiting -- nav2 active: frontier -- garage, facing ?, free space some, sees car, car",
+    "waiting -- nav2 active: frontier -- garage, facing ?, free space some, sees car",
+    "waiting -- nav2 active: frontier -- garage, facing ?, free space some, sees nothing of note"
+   ]
+  },
+  "saved": {
+   "map_id": "map-e605b387",
+   "saving": false,
+   "store": true,
+   "saved": 1,
+   "failed": 0,
+   "skipped": 0,
+   "last_version": 1,
+   "last_at": 1792814605.4534428,
+   "last_error": null
+  },
+  "sampler": {
+   "contacts": 0,
+   "min_gap_cm": 7.6,
+   "jumps": [],
+   "error_samples": 883,
+   "max_error_m": 0.115,
+   "remaps": [],
+   "states": [
+    [
+     [
+      "ready",
+      "mapping"
+     ],
+     1792813704.63
+    ]
+   ]
+  }
+ },
+ "session2": {
+  "reload": {
+   "map_id": "map-e605b387",
+   "version": 1,
+   "took_s": 1.82,
+   "agreement": 1.0,
+   "dock_error_m": 0.0,
+   "dock_error_deg": 0.07,
+   "ok": true,
+   "reason": "matched",
+   "result": "matched"
+  },
+  "watch": {
+   "leaked_pose": 0,
+   "leaked_map": 0,
+   "goal_during_check": 503,
+   "states": [
+    [
+     "checking",
+     1.62
+    ],
+    [
+     "ready",
+     3.5
+    ]
+   ],
+   "ready_at": 1792814615.8783112
+  }
+ },
+ "to_view": {
+  "state": "canceled",
+  "seconds": 12.9
+ },
+ "remap_before_passes": {
+  "trigger": "contradiction",
+  "at": 1792814623.6617484,
+  "map_id": "map-e605b387",
+  "version": 1,
+  "detail": {
+   "trigger": "contradiction",
+   "cells": 12,
+   "centre_m": [
+    1.924,
+    -0.71
+   ],
+   "agreement": 0.615
+  },
+  "waited_s": 6.12,
+  "cancelled_goal": true,
+  "at_rest": true,
+  "from_pose": [
+   2.5308,
+   0.0223,
+   -0.1419
+  ],
+  "result": "mapping",
+  "mapping_at": 1792814630.5042424,
+  "took_s": 0.72
+ },
+ "passes": [
+  {
+   "goal": {
+    "state": "active",
+    "seconds": 120.2
+   },
+   "door_free": 0.0
+  },
+  {
+   "goal": {
+    "state": "succeeded",
+    "seconds": 10.7
+   },
+   "door_free": 1.0
+  },
+  {
+   "goal": {
+    "state": "active",
+    "seconds": 120.1
+   },
+   "door_free": 1.0
+  }
+ ],
+ "saved": {
+  "map_id": "map-e605b387",
+  "saving": false,
+  "store": true,
+  "saved": 1,
+  "failed": 0,
+  "skipped": 0,
+  "last_version": 2,
+  "last_at": 1792814884.414298,
+  "last_error": null
+ },
+ "sampler": {
+  "contacts": 0,
+  "min_gap_cm": 7.8,
+  "jumps": [],
+  "error_samples": 258,
+  "max_error_m": 0.026,
+  "remaps": [
+   {
+    "trigger": "contradiction",
+    "at": 1792814623.6617484,
+    "map_id": "map-e605b387",
+    "version": 1,
+    "detail": {
+     "trigger": "contradiction",
+     "cells": 12,
+     "centre_m": [
+      1.924,
+      -0.71
+     ],
+     "agreement": 0.615
+    },
+    "result": "waiting"
+   },
+   {
+    "trigger": "contradiction",
+    "at": 1792814623.6617484,
+    "map_id": "map-e605b387",
+    "version": 1,
+    "detail": {
+     "trigger": "contradiction",
+     "cells": 12,
+     "centre_m": [
+      1.924,
+      -0.71
+     ],
+     "agreement": 0.615
+    },
+    "waited_s": 6.12,
+    "cancelled_goal": true,
+    "at_rest": true,
+    "from_pose": [
+     2.5308,
+     0.0223,
+     -0.1419
+    ],
+    "result": "starting"
+   },
+   {
+    "trigger": "contradiction",
+    "at": 1792814623.6617484,
+    "map_id": "map-e605b387",
+    "version": 1,
+    "detail": {
+     "trigger": "contradiction",
+     "cells": 12,
+     "centre_m": [
+      1.924,
+      -0.71
+     ],
+     "agreement": 0.615
+    },
+    "waited_s": 6.12,
+    "cancelled_goal": true,
+    "at_rest": true,
+    "from_pose": [
+     2.5308,
+     0.0223,
+     -0.1419
+    ],
+    "result": "mapping",
+    "mapping_at": 1792814630.5042424,
+    "took_s": 0.72
+   }
+  ],
+  "states": [
+   [
+    [
+     "ready",
+     "localisation"
+    ],
+    1792814615.91
+   ],
+   [
+    [
+     "remapping",
+     "localisation"
+    ],
+    1792814624.05
+   ],
+   [
+    [
+     "remapping",
+     "mapping"
+    ],
+    1792814630.17
+   ],
+   [
+    [
+     "ready",
+     "mapping"
+    ],
+    1792814631.2
+   ]
+  ]
+ },
+ "criteria": {
+  "remap_by_contradiction": true,
+  "door_free_within_3": true,
+  "goals_3_of_3": false,
+  "contacts_0": true
+ },
+ "verdict": {
+  "D4-b": "FAILED"
+ },
+ "image": "vision-picar-ros:plan-3.50"
+}

@@ -1,0 +1,257 @@
+{
+ "house": "scaled_house",
+ "room": "study",
+ "door": [
+  [
+   16,
+   9
+  ],
+  [
+   16,
+   10
+  ],
+  [
+   16,
+   11
+  ]
+ ],
+ "moves": [
+  [
+   [
+    23,
+    5
+   ],
+   [
+    16,
+    9
+   ]
+  ],
+  [
+   [
+    24,
+    2
+   ],
+   [
+    16,
+    10
+   ]
+  ],
+  [
+   [
+    2,
+    10
+   ],
+   [
+    16,
+    11
+   ]
+  ]
+ ],
+ "map_run": {
+  "mission": {
+   "outcome": "exhausted",
+   "seconds": 147,
+   "target_at": [],
+   "status_file": "explore_status_explore-purple_unicorn-1792814894.json",
+   "steps": 10,
+   "explore": {
+    "goals_sent": 9,
+    "goals_failed": 0,
+    "last_event": "no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)",
+    "camera_seen_m2": 20.0,
+    "choice_ms": {
+     "n": 28,
+     "p50_ms": 9.0,
+     "p90_ms": 16.3,
+     "max_ms": 20.2
+    },
+    "asks": false,
+    "ask": null,
+    "choices": 0
+   },
+   "stuck_episodes": 0,
+   "travel_m": 15.0,
+   "min_gap_cm": 21.7,
+   "contact_samples": 0,
+   "inside_samples": 0,
+   "samples": 291,
+   "last_log": [
+    "step 9: STOP (ok) -- no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped) -- hallway, facing ?, free space some, sees nothing of note",
+    "inventory: 3 reported, 0 candidates from 268 frames -- bed, red backpack, sofa",
+    "mission ended (exhausted): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  "saved": {
+   "map_id": "map-8b41edae",
+   "saving": false,
+   "store": true,
+   "saved": 1,
+   "failed": 0,
+   "skipped": 0,
+   "last_version": 1,
+   "last_at": 1792815041.0061767,
+   "last_error": null
+  },
+  "sampler": {
+   "contacts": 0,
+   "min_gap_cm": 21.7,
+   "jumps": [],
+   "error_samples": 146,
+   "max_error_m": 0.036,
+   "remaps": [],
+   "states": [
+    [
+     [
+      "ready",
+      "mapping"
+     ],
+     1792814894.09
+    ]
+   ]
+  }
+ },
+ "room_known_free_run1": 0.0,
+ "session2": {
+  "reload": {
+   "map_id": "map-8b41edae",
+   "version": 1,
+   "took_s": 1.72,
+   "agreement": 0.683,
+   "dock_error_m": 0.0,
+   "dock_error_deg": 0.0,
+   "ok": true,
+   "reason": "matched",
+   "result": "matched"
+  },
+  "watch": {
+   "leaked_pose": 0,
+   "leaked_map": 0,
+   "goal_during_check": 503,
+   "states": [
+    [
+     "checking",
+     1.51
+    ],
+    [
+     "ready",
+     3.21
+    ]
+   ],
+   "ready_at": 1792815052.0199442
+  }
+ },
+ "goal_in": {
+  "state": "aborted",
+  "seconds": 18.5
+ },
+ "goals_room": [
+  {
+   "state": "aborted",
+   "seconds": 27.3
+  },
+  {
+   "state": "aborted",
+   "seconds": 18.5
+  }
+ ],
+ "room_known_free_live": 0.0,
+ "saved": {
+  "map_id": "map-8b41edae",
+  "saving": false,
+  "store": true,
+  "saved": 0,
+  "failed": 0,
+  "skipped": 1,
+  "last_version": null,
+  "last_at": null,
+  "last_error": null
+ },
+ "sampler": {
+  "contacts": 0,
+  "min_gap_cm": Infinity,
+  "jumps": [],
+  "error_samples": 96,
+  "max_error_m": 0.021,
+  "remaps": [],
+  "states": [
+   [
+    [
+     "ready",
+     "localisation"
+    ],
+    1792815052.26
+   ]
+  ]
+ },
+ "watch_errors": 0,
+ "first_remap": {},
+ "entry_from": null,
+ "saved_first_known_cells": 8726,
+ "entered_unknown_at": null,
+ "mapping_at": null,
+ "remap_after_entry_s": null,
+ "already_mapping_at_entry": false,
+ "session3": {
+  "reload": {
+   "map_id": "map-8b41edae",
+   "version": 1,
+   "took_s": 1.82,
+   "agreement": 0.683,
+   "dock_error_m": 0.0,
+   "dock_error_deg": 0.0,
+   "ok": true,
+   "reason": "matched",
+   "result": "matched"
+  },
+  "watch": {
+   "leaked_pose": 0,
+   "leaked_map": 0,
+   "goal_during_check": 503,
+   "states": [
+    [
+     "checking",
+     1.51
+    ],
+    [
+     "ready",
+     3.28
+    ]
+   ],
+   "ready_at": 1792815158.4332426
+  }
+ },
+ "room_known_free_saved": 0.0,
+ "other_walls_true": true,
+ "walls_by_room": {
+  "bedroom": [
+   88,
+   1.0
+  ],
+  "hallway": [
+   94,
+   1.0
+  ],
+  "kitchen": [
+   70,
+   1.0
+  ],
+  "living room": [
+   135,
+   1.0
+  ]
+ },
+ "criteria": {
+  "remapped": false,
+  "remap_within_10s": false,
+  "room_90_live": false,
+  "room_90_saved": false,
+  "other_walls_100": true,
+  "no_jumps": true,
+  "new_version": false,
+  "contacts_0": true
+ },
+ "verdict": {
+  "D4-a": "FAILED"
+ },
+ "image": "vision-picar-ros:plan-3.50"
+}
