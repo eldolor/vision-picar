@@ -52,6 +52,9 @@ if [ ! -f venv/.ok ]; then
   python3 -m venv venv
   ./venv/bin/pip install -q --upgrade pip
   ./venv/bin/pip install -q -r repo/requirements.txt
+  # The harness's contact check (tests/chassis_fit.py) needs scipy, which
+  # only requirements-perception.txt names (3.50.D4's first cloud run).
+  ./venv/bin/pip install -q "scipy>=1.11"
   touch venv/.ok
 fi
 mkdir -p out logs logdir
