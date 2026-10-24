@@ -48,6 +48,7 @@ from brain.agent import MissionAgent, StepResult
 from brain.arrival import ARRIVED, CHECKING, LOCAL_FRESH_S, REFUSED, ArrivalCheck
 from brain.perceive import DETECTED
 from brain.tiered import STEER_BAND_DEG, located_local_bearing, turn_for
+from brain.tiered import candidate_refused as _refused
 from brain.frontier import (RetryBook, camera_seen, find_frontiers, find_view_gaps,
                             known_near, reach, reachable)
 from brain.choice_log import BY_RULE_TIMEOUT, GoalAsk
@@ -687,7 +688,7 @@ class ExploreAgent(MissionAgent):
             return "WAIT", True, "arrived; holding for the identity check"
         perception = scene.get("_perception") or {}
         bearing = perception.get("bearing_deg")
-        if perception.get("status") == DETECTED and bearing is not None:
+        if perception.get("status") == DETECTED and bearing is not None and not _refused(scene):
             bearing = float(bearing) - float(perception.get("pan_deg") or 0.0)
         else:
             # 3.80.O: the local VLM's located yes on this frame, already a
@@ -1648,7 +1649,8 @@ class ExploreAgent(MissionAgent):
         if self.sight_from == "perception":
             scene = self._scene or {}
             p = scene.get("_perception") or {}
-            if p.get("status") == DETECTED and p.get("bearing_deg") is not None:
+            if (p.get("status") == DETECTED and p.get("bearing_deg") is not None
+                    and not _refused(scene)):
                 self._sighted_by_local = False
                 return [{"bearing_deg": float(p["bearing_deg"]) - float(p.get("pan_deg") or 0.0)}]
             # The local VLM's located yes, on the frame it landed: a BODY

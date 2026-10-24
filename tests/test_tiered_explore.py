@@ -100,7 +100,9 @@ def test_g_a_local_no_is_never_found():
     runner, nav, grid, tier, cloud, confirm = _mission(local_score=0.0, max_steps=60)
     s = runner.status()
     assert s["outcome"] != FOUND
-    assert tier.stats.local.get("no", 0) >= 1
+    # Since 3.91.C the frame question's no is remembered and explore does not
+    # close in on the refused candidate, so the no may come before any arrival.
+    assert tier.stats.local.get("no", 0) + tier.stats.local_frame.get("no", 0) >= 1
     assert confirm.calls == 0
 
 

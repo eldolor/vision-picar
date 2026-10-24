@@ -133,6 +133,65 @@ TRIGGER_OOV = "out_of_vocabulary"
 # the local VLM is asked on every frame it is free (its box steers the last
 # half metre and judges the arrival). Local only: never handed to the cloud.
 TRIGGER_TRACK = "local_track"
+# 3.91.C (the user, 2026-10-23/24): the tiers disagree -- the local VLM said
+# no where it cannot tell (`no_box_range`) and perception still passes the
+# candidate, or said yes about a candidate the cloud refused. Asked of the
+# cloud, once per candidate run.
+TRIGGER_DISAGREE = "disagreement"
+
+# 3.91.C, the user's ordering (2026-10-24): each tier outranks the one below
+# -- YOLOE + CLIP < the local VLM < the cloud -- and only the robot server's
+# safety layer overrides them all. An answer about a candidate is never undone
+# by a lower tier's: a cloud no is lifted only by a cloud yes (or the
+# candidate changing), a cloud yes stands against a local no, and where the
+# two VLMs disagree the cloud is asked. Perception acts only where neither
+# VLM has spoken about the candidate.
+TIER_RANK = {"local": 1, "cloud": 2}
+
+# Outside the trees, by design: no tree node may reorder or tune them away.
+HARD_RULES = (
+    "safety: robot/safety.py vetoes every move; only it overrides the tiers",
+    "a person's Stop is the last word over autonomy (3.84)",
+    "the tiers' order: perception < local VLM < cloud -- a lower tier never "
+    "undoes a higher tier's answer about a candidate (3.91.C)",
+    "an arrival the local VLM's box led to is confirmed only by the cloud (3.80.O)",
+    "arrival is the lidar's rule, then the identity check",
+    "B3: the watchdog, the runner's vision timeout and failure budget, the tick guard",
+    "who to ask: the guards' order (call cap, one call at a time)",
+)
+
+# 3.91.C: a "no" about a DETECTED candidate is remembered (B6: Qwen said no
+# on 18 of 18 taupe sightings and perception still steered at it on every
+# later frame). While remembered, a frame showing the candidate neither
+# steers at it nor asks about it, until the candidate changes: on a body
+# with odometry it moved `reject_move_m` or turned `reject_turn_deg` since
+# the asked frame; without (a phone) the candidate was lost for
+# REJECT_LOST_FRAMES frames and found again, or `reject_hold_s` passed. Any
+# yes releases it. A local no counts only when perception's box covered
+# `no_box_range` of the frame: under it is the far view (B5's 1.0 m hold,
+# 11%; B6's false no at seq 19), over it fabric only (~0.3 m). The numbers
+# are the proposal's, approved as written.
+#
+# Amendment 3 (the user, 2026-10-23): a no released by loss or time puts the
+# candidate on PROBATION -- asked about again, not steered at until a yes (or,
+# amendment 4, a no about the far view, which rule 2 does not remember).
+# Without it the replay of the taupe walk reversed 7 times: perception's
+# close-range blind spot loses the same bag for 3+ frames, and every re-found
+# bag was steered at for ~2 frames before the new no landed.
+PROBATION_RELEASES = ("lost", "timeout")
+DEFAULT_REMEMBER_NO = True
+DEFAULT_REJECT_HOLD_S = 20.0
+DEFAULT_REJECT_MOVE_M = 0.5
+DEFAULT_REJECT_TURN_DEG = 30.0
+REJECT_LOST_FRAMES = 3
+DEFAULT_NO_BOX_RANGE = (0.15, 0.95)
+
+
+def candidate_refused(scene: dict) -> bool:
+    """3.91.C, the tiers' order: the scene's detected candidate is one a VLM
+    refused (a held no, or probation). A reader of `_perception` -- explore's
+    sightings and close-in -- treats it as no detection."""
+    return bool(((scene or {}).get("_tier") or {}).get("candidate_refused"))
 
 
 def located_local_bearing(scene: dict):
@@ -598,6 +657,14 @@ class TierStats:
     cloud_errors: int = 0
     # 3.91 A: cloud answers dropped from the walk record's queue, untaken.
     cloud_answers_dropped: int = 0
+    # 3.91.C: nos remembered (by `local` / `cloud`), how each was released
+    # (`moved`, `turned`, `lost`, `timeout`, `yes`), local nos that could not
+    # tell (the box out of range), and frames that showed a rejected
+    # candidate.
+    rejections: dict = field(default_factory=dict)
+    releases: dict = field(default_factory=dict)
+    cannot_tell: int = 0
+    masked_frames: int = 0
     # How many samples each bucket has been offered, and the reservoir's
     # draw (seeded, so a replay samples the same way) -- 3.76.
     _seen: dict = field(default_factory=dict, repr=False, compare=False)
@@ -654,6 +721,10 @@ class TierStats:
             "candidate_steers": self.candidate_steers,
             "cloud_errors": self.cloud_errors,
             "cloud_answers_dropped": self.cloud_answers_dropped,
+            "rejections": dict(self.rejections),
+            "releases": dict(self.releases),
+            "cannot_tell": self.cannot_tell,
+            "masked_frames": self.masked_frames,
             "frames": self.frames,
             "frames_skipped": self.frames_skipped,
             "vote": dict(self.vote) if self.vote else None,
@@ -696,6 +767,10 @@ class _Question:
     # (a no on this frame rejects it).
     detected: bool = False
     band: bool = False
+    # 3.91.C: the candidate run the asked frame was in, and its box's share
+    # of the frame (None: unknown, so a no about it counts).
+    episode: int = 0
+    box_share: Optional[float] = None
     # Set when the local tier has answered (or failed): the arrival's own
     # local check waits for this, not for the whole question.
     local_done: threading.Event = field(default_factory=threading.Event)
@@ -874,8 +949,43 @@ class TieredVision:
         steer_on_candidate: bool = False,
         cloud_errors_fatal: bool = True,
         tree: Optional[dict] = None,
+        remember_no: bool = DEFAULT_REMEMBER_NO,
+        reject_hold_s: float = DEFAULT_REJECT_HOLD_S,
+        reject_move_m: float = DEFAULT_REJECT_MOVE_M,
+        reject_turn_deg: float = DEFAULT_REJECT_TURN_DEG,
+        no_box_range: tuple = DEFAULT_NO_BOX_RANGE,
     ):
         self.pipeline = pipeline
+        # 3.91.C: a no about a candidate, remembered (see DEFAULT_REMEMBER_NO).
+        # `_rejection` is {"by", "episode", "at_s", "pose"} or None; an
+        # episode is a run of detections broken by REJECT_LOST_FRAMES absent
+        # frames. `_masked`: this frame shows the rejected candidate.
+        self.remember_no = bool(remember_no)
+        self.reject_hold_s = max(0.0, float(reject_hold_s))
+        self.reject_move_m = max(0.0, float(reject_move_m))
+        self.reject_turn_deg = max(0.0, float(reject_turn_deg))
+        self.no_box_range = (float(no_box_range[0]), float(no_box_range[1]))
+        self._rejection: Optional[dict] = None
+        # Review: `wait_inflight()` can apply an answer on the runner's
+        # abandoned thread while a tick tracks the candidate.
+        self._reject_lock = threading.RLock()
+        self._episode = 0
+        self._lost = REJECT_LOST_FRAMES
+        self._masked = False
+        self._probation = False
+        # The candidate run a probation is about (the user, 2026-10-24: that
+        # run only -- lost again with no answer, it ends).
+        self._probation_episode: Optional[int] = None
+        # The highest tier behind a probation (TIER_RANK's names).
+        self._probation_by: Optional[str] = None
+        # A candidate run the cloud should settle (a local no that cannot
+        # tell, or a local yes against the cloud's no), and the run the cloud
+        # last said yes about (a local no does not undo it).
+        self._escalate_episode: Optional[int] = None
+        self._cloud_yes_episode: Optional[int] = None
+        self._release_gen = 0
+        self._disagree_key: Optional[tuple] = None   # (episode, release_gen) asked
+        self._inflight_ask: Optional[tuple] = None   # (pose, episode) of a cloud call out
         # 3.80.F: the local tier's search question (brain/local_vlm.py's
         # `direction`), asked after a search trigger's sighting answer that
         # is not a yes; its answer is held as a cloud goal is. None: the
@@ -1184,6 +1294,9 @@ class TieredVision:
         # on a worker pool created again and never shut down).
         frame_epoch = self._epoch
         self._read_odometry(frame)
+        # 3.91.C (review): before a landed answer is applied, so a no that
+        # lands now is held from this frame's stamp, not the one before.
+        self._frame_stamp = frame.get("captured_at")
         # An answer that landed since the last frame becomes the current
         # goal now, BEFORE the trigger policy runs -- so a call that has
         # already returned is never counted as still in flight.
@@ -1207,8 +1320,8 @@ class TieredVision:
                 raise err
             self._count_cloud_error(err)
 
-        self._frame_stamp = frame.get("captured_at")
         self._count_skipped(frame)
+        self._track_candidate(perception)
         # 3.94.C: who to ask (if anyone) is a tree (`_build_who_tree`); the
         # code it replaced is in `tests/tiered_reference.py`.
         bb = _RouteDecision(frame=frame, perception=perception,
@@ -1218,6 +1331,229 @@ class TieredVision:
             # would hand the runner nothing to act on.
             raise RuntimeError(f"who to ask: no route answered {bb.trigger}")
         return bb.scene
+
+    # -- 3.91.C: a no about a candidate, remembered ------------------------
+
+    def _stamp(self) -> Optional[float]:
+        stamp = self._frame_stamp
+        if isinstance(stamp, numbers.Real) and math.isfinite(stamp):
+            return float(stamp)
+        return None
+
+    def _held_s(self, r: dict) -> float:
+        """How long a no has been held: on the frames' capture stamps when
+        both ends have one (a replay keeps its time), else on the monotonic
+        clock -- never one against the other (review: wall seconds against
+        monotonic ones)."""
+        now = self._stamp()
+        if now is not None and r["at_stamp"] is not None:
+            return now - r["at_stamp"]
+        return time.monotonic() - r["at_mono"]
+
+    def _band_crop(self, perception: Perception) -> bool:
+        """An absent frame that still holds a crop at the band's P: the
+        candidate is in view, under the gate (review: such frames counted as
+        lost, and three of them released the no)."""
+        return bool(perception.candidates) and max(
+            float(c.probability) for c in perception.candidates) >= self.local_band_low
+
+    def _pose_now(self) -> Optional[Pose]:
+        if self._odometry_usable and self._odom.samples:
+            p = self._odom.pose
+            return Pose(p.x, p.y, p.heading_deg)
+        return None
+
+    def _track_candidate(self, perception: Perception) -> None:
+        """Before the trees: number the candidate run this frame is in,
+        release a remembered no whose candidate has changed, and say whether
+        this frame shows the rejected one (`_masked`)."""
+        with self._reject_lock:
+            self._track_candidate_locked(perception)
+
+    def _track_candidate_locked(self, perception: Perception) -> None:
+        if perception.status == DETECTED:
+            if self._lost >= REJECT_LOST_FRAMES:
+                self._episode += 1
+                if self._probation and self._probation_episode != self._episode:
+                    # The user (2026-10-24): probation is about the run it
+                    # began in; lost again with no answer, it ends -- else it
+                    # outlives its object and the real target is never
+                    # steered at (review: nothing may be left to clear it).
+                    self._end_probation()
+            self._lost = 0
+        elif perception.status == ABSENT and not self._band_crop(perception):
+            # A frame with no picture is not a look away, nor one with the
+            # candidate just under the gate.
+            self._lost += 1
+            if (self._lost == REJECT_LOST_FRAMES and self._probation
+                    and self._probation_episode == self._episode):
+                # Its run is lost: probation ends here, not at the next
+                # detection (Thermos round 3: the readout stayed true).
+                self._end_probation()
+        r = self._rejection
+        if r is not None:
+            pose = self._pose_now()
+            why = None
+            if pose is not None and r["pose"] is not None:
+                moved = math.hypot(pose.x - r["pose"].x, pose.y - r["pose"].y)
+                turned = abs(_wrap(pose.heading_deg - r["pose"].heading_deg))
+                if moved >= self.reject_move_m:
+                    why = "moved"
+                elif turned >= self.reject_turn_deg:
+                    why = "turned"
+            elif self._episode != r["episode"]:
+                why = "lost"
+            elif self._held_s(r) >= self.reject_hold_s:
+                why = "timeout"
+            if why:
+                self._release(why)
+        self._masked = False
+        self._remask(perception)
+
+    def _remask(self, perception: Perception) -> None:
+        """Does this frame show the rejected candidate. Again after an answer
+        applied on this frame's own tick (sync), so the frame it lands on does
+        not steer at it (review)."""
+        with self._reject_lock:
+            masked = self._rejection is not None and perception.status == DETECTED
+            if masked and not self._masked:
+                with self._stats_lock:
+                    self.stats.masked_frames += 1
+            self._masked = masked
+
+    def _reject(self, by: str, pose: Optional[Pose], episode: int) -> None:
+        if not self.remember_no:
+            return
+        with self._reject_lock:
+            if episode != self._episode or self._lost >= REJECT_LOST_FRAMES:
+                # A no about a run that has ended, or is being lost (an answer
+                # landing late), is about a candidate no longer in view: kept,
+                # it would mask whatever is in view now, or be released at
+                # once into probation over it (review, both bodies).
+                return
+            if by == "local" and (self._cloud_yes_episode == episode or (
+                    self._rejection is not None and self._rejection["rank"] == "cloud")):
+                # The tier ordering: the cloud said yes about this run, or
+                # holds its own no already.
+                return
+            # Moves are measured from where the body is as the no LANDS
+            # (review: an approach during an async call released it at once).
+            # `pose` None: the asked frame had no odometry.
+            if pose is not None:
+                pose = self._pose_now() or pose
+            # `rank`: the highest tier behind this no -- a cloud probation it
+            # replaces keeps the cloud's rank, or a local yes could lift it.
+            rank = by
+            if self._probation and TIER_RANK[self._probation_by] > TIER_RANK[by]:
+                rank = self._probation_by
+            self._rejection = {"by": by, "rank": rank, "episode": episode, "pose": pose,
+                               "at_stamp": self._stamp(), "at_mono": time.monotonic()}
+            if by == "cloud":
+                # The cloud's latest answer about this run is no (review
+                # round 4: an older yes kept refusing local nos after it).
+                self._cloud_yes_episode = None
+            # A decided no ends probation and settles a disagreement.
+            self._end_probation()
+            self._escalate_episode = None
+            # A sighting anchored on it is the same candidate (P25's rung).
+            self._goal.clear()
+        self._count("rejections", by)
+
+    def _release(self, why: str) -> None:
+        with self._reject_lock:
+            if self._rejection is None:
+                return
+            rank, self._rejection = self._rejection["rank"], None
+            # Each release is a new chance for the disagreement question
+            # (Thermos round 4: a local yes on the cloud's probation in a run
+            # whose question was spent was never asked).
+            self._release_gen += 1
+            if why in PROBATION_RELEASES:
+                self._probation = True
+                self._probation_by = rank
+                # A timeout while the candidate is out of view is about the
+                # run that comes next, which numbers one up (review round 3:
+                # it ended probation the moment the refused bag came back).
+                self._probation_episode = self._episode + (
+                    why == "timeout" and self._lost >= REJECT_LOST_FRAMES)
+        self._count("releases", why)
+        if why != "yes":
+            # Asked about again once it is confirmed in view: the edge into
+            # `detected` was spent while it was remembered. Not after a yes,
+            # which has answered it (review: a second paid call).
+            self._rearm(TRIGGER_CANDIDATE)
+
+    def _end_probation(self) -> None:
+        with self._reject_lock:
+            self._probation = False
+            self._probation_episode = None
+            self._probation_by = None
+
+    def _on_yes(self, by: str, episode: int) -> bool:
+        """A yes (a local yes, or a cloud claim) releases a no and ends a
+        probation that no higher tier stands behind, and settles a
+        disagreement. Outranked (False), a local yes steers nothing, its box
+        included: with perception silent nothing says the box is not the
+        object the cloud refused (round 4 let it steer: the red replay's
+        reversals 1 -> 3). On the cloud's probation it is a disagreement,
+        and the cloud is asked."""
+        with self._reject_lock:
+            r = self._rejection
+            if by == "cloud":
+                self._cloud_yes_episode = episode
+            no_outranks = r is not None and TIER_RANK[r["rank"]] > TIER_RANK[by]
+            probation_outranks = (self._probation
+                                  and TIER_RANK[self._probation_by] > TIER_RANK[by])
+            if no_outranks or probation_outranks:
+                if probation_outranks and episode == self._probation_episode:
+                    self._escalate_episode = episode
+                return False      # a held no: masked frames ask nothing
+            self._release("yes")
+            self._end_probation()
+            self._escalate_episode = None
+            return True
+
+    def _learn_from_cloud(self, scene: dict, perception: Optional[Perception],
+                          pose: Optional[Pose], episode: int) -> None:
+        """A cloud answer that landed: "not visible" about a frame
+        perception called DETECTED is remembered (whatever the box: rule 2
+        is about where Qwen can tell); a claim releases any no."""
+        nav = (scene or {}).get("_navigate") or {}
+        if "target_visible" not in nav or nav.get("unparsed"):
+            # Review: a reply the service could not parse reads "not
+            # visible" by default; it is no answer, not a decided no.
+            return
+        if nav.get("target_visible"):
+            self._on_yes("cloud", episode)
+        elif perception is not None and perception.status == DETECTED:
+            self._reject("cloud", pose, episode)
+
+    def _rejection_readout(self) -> Optional[dict]:
+        r = self._rejection
+        if r is None:
+            return None
+        return {"by": r["by"], "episode": r["episode"],
+                "age_s": round(max(0.0, self._held_s(r)), 1)}
+
+    def _refused_in_view(self, perception: Perception) -> bool:
+        return perception.status == DETECTED and (
+            self._rejection is not None or self._probation)
+
+    def cloud_spoke(self) -> bool:
+        """The tiers' order at arrival (the user, 2026-10-24): the cloud has
+        answered about the candidate in view -- a yes about this run, a no
+        it holds, or its probation -- so the identity check is the cloud's,
+        not the local VLM's."""
+        with self._reject_lock:
+            r = self._rejection
+            return (self._cloud_yes_episode == self._episode
+                    or (r is not None and r["rank"] == "cloud")
+                    or (self._probation and self._probation_by == "cloud"))
+
+    def _on_probation(self, perception: Perception) -> bool:
+        """Amendment 3: a candidate in view whose no was released by loss or
+        time, with no yes about it since and no far-view no (amendment 4)."""
+        return self._probation and perception.status == DETECTED
 
     # -- 3.94.C: who to ask, as a tree --------------------------------------
 
@@ -1255,22 +1591,27 @@ class TieredVision:
     def _who_no_trigger(self, bb: "_RouteDecision") -> bool:
         if bb.trigger is not None:
             return False
-        self._since_call += 1
+        if not self._masked:
+            # 3.91.C: a frame of a rejected candidate is no step toward a
+            # question about it (the floor would ask the same thing).
+            self._since_call += 1
         return self._answer(bb, self._local_scene(bb.perception))
 
     def _who_rearm(self, bb: "_RouteDecision") -> bool:
         # 3.76: the edge into `detected` was spent in _trigger_for; held back
         # by the call in flight, it must fire once that lands, not wait for the
         # staleness floor. 3.80.D: the same for the band.
-        if (bb.trigger in (TRIGGER_CANDIDATE, TRIGGER_BAND) and self.async_cloud
-                and self._inflight is not None):
+        if (bb.trigger in (TRIGGER_CANDIDATE, TRIGGER_BAND, TRIGGER_DISAGREE)
+                and self.async_cloud and self._inflight is not None):
             self._rearm(bb.trigger)
         return True
 
     def _who_choose_local(self, bb: "_RouteDecision") -> bool:
         # 3.80.D: the local tier first, unless it has been unable
         # `local_max_unable` times in a row (then this one is the cloud's).
-        bb.local_fn = self._local_first()
+        # 3.91.C: the disagreement question is the cloud's: the local tier
+        # has answered it.
+        bb.local_fn = None if bb.trigger == TRIGGER_DISAGREE else self._local_first()
         return True
 
     def _who_call_cap(self, bb: "_RouteDecision") -> bool:
@@ -1278,6 +1619,10 @@ class TieredVision:
                 and self.stats.cloud_calls >= self.max_calls):
             return False
         logger.warning("call cap %d reached -- not firing %s", self.max_calls, bb.trigger)
+        if self.local_sighting_fn is None or self._probation_by == "cloud":
+            # 3.91.C amendment 3: no question can clear probation now (the
+            # local tier cannot lift the cloud's).
+            self._end_probation()
         return self._answer(bb, self._local_scene(bb.perception, note="call cap reached"))
 
     def _who_one_at_a_time(self, bb: "_RouteDecision") -> bool:
@@ -1302,7 +1647,8 @@ class TieredVision:
 
     def _who_ask_cloud(self, bb: "_RouteDecision") -> bool:
         frame, perception, trigger, frame_epoch = bb.frame, bb.perception, bb.trigger, bb.epoch
-        escalated = self.local_sighting_fn is not None
+        escalated = ("disagreement" if trigger == TRIGGER_DISAGREE
+                     else "unable" if self.local_sighting_fn is not None else None)
 
         self.stats.cloud_calls += 1
         self.stats.triggers[trigger] = self.stats.triggers.get(trigger, 0) + 1
@@ -1318,19 +1664,23 @@ class TieredVision:
                 self.stats.triggers[trigger] -= 1
                 return self._answer(bb, self._local_scene(perception, note="mission ended"))
             if escalated:
-                # 3.80.D: handed up after `local_max_unable` unable answers.
-                self._count("frame_escalations", "unable")
+                # 3.80.D: handed up after `local_max_unable` unable answers;
+                # 3.91.C: or the tiers disagree.
+                self._count("frame_escalations", escalated)
             return self._answer(bb, self._local_scene(perception, note="dispatched",
                                                       dispatched=trigger))
 
         if escalated:
-            self._count("frame_escalations", "unable")
+            self._count("frame_escalations", escalated)
         _t0 = time.perf_counter()
         try:
             scene = self.cloud_vision_fn(frame)
         except Exception as exc:  # noqa: BLE001 -- raised for B3.2 unless 3.80.G says not
             self._note_cloud_answer(trigger, _frame_seq(frame), error=exc)
-            if self.cloud_errors_fatal:
+            if self.cloud_errors_fatal and trigger != TRIGGER_DISAGREE:
+                # 3.91.C (review): the disagreement question is extra to dev's
+                # ladder; offline it must not spend B3.2's budget on a mission
+                # the local tier would carry.
                 raise
             self._count_cloud_error(exc)
             return self._answer(bb, self._local_scene(perception, note="cloud call failed"))
@@ -1344,6 +1694,8 @@ class TieredVision:
         self._local_held_why = None
         self._local_turn = None     # 3.80.D: this answer is newer
         self._frame_unable = 0
+        self._learn_from_cloud(scene, perception, self._pose_now(), self._episode)
+        self._remask(perception)
         return self._answer(bb, self._annotate_noted(scene, perception, trigger, frame))
 
     # -- 3.80.D: a frame's question, to the local tier first --------------
@@ -1371,6 +1723,8 @@ class TieredVision:
             self._band_asked = False
         elif trigger == TRIGGER_START:
             self._retry_start = True
+        elif trigger == TRIGGER_DISAGREE:
+            self._disagree_key = None
 
     def _count(self, bucket: str, key: str) -> None:
         with self._stats_lock:
@@ -1402,6 +1756,8 @@ class TieredVision:
             hfov_deg=float(getattr(self.pipeline, "hfov_deg", None) or DEFAULT_HFOV_DEG),
             detected=perception.status == DETECTED,
             band=self._band_run > 0,
+            episode=self._episode,
+            box_share=perception.box_share if perception.status == DETECTED else None,
             # An absent local tier hands this to the cloud, which an
             # out-of-vocabulary question earns only at cold_search's bar.
             # 3.80.P: a cold search asked at the local pace reaches the
@@ -1438,6 +1794,7 @@ class TieredVision:
         if isinstance(got, _LocalAnswer) or got is None:
             if got is not None:
                 self._apply_local(got)
+                self._remask(perception)
             return self._local_scene(perception, note="asked the local tier",
                                      local_asked=trigger)
         # The local tier was absent and the cloud answered about this frame.
@@ -1449,6 +1806,8 @@ class TieredVision:
         self._local_held_why = None
         self._local_turn = None
         self._frame_unable = 0
+        self._learn_from_cloud(got, perception, q.pose, q.episode)
+        self._remask(perception)
         return self._annotate_noted(got, perception, trigger, frame, via_local=True)
 
     def _ask_tiers(self, frame: dict, q: "_Question", fn):
@@ -1571,6 +1930,10 @@ class TieredVision:
             # out-of-vocabulary question before cold_search's bar): nothing
             # answered, nothing paid.
             self._local_landed = {"trigger": trigger, "answer": "absent", "score": None}
+            if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
+                # 3.91.C (review): the local tier gone and the cap spent -- no
+                # question can clear probation now, as with no local tier.
+                self._end_probation()
             return
         got = ans.got
         unable_before = self._frame_unable
@@ -1587,7 +1950,10 @@ class TieredVision:
             self._since_call = 0
             self._mark_odometry_call()
             if kind == "yes":
-                bearing = self._bearing_of(ans)
+                # Outranked (a cloud no or probation stands): its box steers
+                # nothing either; the cloud is asked when it is a probation.
+                accepted = self._on_yes("local", ans.q.episode)
+                bearing = self._bearing_of(ans) if accepted else None
                 if bearing is not None:
                     self._local_turn = (
                         ("LEFT" if bearing < 0 else "RIGHT", self._turn_for(bearing))
@@ -1604,6 +1970,36 @@ class TieredVision:
                     # (3.80.F) is about where to look, and a no does not
                     # answer that.
                     self._local_held = self._local_held_why = None
+                if ans.q.detected and self.remember_no:
+                    # 3.91.C: about the candidate perception called the
+                    # target -- remembered where Qwen can tell, else a
+                    # disagreement the cloud may settle. Off, none of it
+                    # (review: off is dev's behaviour, its stats too).
+                    lo, hi = self.no_box_range
+                    share = ans.q.box_share
+                    if share is None or lo <= share <= hi:
+                        self._reject("local", ans.q.pose, ans.q.episode)
+                    elif self._cloud_yes_episode != ans.q.episode:
+                        with self._reject_lock:
+                            # Option (a) (the user, 2026-10-24): a no Qwen
+                            # cannot vouch for goes up to the cloud, once per
+                            # run; perception steers until it answers. Also on
+                            # the cloud's probation, where the local no agrees:
+                            # the cloud's renewed no is HELD, and outlives the
+                            # next loss of the object, where a probation ends
+                            # (round 4 skipped the call: the taupe replay then
+                            # steered at the re-found bag, 2 reversals).
+                            self._escalate_episode = ans.q.episode
+                            if share < lo and self._probation_by == "local":
+                                # Amendment 4 (the user, 2026-10-23/24): a far
+                                # no ends a local probation -- the far view is
+                                # where a real target would otherwise never be
+                                # closed on. A fabric-only no keeps it: the
+                                # robot is at that object already (the taupe
+                                # replay: 2 reversals). The cloud's stands.
+                                self._end_probation()
+                        with self._stats_lock:
+                            self.stats.cannot_tell += 1
                 if ans.q.band:
                     # 3.80.F: the crop in view when it was asked is not the
                     # target. Rejected until the band run breaks (the crop
@@ -1924,6 +2320,8 @@ class TieredVision:
             # unless the perception is carried along with the call, so it is.
             self._inflight_perception = self._perception_this_frame
             self._inflight_seq = _frame_seq(frame)
+            # 3.91.C: where the body was and which candidate was in view.
+            self._inflight_ask = (self._pose_now(), self._episode)
             self._inflight = (self._executor.submit(job) if job is not None
                               else self._executor.submit(self._call_cloud, frame, epoch))
         return True
@@ -1973,6 +2371,7 @@ class TieredVision:
             self._inflight_question = None
             perception, self._inflight_perception = self._inflight_perception, None
             asked_seq, self._inflight_seq = self._inflight_seq, None
+            ask, self._inflight_ask = self._inflight_ask, None
         if fut.exception() is None and isinstance(fut.result(), _LocalAnswer):
             # 3.80.D: the local tier's answer; its own rules reset the pacing.
             self._apply_local(fut.result())
@@ -1997,6 +2396,15 @@ class TieredVision:
             logger.warning("async cloud call failed: %s", exc)
             if not already_noted:
                 self._note_cloud_answer(trigger, asked_seq, error=exc, via_local=via_local)
+            if trigger == TRIGGER_DISAGREE:
+                # 3.91.C (review): never B3.2's, as on the synchronous path --
+                # unless the runner charged it already (a hang at arrival),
+                # then not counted twice.
+                with self._collect_lock:
+                    charged = fut is self._charged
+                if not charged:
+                    self._count_cloud_error(exc)
+                return
             with self._collect_lock:
                 if fut is not self._charged:
                     self._pending_error = exc
@@ -2010,6 +2418,8 @@ class TieredVision:
         self._local_held = None
         self._local_held_why = None
         self._frame_unable = 0      # 3.80.D: a cloud answer starts the count again
+        pose, episode = ask or (None, self._episode)
+        self._learn_from_cloud(scene, perception, pose, episode)
         # Run the annotation for its SIDE EFFECTS -- corroboration and the
         # stats 6.3 puts on the panel -- against the perception this call
         # was actually made on, not whatever is in front of the camera now.
@@ -2052,6 +2462,7 @@ class TieredVision:
             self._inflight_question = None
             self._inflight_perception = None
             self._inflight_seq = None
+            self._inflight_ask = None
             # 3.91 A: the runner takes what landed before it closes the policy;
             # nothing of this mission may ride out on another.
             self._cloud_answers = []
@@ -2060,6 +2471,13 @@ class TieredVision:
         self._local_turn = None
         self._local_landed = None
         self._pending_error = None
+        with self._reject_lock:
+            self._rejection = None
+            self._end_probation()
+            self._masked = False
+            self._escalate_episode = None
+            self._cloud_yes_episode = None
+        self._disagree_key = None
 
     def close(self) -> None:
         """Release the worker thread. Safe to call more than once.
@@ -2247,6 +2665,7 @@ class TieredVision:
             Action("local tracking", self._tr_track),
             Action("candidate sighting", self._tr_candidate,
                    lambda: {"frames": self.consecutive_frames, "vote": self.frame_vote}),
+            Action("the tiers disagree", self._tr_disagree),
             Sequence("after the edges", [
                 Action("the absent edge", self._tr_absent_edge),
                 Fallback("absent, then the floor", [
@@ -2262,6 +2681,8 @@ class TieredVision:
                 Action("the opening question", self._tr_start),
                 Action("no picture, no question", self._tr_unavailable),
                 Action("the opening question again", self._tr_retry_start),
+                Action("a rejected candidate asks nothing", self._tr_rejected,
+                       lambda: {"remember_no": self.remember_no}),
                 Sequence("this frame's evidence, then the events", [
                     Action("track the band", self._tr_track_band),
                     Action("note the run", self._tr_note_run),
@@ -2379,6 +2800,36 @@ class TieredVision:
         if self.frame_vote:
             self.stats.vote["fired"] += 1
         return self._fire(bb, TRIGGER_CANDIDATE)
+
+    def _tr_rejected(self, bb: "_TriggerDecision") -> bool:
+        # 3.91.C: the candidate a no is remembered about asks nothing and
+        # counts toward nothing; its run starts again once it is released.
+        if not self._masked:
+            return False
+        self._run.clear()
+        self._run_since = None
+        # Review: nor toward the vote, or the frame it is released on fires
+        # the candidate edge alone on the masked frames' votes.
+        self._votes.clear()
+        self._vote_ok = False
+        if self.stats.vote:
+            self.stats.vote["detected"] = 0
+        self._band_run = 0
+        self._band_asked = False
+        return self._fire(bb, None)
+
+    def _tr_disagree(self, bb: "_TriggerDecision") -> bool:
+        # 3.91.C (3.92: escalate on disagreement, not on Qwen's own doubt):
+        # the local VLM said no where it cannot tell, or yes against the
+        # cloud's no, and perception still passes the candidate -- the cloud,
+        # once a run (the tier ordering; option (a), the user, 2026-10-24).
+        if (not self.remember_no or self.local_sighting_fn is None
+                or bb.confirmed != DETECTED
+                or self._escalate_episode != self._episode
+                or self._disagree_key == (self._episode, self._release_gen)):
+            return False
+        self._disagree_key = (self._episode, self._release_gen)
+        return self._fire(bb, TRIGGER_DISAGREE)
 
     def _tr_absent_edge(self, bb: "_TriggerDecision") -> bool:
         if bb.confirmed == ABSENT:
@@ -2628,6 +3079,13 @@ class TieredVision:
                       "local_called": local_asked,
                       "local_landed": local_landed,
                       "holding": held,
+                      # 3.91.C: a no remembered about a candidate, if any.
+                      "rejected": self._rejection_readout(),
+                      "probation": self._probation,
+                      # The tiers' order: this frame's candidate is one a
+                      # VLM refused (held or on probation) -- explore and any
+                      # other reader of `_perception` must not act on it.
+                      "candidate_refused": self._refused_in_view(perception),
                       "vocabulary": self._vocabulary_readout(),
                       "pacing": self._pacing_readout(),
                       "stats": self.stats.as_dict()},
@@ -2681,6 +3139,11 @@ class TieredVision:
     def describe_tree(self) -> str:
         return "\n".join(self._what_tree.describe())
 
+    def describe_hard_rules(self) -> str:
+        """The rules the three trees work inside and no tree may reorder
+        (3.94; the tiers' order, 3.91.C)."""
+        return "\n".join(HARD_RULES)
+
     def _take_evidence(self, bb: "_FrameDecision") -> bool:
         # A located yes is used once, after this frame's own bearing and
         # before anything older -- and spent even when a better rung wins.
@@ -2697,6 +3160,15 @@ class TieredVision:
         return True
 
     def _rung_steer(self, bb: "_FrameDecision") -> bool:
+        if self._masked:
+            r = self._rejection or {}
+            bb.why = (f"{bb.why} -- not steering at a candidate the {r.get('by', '?')} "
+                      "said is not the target")
+            return False
+        if self._on_probation(bb.perception):
+            bb.why = (f"{bb.why} -- not steering at a candidate once refused, "
+                      "until a yes (probation)")
+            return False
         steer = self._steer_to(bb.perception)
         return bool(steer) and self._choose(
             bb, RUNG_STEER, steer, f"steering on local sighting ({_direction_for(bb.perception)})",
@@ -2749,7 +3221,8 @@ class TieredVision:
         if (self.spin_guard_after
                 and bb.direction in TURN_ACTIONS
                 and bb.rung not in RUNGS_THIS_FRAME
-                and bb.perception.status != DETECTED
+                and (bb.perception.status != DETECTED or self._masked
+                     or self._on_probation(bb.perception))
                 and self._consecutive_turn_deg >= self.spin_guard_after * 90):
             bb.direction, bb.rung = "FORWARD", RUNG_SPIN_GUARD
             self._consecutive_turn_deg = 0.0
@@ -2818,6 +3291,9 @@ class TieredVision:
         panned camera, and never an anchor for dead reckoning: the crop may
         not be the target."""
         if (not self.steer_on_candidate or self._candidate_rejected
+                # 3.91.C (review): a crop under the gate while a no or a
+                # probation is held is the same object, most likely.
+                or self._rejection is not None or self._probation
                 or perception.status != ABSENT or not perception.candidates
                 or getattr(perception, "pan_deg", 0.0)):
             return None
@@ -2990,10 +3466,12 @@ def tiered_vision_fn_for(target: str, cloud_vision_fn: Callable[[dict], dict],
 
 
 __all__ = [
-    "TieredVision", "TierStats", "tiered_vision_fn_for", "CENTER_BAND_DEG",
+    "TieredVision", "TierStats", "tiered_vision_fn_for", "CENTER_BAND_DEG", "HARD_RULES",
+    "candidate_refused",
+    "TIER_RANK",
     "MAX_TURN_DEG", "MIN_TURN_DEG", "SCAN_TURN_DEG", "STEER_BAND_DEG", "turn_for",
     "TRIGGER_START", "TRIGGER_CANDIDATE", "TRIGGER_COLD_SEARCH",
-    "TRIGGER_STALE", "DEFAULT_STALE_AFTER", "TRIGGER_BAND", "TRIGGER_OOV",
+    "TRIGGER_STALE", "DEFAULT_STALE_AFTER", "TRIGGER_BAND", "TRIGGER_OOV", "TRIGGER_DISAGREE",
     "UNAVAILABLE_TRIGGERS", "SCAN_ACTION",
     "DEFAULT_CONSECUTIVE", "DEFAULT_COLD_SEARCH_AFTER",
     "DEFAULT_CORROBORATION_P", "corroboration_for",

@@ -400,6 +400,12 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         "local_band_low": config["tier_local_band_low"],
         # 3.94.D: the behavior tree's order and numbers (validated at load).
         "tree": config["tier_tree"],
+        # 3.91.C: a no about a candidate, remembered; 0 disagreement = never.
+        "remember_no": config["tier_remember_no"],
+        "reject_hold_s": config["tier_reject_hold_s"],
+        "reject_move_m": config["tier_reject_move_m"],
+        "reject_turn_deg": config["tier_reject_turn_deg"],
+        "no_box_range": tuple(config["tier_no_box_range"]),
     }
     # 3.80.C: the local VLM tier at arrival, when a URL is configured; 3.80.D:
     # the same client for every frame's question, asking where as well.
@@ -812,6 +818,9 @@ def create_app(
                 "perception_floor_mask", "perception_crop_path",
                 "navigate_model_id", "navigate_prompt_variant",
                 "explore_goal_policy",
+                # 3.91.C (review): a no remembered, and the disagreement call.
+                "tier_remember_no", "tier_reject_hold_s", "tier_reject_move_m",
+                "tier_reject_turn_deg", "tier_no_box_range",
             ) if k in config},
             # 3.94.D: the tree as one compact string -- the console prints each
             # config value as `k=v`, and a nested mapping read `[object Object]`.
@@ -1349,6 +1358,9 @@ def create_app(
             "tier_local_direction": bool(config["tier_local_direction"]),
             "tier_steer_on_candidate": bool(config["tier_steer_on_candidate"]),
             "tier_spin_guard_after": config["tier_spin_guard_after"],
+            # 3.91.C: whether a no is remembered (and the tiers' disagreement
+            # asked of the cloud).
+            "tier_remember_no": bool(config["tier_remember_no"]),
             # Published so the panel can name the bar it is reporting
             # against. A verdict shown without the number it was taken at
             # is not readable, and 1.11a's whole finding is that the bar

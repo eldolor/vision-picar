@@ -186,6 +186,18 @@ DEFAULTS = {
     # real frames); it cannot act in the simulator, whose perception has no
     # such crops.
     "tier_steer_on_candidate": True,
+    # 3.91.C (the user, 2026-10-23): a "no" about a DETECTED candidate is
+    # remembered -- not steered at, not asked about -- until it changes:
+    # with odometry, moved `reject_move_m` or turned `reject_turn_deg`;
+    # without (a phone), lost for 3 frames and found again, or
+    # `reject_hold_s`. A local no counts only with perception's box inside
+    # `no_box_range` of the frame; outside, it asks the cloud once a
+    # candidate run (the tiers' order). brain/tiered.py has the why.
+    "tier_remember_no": True,
+    "tier_reject_hold_s": 20.0,
+    "tier_reject_move_m": 0.5,
+    "tier_reject_turn_deg": 30.0,
+    "tier_no_box_range": [0.15, 0.95],
     # 3.80.G (the user, 2026-10-16): who chooses where a tiered mission
     # searches. `cloud`: the cloud's direction, as before. `explore`:
     # explore's nav2 goals (needs nav2, as the explore policy does), the
@@ -538,6 +550,20 @@ def load_brain_config(config_path=None) -> dict:
     if not 0.0 < band_low < 0.8:
         raise ValueError(f"brain.tier_local_band_low must be in (0, 0.8), below the "
                          f"match gate; got {band_low}")
+    if not isinstance(merged["tier_remember_no"], bool):
+        raise ValueError(f"brain.tier_remember_no must be true or false; "
+                         f"got {merged['tier_remember_no']!r}")
+    for key in ("tier_reject_hold_s", "tier_reject_move_m", "tier_reject_turn_deg"):
+        value = merged[key]
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or value <= 0):
+            raise ValueError(f"brain.{key} must be a number > 0; got {value!r}")
+    box = merged["tier_no_box_range"]
+    if (not isinstance(box, (list, tuple)) or len(box) != 2
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in box)
+            or not 0.0 <= box[0] < box[1] <= 1.0):
+        raise ValueError(f"brain.tier_no_box_range must be [low, high] with "
+                         f"0 <= low < high <= 1; got {box!r}")
     if float(merged["tier_local_timeout_s"]) <= 0:
         raise ValueError(f"brain.tier_local_timeout_s must be > 0; "
                          f"got {merged['tier_local_timeout_s']}")

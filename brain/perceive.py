@@ -575,6 +575,9 @@ class Perception:
     # every tier frame so a recorded walk can never be scored as though the
     # detector had run.
     synthesised: bool = False
+    # 3.91.C: the frame's (width, height) in pixels, when the pipeline read
+    # them; None from the simulator's geometry, whose boxes are not pixels.
+    image_size: Optional[tuple] = None
 
     @property
     def matched(self) -> bool:
@@ -584,10 +587,22 @@ class Perception:
     def bearing_deg(self) -> Optional[float]:
         return self.best.bearing_deg if self.best else None
 
+    @property
+    def box_share(self) -> Optional[float]:
+        """3.91.C: the best box's area as a share of the frame, or None when
+        there is no best box or no frame size to divide by."""
+        if self.best is None or not self.image_size:
+            return None
+        w, h = self.image_size
+        if not (w and h and w > 0 and h > 0):
+            return None
+        return min(1.0, self.best.detection.box.area / (w * h))
+
     def as_dict(self) -> dict:
         """The shape that crosses the wire in phase C5, and that the twin
         draws in 6.3. `synthesised` says whether a model produced it -- no
         run may look as though it exercised perception it never had."""
+        share = self.box_share
         return {
             "status": self.status,
             "crop_source": self.crop_source,
@@ -602,6 +617,7 @@ class Perception:
             "similarity": round(self.best.similarity, 4) if self.best else None,
             "label": self.best.detection.label if self.best else None,
             "candidates": len(self.candidates),
+            "box_share": None if share is None else round(share, 3),
         }
 
 
@@ -999,7 +1015,8 @@ class PerceptionPipeline:
                               reason="no proposals survived the crop gate",
                               pan_deg=pan, tilt_deg=tilt)
 
-        width = float(frame.get("image_width") or 0.0) or _image_width(image)
+        size = _image_size(image)
+        width = float(frame.get("image_width") or 0.0) or size[0]
         try:
             candidates = self._score(image, crops, width, pan, tilt)
         except PerceptionUnavailable as exc:
@@ -1030,6 +1047,7 @@ class PerceptionPipeline:
         return Perception(status=DETECTED, candidates=candidates, best=best,
                           crop_source=self.crop_source, pan_deg=pan,
                           tilt_deg=tilt,
+                          image_size=(size if size[0] > 0 and size[1] > 0 else None),
                           reason=f"{best.detection.label} @ {unit} {got:.3f}")
 
     def _crops(self, proposals: Sequence[Detection]) -> list:
@@ -1107,13 +1125,19 @@ def _image_width(image: bytes) -> float:
     (both concrete backends import it), so a fake-driven test simply gets
     the old behaviour.
     """
+    return _image_size(image)[0]
+
+
+def _image_size(image: bytes) -> tuple:
+    """(width, height) in pixels as `_image_width` reads them; (0.0, 0.0)
+    when unreadable."""
     try:
         from PIL import Image
 
         with Image.open(io.BytesIO(image)) as img:
-            return float(img.width)
+            return float(img.width), float(img.height)
     except Exception:  # noqa: BLE001 -- an unreadable size is not an error
-        return 0.0
+        return 0.0, 0.0
 
 
 def _decode(frame: dict) -> bytes:

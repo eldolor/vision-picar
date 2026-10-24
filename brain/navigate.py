@@ -238,6 +238,10 @@ def to_scene(result: dict, target_object: str) -> dict:
             "target_visible": visible,
             "target_direction": result.get("target_direction", "not_visible"),
             "target_reached": reached,
+            # 3.91.C: the service could not parse the model's reply and sent
+            # its empty schema (`_raw` beside it): "not visible" here is a
+            # default, not an answer.
+            **({"unparsed": True} if "_raw" in result else {}),
             # None means "this prompt variant did not ask", and a consumer
             # must not read it as False. The only obstacle logic left on the
             # path under such a variant is robot/safety.py's get_distance()

@@ -147,12 +147,42 @@ STATE_KEYS = ("_consecutive_turn_deg", "_local_turn", "_dead_reckoned", "_steer_
               "_local_held", "_local_held_why", "_candidate_rejected")
 
 
+# 3.91.C changes behaviour on purpose (a remembered no, the disagreement
+# question): off here, and its counters left out, so the trees are compared
+# with the code they replaced (tests/test_tier_remember_no.py covers it on).
+C_OFF = {"remember_no": False}
+C_STATS = ("rejections", "releases", "cannot_tell", "masked_frames")
+
+
+def _off(cls):
+    # Both: the reference is TieredVision with the old bodies, and inherits
+    # the rest, 3.91.C's switches included.
+    return C_OFF
+
+
+def _stats(tier):
+    # Both: the reference counts with this module's TierStats.
+    out = tier.stats.as_dict()
+    for k in C_STATS:
+        out.pop(k, None)
+    return out
+
+
+def _scene(scene):
+    """The new policy's scene without 3.91.C's readout (None / False with C
+    off)."""
+    if isinstance(scene, dict) and isinstance(scene.get("_tier"), dict):
+        scene = {**scene, "_tier": {k: v for k, v in scene["_tier"].items()
+                                    if k not in ("rejected", "probation", "candidate_refused")}}
+    return scene
+
+
 def _state(tier):
     goal = tier._goal
     return ({k: getattr(tier, k, None) for k in STATE_KEYS},
             (goal.held, goal.sightings, goal._seen_at, goal.direction_deg, goal.x, goal.y,
              goal.range_m),
-            tier.stats.as_dict())
+            _stats(tier))
 
 
 def _pair(seed):
@@ -161,7 +191,7 @@ def _pair(seed):
     tiers = []
     mp = cfg.pop("match_probability")
     for cls in (ReferenceTieredVision, TieredVision):
-        t = cls(_Pipe(mp), lambda f: {}, **cfg)
+        t = cls(_Pipe(mp), lambda f: {}, **cfg, **_off(cls))
         _set_state(t, random.Random(seed * 7919 + 1))
         tiers.append(t)
     return tiers, rng
@@ -181,7 +211,7 @@ def test_criterion_2a_the_tree_decides_exactly_as_the_code_it_replaced():
                 ref._read_odometry({"odometry": odo})
                 new._read_odometry({"odometry": odo})
             a = ref._local_scene(_perception(random.Random(p_seed)), note=note, **kw)
-            b = new._local_scene(_perception(random.Random(p_seed)), note=note, **kw)
+            b = _scene(new._local_scene(_perception(random.Random(p_seed)), note=note, **kw))
             if a != b or _state(ref) != _state(new):
                 differences.append((seed, i, a.get("safest_direction"), b.get("safest_direction"),
                                     a["_navigate"]["reasoning"], b["_navigate"]["reasoning"]))
@@ -260,7 +290,7 @@ def _trigger_pair(seed):
                  _candidate_rejected=st.random() < 0.2)
     tiers = []
     for cls in (ReferenceTieredVision, TieredVision):
-        t = cls(_Pipe(mp), lambda f: {}, **cfg)
+        t = cls(_Pipe(mp), lambda f: {}, **cfg, **_off(cls))
         for k, v in state.items():
             if k == "cloud_calls":
                 t.stats.cloud_calls = v
@@ -383,7 +413,7 @@ def _route_pair(seed):
                     "box": [100, 100, 200, 200] if lrng.random() < 0.5 else None}
 
         t = cls(_ScriptPipe(seed * 11), cloud, local_sighting_fn=local if has_local else None,
-                **cfg)
+                **cfg, **_off(cls))
         t.pipeline.tier = t
 
         def dispatch(frame, trigger, epoch=None, tier="cloud", job=None, log=log, drng=drng,
@@ -447,8 +477,8 @@ def test_criterion_2a_who_to_ask_exactly_as_the_code_it_replaced(monkeypatch):
                 except Exception as e:  # noqa: BLE001 -- the same failure on both is equivalence
                     r = ("raised", type(e).__name__, str(e))
                 out.append(r)
-            state = [({k: getattr(t, k) for k in ROUTE_STATE}, t.stats.as_dict()) for t in (ref, new)]
-            if out[0] != out[1] or state[0] != state[1] or logs[0] != logs[1]:
+            state = [({k: getattr(t, k) for k in ROUTE_STATE}, _stats(t)) for t in (ref, new)]
+            if out[0] != _scene(out[1]) or state[0] != state[1] or logs[0] != logs[1]:
                 differences.append((seed, i))
             r = out[1]
             key = (r[0] if isinstance(r, tuple) else

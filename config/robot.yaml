@@ -375,6 +375,18 @@ brain:
   # while the local VLM is asked about it. On since criterion F5 (the target
   # in view on 26 of 27 such real frames). TIER_STEER_ON_CANDIDATE overrides.
   tier_steer_on_candidate: true
+  # 3.91.C (the user, 2026-10-23): a "no" about a candidate perception called
+  # the target -- the local VLM's with its box 15-95% of the frame, or the
+  # cloud's "not visible" -- is remembered: not steered at, not asked about,
+  # until the body moved 0.5 m or turned 30 deg (with odometry), or (a phone)
+  # the candidate was lost 3 frames and found again, or 20 s passed. A local
+  # no outside the box range cannot tell: the cloud is asked once a candidate
+  # run (the tiers' order, the user 2026-10-24: perception < local < cloud).
+  tier_remember_no: true
+  tier_reject_hold_s: 20.0
+  tier_reject_move_m: 0.5
+  tier_reject_turn_deg: 30.0
+  tier_no_box_range: [0.15, 0.95]
   # 3.80.G -- who chooses where a tiered mission searches: `cloud` (the
   # cloud's direction, as before) or `explore` (explore's nav2 goals; needs
   # nav2 like the explore policy; the tiers decide identity and the last

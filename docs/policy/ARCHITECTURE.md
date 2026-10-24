@@ -203,6 +203,37 @@ arrival; the lidar decides distance"). The corroboration verdict
 ([perception](../perception/ARCHITECTURE.md)) still measures the exposure and
 enforces nothing.
 
+**Amended 2026-10-23 (3.91.C, the user's choice): a "no" about a candidate
+is remembered.** The steering half of the trade-off above had a measured
+cost: on the 2026-10-21 phone walk a correct cloud "not the target" was
+overridden on the next frame by a false local sighting of a lookalike, about
+nine times, and with the local VLM first perception still steered at a bag
+it had refused on 54 of 54 frames. Now an identity "no" -- the local VLM's,
+where its box is a fair view of the object, or the cloud's -- is evidence
+about that candidate, not a passing opinion: the candidate is neither
+steered at nor asked about again until it changes (the body moved or turned;
+on a body without odometry, the candidate was lost and found again, or a
+set time passed, and then it is asked about before it is steered at again)
+or a later answer says yes. The local VLM's "no" where it cannot tell (the
+far view, fabric only) is not remembered; it asks the cloud, once a
+candidate -- escalation on the tiers' disagreement, which 3.92 found catches
+as many errors as a learned router.
+
+**The tiers' order (the user, 2026-10-24).** Each tier is more capable than
+the one below it -- YOLOE + CLIP < the local VLM < the cloud VLM -- and its
+answer about a candidate is never undone by a lower tier's: only a cloud
+"yes" lifts the cloud's "no", a cloud "yes" stands against a local "no",
+and where the two VLMs disagree, or the local one cannot tell, the cloud is
+asked. Perception acts alone only where neither VLM has spoken about the
+candidate. Only the robot's own safety layer overrides every tier. The
+order is a hard rule beside the behaviour trees, not a node in them, so no
+reordered or tuned tree can break it.
+**Rejected:** leaving the steer to perception and fixing only the paid
+re-asks (the wrong bag is still approached); a learned router (3.92: AUROC
+0.70). **Trade-off:** a true target refused once by mistake is not
+approached until the robot moves or the hold ends; arrival's own checks are
+unchanged.
+
 ### Turns are sized; search turns are smaller than the field of view
 
 **Decision** (R1, R1b, R1c -- `PLAN-ros-alignment.md` 3.3, 3.5, 3.6b). A turn

@@ -299,13 +299,102 @@ brain has a local tier (`local_identity_fn`):
   dead reckoning, the candidate, the held goal (the local VLM's, else the
   cloud's), the scan; the spin guard skips a candidate turn.
 
+**A no about a candidate, remembered (3.91.C).** On by default
+(`remember_no`; config `tier_remember_no`). `_track_candidate()` runs on
+every frame before the trees: it numbers candidate runs (`_episode`: a run
+of `detected` frames, broken by `REJECT_LOST_FRAMES` (3) `absent` ones;
+`unavailable` frames and absent frames holding a crop at the band's P
+(`_band_crop`) do not count), releases a remembered no whose
+candidate changed, and sets `_masked` when this frame is `detected` while a
+no is held.
+* **What is remembered** (`_reject`; `_rejection` = by, episode, the
+  landing frame's stamp and the body's pose as it lands): a decided local `no` about a frame
+  perception called `detected` (`_Question.detected`) whose best box covered
+  `no_box_range` (0.15-0.95) of the frame (`Perception.box_share`, from the
+  pipeline's `image_size`; None, as in the simulator, counts), and a cloud
+  `target_visible: false` about such a frame, by any trigger, sync or async
+  (`_learn_from_cloud`, with the pose and episode of the dispatch,
+  `_inflight_ask`). A no about a run that has already ended, or has 3
+  absent frames behind it (a late answer), is not remembered, with or
+  without odometry. A cloud reply the service could not parse
+  (`_navigate.unparsed`, set by `to_scene` when `/navigate` sent `_raw`) is
+  no answer. **The tiers' order** (`TIER_RANK`, the user, 2026-10-24:
+  perception < local VLM < cloud; only `robot/safety.py` overrides them, and
+  it stays outside the trees: `HARD_RULES`, `describe_hard_rules()`): each
+  held no carries `rank`, the highest tier behind it (a local no replacing
+  the cloud's probation keeps the cloud's rank); a local no is not
+  remembered about a run the cloud said yes about (`_cloud_yes_episode`,
+  cleared by a later cloud no about the run) nor over the cloud's own no.
+  Outside `brain/tiered.py` the order reaches two readers: **explore**
+  (`candidate_refused(scene)`, from `_tier.candidate_refused`: a frame whose
+  detected candidate is held or on probation is no sighting and no close-in)
+  and **the arrival** (`TieredVision.cloud_spoke()`: once the cloud answered
+  about the candidate in view -- a yes about this run, a no it holds, or its
+  probation -- `brain/agent.py` sends the identity check to the cloud alone,
+  3.80.O's path; offline such an arrival ends `arrived_unconfirmed`). A
+  remembered no ends probation and settles a disagreement. The state is under `_reject_lock`:
+  `wait_inflight()` can apply an answer on the runner's abandoned thread
+  while a tick tracks the candidate.
+* **While it is held,** a masked frame (`_remask`, again after an answer
+  applied on the frame's own tick): no steer (`_rung_steer` says why; the
+  uncertain-candidate rung is off too),
+  no trigger and no count toward cold search, staleness or the frame vote
+  (`_tr_rejected` clears the vote's window, `_who_no_trigger`), and the spin guard counts it as a
+  frame without the target. The held goal or the scan drives; a dead-reckoned
+  anchor is dropped.
+* **Released** (`_release`, counted in `stats.releases`): with odometry,
+  after `reject_move_m` (0.5) or `reject_turn_deg` (30) from the pose
+  where the no landed (not the asked frame's: an approach during an async
+  call would release it at once); without, when a new episode begins (`lost`) or after
+  `reject_hold_s` (20 s: `_held_s`, on the frames' `captured_at` when the
+  no and this frame are both stamped, else the monotonic clock, never one
+  against the other: `timeout`); and by a yes of the no's rank or higher
+  (`_on_yes(by, episode)`: a local yes lifts a local no, only a cloud claim
+  lifts the cloud's; an outranked local yes steers nothing, its box
+  included, even when perception saw nothing -- nothing then says the box is
+  not the refused object). A release other than a yes arms the candidate
+  edge again.
+* **Probation** (amendments 3-4): a release by `lost` or `timeout` sets
+  `_probation`, with `_probation_by` the released no's rank -- the candidate is asked about as usual but not steered at
+  (nor its band crops). It covers the candidate run it began in only (the
+  user, 2026-10-24): lost again for 3 frames with no answer, it ends. A
+  `timeout` while the candidate is already out of view puts its next run on
+  probation instead (the run it comes back in). Also
+  ended by a yes of its rank or higher (a local yes on the cloud's probation
+  is a disagreement: the cloud is asked), by a local no about a box under
+  `no_box_range`'s low end when the probation is the local tier's (the far
+  view; a fabric-only no keeps it), by a new remembered no, or by the call
+  cap when no tier that may lift it can answer (no local tier, an absent
+  one, or the cloud's probation).
+* **The disagreement question** (`TRIGGER_DISAGREE`, `_tr_disagree`, after
+  the candidate edge; option (a), the user, 2026-10-24): a local no whose
+  box was out of range (`cannot_tell`) leaves the steer alone and marks the
+  run for the cloud (`_escalate_episode`), as does a local yes on the
+  cloud's probation; once perception confirms the same run (any P that
+  passed the gate; off with `remember_no`), the cloud
+  is asked once per run and release (`_disagree_key` = the episode and
+  `_release_gen`: a no released into the cloud's probation can be asked about
+  again in the same run) -- never the local tier (`_who_choose_local`), counted in
+  `frame_escalations["disagreement"]`, re-armed if a call is in flight. A
+  failure it returns is never raised for B3.2 (sync or async): it counts in
+  `stats.cloud_errors`, and an offline local-first mission searches on. A
+  call that HANGS into the arrival is still charged by the runner's wait
+  (`wait_inflight` under B3.2's timeout), as any call in flight is, and then
+  not counted again.
+* Readouts: `_tier.rejected` (by, episode, age) and `_tier.probation`;
+  `stats.rejections`, `releases`, `cannot_tell`, `masked_frames` (none of
+  them move with `remember_no` off). `/health` carries `tier_remember_no`;
+  each mission's metrics row carries all five knobs.
+
 **What the hysteresis does and does not gate.** `consecutive_frames` is
 read only in `_trigger_for()`. `_steer_to()` returns a direction for any
 frame whose `status` is `detected` with a bearing, with no streak, so one
 detected frame steers. On a free frame the steer outranks the held cloud goal.
 Under `async_cloud` (shipped) every frame's scene is a local one and a landed
 cloud answer only replaces `_last_cloud_scene`. A cloud `not_visible`
-therefore never overrides a local sighting. Synchronously, only the call
+therefore never overrides a local sighting by itself -- since 3.91.C it
+is remembered, and the candidate is not steered at until it changes (above).
+Synchronously, only the call
 frame uses the cloud's direction. Checked 2026-10-02 with a fake pipeline and
 a cloud that always answers `not_visible`: a lone `detected` frame after four
 `absent` returned FORWARD with no trigger; in sync mode the
@@ -332,10 +421,12 @@ printed by `describe_when_tree()`).
   * the opening question;
   * an `unavailable` frame (no trigger; it clears the runs);
   * the opening question again;
+  * a frame of a rejected candidate (no trigger; 3.91.C);
   * this frame's evidence (the band run, the status run, the confirmed
     edge), followed by the events, in order:
     * local tracking;
     * `candidate_sighting`;
+    * `disagreement` (3.91.C);
     * (no trigger) the absent edge, which only moves `_last_confirmed`;
     * for an `absent` frame, the absent count, then the band,
       out-of-vocabulary, and cold search by frames, then by metres;
@@ -419,6 +510,11 @@ with `close()`, `reset_epoch()`, `set_searched_rooms()`, `confirm_arrival(frame)
 | `tier_steer_on_sight` | true | -- | Phase G: 28 RIGHT / 4 FORWARD on 37 locally-detected frames before it |
 | `tier_spin_guard_after` | 8 | quarter turns (x 90 degrees) | 720 degrees; counted in degrees since R1c (84.5% -> 98.3-98.6% arrival at 90% detection, starter house, 2026-09-25) |
 | `tier_tree` | `{}`: today's values (`TIER_TREE_DEFAULTS`) | a mapping | 3.94.D: `what_rungs` (the steering rungs' order; `scan` last; only `reckoned`, `candidate`, `held` may be left out), `absent_events` (the order of `band`, `oov`, `cold_frames`, `cold_metres`; any may be left out), `steer_band_deg` 3.0 (at most the arrival's `ARRIVAL_CENTRE_DEG`, or the robot stops turning toward a target the arrival never counts centred), `min_turn_deg` 5 and `max_turn_deg` 90 (whole, at most 90), `scan_turn_deg` 45 (whole, inside the bounds), `local_yes_at` 0.5 (frame questions only; the arrival keeps `LOCAL_YES_AT`). Under `tier_search: explore` the band and bounds keep their defaults, because explore steers with the module's. Validated in `load_brain_config`, and the policy checks its names itself. An unknown key is refused, including any naming who-to-ask's order, when-to-ask's head or the arrival. The metrics row carries it as one compact JSON string |
+| `tier_remember_no` | true | -- | 3.91.C (the user, 2026-10-23): a no about a detected candidate is remembered; B6: perception steered at a bag Qwen refused on 54 of 54 frames. Replay (amendment 2-3): taupe walk reversals 16 -> 0 cloud only, steers after the first no 53 -> 0 |
+| `tier_reject_hold_s` | 20.0 | s | without odometry, how long a no holds while the candidate stays in view; the proposal's number |
+| `tier_reject_move_m` | 0.5 | m | with odometry, the travel that makes it a new candidate |
+| `tier_reject_turn_deg` | 30.0 | degrees | with odometry, the turn that makes it a new candidate |
+| `tier_no_box_range` | [0.15, 0.95] | share of the frame | a local no outside it cannot tell: B5's 1.0 m hold is 11%, fabric at 0.3 m 99% |
 | `tier_hold_bearing` | false | -- | P25: off until an A/B shows it helps |
 | `tier_hold_bearing_max_m` | 1.0 | m | a starting value, not derived |
 | `tier_stale_after` | 8 | frames | 6.1's figure; contributed 5.7% of triggers there |
@@ -712,6 +808,28 @@ alert colour.
 | `tests/test_arrival_confirmation.py` (9) | Handoff 2026-10-02 1a, scaled house, cloud faked: the right object ends `found` after one `arrival_confirmation` call; a cloud that disagrees refuses the arrival (ends `blocked`, at most 2 confirmation calls); a false-positive run (absent, absent, detected...) cannot end `found` and the same run with an agreeing cloud does; the call is counted; at the call cap it refuses without calling. Spec review 3: under `async_cloud` the confirmation never overlaps a trigger call (peak concurrency 1 with a 0.2 s cloud); a `found` mission's `status.tier.stats` counts it; the paid step is logged `[cloud: arrival_confirmation]`; a refused mission's final `status.arrival` keeps `identity` and its end line does not say "obstructed" |
 | `tests/test_refused_turn_loop.py` (3) | Handoff 5a, starter house: a refused turn is never chosen again from the same spot (was 130 times); with the world the active-search demo finds the backpack in 61 steps (the reference trace); with no world the boxed-in fallback runs instead of a refused LEFT alternating with STOP |
 | `tests/test_tier_tree.py` | 3.94: the tree module's statuses; on 10,000 seeded random states the tree's "what to do this frame" gives exactly the frozen code's scene and state (`tests/tiered_reference.py`), every rung exercised; "when to ask" (3.94.B) the same trigger and state on 10,000 random frame sequences, every trigger fired; "who to ask" (3.94.C) the same scene, state, stats and model calls through the whole `__call__` on 2,500 random runs of 1-10 frames (sync and async, local failures, cloud failures, the cap, calls in flight, a Stop mid-frame); `tier_tree` (3.94.D): the shipped yaml is today's values, sixteen bad trees refused at load (the arrival's band, the scan outside the bounds, a fractional turn, a required rung left out among them), explore's band and bounds kept, the band cap pinned to the arrival's, and order, numbers and `local_yes_at` each take effect; p90 under 1 ms a frame; `describe()` reads settings live; a ladder that chooses nothing raises |
+| `tests/test_tier_remember_no.py` (67) | 3.91.C: a local no stops the steer and the questions about the candidate (off: 9 FORWARDs, staleness re-asks); released on a phone by 3 lost frames (not 2) or 20 s, with odometry by 0.5 m or 30 deg (not by time or loss), and by a yes; probation after a loss or time release until a yes, none after a move, ended by a spent cap; the box range (inclusive, unknown counts); the disagreement question once per candidate, the cloud's answer remembered, off without a local tier or with the bar off; a cloud no remembered sync and async; the taupe loop's shape (<= 1 reversal, <= 4 calls; off >= 5); the settings passed by the brain and bad ones refused; the review's fixes
+(a yes arms nothing, a countable no settles a disagreement, a reset forgets it,
+no hold timed across two clocks, a late no about an ended run, band frames
+neither lost nor steered at, no disagreement with `remember_no` off, a far
+no ends probation and a fabric-only one does not); review round 2 (a late
+no while its run is being lost or, with odometry, after it ended; probation
+ending with its run and with a dead local tier under a spent cap; an
+unparsed cloud reply; the disagreement offline, sync and async; the hold
+measured from the landing pose and stamp; masked frames out of the vote;
+off counts nothing; `/health`); round 3 (a timeout while the bag is out of
+view keeps probation for its return; probation reads false once its run is
+lost); the tiers' order (a local yes does not lift the cloud's no nor steer
+by its box, a cloud yes stands against a local no about its run, a local yes
+on the cloud's probation asks the cloud, a local no keeps the cloud's rank,
+the cap ends the cloud's probation, the order named in the hard rules) and
+option (a) (a no that cannot tell asks the cloud at any P); review round 4
+(an outranked track yes steers nothing, a cannot-tell no on the cloud's
+probation still asks, a later cloud no ends its yes, a late yes escalates
+only its own run, every scene says whether its candidate is refused, explore
+neither sights nor closes in on one, the arrival is the cloud's once it
+spoke -- `tests/test_local_arrival.py` -- and a new release frees the
+question). `tests/test_tier_tree.py` compares the trees with C off |
 | `tests/test_tiered.py` (92) | triggers and hysteresis, call cap, staleness floor, async dispatch and epoch drop, an async failure reaching B3.2, landed verdicts shown once, local bearing beats a stale cloud goal, spin guard never overrides a sighting, timing on the worker |
 | `tests/test_review_376k3.py` (5) | 3.76 K3: a failing cloud (not fatal, explore) hands a frame's question back to the local tier; no frame question goes out beside an arrival identity call still running, and it is asked once that ends (a candidate's edge too); close-in's refusals before an accepted goal do not count after it, and an estimate that flips still trips the bound |
 | `tests/test_vision_policy.py` (39) | visible is not found; absent `obstacle_ahead` is `unknown`; room guess backfill and `searched_rooms`; the policy does not peek; replay missions |
@@ -735,6 +853,25 @@ metric (distance closed, arrival); if a step size changes, re-check every
 threshold counted in steps.
 
 ## Known gaps
+
+- **3.91.C's cloud-only re-asks (criterion 7, failed on that arm).** On a
+  phone a candidate lost for 3 frames is a new candidate, and perception's
+  close-range blind spot loses the same bag that often: the taupe walk's
+  replay re-asked the cloud 7 times (11 calls, bar 4). With the local tier
+  first (3.80's order) it costs 2. A held cloud REVERSE stays the held goal
+  while a no is held (the cloud's own search action).
+- **3.91.C, open by the user's choice (2026-10-23):** with odometry a no is
+  released only by moving or turning, so a robot that cannot (a refused
+  pivot, a wedge) while facing the refused candidate asks nothing, not even
+  staleness; the disagreement question is once per candidate run, so a far
+  candidate lost and found again can be asked about again after each
+  release. A held no does not stop arrival's rule (rule 4): a refused
+  candidate centred inside the radius still gets the identity check -- since
+  amendment 5 the cloud's, when the cloud has spoken about it. A cloud no
+  held with odometry blocks the local VLM's box too (even with perception
+  silent) until the body moves 0.5 m or turns 30 deg; option (a) costs one
+  cloud call per candidate run and release, not per object (a far object
+  flickering on a phone: 3 calls where `dev` made 0).
 
 - **Explore's ask mode (3.88 A), kept as is after review:** the pool is
   frozen at the opening and sent up to `explore_ask_timeout_s` later with

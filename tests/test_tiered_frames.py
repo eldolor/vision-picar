@@ -206,7 +206,11 @@ def test_d2_in_vocabulary_keeps_the_cold_search_bar():
 def test_d3_every_trigger_goes_to_the_local_vlm_first(answer):
     # start on 1, cold search on 4, candidate on 6, staleness on 11.
     frames = ([P(ABSENT)] * 4 + [P(DETECTED, bearing=0.0)] * 8)
-    tier, cloud = tier_for(frames, Local(answer), cold_search_after=3, stale_after=4)
+    # The routing only: 3.91.C's remembered no would keep a no about the
+    # candidate from being asked again by staleness
+    # (tests/test_tier_remember_no.py).
+    tier, cloud = tier_for(frames, Local(answer), cold_search_after=3, stale_after=4,
+                           remember_no=False)
     play(tier, len(frames))
     got = asked(tier)
     for t in (TRIGGER_START, TRIGGER_COLD_SEARCH, TRIGGER_CANDIDATE, TRIGGER_STALE):

@@ -439,3 +439,33 @@ def test_review3_tracking_frames_do_not_build_a_cold_search():
     for _ in range(12):                             # no answer lands meanwhile
         assert tier._trigger_for(absent) == TRIGGER_TRACK
     assert tier._absent_streak < tier._cold_search_bar()
+
+
+def test_391c_once_the_cloud_spoke_the_arrival_is_the_clouds():
+    # 3.91.C, the tiers' order (the user, 2026-10-24): a perception-led
+    # arrival asks the local VLM first -- unless the cloud has answered about
+    # this candidate; then the cloud decides.
+    from brain.agent import MissionAgent
+    from brain.memory import MissionMemory
+    from brain.arrival import SOURCE_PERCEPTION
+    calls = []
+
+    def confirm(frame, local_ok=True):
+        calls.append(local_ok)
+        return {"confirmed": True, "cloud_called": not local_ok}
+
+    class Vision:
+        spoke = False
+
+        def cloud_spoke(self):
+            return self.spoke
+
+    grid = build_world("scaled_house")
+    agent = MissionAgent(MockRobot(grid, render=False),
+                         MissionMemory(mission="m", target_object=TARGET),
+                         arrival_confirm_fn=confirm)
+    agent.vision_fn = Vision()
+    agent._confirm_identity({"state": ARRIVED, "source": SOURCE_PERCEPTION}, {})
+    agent.vision_fn.spoke = True
+    agent._confirm_identity({"state": ARRIVED, "source": SOURCE_PERCEPTION}, {})
+    assert calls == [True, False]
