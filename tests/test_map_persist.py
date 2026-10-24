@@ -1324,3 +1324,11 @@ def test_the_bridge_can_bind_loopback_only():
         src = f.read()
     assert 'os.environ.get("BRIDGE_HOST", "0.0.0.0")' in src
     assert "ThreadingHTTPServer((host, port)" in src
+
+
+def test_a_latched_bridge_refuses_a_trigger_but_not_a_person(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b._remap_latched = True
+    assert b.remap("entered_unknown", {})[0] == 409
+    assert b.remap("contradiction", {})[0] == 409
+    assert b.remap("request")[0] == 200

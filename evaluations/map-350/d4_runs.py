@@ -222,8 +222,9 @@ def reload(house, maps, movers=""):
 
 def known_free_share(robot, cells, whole=False):
     """Share of `cells` free (0) on the robot's /world/map: judged at each
-    cell's centre, or with `whole` at a 5 x 5 grid of points over the whole
-    0.3 m cell (an object's footprint: all of it must read free)."""
+    cell's centre, or with `whole` at a 5 x 5 grid of points over the middle
+    0.18 m of the 0.3 m cell (the object's footprint less 6 cm at each edge,
+    which a wall cell beside a jamb may reach)."""
     m = robot.get("/world/map").json()
     if not m.get("usable"):
         return None
@@ -338,18 +339,19 @@ def run_a(house):
     # Entry: the truth's first point in the reloaded map's unknown (10 Hz).
     # Start: the bridge's own time its mapping node placed the robot (one
     # kernel clock with this host under host networking; else the sampler's).
-    bridge_entry = next((r["at"] for r in s.remaps if r.get("trigger") == "entered_unknown"
-                         and r.get("at")), None)
-    # The bridge's own entry time only when the watcher saw none, and only on
-    # one clock with it (Linux, host networking).
-    entry = entered_at[0] or (bridge_entry if sys.platform.startswith("linux") else None)
+    # Entry on the truth only (review, CLAUDE.md section 6): the bridge's own
+    # entered-unknown report is the trigger under test, never its judge.
+    entry = entered_at[0]
     mapped = next((r for r in s.remaps if r.get("result") == "mapping"), {})
     sampled = next((t for st, t in s.states if st == ("ready", "mapping")), None)
-    mapping_at = (mapped.get("mapping_at") if sys.platform.startswith("linux") else None) or sampled
-    out["entry_from"] = "truth" if entered_at[0] else ("bridge" if entry else None)
+    from_bridge = mapped.get("mapping_at") if sys.platform.startswith("linux") else None
+    mapping_at = from_bridge or sampled
+    out["entry_from"] = "truth" if entry else None
+    out["mapping_at_from"] = "bridge" if from_bridge else ("sampler" if sampled else None)
     out["saved_first_known_cells"] = sum(1 for v in saved_first["cells"] if v != -1)
     out["entered_unknown_at"], out["mapping_at"] = entry, mapping_at
     out["remap_after_entry_s"] = (round(mapping_at - entry, 2) if mapping_at and entry else None)
+    # A label only: `timely` already accepts a re-map mapping before entry.
     out["already_mapping_at_entry"] = bool(mapping_at and entry and mapping_at <= entry)
     # Run 2's save, read back through a reload.
     robot, brain, bridge, out["session3"] = reload(house, maps)
@@ -452,6 +454,8 @@ def run_c(house="home_first_floor", base_maps=None):
             sess["error"] = "reload did not match"
             out["sessions"].append(sess)
             continue
+        m0 = health(bridge)["map"]
+        ends_before = m0["saved"] + m0["skipped"] + m0["failed"]
         with Sampler(robot, bridge, house) as s:
             r = robot.post("/world/remap", headers={"x-driver": "twin-dpad"})
             sess["remap_request"] = {"code": r.status_code, "body": r.json()}
@@ -462,8 +466,6 @@ def run_c(house="home_first_floor", base_maps=None):
                 time.sleep(0.3)
             sess["remap"] = remap_rec(bridge)
             de.MISSION_LIMIT_S = WATCH_S
-            m0 = health(bridge)["map"]
-            ends_before = m0["saved"] + m0["skipped"] + m0["failed"]
             sess["mission"] = de.run_mission(robot, house, policy="explore", target=ABSENT,
                                              max_steps=100000)
         t = time.time()                         # this session's own save
@@ -540,13 +542,23 @@ def run_d(house):
 def check_image():
     """The image must carry this checkout's bridge (review): an older one has
     no `mapping_at` (D4-a would read FAILED) and ignores BRIDGE_HOST."""
+    import hashlib
     import subprocess
-    with open(os.path.join(ROOT, "service/slam/src/picar_bridge/picar_bridge/bridge.py"), "rb") as f:
-        here = f.read()
-    r = subprocess.run(["docker", "run", "--rm", "--entrypoint", "cat", d3.IMAGE,
-                        "/ws/src/picar_bridge/picar_bridge/bridge.py"], capture_output=True)
-    if r.returncode != 0 or r.stdout != here:
-        raise SystemExit(f"{d3.IMAGE} does not carry this checkout's bridge.py: rebuild it "
+    pkg = os.path.join(ROOT, "service/slam/src/picar_bridge/picar_bridge")
+    here = {}
+    for name in sorted(os.listdir(pkg)):
+        if name.endswith(".py"):
+            with open(os.path.join(pkg, name), "rb") as f:
+                here[name] = hashlib.sha256(f.read()).hexdigest()
+    try:
+        r = subprocess.run(["docker", "run", "--rm", "--entrypoint", "sh", d3.IMAGE, "-c",
+                            "cd /ws/src/picar_bridge/picar_bridge && sha256sum *.py"],
+                           capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise SystemExit(f"cannot read {d3.IMAGE}: {e}")
+    there = {ln.split()[1]: ln.split()[0] for ln in r.stdout.splitlines() if ln.strip()}
+    if r.returncode != 0 or there != here:
+        raise SystemExit(f"{d3.IMAGE} does not carry this checkout's picar_bridge: rebuild it "
                          "(docker build -t $ROS_IMAGE service/slam)")
 
 

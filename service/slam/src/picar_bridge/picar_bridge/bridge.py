@@ -1220,6 +1220,11 @@ class Bridge(Node):
                 return 409, {"error": "re-map only from a reloaded map being localised on "
                                       f"(slam {self.slam_state}, mode {mode})",
                              "slam": self.slam_state, "mode": mode}
+            if trigger != "request" and self._remap_latched:
+                # Review: the watch read "not latched" before a failed re-map
+                # latched; a person may still ask, a trigger may not.
+                return 409, {"error": "automatic re-maps are off after a failed one",
+                             "slam": self.slam_state, "mode": mode}
             self.slam_state = "remapping"
             version = self._remap_version
             record = {"trigger": trigger, "at": time.time(), "map_id": version.map_id,
