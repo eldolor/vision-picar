@@ -331,8 +331,7 @@ class Bridge(Node):
         # by the poll and the watch, once per stamp, under self.lock.
         self._remap_pending = collections.deque()
         self._remap_queued_ns = None         # the newest stamp queued
-        self._remap_queue_for = None         # the tracker the queue is for
-        self._remap_dropped = {"no_tf": 0, "overflow": 0}
+        self._remap_dropped = {"no_tf": 0, "overflow": 0}   # this tracker's
         self._rest_clock = remap.RestClock(REST_LINEAR_M_S, REST_ANGULAR_RAD_S, REMAP_REST_S,
                                            1.0 / SCAN_HZ, REST_ODOM_MAX_AGE_S)
         self._remap_latched = False      # a re-map failed: no automatic one again (review)
@@ -1089,7 +1088,7 @@ class Bridge(Node):
             self.reload_matched = True
             self._remap_version = saved
             self._remap_saved = frozen
-            self._remap_tracker = remap.Contradictions(frozen) if frozen else None
+            self._set_tracker(remap.Contradictions(frozen) if frozen else None)
             self.slam_state = "ready"
         self.get_logger().info(f"reloaded map {saved.map_id} v{saved.version} at the dock "
                                f"({verdict['agreement']:.0%} of returns on the map)")
@@ -1099,7 +1098,8 @@ class Bridge(Node):
             self.slam_state = "starting"
             self.reload_matched = False
             self.reload_start_truth = None
-            self._remap_version = self._remap_saved = self._remap_tracker = None
+            self._remap_version = self._remap_saved = None
+            self._set_tracker(None)
             self._reload_map = None
             # A fallen-back reload's map_id is not this map's: a new one
             # before the swap, so no save can file a fresh graph under it.
@@ -1192,35 +1192,34 @@ class Bridge(Node):
                                         throttle_duration_sec=10.0)
             time.sleep(REMAP_WATCH_S)
 
+    def _set_tracker(self, tracker) -> None:
+        """The one place the watch's tracker changes (call under self.lock):
+        the queue and the drop counts are the old tracker's, so they go with
+        it (review round 4)."""
+        self._remap_tracker = tracker
+        self._remap_pending.clear()
+        self._remap_queued_ns = None
+        self._remap_dropped = {"no_tf": 0, "overflow": 0}
+
     def _queue_scan(self, scan) -> None:
-        """File a scan for the watch, once per stamp (call under self.lock)."""
+        """File a scan for the watch (call under self.lock). Only a repeat of
+        the stamp just filed is refused: a clock stepping back must not
+        blind the watch (review round 4)."""
         if self._remap_tracker is None or scan is None or scan.get("stamp_ns") is None:
             return
-        if self._remap_queued_ns is not None and scan["stamp_ns"] <= self._remap_queued_ns:
+        if scan["stamp_ns"] == self._remap_queued_ns:
             return
-        if self._remap_queue_for is not self._remap_tracker:
-            self._remap_pending.clear()          # filed for a tracker since replaced
-            self._remap_queue_for = self._remap_tracker
         if len(self._remap_pending) >= REMAP_PENDING_MAX:
             self._remap_pending.popleft()
             self._remap_dropped["overflow"] += 1
         self._remap_pending.append(scan)
         self._remap_queued_ns = scan["stamp_ns"]
 
-    def _pending_head(self, tracker):
-        """The oldest queued scan for `tracker`, or None; a queue filed for
-        another tracker (a re-map, a fall-back) is emptied first."""
-        with self.lock:
-            if self._remap_queue_for is not tracker:
-                self._remap_pending.clear()
-                self._remap_queue_for = tracker
-            return self._remap_pending[0] if self._remap_pending else None
-
     def remap_step(self, seen):
         """One look: the robot's centre against the saved map's unknown,
         then the queued scans, oldest first, against its cells, as far as TF
-        and odometry have passed them. Returns the newest stamp queued (the
-        poll queues too; `seen` is only carried through)."""
+        and odometry have passed them. Returns the newest stamp queued, on
+        every path (`seen` is the caller's last answer, unused)."""
         with self.lock:
             watching = (self.slam_state == "ready" and self.slam is not None
                         and self.slam.mode == "localisation" and self._remap_saved is not None
@@ -1234,16 +1233,17 @@ class Bridge(Node):
                 self._queue_scan(self.last_scan)
             queued = self._remap_queued_ns
         if not watching:
-            return seen if queued is None else queued
+            return queued
         here = self._fresh_pose()
         if here is not None and remap.entered_unknown(saved, here["x_m"], here["y_m"]):
             self._ask_remap("entered_unknown",
                             {"pose_m": [round(here["x_m"], 3), round(here["y_m"], 3)]})
-            return seen
+            return queued
         while True:
-            s = self._pending_head(tracker)
-            if s is None:
-                break
+            with self.lock:
+                if self._remap_tracker is not tracker or not self._remap_pending:
+                    break                   # a new tracker since this look began: its own next
+                s = self._remap_pending[0]
             old = time.time() - s["at"] > REMAP_SCAN_MAX_AGE_S
             laser = self._laser_in_map(Time(nanoseconds=s["stamp_ns"]))
             if laser is None and not old:
@@ -1253,8 +1253,13 @@ class Bridge(Node):
             if laser is not None and still is None and not old:
                 break                       # odometry not past its revolution yet
             with self.lock:
-                if self._remap_pending and self._remap_pending[0] is s:
-                    self._remap_pending.popleft()
+                # Taken off before it is judged, and only if still this
+                # tracker's head: one the poll pushed out meanwhile was
+                # counted `overflow` and is not judged as well (review round 4).
+                if (self._remap_tracker is not tracker or not self._remap_pending
+                        or self._remap_pending[0] is not s):
+                    continue
+                self._remap_pending.popleft()
                 if laser is None:
                     self._remap_dropped["no_tf"] += 1
             if laser is None:
@@ -1419,7 +1424,8 @@ class Bridge(Node):
             self._remap_failed(version, record, pose, mo, e)
             return
         with self.lock:
-            self._remap_saved = self._remap_tracker = None
+            self._remap_saved = None
+            self._set_tracker(None)
             self.remap_record = {**record, "result": "mapping", "mapping_at": time.time(),
                                  "took_s": round(time.monotonic() - t0, 2)}
             self.slam_state = "ready"
@@ -1471,7 +1477,7 @@ class Bridge(Node):
             # The watch starts over on the same frozen map: its window held
             # scans of the node just replaced.
             if self._remap_saved is not None:
-                self._remap_tracker = remap.Contradictions(self._remap_saved)
+                self._set_tracker(remap.Contradictions(self._remap_saved))
             self.remap_record = {**record, "result": "failed_localising", "error": err}
             self.slam_state = "ready"
             why, self._save_after_remap = self._save_after_remap, None

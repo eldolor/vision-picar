@@ -1162,7 +1162,7 @@ def test_no_watch_without_a_matched_reload(bridge_mod, monkeypatch, tmp_path):
     monkeypatch.setattr(bridge_mod, "MAP_RELOAD", False)
     b.start_slam()
     assert b._remap_saved is None and b.health()[1]["slam"]["watch"] is None
-    assert b.remap_step("x") == "x"
+    assert b.remap_step("x") is None                    # nothing queued, nothing judged
 
 
 def test_the_detector_has_a_hold_time():
@@ -1478,9 +1478,10 @@ def test_the_replay_uses_the_bridges_rest_constants(bridge_mod):
     rp = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(rp)
     assert (rp.REST_LIN, rp.REST_ANG, rp.REST_S, rp.SCAN_HZ, rp.ODOM_MAX_AGE_S,
-            rp.SCAN_MAX_AGE_S) == (
+            rp.SCAN_MAX_AGE_S, rp.WATCH_S) == (
         bridge_mod.REST_LINEAR_M_S, bridge_mod.REST_ANGULAR_RAD_S, bridge_mod.REMAP_REST_S,
-        bridge_mod.SCAN_HZ, bridge_mod.REST_ODOM_MAX_AGE_S, bridge_mod.REMAP_SCAN_MAX_AGE_S)
+        bridge_mod.SCAN_HZ, bridge_mod.REST_ODOM_MAX_AGE_S, bridge_mod.REMAP_SCAN_MAX_AGE_S,
+        bridge_mod.REMAP_WATCH_S)
 
 
 def _queue(b, stamps_s, pose=(0.0, 0.0, 0.0), age_s=0.0):
@@ -1514,7 +1515,8 @@ def test_the_queue_empties_when_the_watch_stops_or_its_tracker_changes(bridge_mo
     b._remap_retry_at = 0.0
     _queue(b, [1000.2, 1000.3])
     old = b._remap_tracker
-    b._remap_tracker = remap.Contradictions(b._remap_saved)          # a re-map's fall-back
+    with b.lock:
+        b._set_tracker(remap.Contradictions(b._remap_saved))         # a re-map's fall-back
     monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
     _rest_clock_still(b)
     b.remap_step(None)
@@ -1542,3 +1544,27 @@ def test_a_stamp_jumping_back_starts_the_rest_clock_over():
     for k in range(20):
         rc.on_odom(50.0 + k * 0.05, 0.0, 0.0)             # back 51 s
     assert rc.start == 50.0 and rc.still_for(50.6) is True and not rc.done
+
+
+def test_a_clock_stepping_back_does_not_blind_the_watch(bridge_mod, monkeypatch, tmp_path):
+    """Review round 4: only a repeat of the stamp just filed is refused."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    _queue(b, [1000.0, 1000.0, 970.0, 970.1])            # a repeat, then 30 s back
+    b.remap_step(None)
+    assert b._remap_tracker.scans == 3
+
+
+def test_a_new_tracker_starts_its_own_counts(bridge_mod, monkeypatch, tmp_path):
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)
+    _queue(b, [1000.0, 1000.1], age_s=1.0)
+    b.remap_step(None)
+    assert b.health()[1]["slam"]["watch"]["no_tf"] == 2
+    with b.lock:
+        b._set_tracker(remap.Contradictions(b._remap_saved))
+    w = b.health()[1]["slam"]["watch"]
+    assert (w["scans"], w["no_tf"], w["overflow"]) == (0, 0, 0)

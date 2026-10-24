@@ -142,7 +142,7 @@ def start_recorder(secs, out):
         print("recorder:", r.stdout.strip(), r.stderr.strip()[-1500:], flush=True)
         # The node prints its counts only once the pickle is written: a
         # non-zero exit after that (rclpy's shutdown) loses nothing (review).
-        if r.returncode != 0 and not r.stdout.strip().startswith("maps "):
+        if r.returncode != 0 and not any(ln.startswith("maps ") for ln in r.stdout.splitlines()):
             raise RuntimeError(f"the recorder node exited {r.returncode}: {r.stderr.strip()[-300:]}")
         subprocess.run(["docker", "cp", f"{de.CONTAINER}:/tmp/rec.pkl", out], check=True)
     subprocess.run(["docker", "rm", "-f", de.CONTAINER], capture_output=True)

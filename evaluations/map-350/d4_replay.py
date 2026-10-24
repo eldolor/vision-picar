@@ -31,7 +31,7 @@ LIDAR_X_M = 0.04
 # REST_ODOM_MAX_AGE_S, REMAP_SCAN_MAX_AGE_S (bridge.py needs rclpy, so they
 # are repeated here; tests/test_map_persist.py checks they agree).
 REST_LIN, REST_ANG, REST_S, SCAN_HZ, ODOM_MAX_AGE_S = 0.01, 0.02, 0.5, 10.0, 0.5
-SCAN_MAX_AGE_S = 0.5
+SCAN_MAX_AGE_S, WATCH_S = 0.5, 0.05
 
 
 def grid(m):
@@ -83,8 +83,11 @@ def still_flags(rec):
             got = od[k][3]                       # when that message reached the bridge
             k += 1
         decided = rc.still_for(cap)
-        # The deciding message had to arrive before the bridge gave up.
-        out[s["stamp_ns"]] = bool(decided) and got <= s["at"] + SCAN_MAX_AGE_S
+        # The deciding message had to arrive before the bridge gave up: at
+        # its first look (every WATCH_S) after SCAN_MAX_AGE_S. Approximate
+        # at that edge, and TF waits are not modelled (the recorder kept
+        # only scans whose transform came within 0.5 s, as the bridge does).
+        out[s["stamp_ns"]] = bool(decided) and got <= s["at"] + SCAN_MAX_AGE_S + WATCH_S
     return [out[s["stamp_ns"]] for s in rec["scans"]]
 
 
