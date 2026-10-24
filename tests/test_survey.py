@@ -515,7 +515,7 @@ def test_the_cloud_label_source_asks_room_with_the_frame_and_the_secret():
     assert seen["url"] == "https://vision.example/room"
     assert seen["secret"] == "s3"
     assert seen["body"] == {"image_base64": "aW1n", "media_type": "image/png"}
-    assert sum(seen["timeout"].values()) <= 12.0 + 1e-9     # phases add up to the timeout
+    assert seen["timeout"]["read"] == 12.0      # the reply gets the whole budget
 
 
 @pytest.mark.parametrize("reply", [{"room": "unknown"}, {"room": "Unclear"}, {"room": ""},
@@ -771,15 +771,67 @@ def test_asks_skipped_for_time_are_counted_on_the_status():
     runner.stop()
 
 
-def test_the_room_call_s_phases_add_up_to_its_timeout():
+def test_a_hung_room_call_gives_the_tick_back_on_time():
+    """httpx's timeouts are per phase and per gap between bytes, so the
+    call itself is bounded on the wall clock: the tick waits timeout_s at
+    most, and an answer that never came is an outage (back-off)."""
+    import time as _time
     import httpx
-    from brain.navigate import room_label_fn_for
-
-    seen = {}
+    from brain.navigate import CloudUnavailable, room_label_fn_for
 
     def handler(request):
-        seen.update(request.extensions["timeout"])
+        _time.sleep(1.5)
         return httpx.Response(200, json={"room": "kitchen"})
 
-    room_label_fn_for("https://v", timeout_s=15.0, client=_room_client(handler))({"image_base64": "aW1n"})
-    assert sum(seen.values()) <= 15.0 + 1e-9
+    fn = room_label_fn_for("https://v", timeout_s=0.3, client=_room_client(handler))
+    t0 = _time.monotonic()
+    with pytest.raises(CloudUnavailable):
+        fn({"image_base64": "aW1n"})
+    assert _time.monotonic() - t0 < 1.0
+
+
+def test_the_same_frame_refusal_three_times_running_stops_the_asking():
+    import httpx
+    from brain.navigate import room_label_fn_for
+    from brain.room_labels import SourceRefused
+
+    fn = room_label_fn_for("https://v", client=_room_client(lambda r: httpx.Response(413)))
+    for _ in range(2):
+        with pytest.raises(RuntimeError) as e:
+            fn({"image_base64": "aW1n"})
+        assert not isinstance(e.value, SourceRefused)
+    with pytest.raises(SourceRefused):
+        fn({"image_base64": "aW1n"})
+
+
+def test_a_422_is_a_frame_refusal_too():
+    import httpx
+    from brain.navigate import room_label_fn_for
+    from brain.room_labels import SourceRefused
+
+    fn = room_label_fn_for("https://v", client=_room_client(lambda r: httpx.Response(422)))
+    with pytest.raises(RuntimeError) as e:
+        fn({"image_base64": "aW1n"})
+    assert not isinstance(e.value, SourceRefused)
+
+
+def test_no_skip_is_counted_when_no_ask_was_due():
+    runner, _robot, _grid = _survey(room_label_fn=lambda f: "kitchen", room_label_timeout_s=15.0,
+                                    room_label_max_calls=1)
+    runner.tick_timeout_s = 30.0
+    runner.start()
+    for _ in range(10):
+        runner.tick()                      # the one call is spent: capped
+    assert runner.room_labeller.capped
+    runner.tick_timeout_s = 3.0
+    for _ in range(10):
+        runner.tick()
+    assert runner.status()["survey"]["skipped_for_time"] == 0
+    runner.stop()
+
+
+@pytest.mark.parametrize("raw, expected", [('The "kitchen"', "kitchen"), ("A.", "unclear"),
+                                           ("the", "unclear")])
+def test_an_article_and_its_quotes_are_no_second_spelling(raw, expected):
+    from brain.room_labels import clean_room_name
+    assert clean_room_name(raw) == expected

@@ -90,12 +90,13 @@ def clean_room_name(name) -> str:
     ("The kitchen" and "kitchen" are one room, 3.76 L2); a reply naming no
     room is UNCLEAR."""
     name = " ".join(name.split()).lower() if isinstance(name, str) else ""
-    name = name.strip(" *_`\"'.,:;!?")
+    marks = " *_`\"'.,:;!?"
+    name = name.strip(marks)
     for article in _ARTICLES:
         if name.startswith(article):
-            name = name[len(article):]
+            name = name[len(article):].strip(marks)
             break
-    return UNCLEAR if name in _NO_ROOM else name
+    return UNCLEAR if name in _NO_ROOM or name + " " in _ARTICLES else name
 # The map's rooms are re-cut at most this often (on the labeller's clock):
 # a cut is pure Python, ~0.2-0.9 s on a 200-400 cell square map, and a SLAM
 # map changes -- size and origin too -- about once a second while the robot
@@ -351,6 +352,7 @@ class RoomLabeller:
         self.capped = False            # the cap was reached: no more asks
         self.no_source = False         # NO_SOURCE seen: no more asks, no frames
         self.source_error: Optional[str] = None   # why a SourceRefused stopped it
+        self.skipped_for_time = 0      # asks due but skipped: `fits()` said no
         self._cut: Optional[_Cut] = None
         self._geo = None               # spacing: (cut, seeds counted, distances)
         self._retry_at: Optional[float] = None
@@ -403,7 +405,8 @@ class RoomLabeller:
 
     def observe(self, m: Optional[dict], pose: Optional[dict],
                 look: Callable[[], Optional[dict]],
-                alive: Callable[[], bool] = lambda: True) -> Optional[str]:
+                alive: Callable[[], bool] = lambda: True,
+                fits: Callable[[], bool] = lambda: True) -> Optional[str]:
         """Called once a step with the map and the robot's pose. If the
         robot stands in space no ask covers, `look()` takes the frame to ask
         about -- now, at this pose; None means do not ask -- and the answer
@@ -424,8 +427,17 @@ class RoomLabeller:
         x, y = pose["x_m"], pose["y_m"]
         if not self._wants(m, x, y):
             return None
+        # An ask is due. `fits()` -- the caller's: does a paid call still end
+        # inside its loop's deadline? -- before the frame and again after
+        # it; a skip is counted (`skipped_for_time`), a later step asks.
+        if not fits():
+            self.skipped_for_time += 1
+            return None
         frame = look()
         if frame is None or not alive():
+            return None
+        if not fits():
+            self.skipped_for_time += 1
             return None
         self.calls += 1                # counted when SENT: a failed paid call may be billed
         try:
@@ -495,5 +507,6 @@ class RoomLabeller:
                 "label_call_limit": self.max_calls, "capped": self.capped,
                 "no_source": self.no_source,
                 "source_error": self.source_error,
+                "skipped_for_time": self.skipped_for_time,
                 "rooms_named": sorted({n for _x, _y, n in self.seeds if n != UNCLEAR}),
                 "seeds": [list(s) for s in self.seeds]}

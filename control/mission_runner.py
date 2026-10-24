@@ -636,7 +636,6 @@ class MissionRunner:
         # what is left of the tick's deadline waits for a later tick (review).
         self.room_label_timeout_s = room_label_timeout_s
         self._tick_began = time.monotonic()
-        self._label_skips = 0          # asks skipped for lack of tick (status)
         # WORLD state, and the first consumer `control/` has ever had for it
         # (`PLAN-mapping.md` N1 built the routes; nothing here read them).
         # Optional and defaulting to `NullWorld()` rather than None, so every
@@ -1038,7 +1037,7 @@ class MissionRunner:
         if self.memory.is_complete():
             self._finish(FOUND if self.memory.found else ROOM_REACHED, self.memory.summary())
             return False
-        if self.room_labeller is not None and self._label_alive():
+        if self.room_labeller is not None and self.is_running():
             # The pose now, and -- only if it asks -- a frame taken now: the
             # step's own frame was taken before its move. A label is never
             # worth a survey: any error here (the pose, the frame, the label
@@ -1046,7 +1045,7 @@ class MissionRunner:
             try:
                 name = self.room_labeller.observe(getattr(self.agent, "_last_map", None),
                                                   self.world.get_pose(), self._label_frame,
-                                                  alive=self._label_alive)
+                                                  alive=self.is_running, fits=self._label_fits)
                 if name is not None:
                     self._log_line(f"room label {self.room_labeller.calls}: {name}")
             except Exception:  # noqa: BLE001 -- see above
@@ -1357,8 +1356,7 @@ class MissionRunner:
                 "job": self.job,
                 # 3.70 S2: a survey's room labels -- how many asks, the cap,
                 # whether it was reached, and the names so far.
-                "survey": ({**self.room_labeller.status(), "skipped_for_time": self._label_skips}
-                           if self.room_labeller else None),
+                "survey": (self.room_labeller.status() if self.room_labeller else None),
                 "mission": self.memory.mission,
                 "target_object": self.memory.target_object,
                 "target_room": self.memory.target_room,
@@ -2224,17 +2222,6 @@ class MissionRunner:
             return True
         spent = time.monotonic() - self._tick_began
         return spent + self.room_label_timeout_s + self.LABEL_TICK_MARGIN_S <= deadline
-
-    def _label_alive(self) -> bool:
-        """Running, and the label call still fits the tick -- checked before
-        the pose, the cut and the frame, and again after them (`observe`'s
-        `alive`). A skip for time is counted, never silent."""
-        if not self.is_running():
-            return False
-        if not self._label_fits():
-            self._label_skips += 1
-            return False
-        return True
 
     def _label_frame(self) -> Optional[dict]:
         """The frame a survey's room label is asked about, taken now -- or
