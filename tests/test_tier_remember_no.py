@@ -177,6 +177,7 @@ def _held(by, episode=1, rank=None):
 
 def test_a_local_yes_forgets_a_local_no():
     tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(yes()))
+    tier._episode = 1                       # the run the answer is about
     tier._rejection = _held("local")
     tier._apply_local(_local_answer(yes()))
     assert tier._rejection is None and tier.stats.releases == {"yes": 1}
@@ -655,6 +656,7 @@ def test_probation_reads_false_once_its_run_is_lost():
 
 def test_a_local_yes_does_not_lift_the_clouds_no():
     tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(yes()))
+    tier._episode = 1                       # the run both answers are about
     tier._rejection = _held("cloud")
     tier._apply_local(_local_answer(yes(frac=[0.4, 0.4, 0.6, 0.6])))
     assert tier._rejection is not None and tier.stats.releases == {}
@@ -729,6 +731,7 @@ def test_a_local_track_yes_steers_nothing_while_the_cloud_holds_a_no():
     # Round 4 let it steer and the red replay reversed 3 times: with
     # perception silent, nothing says the box is not the refused object.
     tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(yes()))
+    tier._episode = 1                       # the run both answers are about
     tier._rejection = _held("cloud")
     tier._apply_local(_local_answer(yes(frac=[0.6, 0.4, 0.8, 0.6]), detected=False))
     assert tier._rejection is not None and tier.stats.releases == {}
@@ -793,6 +796,7 @@ def test_the_arrival_goes_to_the_cloud_once_the_cloud_spoke():
     assert tier.cloud_spoke() is None
     tier._reject("cloud", None, 2)
     tier._remask(D())                            # the frame shows that run
+    tier._perception_this_frame = D()
     assert tier.cloud_spoke() == "no"            # refused without a call
     tier._release("lost")
     assert tier._probation_by == "cloud" and tier.cloud_spoke() == "ask"
@@ -810,6 +814,7 @@ def test_cloud_spoke_is_off_with_remember_no_off_and_at_a_spent_cap():
     assert capped.cloud_spoke() is None          # no answer can come: the local tier
     capped._reject("cloud", None, 1)
     capped._remask(D())
+    capped._perception_this_frame = D()
     assert capped.cloud_spoke() == "no"          # a held no still refuses free
 
 
@@ -822,6 +827,7 @@ def test_the_arrivals_cloud_no_is_remembered():
     assert verdict["confirmed"] is False
     assert tier._rejection is not None and tier._rejection["by"] == "cloud"
     tier._remask(D())
+    tier._perception_this_frame = D()
     assert tier.cloud_spoke() == "no"
 
 
@@ -877,6 +883,7 @@ def test_only_the_clouds_own_no_about_the_run_in_view_refuses_free():
     tier._lost, tier._episode = 0, 1
     tier._reject("cloud", Pose(0.0, 0.0, 0.0), 1)
     tier._remask(D())
+    tier._perception_this_frame = D()
     assert tier.cloud_spoke() == "no"
     tier._episode = 2                     # a new run, the no still held (odometry)
     assert tier.cloud_spoke() == "ask"    # asked, not refused: maybe the target
@@ -887,6 +894,7 @@ def test_only_the_clouds_own_no_about_the_run_in_view_refuses_free():
     renewed._probation, renewed._probation_episode, renewed._probation_by = True, 3, "cloud"
     renewed._reject("local", None, 3)
     renewed._remask(D())
+    renewed._perception_this_frame = D()
     assert renewed._rejection["rank"] == "cloud" and renewed.cloud_spoke() == "ask"
 
 
@@ -904,3 +912,39 @@ def test_an_arrival_answer_is_about_what_was_in_view_when_asked():
     tier.confirm_vision_fn = late
     tier.confirm_cloud({"image_base64": "x"})
     assert tier._rejection is None
+
+
+# --- review round 7 -------------------------------------------------------------
+
+def test_a_late_yes_about_an_ended_run_lifts_nothing():
+    tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()))
+    tier._lost, tier._episode = 0, 2
+    tier._reject("cloud", None, 2)
+    assert tier._on_yes("cloud", 1) is False          # about run 1, landing in run 2
+    assert tier._rejection is not None and tier.stats.releases == {}
+
+
+def test_a_far_no_ends_only_the_probation_of_its_own_run():
+    tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()))
+    tier._lost, tier._episode = 0, 5
+    tier._probation, tier._probation_episode, tier._probation_by = True, 5, "local"
+    tier._apply_local(_local_answer(no(), episode=4, share=0.05))   # about run 4
+    assert tier._probation is True
+
+
+def test_the_arrival_refusal_reads_this_frames_perception_not_a_stale_mask():
+    tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()))
+    tier._lost, tier._episode = 0, 1
+    tier._perception_this_frame = D()
+    tier._reject("cloud", None, 1)          # landed on another thread: no remask
+    assert tier._masked is False and tier.cloud_spoke() == "no"
+
+
+def test_with_the_cap_spent_a_cloud_ranked_no_from_another_run_asks_the_local_tier():
+    tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()), max_calls=1)
+    tier._lost, tier._episode = 0, 1
+    tier._reject("cloud", None, 1)
+    tier._episode = 2                       # a new run, the no held (odometry)
+    tier._perception_this_frame = D()
+    tier.stats.cloud_calls = 1
+    assert tier.cloud_spoke() is None

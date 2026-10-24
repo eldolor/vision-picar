@@ -331,11 +331,11 @@ no is held.
   and **the arrival** (`TieredVision.cloud_spoke()`, read by
   `MissionRunner._guarded_confirm` -- the agent's `vision_fn` is the runner's
   wrapper, so the agent's own check works only outside a runner: "no" while
-  the cloud's OWN no about the run in view is held and the frame shows it
-  (not a no outliving its run with odometry, nor a local no renewed at the
-  cloud's rank), and the arrival is refused without a call; "ask" for any
-  other cloud-ranked no, after a cloud yes about this run, or during its
-  probation, and the identity check is the cloud's alone, 3.80.O's path,
+  the cloud's OWN no about the run in view is held and this frame's
+  perception shows it (not a no outliving its run with odometry, nor a local
+  no renewed at the cloud's rank), and the arrival is refused without a
+  call; then None if the cap is spent; "ask" for any other cloud-ranked no,
+  after a cloud yes about this run, or during its probation, and the identity check is the cloud's alone, 3.80.O's path,
   offline ending `arrived_unconfirmed`; None with `remember_no` off or the cap
   spent, local first as before). The arrival's own cloud answer is
   remembered like any other (`confirm_cloud` -> `_learn_from_cloud`, about
@@ -361,7 +361,8 @@ no is held.
   (`_on_yes(by, episode)`: a local yes lifts a local no, only a cloud claim
   lifts the cloud's; an outranked local yes steers nothing, its box
   included, even when perception saw nothing -- nothing then says the box is
-  not the refused object). A release other than a yes arms the candidate
+  not the refused object). A yes about a run that has ended (a late or
+  abandoned answer) lifts nothing. A release other than a yes arms the candidate
   edge again.
 * **Probation** (amendments 3-4): a release by `lost` or `timeout` sets
   `_probation`, with `_probation_by` the released no's rank -- the candidate is asked about as usual but not steered at
@@ -819,7 +820,7 @@ alert colour.
 | `tests/test_arrival_confirmation.py` (9) | Handoff 2026-10-02 1a, scaled house, cloud faked: the right object ends `found` after one `arrival_confirmation` call; a cloud that disagrees refuses the arrival (ends `blocked`, at most 2 confirmation calls); a false-positive run (absent, absent, detected...) cannot end `found` and the same run with an agreeing cloud does; the call is counted; at the call cap it refuses without calling. Spec review 3: under `async_cloud` the confirmation never overlaps a trigger call (peak concurrency 1 with a 0.2 s cloud); a `found` mission's `status.tier.stats` counts it; the paid step is logged `[cloud: arrival_confirmation]`; a refused mission's final `status.arrival` keeps `identity` and its end line does not say "obstructed" |
 | `tests/test_refused_turn_loop.py` (3) | Handoff 5a, starter house: a refused turn is never chosen again from the same spot (was 130 times); with the world the active-search demo finds the backpack in 61 steps (the reference trace); with no world the boxed-in fallback runs instead of a refused LEFT alternating with STOP |
 | `tests/test_tier_tree.py` | 3.94: the tree module's statuses; on 10,000 seeded random states the tree's "what to do this frame" gives exactly the frozen code's scene and state (`tests/tiered_reference.py`), every rung exercised; "when to ask" (3.94.B) the same trigger and state on 10,000 random frame sequences, every trigger fired; "who to ask" (3.94.C) the same scene, state, stats and model calls through the whole `__call__` on 2,500 random runs of 1-10 frames (sync and async, local failures, cloud failures, the cap, calls in flight, a Stop mid-frame); `tier_tree` (3.94.D): the shipped yaml is today's values, sixteen bad trees refused at load (the arrival's band, the scan outside the bounds, a fractional turn, a required rung left out among them), explore's band and bounds kept, the band cap pinned to the arrival's, and order, numbers and `local_yes_at` each take effect; p90 under 1 ms a frame; `describe()` reads settings live; a ladder that chooses nothing raises |
-| `tests/test_tier_remember_no.py` (74) | 3.91.C: a local no stops the steer and the questions about the candidate (off: 9 FORWARDs, staleness re-asks); released on a phone by 3 lost frames (not 2) or 20 s, with odometry by 0.5 m or 30 deg (not by time or loss), and by a yes; probation after a loss or time release until a yes, none after a move, ended by a spent cap; the box range (inclusive, unknown counts); the disagreement question once per candidate, the cloud's answer remembered, off without a local tier or with the bar off; a cloud no remembered sync and async; the taupe loop's shape (<= 1 reversal, <= 4 calls; off >= 5); the settings passed by the brain and bad ones refused; the review's fixes
+| `tests/test_tier_remember_no.py` (78) | 3.91.C: a local no stops the steer and the questions about the candidate (off: 9 FORWARDs, staleness re-asks); released on a phone by 3 lost frames (not 2) or 20 s, with odometry by 0.5 m or 30 deg (not by time or loss), and by a yes; probation after a loss or time release until a yes, none after a move, ended by a spent cap; the box range (inclusive, unknown counts); the disagreement question once per candidate, the cloud's answer remembered, off without a local tier or with the bar off; a cloud no remembered sync and async; the taupe loop's shape (<= 1 reversal, <= 4 calls; off >= 5); the settings passed by the brain and bad ones refused; the review's fixes
 (a yes arms nothing, a countable no settles a disagreement, a reset forgets it,
 no hold timed across two clocks, a late no about an ended run, band frames
 neither lost nor steered at, no disagreement with `remember_no` off, a far
@@ -828,7 +829,9 @@ no while its run is being lost or, with odometry, after it ended; probation
 ending with its run and with a dead local tier under a spent cap; an
 unparsed cloud reply; the disagreement offline, sync and async; the hold
 measured from the landing pose and stamp; masked frames out of the vote;
-off counts nothing; `/health`); round 6 (a far no ends a local probation
+off counts nothing; `/health`); round 7 (a late yes about an ended run lifts
+nothing, a far no ends only its own run's probation, the arrival refusal
+reads this frame's perception, a spent cap asks the local tier); round 6 (a far no ends a local probation
 with the cloud offline; only the cloud's own no about the run in view
 refuses free; an arrival answer is about what was in view when asked); round 5 (through `MissionRunner`: the cloud
 decides once it spoke, a held cloud no refuses free, nothing spoken asks the

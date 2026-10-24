@@ -515,7 +515,7 @@ def test_391c_through_the_runner_a_held_cloud_no_refuses_free():
     try:
         tier._lost, tier._episode = 0, 1
         tier._reject("cloud", None, 1)
-        tier._remask(tier._perception_this_frame or _detected())
+        tier._perception_this_frame = _detected()    # the arrival frame shows that run
         verdict = runner._guarded_confirm(robot.get_camera_frame())
         assert verdict["confirmed"] is False and verdict["cloud_called"] is False
         assert cloud.calls == 0 and identity.asked == 0

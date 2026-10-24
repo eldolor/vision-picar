@@ -84,14 +84,17 @@ case "${1:-}" in
           # earlier run's result beside this run's HEAD -- cleared only once
           # S3 is known to hold this run's results (round 6: a pull after
           # `down`, or a failed listing, emptied C8/).
-          if [ -n "$(aws --region "$REGION" s3 ls "$S3/out/")" ]; then
-            rm -f "$HERE/C8/"*.json "$HERE/C8/"*.log "$HERE/C8/HEAD"
-          else
+          if [ -z "$(aws --region "$REGION" s3 ls "$S3/out/")" ]; then
             echo "no results under $S3/out/ -- nothing pulled" >&2; exit 1
           fi
-          aws --region "$REGION" s3 sync --only-show-errors "$S3/out/" "$HERE/C8/"
-          aws --region "$REGION" s3 sync --only-show-errors "$S3/logs/" "$HERE/C8/"
-          aws --region "$REGION" s3 cp --only-show-errors "$S3/HEAD" "$HERE/C8/HEAD" || true
+          # Into a fresh folder first: a sync that fails leaves C8/ as it was
+          # (review round 7).
+          tmp="$(mktemp -d)"
+          aws --region "$REGION" s3 sync --only-show-errors "$S3/out/" "$tmp/"
+          aws --region "$REGION" s3 sync --only-show-errors "$S3/logs/" "$tmp/"
+          aws --region "$REGION" s3 cp --only-show-errors "$S3/HEAD" "$tmp/HEAD" || true
+          rm -f "$HERE/C8/"*.json "$HERE/C8/"*.log "$HERE/C8/HEAD"
+          mv "$tmp/"* "$HERE/C8/" && rmdir "$tmp"
           if [ $complete = 1 ]; then touch "$HERE/C8/.pulled"; else echo "not all results in yet -- pull again when done"; fi
           ls -la "$HERE/C8" ;;
   down)   bash "$EC2" down

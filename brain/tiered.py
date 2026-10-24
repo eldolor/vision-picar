@@ -1498,6 +1498,11 @@ class TieredVision:
         reversals 1 -> 3). On the cloud's probation it is a disagreement,
         and the cloud is asked."""
         with self._reject_lock:
+            if episode != self._episode:
+                # A yes about a run that has ended (an abandoned arrival call,
+                # an answer landing late) says nothing about what is in view
+                # now: it lifts nothing (review round 7).
+                return False
             r = self._rejection
             if by == "cloud" and self.remember_no:
                 self._cloud_yes_episode = episode
@@ -1551,16 +1556,21 @@ class TieredVision:
             return None
         with self._reject_lock:
             r = self._rejection
+            p = self._perception_this_frame
             if (r is not None and r["by"] == "cloud" and r["episode"] == self._episode
-                    and self._masked):
+                    and p is not None and p.status == DETECTED):
                 # Only the cloud's own no, about the run in view (round 6: with
                 # odometry a no outlives its run, and an arrival at the real
-                # target nearby was refused free and its place dropped).
+                # target nearby was refused free and its place dropped). This
+                # frame's perception, not `_masked`: an answer applied on
+                # another thread after the tick leaves that stale (round 7).
                 return "no"
+            if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
+                # Before "ask" (round 7): with the cap spent the cloud cannot
+                # answer, and its refusal would drop the place.
+                return None
             if r is not None and r["rank"] == "cloud":
                 return "ask"
-            if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
-                return None
             if (self._cloud_yes_episode == self._episode
                     or (self._probation and self._probation_by == "cloud")):
                 return "ask"
@@ -2003,7 +2013,8 @@ class TieredVision:
                                 # cannot vouch for goes up to the cloud, once
                                 # per run; perception steers until it answers.
                                 self._escalate_episode = ans.q.episode
-                                if share < lo and self._probation_by == "local":
+                                if (share < lo and self._probation_by == "local"
+                                        and ans.q.episode == self._probation_episode):
                                     # Amendment 4 (the user, 2026-10-23/24): a
                                     # far no ends a local probation -- the far
                                     # view is where a real target would
