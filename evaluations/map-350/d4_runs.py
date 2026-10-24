@@ -54,6 +54,7 @@ MAP_RUN_S = d3.MAP_RUN_S
 JUMP_M, JUMP_WINDOW_S = 0.5, 2.0          # 3.38's metric at criterion 5's 0.5 m
 WATCH_S = 600                             # D4-d
 REMAP_WITHIN_S = 10.0                     # D4-a
+VIEW_S = 30.0                             # D4-a/b: at rest in view of the door (amendments 3-4)
 MOVERS = {"scaled_house": "hallway_crossing", "home_first_floor": ""}
 # Amendment 3's doors (cells): the room closed for D4-a, the door for D4-b.
 CLOSED_ROOM = {"scaled_house": ("study", [(16, 9), (16, 10), (16, 11)]),
@@ -279,6 +280,18 @@ def close_moves(house, door, room):
     return list(zip(objs[:len(door)], door))
 
 
+def outside(house, door, room):
+    """A free cell two steps out of `room` from its door's middle cell."""
+    w = build_world(house)
+    free, inside = de.free_cells(w), set(w.rooms[room])
+    mid = door[len(door) // 2]
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        c1, c2 = (mid[0] + dx, mid[1] + dy), (mid[0] + 2 * dx, mid[1] + 2 * dy)
+        if c1 in free and c2 in free and c1 not in inside and c2 not in inside:
+            return c2
+    raise RuntimeError(f"no free cell outside {room}'s door {door}")
+
+
 def run_a(house):
     room, door = CLOSED_ROOM[house]
     maps = os.path.join(de.RUN_DIR, f"maps-a-{house}")
@@ -324,6 +337,13 @@ def run_a(house):
     th = threading.Thread(target=watch_entry, daemon=True)
     th.start()
     with Sampler(robot, bridge, house) as s:
+        # Amendment 4: the contradiction trigger judges scans taken at rest
+        # within MAX_RANGE_M, and a door closed in the saved map holds nav2
+        # out of the room (item 2's limit): first VIEW_S at rest outside it.
+        out["to_view"] = goal(robot, *cell_m(outside(house, door, room)), timeout_s=180)
+        t0 = time.time()
+        while time.time() - t0 < VIEW_S and not any(r.get("result") == "mapping" for r in s.remaps):
+            time.sleep(0.5)
         out["goal_in"] = goal(robot, *cell_m(spot), timeout_s=180)
         # Look round the room from its middle, then two more spots in it.
         extra = sorted(room_cells, key=lambda c: -math.dist(c, spot))[:2]
@@ -419,7 +439,7 @@ def run_b(house):
     with Sampler(robot, bridge, house) as s:
         out["to_view"] = goal(robot, *cell_m(a_side), timeout_s=180)
         t0 = time.time()                        # up to 30 s at rest, in view
-        while time.time() - t0 < 30 and not any(r.get("result") == "mapping" for r in s.remaps):
+        while time.time() - t0 < VIEW_S and not any(r.get("result") == "mapping" for r in s.remaps):
             time.sleep(0.5)
         out["remap_before_passes"] = dict(remap_rec(bridge))
         passes = []

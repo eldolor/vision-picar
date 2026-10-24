@@ -295,14 +295,22 @@ again (the user, 2026-10-23) on any of three triggers:
   reloaded map is the localisation node's first `/map` (`_reload_map`),
   frozen (`remap.SavedMap`), because the live `/map` fills those cells as
   the robot drives.
-- **The scans contradict it** (`remap.Contradictions`): each scan, laid at
-  `map -> laser` at its own capture stamp (`last_scan.stamp_ns`), counts
-  *something new* (a return within `MAX_RANGE_M` with no occupied and no
-  unknown cell within `NEW_TOL_M`) and *something gone* (a beam whose
-  return lies `GONE_SHORT_M` past the first occupied cell the map puts on
-  its line, met at `MIN_INCIDENCE_DEG` or more; every occupied cell from
-  there to `GONE_SHORT_M` short of the return is contradicted). Returns
-  into unknown are the first trigger's. A cell is persistent when, over
+- **The scans contradict it** (`remap.Contradictions`): each scan taken
+  with the robot at rest (`Bridge._still_for`: fresh odometry, still for
+  `REMAP_REST_S` before the scan's revolution began; others count
+  `moving`, amendment 4), laid at `map -> laser` at its own capture stamp
+  (`last_scan.stamp_ns`), counts *something new* (a return within
+  `MAX_RANGE_M` with no occupied and no unknown cell within `NEW_TOL_M`)
+  and *something gone* (a beam whose return lies `GONE_SHORT_M` past the
+  first occupied cell the map puts on its line, that cell within
+  `MAX_RANGE_M` and met at `MIN_INCIDENCE_DEG` or more, whatever the
+  return's own range; every occupied cell from there to `GONE_SHORT_M`
+  short of the return is contradicted). Only such beams in a run at least
+  `MIN_RUN_M` wide count (`remap.run_widths`: neighbouring beams joined
+  across `RUN_GAP_BEAMS` quiet ones, the width measured at the saved
+  surface for gone and at the return for new): a jamb or a leg seen a few
+  centimetres off gives a sliver, a moved object a face. Returns into
+  unknown are the first trigger's. A cell is persistent when, over
   `WINDOW_S`, `MIN_LOOKS` scans looked at it, `MIN_SHARE` of them
   contradicted the map there, and those contradictions span `HOLD_S`; the
   trigger fires on `MIN_GROUP` persistent cells chained within
@@ -407,7 +415,8 @@ person's request still re-maps.
 | `DOCK_TOL_M`, `DOCK_TOL_DEG` | 0.5, 15 | m, deg | `relocalise.py` | ... and the localised pose is this close to the dock. |
 | `VERDICT_TIMEOUT_S` | 8 | s | `relocalise.py` | From the localisation node's start; no verdict by then is a bad match (criterion 8: a fresh map within 10 s). |
 | `STOP_TIMEOUT_S` | 5 | s | `slam_process.py` | After SIGINT, then SIGKILL. |
-| `MAX_RANGE_M`, `NEW_TOL_M`, `GONE_SHORT_M`, `MIN_INCIDENCE_DEG` | 4.0, 0.10, 0.15, 20 | m, m, m, deg | `remap.py` | 3.50.D4: which returns and beams may contradict the saved map ("Re-mapping a reloaded map"). Set before measurement. |
+| `MAX_RANGE_M`, `NEW_TOL_M`, `GONE_SHORT_M`, `MIN_INCIDENCE_DEG` | 2.5, 0.10, 0.15, 20 | m, m, m, deg | `remap.py` | 3.50.D4: which returns and beams may contradict the saved map ("Re-mapping a reloaded map"). Set before measurement; `MAX_RANGE_M` 4.0 -> 2.5 by amendment 4 (a wall 3.9 m off contradicted a no-change map). |
+| `MIN_RUN_M`, `RUN_GAP_BEAMS`, `REQUIRE_REST`, `JUDGE_MIN` | 0.2, 1, true, 0 (off) | m, beams, --, share | `remap.py` | 3.50.D4 amendment 4, chosen on four recorded sessions (`evaluations/map-350/d4_replay.py`) before any run: 0 false fires in session (89 under the old rule) and every moved object found. Anything from 0.15 to 0.2 m and 2.0 to 3.0 m gave the same; 0.3 m lost a single-cell chair's later fires. `JUDGE_MIN` (an agreement floor) also dropped a re-opened doorway, so it stays off. |
 | `WINDOW_S`, `MIN_LOOKS`, `MIN_SHARE`, `HOLD_S`, `MIN_GROUP`, `GROUP_GAP_M` | 10, 10, 0.8, 5, 10, 0.15 | s, scans, share, s, cells, m | `remap.py` | A cell is persistent when looked at by 10 scans in 10 s, 80% of them contradicting, over at least 5 s (amendment 1: 10 looks at 10 Hz is one second); 10 persistent cells within 0.15 m of each other fire. |
 | `LOST_BELOW` | 0.60 | share | `remap.py` | `relocalise.AGREE_MIN`: a scan agreeing less is a lost robot, counted, never a trigger. |
 | `REMAP_WATCH_S`, `REMAP_SCAN_MAX_AGE_S`, `REMAP_READY_TIMEOUT_S`, `REMAP_RETRY_S` | 0.05, 0.5, 15, 2 | s | `bridge.py` | The watch's look interval; a scan whose TF at capture has not come within 0.5 s is skipped; a re-map's node that gives no pose in 15 s has failed; a trigger whose re-map did not start waits 2 s. |

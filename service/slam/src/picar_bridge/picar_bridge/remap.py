@@ -8,7 +8,9 @@ copy of the first /map after `ready`); the third is a person's request.
 
 * **Entered unknown** (`entered_unknown`): the robot's centre is in a cell
   the saved map calls unknown, or off its edge.
-* **The scans contradict the map** (`Contradictions`), per scan:
+* **The scans contradict the map** (`Contradictions`), per scan taken with
+  the robot at rest (amendment 4: a scan cast across a turning revolution is
+  laid degrees off), up to MAX_RANGE_M:
   - *something new:* a return with no occupied and no unknown cell within
     NEW_TOL_M on the saved map;
   - *something gone:* a beam whose return lies more than GONE_SHORT_M past
@@ -16,6 +18,9 @@ copy of the first /map after `ready`); the third is a person's request.
     cell from there to GONE_SHORT_M short of the return is contradicted. A
     beam meeting that first surface at under MIN_INCIDENCE_DEG is not judged
     at all: a beam grazing a wall crosses its cells with nothing gone.
+  Only beams in a run of such beams at least MIN_RUN_M wide count
+  (amendment 4: a jamb or a leg seen a few centimetres off gives a sliver,
+  a moved object a face).
   A cell is persistent when, over WINDOW_S, at least MIN_LOOKS scans looked
   at it, at least MIN_SHARE of those contradicted the map there, and its
   contradictions span at least HOLD_S (amendment 1: 10 looks at 10 Hz is
@@ -38,7 +43,7 @@ import numpy as np
 
 from picar_bridge import relocalise
 
-MAX_RANGE_M = 4.0
+MAX_RANGE_M = 2.5                          # amendment 4 (was 4.0)
 NEW_TOL_M = relocalise.AGREE_TOL_M          # 0.10
 GONE_SHORT_M = 0.15
 MIN_INCIDENCE_DEG = 20.0
@@ -49,6 +54,18 @@ HOLD_S = 5.0
 MIN_GROUP = 10
 GROUP_GAP_M = 0.15
 LOST_BELOW = relocalise.AGREE_MIN           # 0.60
+# Amendment 4 (object scale): contradicting beams count only in angular runs
+# at least MIN_RUN_M wide (at the saved surface for gone, at the return for
+# new), bridging RUN_GAP_BEAMS quiet beams; only scans taken with the robot
+# still are judged (REQUIRE_REST). Chosen on four recorded sessions
+# (evaluations/map-350/d4_replay.py) and written in the plan before any run.
+MIN_RUN_M = 0.2
+RUN_GAP_BEAMS = 1
+REQUIRE_REST = True
+# A scan agreeing with the map under JUDGE_MIN (but not lost) is not judged,
+# counted `loose`. Off (0): tried in amendment 4, it also drops a true
+# re-opened doorway, whose own beams lower the scan's agreement.
+JUDGE_MIN = 0.0
 OCCUPIED_AT = relocalise.OCCUPIED_AT        # 65
 
 FREE, OCC, UNKNOWN = 0, 1, 2
@@ -114,6 +131,42 @@ class SavedMap:
 
     def inside(self, col, row):
         return (col >= 0) & (col < self.w) & (row >= 0) & (row < self.h)
+
+
+def run_widths(mask: np.ndarray, width: np.ndarray, gap: int, full_turn: bool) -> np.ndarray:
+    """For each True beam, the summed `width` of the run it lies in: True
+    beams joined across at most `gap` False ones (round the end on a full
+    turn). False beams get 0."""
+    n = mask.size
+    out = np.zeros(n)
+    if not mask.any():
+        return out
+    start = 0
+    if full_turn:
+        # Start the walk just after more than `gap` quiet beams, so no run
+        # straddles the start; with no such stretch the whole turn is one.
+        quiet = np.convolve(np.concatenate([~mask[-(gap + 1):], ~mask]).astype(int),
+                            np.ones(gap + 1, dtype=int), "valid")[:n]
+        ends = np.nonzero(quiet == gap + 1)[0]      # beams i-gap-1 .. i-1 all quiet
+        if ends.size == 0:
+            out[mask] = width[mask].sum()
+            return out
+        start = int(ends[0])
+    order = (np.arange(n) + start) % n
+    run, quiet, total = [], 0, 0.0
+    for i in order:
+        if mask[i]:
+            run.append(i)
+            total += width[i]
+            quiet = 0
+        else:
+            quiet += 1
+            if quiet > gap and run:
+                out[run] = total
+                run, total = [], 0.0
+    if run:
+        out[run] = total
+    return out
 
 
 def entered_unknown(saved: SavedMap, x: float, y: float) -> bool:
@@ -187,17 +240,25 @@ def judge_scan(saved: SavedMap, scan: dict, laser_pose: Sequence[float]) -> dict
     square = e_ok & np.isfinite(incidence) & (incidence >= MIN_INCIDENCE_DEG)
     e_idx = np.maximum(first, 0)
     flat_e = pr[rows, e_idx] * saved.w + pc[rows, e_idx]
-    gone = use & square & (r > e + GONE_SHORT_M)
-    seen_e = use & square & ((np.abs(r - e) <= NEW_TOL_M) | gone)
+    # Gone is judged by the saved surface's range (e_ok: e <= MAX_RANGE_M),
+    # whatever the return's: a beam through a doorway re-opened since the
+    # save returns at the far wall of the room behind it (amendment 4).
+    gone = valid & square & (r > e + GONE_SHORT_M)
+    seen_e = valid & square & ((np.abs(r - e) <= NEW_TOL_M) | gone)
+    if MIN_RUN_M > 0:
+        # Amendment 4: an object's worth of beams, not a sliver beside an edge.
+        full = abs(n * inc - 2 * math.pi) <= inc / 2
+        gone = gone & (run_widths(gone, np.where(gone, e, 0) * inc, RUN_GAP_BEAMS, full) >= MIN_RUN_M)
+        new = new & (run_widths(new, np.where(new, r, 0) * inc, RUN_GAP_BEAMS, full) >= MIN_RUN_M)
 
     # Free cells a beam crossed clear of its own return: looked at, unchanged.
-    clear = pin & (st == FREE) & (d[None, :] < (np.where(use, r, 0) - NEW_TOL_M)[:, None])
+    clear = pin & (st == FREE) & (d[None, :] < (np.where(valid, r, 0) - NEW_TOL_M)[:, None])
     flat_clear = (pr * saved.w + pc)[clear]
 
     # A beam that went past its expected hit passed through every occupied
     # cell from there to (GONE_SHORT_M short of) its own return.
     through = (gone[:, None] & pin & (st == OCC) & (d[None, :] >= e[:, None])
-               & (d[None, :] < (np.where(use, r, 0) - GONE_SHORT_M)[:, None]))
+               & (d[None, :] < (np.where(valid, r, 0) - GONE_SHORT_M)[:, None]))
     flat_through = (pr * saved.w + pc)[through]
 
     looked = np.unique(np.concatenate([flat_clear, flat_e[seen_e], flat_ret[use & hin],
@@ -218,19 +279,29 @@ class Contradictions:
         self.window = deque()               # (t, looked, contra)
         self.scans = 0
         self.lost = 0
+        self.moving = 0
+        self.loose = 0
 
-    def add(self, scan: dict, laser_pose: Sequence[float], now: float) -> Optional[dict]:
-        """Fold one scan in; the trigger's record if it fires, else None."""
+    def add(self, scan: dict, laser_pose: Sequence[float], now: float,
+            still: bool = True) -> Optional[dict]:
+        """Fold one scan in; the trigger's record if it fires, else None.
+        `still`: the robot was at rest when it was taken (REQUIRE_REST)."""
         while self.window and self.window[0][0] < now - WINDOW_S:
             _, lk, ct = self.window.popleft()
             self.looks[lk] -= 1
             self.contras[ct] -= 1
+        if REQUIRE_REST and not still:
+            self.moving += 1
+            return None
         j = judge_scan(self.saved, scan, laser_pose)
         if j["agreement"] is None:
             return None
         self.scans += 1
         if j["agreement"] < LOST_BELOW:
             self.lost += 1
+            return None
+        if j["agreement"] < JUDGE_MIN:
+            self.loose += 1
             return None
         # A contradicted cell was looked at, whichever list said so.
         looked = np.union1d(j["looked"], j["contra"])

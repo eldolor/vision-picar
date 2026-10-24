@@ -751,6 +751,47 @@ def test_returns_into_unknown_are_not_new():
     assert fired is None
 
 
+def test_something_narrower_than_an_object_never_fires():
+    """Amendment 4: a 15 cm leg seen 15-30 cm off its saved cells (a pose
+    offset beside furniture, or a leg moved) is a sliver, not an object's
+    face: under MIN_RUN_M it contradicts nothing. Without the run rule it
+    fired (D4-d's leg)."""
+    pose = (0.3, 0.3, 0.0)
+    saved = (1.2, 1.35, 0.6, 0.75)
+    assert remap.MIN_RUN_M > 0.15
+    for off in (0.15, 0.2, 0.3):
+        real = (saved[0], saved[1], saved[2] + off, saved[3] + off)
+        fired, _, _ = _run(_grid_with(boxes=[saved]),
+                           lambda t: (_scan(*pose, boxes=[real]), pose), seconds=20)
+        assert fired is None, off
+
+
+def test_gone_is_judged_by_the_saved_surfaces_range_not_the_return():
+    """Amendment 4: an object removed from 1.3 m away, whose beams now return
+    at walls beyond MAX_RANGE_M (a re-opened doorway's room behind it), is
+    gone; judging gone by the return's range dropped every such beam."""
+    pose = (-0.9, -0.9, 0.0)
+    box = (0.4, 1.0, 0.0, 0.4)
+    j = remap.judge_scan(remap.SavedMap(_grid_with(boxes=[box])), _scan(*pose), pose)
+    assert j["gone"] > 0
+    fired, _, _ = _run(_grid_with(boxes=[box]), lambda t: (_scan(*pose), pose), seconds=20)
+    assert fired is not None and fired["trigger"] == "contradiction"
+
+
+def test_run_widths_join_short_gaps_and_wrap_a_full_turn():
+    import numpy as np
+    m = np.array([1, 1, 0, 1, 0, 0, 1, 0, 1], dtype=bool)
+    w = np.ones(m.size)
+    assert remap.run_widths(m, w, 1, full_turn=False).tolist() == [3, 3, 0, 3, 0, 0, 2, 0, 2]
+    # Round the end on a full turn: 6, 8, 0, 1 and 3 are one run (one quiet
+    # beam at most between them); only 4-5 separate anything.
+    assert remap.run_widths(m, w, 1, full_turn=True).tolist() == [5, 5, 0, 5, 0, 0, 5, 0, 5]
+    m2 = np.array([1, 0, 0, 1, 1, 0, 0, 1], dtype=bool)
+    assert remap.run_widths(m2, w[:8], 1, full_turn=True).tolist() == [2, 0, 0, 2, 2, 0, 0, 2]
+    assert remap.run_widths(np.ones(4, dtype=bool), w[:4], 1, True).tolist() == [4] * 4
+    assert remap.run_widths(np.zeros(4, dtype=bool), w[:4], 1, True).tolist() == [0] * 4
+
+
 def test_entered_unknown_is_the_saved_maps_unknown_or_off_its_edge():
     saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
     assert not remap.entered_unknown(saved, 0.5, 0.5)
@@ -1003,6 +1044,7 @@ def test_the_watch_re_maps_when_the_scans_contradict(bridge_mod, monkeypatch, tm
         stamps.append(at.nanoseconds)
         return pose
     monkeypatch.setattr(b, "_laser_in_map", laser)
+    _at_rest_for(b, 5.0)
     seen = None
     for k in range(120):
         b.last_scan = {**_scan(*pose, boxes=[BOX]), "stamp_ns": k * 10**8, "at": time.time()}
@@ -1012,6 +1054,31 @@ def test_the_watch_re_maps_when_the_scans_contradict(bridge_mod, monkeypatch, tm
     assert asked and asked[0][0] == "contradiction" and asked[0][1]["cells"] >= remap.MIN_GROUP
     assert stamps[:3] == [0, 10**8, 2 * 10**8]
     assert b.remap_step(seen) == seen                   # the same scan is not judged twice
+
+
+def _at_rest_for(b, seconds, moving=False):
+    """Fresh odometry; still for `seconds` (or moving)."""
+    b.last_odom = {"x_m": 0.0, "y_m": 0.0, "yaw_rad": 0.0, "linear_m_s": 0.2 if moving else 0.0,
+                   "angular_rad_s": 0.0, "at": time.time() + 3600}
+    b._rest_since_wall = None if moving else time.time() - seconds
+
+
+def test_the_watch_judges_only_scans_taken_at_rest(bridge_mod, monkeypatch, tmp_path):
+    """Amendment 4: moving, or still for less than REMAP_REST_S before the
+    scan's revolution began, the scan is not judged (counted `moving`)."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    asked = []
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None: asked.append(trigger) or (200, {}))
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    for moving, still_s in ((True, 0.0), (False, 0.5)):
+        _at_rest_for(b, still_s, moving=moving)
+        seen = None
+        for k in range(150):
+            b.last_scan = {**_scan(*pose, boxes=[BOX]), "stamp_ns": k * 10**8, "at": time.time()}
+            seen = b.remap_step(seen)
+        assert asked == []
+    assert b._remap_tracker.moving == 300 and b._remap_tracker.scans == 0
 
 
 def test_a_scan_whose_tf_is_late_is_retried_then_dropped(bridge_mod, monkeypatch, tmp_path):
