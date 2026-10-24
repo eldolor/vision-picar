@@ -865,6 +865,7 @@ class TieredVision:
         hold_bearing: bool = DEFAULT_HOLD_BEARING,
         hold_bearing_max_m: float = DEFAULT_HOLD_BEARING_MAX_M,
         confirm_vision_fn: Optional[Callable[[dict], dict]] = None,
+        sim_identity_fn: Optional[Callable[[dict], Optional[bool]]] = None,
         local_identity_fn: Optional[Callable[[dict], dict]] = None,
         local_no_below: float = DEFAULT_LOCAL_NO_BELOW,
         local_max_unable: int = DEFAULT_LOCAL_MAX_UNABLE,
@@ -933,6 +934,10 @@ class TieredVision:
         # CloudUnavailable) rather than in an abandoned thread. None: the
         # triggers' client, resolved at call time.
         self.confirm_vision_fn = confirm_vision_fn
+        # 3.98: in the simulator, the arrival's cloud step answered from its
+        # geometry (brain/arrival.py `geometry_identity`); None on a frame
+        # that is not the sim's, which then goes to the cloud as ever.
+        self.sim_identity_fn = sim_identity_fn
         self.consecutive_frames = max(1, int(consecutive_frames))
         # 0 (or None) is counted only; a negative span would time nothing.
         self.sighting_span_s = max(0.0, float(sighting_span_s or 0)) or None
@@ -1857,6 +1862,16 @@ class TieredVision:
         about to end on the answer, so there is nothing to hold meanwhile.
         A failure raises, and the runner counts it against B3.2's budget.
         """
+        if self.sim_identity_fn is not None:
+            # 3.98 (the user, 2026-10-24): a sim arrival is the sim's to judge
+            # -- no call, no cap, no wait on a call in flight.
+            verdict = self.sim_identity_fn(frame)
+            if verdict is not None:
+                return {"confirmed": verdict, "cloud_called": False, "tier": "sim",
+                        "reason": ("the simulator's geometry puts the target in front"
+                                   if verdict else
+                                   "the simulator's geometry puts something else in front"),
+                        "stats": self.stats.as_dict()}
         if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
             return {"confirmed": False, "cloud_called": False,
                     "reason": "call cap reached -- identity not confirmed",

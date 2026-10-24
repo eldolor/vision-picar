@@ -380,6 +380,12 @@ brain:
   # nav2 like the explore policy; the tiers decide identity and the last
   # approach). TIER_SEARCH overrides.
   tier_search: cloud
+  # 3.98 -- a tiered arrival on the SIMULATOR's frames is confirmed from its
+  # geometry (`geometry`: the nearest object near the centre must be the
+  # target, no paid call) or by one real cloud call on the render (`cloud`,
+  # for a run that means to test it). Real frames always ask the tiers.
+  # SIM_ARRIVAL_CONFIRM overrides.
+  sim_arrival_confirm: geometry
 
   # 3.70 E4: a mission's budget -- a time limit (seconds) and a battery floor
   # (volts, the motor board's `v`). It ends `out_of_budget` at either. The

@@ -436,6 +436,11 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
                 target, blind=os.environ.get("SIM_PERCEPTION_BLIND", "") == "1")
             # 3.80.D: a local VLM's box is read in the render's field of view.
             pipeline.hfov_deg = SIM_HFOV_DEG
+            if config["sim_arrival_confirm"] == "geometry":
+                # 3.98: the arrival's identity from the sim's ground truth;
+                # `cloud` keeps the paid call for a run that tests it.
+                from brain.arrival import geometry_identity
+                kwargs["sim_identity_fn"] = functools.partial(geometry_identity, target=target)
             return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
         pipeline_kwargs = {}
         if config["perception_detector"]:

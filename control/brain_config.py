@@ -191,6 +191,12 @@ DEFAULTS = {
     # explore's nav2 goals (needs nav2, as the explore policy does), the
     # tiers deciding identity and the last approach.
     "tier_search": "cloud",
+    # 3.98 (the user, 2026-10-24): how a tiered mission confirms its arrival
+    # when the frames are the simulator's. `geometry`: from the sim's own
+    # ground truth (brain/arrival.py `geometry_identity`), no paid call.
+    # `cloud`: one real call on the render, as before -- for a run that means
+    # to test the cloud (Stage 1's lit renderer). Real frames always ask.
+    "sim_arrival_confirm": "geometry",
     # 3.70 E4 (decided by the user 2026-10-11): a mission's budget is a time
     # limit and a battery floor; the step count is only a backstop derived
     # from the limit (control/mission_runner.py's derived_max_steps()).
@@ -425,6 +431,8 @@ def load_brain_config(config_path=None) -> dict:
         merged["tier_local_vlm_url"] = os.environ["LOCAL_VLM_URL"].strip()
     if os.environ.get("TIER_SEARCH", "").strip():
         merged["tier_search"] = os.environ["TIER_SEARCH"].strip()
+    if os.environ.get("SIM_ARRIVAL_CONFIRM", "").strip():
+        merged["sim_arrival_confirm"] = os.environ["SIM_ARRIVAL_CONFIRM"].strip()
     # 3.80.F: the criterion-2 arms switch these per stack.
     for key, env in (("tier_local_direction", "TIER_LOCAL_DIRECTION"),
                      ("tier_steer_on_candidate", "TIER_STEER_ON_CANDIDATE")):
@@ -531,6 +539,9 @@ def load_brain_config(config_path=None) -> dict:
     if isinstance(unable, bool) or not isinstance(unable, int) or unable < 1:
         raise ValueError(f"brain.tier_local_max_unable must be a whole number >= 1; "
                          f"got {unable!r}")
+    if merged["sim_arrival_confirm"] not in ("geometry", "cloud"):
+        raise ValueError(f"brain.sim_arrival_confirm must be 'geometry' or 'cloud'; "
+                         f"got {merged['sim_arrival_confirm']!r}")
     if merged["tier_search"] not in ("cloud", "explore"):
         raise ValueError(f"brain.tier_search must be 'cloud' or 'explore'; "
                          f"got {merged['tier_search']!r}")

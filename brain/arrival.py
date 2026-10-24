@@ -305,6 +305,36 @@ class ArrivalCheck:
         return window
 
 
+# 3.98: how far off the frame's centre an object still counts as "the thing
+# the robot arrived at" for the simulator's geometry identity check. Wider
+# than the arrival rule's own ARRIVAL_CENTRE_DEG, which judged the TARGET's
+# bearing: here a nearer object anywhere near the centre must win.
+SIM_CONFIRM_CENTRE_DEG = 10.0
+
+
+def geometry_identity(frame: dict, target: str) -> Optional[bool]:
+    """3.98: the simulator's answer to the arrival's identity question, from
+    its own ground truth (`detections`, 1.12) -- True when the NEAREST object
+    within SIM_CONFIRM_CENTRE_DEG of the centre is the target. None for a
+    frame that is not the simulator's (`metadata.source`), so a real camera's
+    arrival is always put to the tiers; False for a sim frame with no
+    detections (never a confirmation it cannot back)."""
+    if (frame.get("metadata") or {}).get("source") != "sim":
+        return None
+    detections = frame.get("detections")
+    if not isinstance(detections, list):
+        return False
+    centred = [d for d in detections
+               if isinstance(d, dict) and isinstance(d.get("bearing_deg"), (int, float))
+               and abs(d["bearing_deg"]) <= SIM_CONFIRM_CENTRE_DEG]
+    if not centred:
+        return False
+    nearest = min(centred, key=lambda d: d.get("distance_m")
+                  if isinstance(d.get("distance_m"), (int, float)) else float("inf"))
+    needle = target.strip().lower()
+    return bool(needle) and needle in str(nearest.get("label", "")).lower()
+
+
 def arrived_scene(scene: dict, target: str, readout: dict) -> dict:
     """The scene rewritten as an arrival: STOP, target reached, and the
     target named in `important_objects` -- which is what `MissionMemory`
