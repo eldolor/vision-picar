@@ -74,6 +74,20 @@ def servers(house):
 _logs = [0]
 
 
+def _network():
+    """Docker Desktop (the Mac) reaches the host's 127.0.0.1 servers as
+    host.docker.internal; Linux does not (the servers bind 127.0.0.1), so
+    there the container shares the host's network, as on the Jetson
+    (tools/jetson/README.md), with the bridge on this section's own port."""
+    if sys.platform.startswith("linux"):
+        return ["--network", "host", "-e", f"BRIDGE_PORT={de.BRIDGE}",
+                "-e", f"ROBOT_URL=http://127.0.0.1:{de.ROBOT}",
+                "-e", f"BRAIN_URL=http://127.0.0.1:{de.BRAIN}"]
+    return ["-p", f"127.0.0.1:{de.BRIDGE}:8090",
+            "-e", f"ROBOT_URL=http://host.docker.internal:{de.ROBOT}",
+            "-e", f"BRAIN_URL=http://host.docker.internal:{de.BRAIN}"]
+
+
 def container(maps, bridge):
     """Restart only the container; watch it come up at 10 Hz. Returns the
     watch: when the reload was judged, and whether anything leaked before."""
@@ -83,9 +97,7 @@ def container(maps, bridge):
                        stdout=open(f"{de.RUN_DIR}/ros-{_logs[0]}.log", "w"), stderr=subprocess.STDOUT)
     subprocess.run(["docker", "rm", "-f", de.CONTAINER], capture_output=True)
     subprocess.run(["docker", "run", "-d", "--name", de.CONTAINER, "-v", f"{maps}:/maps",
-                    "-p", f"127.0.0.1:{de.BRIDGE}:8090", "-e", f"ROS_DOMAIN_ID={de.ROS_DOMAIN}",
-                    "-e", f"ROBOT_URL=http://host.docker.internal:{de.ROBOT}",
-                    "-e", f"BRAIN_URL=http://host.docker.internal:{de.BRAIN}",
+                    *_network(), "-e", f"ROS_DOMAIN_ID={de.ROS_DOMAIN}",
                     IMAGE, "ros2", "launch", "picar_bringup", "picar.launch.py"],
                    capture_output=True, check=True)
     w = {"leaked_pose": 0, "leaked_map": 0, "goal_during_check": None, "states": []}

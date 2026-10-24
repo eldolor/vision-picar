@@ -1304,6 +1304,7 @@ class Bridge(Node):
                 math.atan2(math.sin(myaw + oyaw), math.cos(myaw + oyaw)))
 
     def _remap_run(self, version, record) -> None:
+        self._remap_mo = None                # this re-map's own, set at its swap (review)
         rest = self._await_rest()
         record = {**record, **rest}
         if not rest["at_rest"]:
@@ -1311,10 +1312,10 @@ class Bridge(Node):
             # driving): called off, localising as before, asked again later.
             with self.lock:
                 self.remap_record = {**record, "result": "deferred"}
+                self._remap_deferrals += 1
+                self._remap_retry_at = time.monotonic() + REMAP_DEFER_BACKOFF_S
                 self.slam_state = "ready"
                 why, self._save_after_remap = self._save_after_remap, None
-            self._remap_deferrals += 1
-            self._remap_retry_at = time.monotonic() + REMAP_DEFER_BACKOFF_S
             self.get_logger().warning("re-map called off: the robot did not come to rest "
                                       f"({self._remap_deferrals} so far); asked again in "
                                       f"{REMAP_DEFER_BACKOFF_S:.0f} s")

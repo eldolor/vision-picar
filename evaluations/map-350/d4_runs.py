@@ -228,7 +228,8 @@ def known_free_share(robot, cells):
     free = 0
     for c in cells:
         x, y = cell_m(c)
-        i, j = int((x - m["origin_x_m"]) / res), int((y - m["origin_y_m"]) / res)
+        i = math.floor((x - m["origin_x_m"]) / res)
+        j = math.floor((y - m["origin_y_m"]) / res)
         free += 0 <= i < w and 0 <= j < h and m["cells"][j * w + i] == 0
     return round(free / max(len(cells), 1), 4)
 
@@ -253,18 +254,13 @@ def saved_unknown_at(saved_map, pose):
 
 # ---------- D4-a ----------
 
-def free_neighbours(world, cells, avoid=()):
-    """Movable objects' cells and free floor to park them on, away from `cells`."""
-    objs = sorted(world.objects)
-    return objs
-
-
 def close_moves(house, door):
-    """Moves putting the house's own objects on `door`'s cells: the nearest
-    objects that can move there (a fresh server per attempt is too slow, so a
-    move that fails is skipped)."""
+    """Moves putting the house's own objects, nearest first, on every one of
+    `door`'s cells. map_run asserts each move; too few objects is an error."""
     w = build_world(house)
     objs = sorted(w.objects, key=lambda o: min(math.dist(o, d) for d in door))
+    if len(objs) < len(door):
+        raise RuntimeError(f"{house}: {len(objs)} objects cannot close {len(door)} door cells")
     return list(zip(objs[:len(door)], door))
 
 
@@ -285,15 +281,22 @@ def run_a(house):
         out["verdict"] = {"D4-a": "FAILED (reload did not match)"}
         return out
     saved_first = d3.first_map(bridge)
+    if saved_first is None:
+        out["verdict"] = {"D4-a": "FAILED (no reloaded map to judge entry against)"}
+        return out
     spot = de.room_spot(world, room, reach) or room_cells[len(room_cells) // 2]
-    entered_at = [None]
+    entered_at, watch_errors = [None], [0]
     stop = threading.Event()
 
     def watch_entry():
+        pose_c = httpx.Client(base_url=str(bridge.base_url), timeout=5)
         while not stop.is_set() and entered_at[0] is None:
-            p = bridge.get("/slam/pose").json().get("map")
-            if p and saved_unknown_at(saved_first, p):
-                entered_at[0] = time.time()
+            try:
+                p = pose_c.get("/slam/pose").json().get("map")
+                if p and saved_unknown_at(saved_first, p):
+                    entered_at[0] = time.time()
+            except Exception:  # noqa: BLE001 -- counted; the bridge's own record backs it
+                watch_errors[0] += 1
             time.sleep(0.1)
     th = threading.Thread(target=watch_entry, daemon=True)
     th.start()
@@ -306,28 +309,37 @@ def run_a(house):
         out["saved"] = end_mission(brain, bridge)
     stop.set()
     out["sampler"] = s.summary()
-    out["entered_unknown_at"] = entered_at[0]
-    rem = [r for r in s.remaps if r.get("result") in ("mapping", "waiting", "starting")]
+    out["watch_errors"] = watch_errors[0]
     first = s.remaps[0] if s.remaps else {}
     out["first_remap"] = first
-    started = first.get("at")
-    out["remap_after_entry_s"] = (round(started - entered_at[0], 2)
-                                  if started and entered_at[0] else None)
+    # Entry: the watcher's first pose in the saved unknown, or the bridge's own
+    # entered-unknown trigger (it looks at 20 Hz; /slam/pose is null while it
+    # swaps), whichever is earlier. Start: the mapping node placing the robot.
+    entries = [t for t in (entered_at[0], first.get("at") if first.get("trigger") == "entered_unknown"
+                           else None) if t]
+    entry = min(entries) if entries else None
+    mapping_at = next((t for st, t in s.states if st == ("ready", "mapping")), None)
+    out["entered_unknown_at"], out["mapping_at"] = entry, mapping_at
+    out["remap_after_entry_s"] = (round(mapping_at - entry, 2) if mapping_at and entry else None)
     # Run 2's save, read back through a reload.
     robot, brain, bridge, out["session3"] = reload(house, maps)
     out["room_known_free_saved"] = known_free_share(robot, room_cells)
     ok_walls, rooms = walls_true(robot, house, skip=(room,))
     out["other_walls_true"], out["walls_by_room"] = ok_walls, rooms
-    timely = (started is not None and (entered_at[0] is None or started <= entered_at[0]
-                                       or started - entered_at[0] <= REMAP_WITHIN_S))
+    # Timely: mapping within 10 s of entering, or already mapping when it
+    # entered (a contradiction first: "either counts"). No entry seen is not met.
+    timely = (entry is not None and mapping_at is not None
+              and mapping_at - entry <= REMAP_WITHIN_S)
     out["criteria"] = {
-        "remapped": bool(rem) and any(r.get("result") == "mapping" for r in s.remaps),
+        "remapped": any(r.get("result") == "mapping"
+                        and r.get("trigger") in ("entered_unknown", "contradiction")
+                        for r in s.remaps),
         "remap_within_10s": timely,
         "room_90_live": (out["room_known_free_live"] or 0) >= 0.90,
         "room_90_saved": (out["room_known_free_saved"] or 0) >= 0.90,
         "other_walls_100": bool(ok_walls),
         "no_jumps": not out["sampler"]["jumps"],
-        "new_version": out["saved"].get("last_version", 0) >= 2,
+        "new_version": (out["saved"].get("last_version") or 0) >= 2,
         "contacts_0": out["sampler"]["contacts"] == 0}
     out["verdict"] = {"D4-a": "MET" if all(out["criteria"].values()) else "FAILED"}
     return out
@@ -373,10 +385,9 @@ def run_b(house):
     door_cells = [door]
     with Sampler(robot, bridge, house) as s:
         out["to_view"] = goal(robot, *cell_m(a_side), timeout_s=180)
-        t0 = time.time()
-        while time.time() - t0 < 30 and not s.remaps:
+        t0 = time.time()                        # up to 30 s at rest, in view
+        while time.time() - t0 < 30 and not any(r.get("result") == "mapping" for r in s.remaps):
             time.sleep(0.5)
-        time.sleep(max(0.0, 30 - (time.time() - t0)))
         out["remap_before_passes"] = dict(remap_rec(bridge))
         passes = []
         for k in range(3):
@@ -423,8 +434,8 @@ def run_c(house="home_first_floor", base_maps=None):
             de.MISSION_LIMIT_S = WATCH_S
             sess["mission"] = de.run_mission(robot, house, policy="explore", target=ABSENT,
                                              max_steps=100000)
-        t = time.time()
-        while time.time() - t < 30 and health(bridge)["map"].get("last_version") in (None, i):
+        t = time.time()                         # this session's own save: v(i + 2)
+        while time.time() - t < 30 and (health(bridge)["map"].get("last_version") or 0) < i + 2:
             time.sleep(0.3)
         sess["saved"] = health(bridge)["map"]
         sess["sampler"] = s.summary()
