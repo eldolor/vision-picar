@@ -1013,10 +1013,13 @@ def test_the_room_call_leaves_room_for_the_models_thinking(monkeypatch):
     "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "us.anthropic.claude-opus-4-5-20251101-v1:0",
     "us.anthropic.claude-opus-5", "us.anthropic.claude-opus-5-50", "us.openai.gpt-6-astra",
     "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-opus-5-5",
+    # Opus 5.5 under spellings no real call has confirmed: no guessed ids.
+    "eu.anthropic.claude-opus-5-5", "global.anthropic.claude-opus-5-5",
 ])
-def test_the_effort_field_goes_only_to_a_model_that_takes_it(monkeypatch, model_id):
+def test_the_effort_field_goes_only_to_a_confirmed_model(monkeypatch, model_id):
     """RoomModelId is a deploy parameter; a model that refuses the effort
-    field would make every /room a 502. Near misses get none."""
+    field would make every /room a 502. Only ids a real call confirmed get
+    it; any other shows as cut replies with _stop, never silently."""
     import vision_core
 
     monkeypatch.setattr(vision_core, "ROOM_MODEL_ID", model_id)
@@ -1025,37 +1028,48 @@ def test_the_effort_field_goes_only_to_a_model_that_takes_it(monkeypatch, model_
     assert "additionalModelRequestFields" not in fake.kwargs
 
 
-@pytest.mark.parametrize("model_id", [
-    "us.anthropic.claude-opus-5-5", "global.anthropic.claude-opus-5-5",
-    "eu.anthropic.claude-opus-5-5", "anthropic.claude-opus-5-5", "us.anthropic.claude-opus-5-5-v1:0",
-    "us.anthropic.claude-opus-5-5-20261101-v1:0", "us-gov.anthropic.claude-opus-5-5",
-    " us.anthropic.claude-opus-5-5\n",
-])
-def test_opus_5_5_gets_the_effort_field_under_any_spelling(monkeypatch, model_id):
-    """Matched by name: an id spelled another way that missed the effort
-    field would bring S2b's every-room-unclear back, silently."""
+def test_the_room_model_id_is_read_stripped(monkeypatch):
+    """A pasted id with a trailing newline is the id sent and the id the
+    effort list is checked against -- one value, not two."""
+    import importlib
     import vision_core
 
-    monkeypatch.setattr(vision_core, "ROOM_MODEL_ID", model_id)
-    fake = _stub_room_converse(monkeypatch, [_REASONING, {"text": "hallway"}], "end_turn")
-    vision_core.describe_image_bytes_room(b"x", "image/jpeg")
-    assert fake.kwargs["additionalModelRequestFields"] == {"output_config": {"effort": "low"}}
+    monkeypatch.setenv("BEDROCK_ROOM_MODEL_ID", " us.anthropic.claude-opus-5-5\n")
+    try:
+        importlib.reload(vision_core)
+        assert vision_core.ROOM_MODEL_ID == "us.anthropic.claude-opus-5-5"
+        assert vision_core.ROOM_MODEL_ID in vision_core.ROOM_EFFORT_MODELS
+    finally:
+        monkeypatch.delenv("BEDROCK_ROOM_MODEL_ID")
+        importlib.reload(vision_core)
+
+
+def _template_parameter_default(template: str, name: str):
+    """The Default of one top-level Parameters entry, read from its own
+    indented block only (never a later parameter's)."""
+    lines = template.replace("\r\n", "\n").split("\n")
+    head = next(i for i, line in enumerate(lines) if line.strip() == f"{name}:")
+    indent = len(lines[head]) - len(lines[head].lstrip())
+    for line in lines[head + 1:]:
+        if line.strip() and len(line) - len(line.lstrip()) <= indent:
+            return None
+        key, _, value = line.strip().partition(":")
+        if key == "Default":
+            return value.strip().strip("'\"")
+    return None
 
 
 def test_the_deployed_room_model_gets_the_effort_field():
     """The code's default and the template's RoomModelId (the env var that
     wins when deployed) both name a model the effort field goes to."""
-    import re
     from pathlib import Path
     import vision_core
 
     template = (Path(__file__).resolve().parents[3] / "cloudformation" / "serverless.yaml").read_text()
-    block = re.search(r"RoomModelId:\s*\n((?:[ \t]+.*\n)+)", template.replace("\r\n", "\n"))
-    assert block, "serverless.yaml has no RoomModelId parameter"
-    default = re.search(r"Default:\s*['\"]?([^'\"\s]+)", block.group(1))
-    assert default, "RoomModelId has no Default"
-    for model_id in (vision_core.ROOM_MODEL_ID, default.group(1)):
-        assert vision_core._takes_room_effort(model_id), model_id
+    deployed = _template_parameter_default(template, "RoomModelId")
+    assert deployed, "RoomModelId has no Default of its own"
+    for model_id in (vision_core.ROOM_MODEL_ID, deployed):
+        assert model_id in vision_core.ROOM_EFFORT_MODELS, model_id
 
 
 @pytest.mark.parametrize("content", [[_REASONING], [_REASONING, {"text": "dining"}]])

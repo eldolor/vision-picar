@@ -83,7 +83,8 @@ GUIDANCE_MODEL_ID = os.environ.get("BEDROCK_GUIDANCE_MODEL_ID", "amazon.nova-lit
 # Claude Opus 5.5, the user's choice for labels (2026-10-13), confirmed with
 # two real Converse calls on recorded walk frames from us-east-2 that day.
 # Keep in step with cloudformation/serverless.yaml's RoomModelId.
-ROOM_MODEL_ID = os.environ.get("BEDROCK_ROOM_MODEL_ID", "us.anthropic.claude-opus-5-5")
+# Stripped once here, so the id sent and the id the effort rule checks agree.
+ROOM_MODEL_ID = os.environ.get("BEDROCK_ROOM_MODEL_ID", "us.anthropic.claude-opus-5-5").strip()
 
 # /navigate's model A/B set -- a request may pick one of these by id (app.py
 # validates against this exact set before it ever reaches Bedrock, so an
@@ -1329,26 +1330,19 @@ Answer with the room's name only, lowercase, at most three words. Use one of the
 # any text, so every room was "unclear" (3.70 S2b, 2026-10-24). Low effort
 # keeps the thinking short (57 tokens out with the answer, on a real call);
 # the cap only bounds a call's cost (~$0.006 of output at most). The effort
-# field goes to a model by its exact name -- a region prefix (a routing
-# profile of the same model), a date and a -vN:N version allowed -- and
-# only to the models confirmed to take it (Opus 5.5, the us. profile from
-# us-east-2): older Claude models and other vendors' models refuse it, which
-# would make every /room a 502.
+# field goes only to ids confirmed to take it by a real Converse call (never
+# a guessed spelling, CLAUDE.md section 6): older Claude models and other
+# vendors' models refuse it, which would make every /room a 502. An Opus 5.5
+# id not listed here gets no effort and shows as cut replies with _stop;
+# confirm it with a real call, then add it.
 ROOM_EFFORT = "low"
-ROOM_EFFORT_MODELS = ("claude-opus-5-5",)
+ROOM_EFFORT_MODELS = frozenset({
+    "us.anthropic.claude-opus-5-5",  # us-east-2, 2026-10-24: "bedroom", 57 tokens out
+})
 ROOM_MAX_TOKENS = 256
 _CLEAN_STOPS = (None, "end_turn", "stop_sequence")
 _ROOM_NAME = re.compile(r"[a-z][a-z' -]{0,39}")
 _ROOM_UNCLEAR = ("unclear", "unknown", "none", "n/a")
-
-
-def _takes_room_effort(model_id: str) -> bool:
-    # A region prefix (us., us-gov.), then the name, then at most a date
-    # and a -vN:N version: never a longer name (opus-5-50) or an ARN. A
-    # model this misses fails loudly, as a cut reply with _stop.
-    names = "|".join(map(re.escape, ROOM_EFFORT_MODELS))
-    pattern = rf"(?:[a-z-]+\.)?anthropic\.(?:{names})(?:-\d{{8}})?(?:-v\d+:\d+)?"
-    return bool(re.fullmatch(pattern, (model_id or "").strip().lower()))
 
 
 def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
@@ -1357,7 +1351,7 @@ def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg"
     image_bytes, fmt = _prepare_image(image_bytes, media_type)
 
     extra = {}
-    if _takes_room_effort(ROOM_MODEL_ID):
+    if ROOM_MODEL_ID in ROOM_EFFORT_MODELS:
         extra["additionalModelRequestFields"] = {"output_config": {"effort": ROOM_EFFORT}}
     response = _converse(client,
         modelId=ROOM_MODEL_ID,
