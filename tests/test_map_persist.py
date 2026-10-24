@@ -871,7 +871,7 @@ def test_a_matched_reload_freezes_its_map_for_the_watch(bridge_mod, monkeypatch,
     assert b._remap_saved is not None and b._remap_saved.w == _room_grid()["width"]
     b.last_map = {**_room_grid(), "data": [0] * len(_room_grid()["data"])}    # /map fills in
     assert b._remap_saved.state.max() == remap.OCC                           # the frozen copy does not
-    assert b.health()[1]["slam"]["watch"] == {"contradiction": True, "scans": 0, "lost": 0, "moving": 0,
+    assert b.health()[1]["slam"]["watch"] == {"scans": 0, "lost": 0, "moving": 0,
                                               "no_tf": 0, "overflow": 0}
 
 
@@ -1054,8 +1054,10 @@ def test_the_contradiction_trigger_ships_off_and_entered_unknown_still_re_maps(
     """3.50.D4 (the user, 2026-10-24): off unless PICAR_REMAP_CONTRADICTION=1.
     Off, no scan is filed or judged, and entering the saved unknown still
     asks for the re-map."""
-    assert os.environ.get("PICAR_REMAP_CONTRADICTION") is None
-    assert bridge_mod.REMAP_CONTRADICTION is False
+    # The shipped default, read from the code (not the shell's env, review).
+    src = open(bridge_mod.__file__).read()
+    assert 'REMAP_CONTRADICTION = os.environ.get("PICAR_REMAP_CONTRADICTION", "0") == "1"' in src
+    monkeypatch.setattr(bridge_mod, "REMAP_CONTRADICTION", False)
     pose = (0.0, 0.0, 0.0)
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.5, 0.5, 0.0))
     b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
@@ -1067,6 +1069,7 @@ def test_the_contradiction_trigger_ships_off_and_entered_unknown_still_re_maps(
     assert not b._remap_pending
     b.remap_step()
     assert b._remap_tracker.scans == 0 and asked == []
+    assert b.health()[1]["slam"]["remap_contradiction"] is False
     monkeypatch.setattr(b, "_fresh_pose",
                         lambda: {"x_m": 3.0, "y_m": 0.5, "yaw_rad": 0.0, "age_s": 0.0})
     b.remap_step()

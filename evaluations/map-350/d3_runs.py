@@ -98,6 +98,10 @@ def container(maps, bridge):
     subprocess.run(["docker", "rm", "-f", de.CONTAINER], capture_output=True)
     subprocess.run(["docker", "run", "-d", "--name", de.CONTAINER, "-v", f"{maps}:/maps",
                     *_network(), "-e", f"ROS_DOMAIN_ID={de.ROS_DOMAIN}",
+                    # 3.50.D4: the contradiction trigger ships off; a run
+                    # that measures it sets this (d4_runs.py does).
+                    *([] if os.environ.get("PICAR_REMAP_CONTRADICTION") is None else
+                      ["-e", f"PICAR_REMAP_CONTRADICTION={os.environ['PICAR_REMAP_CONTRADICTION']}"]),
                     IMAGE, "ros2", "launch", "picar_bringup", "picar.launch.py"],
                    capture_output=True, check=True)
     w = {"leaked_pose": 0, "leaked_map": 0, "goal_during_check": None, "states": []}

@@ -1638,11 +1638,12 @@ class Bridge(Node):
                                   # 3.50.D4: the re-map, and what its watch has judged
                                   "remap": dict(self.remap_record),
                                   "watch": None if self._remap_tracker is None else
-                                  {"contradiction": REMAP_CONTRADICTION,
-                                   "scans": self._remap_tracker.scans,
+                                  {"scans": self._remap_tracker.scans,
                                    "lost": self._remap_tracker.lost,
                                    "moving": self._remap_tracker.moving,
                                    **self._remap_dropped},
+                                  # PICAR_REMAP_CONTRADICTION: off, no scan is judged
+                                  "remap_contradiction": REMAP_CONTRADICTION,
                                   "remap_latched": self._remap_latched,
                                   "remap_stale_refused": self._remap_stale_refused,
                                   "remap_deferrals": self._remap_deferrals}}
