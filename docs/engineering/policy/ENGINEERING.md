@@ -97,6 +97,18 @@ frame)`, which asks `arrival_confirm_fn(frame)` -- `MissionRunner` passes
 `_guarded_confirm`, the policy's `confirm_arrival` under B3.2's
 `vision_timeout_s`, a failure raising `VisionUnavailable` into the budget;
 without a runner the agent falls back to `vision_fn.confirm_arrival`.
+**3.98: in the simulator the cloud step is the sim's own geometry.**
+With `sim_identity_fn` (the brain server sets it to `geometry_identity` on
+the simulator's frames under `sim_arrival_confirm: geometry`),
+`confirm_cloud()` first asks it: of the frame's `detections` within
+`SIM_CONFIRM_CENTRE_DEG` (10 deg) of the centre, the nearest must be the
+target (the label test `FrameReportedPipeline` uses). Its answer returns
+`{"confirmed", "cloud_called": false, "tier": "sim"}` before the call cap,
+the wait on a call in flight and the call itself; a sim frame with no
+`detections` is refused. It answers None on a frame that is not the
+simulator's (`metadata.source`), which then goes to the cloud as below. A
+local tier, when configured, still answers first.
+
 `TieredVision.confirm_arrival(frame)` makes one synchronous call to the
 cloud (even under `async_cloud`) -- through `confirm_vision_fn` when one was
 given (3.56: the brain's second client, built with the confirmation's
@@ -424,6 +436,7 @@ with `close()`, `reset_epoch()`, `set_searched_rooms()`, `confirm_arrival(frame)
 | `tier_stale_after` | 8 | frames | 6.1's figure; contributed 5.7% of triggers there |
 | `tier_max_calls` | 0 (no cap) | calls | `max_steps` bounds the mission |
 | `tier_search` | `cloud` | -- | 3.80.G: `explore` = explore's nav2 goals choose where to search; env `TIER_SEARCH` |
+| `sim_arrival_confirm` | `geometry` | -- | 3.98 (the user, 2026-10-24): on the simulator's frames (`_frames_are_simulated()`), the arrival's cloud step is `brain/arrival.py` `geometry_identity()` (no call); `cloud` keeps the paid call. Real frames always ask; env `SIM_ARRIVAL_CONFIRM` |
 
 `oov_cold_search_after` exists on `TieredVision` but has no config key.
 `tier_corroboration_bar` is also passed to `TieredVision`; it changes no

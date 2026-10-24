@@ -100,7 +100,7 @@ def _place(grid, start):
 
 
 def _mission(policy, start=None, async_cloud=False, cloud=None, max_steps=60,
-             timeout=20.0, render=True, cloud_for=None):
+             timeout=20.0, render=True, cloud_for=None, tier_kw=None):
     """One mission. `cloud` None means the real HTTP client at DEAD_URL;
     `cloud_for(tier)` builds a cloud that can read the tier's counters."""
     grid = _build()
@@ -112,7 +112,8 @@ def _mission(policy, start=None, async_cloud=False, cloud=None, max_steps=60,
     if policy == "tiered":
         holder = {"cloud": cloud}
         tier = TieredVision(FrameReportedPipeline(TARGET), lambda f: holder["cloud"](f),
-                            steer_on_sight=True, hold_goal=True, async_cloud=async_cloud)
+                            steer_on_sight=True, hold_goal=True, async_cloud=async_cloud,
+                            **(tier_kw or {}))
         if cloud_for is not None:
             holder["cloud"] = cloud_for(tier)
         kw["vision_fn"] = tier
@@ -200,9 +201,24 @@ def test_2a_the_cloudless_policies_still_find(no_network, policy, steps):
 
 
 @pytest.mark.parametrize("async_cloud", [False, True], ids=["sync", "async"])
+def test_2b_tiered_offline_in_the_sim_is_found_on_geometry(no_network, async_cloud):
+    """3.98 criterion 5: the same offline mission with the brain's default,
+    the sim's geometry confirming the arrival -- `found`, where the cloud
+    arm below (3.49's recorded result) ends `arrived_unconfirmed`."""
+    import functools
+    from brain.arrival import geometry_identity
+    runner, r = _mission("tiered", async_cloud=async_cloud, max_steps=120, tier_kw={
+        "sim_identity_fn": functools.partial(geometry_identity, target=TARGET)})
+    assert r["outcome"] == FOUND, (r, runner.status()["log_tail"][-3:])
+    assert r["end"] <= ARRIVED_CELLS, r
+
+
+@pytest.mark.parametrize("async_cloud", [False, True], ids=["sync", "async"])
 def test_2b_tiered_searches_and_arrives_offline(no_network, async_cloud):
     """From the default start the backpack is out of sight: the local tier
-    searches, steers and arrives with every cloud call refused."""
+    searches, steers and arrives with every cloud call refused. (3.98: the
+    `sim_arrival_confirm: cloud` arm -- this builds the policy without the
+    brain server's geometry check.)"""
     runner, r = _mission("tiered", async_cloud=async_cloud, max_steps=120)
     assert no_network.to_cloud(), "the cloud was never dialled -- the test proves nothing"
     assert r["outcome"] == ARRIVED_UNCONFIRMED, (r, runner.status()["log_tail"][-3:])

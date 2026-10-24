@@ -308,13 +308,10 @@ note).
 
 ## Open questions
 
-- **Should a sim frame's arrival be confirmed from geometry?** A live
-  tiered mission on the Sim tab now pays one real cloud call on a render to
-  end `found`, which ties its outcome to whether the model recognises a
-  flat-shaded billboard (the "lit renderer" question below). By analogy with
-  1.12 (the sim reports detections, it does not run a detector), the sim
-  could answer identity from its own geometry. The user decides; the policy
-  domain owns the rule.
+- **Closed 2026-10-24: a sim frame's arrival is confirmed from geometry**
+  (the user; `PLAN-ros-alignment.md` 3.98). The nearest object at the
+  frame's centre must be the target; `sim_arrival_confirm: cloud` keeps the
+  paid call on the render. The policy domain owns the rule.
 
 - **Low obstacles.** Answered by 3.74 part A (objects with a height, a
   floor band in the sim's depth grid). Open: whether flat things (a cable)

@@ -245,6 +245,19 @@ target.
 
 ### The cloud confirms identity at arrival; the lidar decides distance
 
+**In the simulator, its geometry confirms instead** (3.98, the user
+2026-10-24; `docs-review/SPEC-REVIEW-3.md` fix 7). A render is not a
+photograph, and a paid call on a flat-shaded billboard tied every sim
+outcome to how a model reads it. As the sim reports detections from its
+geometry rather than run a detector on a render (1.12), it answers the
+identity question from the same ground truth: the nearest object at the
+centre of the arrival frame must be the target. A setting
+(`sim_arrival_confirm: cloud`) keeps the real call for a run that means to
+test it. Frames that are not the simulator's always go to the tiers below.
+**Trade-off:** sim missions no longer exercise the real confirmation call
+by default, so it is measured on purpose (Stage 1's lit-renderer re-run,
+the car), not in passing.
+
 **Decision.** Decided by the user 2026-10-02; built the same day. Two rules,
 decided together, that split the end of a tiered mission by question, as the
 arbitration above splits steering:
