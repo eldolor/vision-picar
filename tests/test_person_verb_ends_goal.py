@@ -94,3 +94,28 @@ def test_a_move_with_no_goal_counts_no_stop(served):
     assert r["accepted"] is True, r
     time.sleep(0.5)
     assert bridge.goal is not None and bridge.goal["state"] == "active"
+
+
+# ---------- drive: ros (review round 1) ----------
+
+from tests.test_person_stop import _nav2_applied, _nav2_for, ros_goals  # noqa: E402,F401
+
+
+def test_under_ros_drive_a_persons_move_runs_and_nav2_stays_held(ros_goals):
+    """The move counts a stop before its own count is read, so its own
+    loop does not overtake it: it lifts the hold for its twists, turns, and
+    the hold comes back while the loop is still ending the goal."""
+    stack, bridge = ros_goals
+    assert stack.client.post("/world/goal", json={"x_m": 2.0, "y_m": 1.0}).json()["accepted"]
+    bridge.cancel_fails = True                      # the loop keeps going
+    r = stack.act("LEFT", angle=45)
+    assert r["executed"] is True, r
+    assert abs(r["result"]["turned_deg"]) > 30, r
+    assert _nav2_for(stack, 0.5) == 0.0, "nav2 drove the goal after the person's move"
+    bridge.cancel_fails = False
+    end, lifted = time.monotonic() + 3.0, False
+    while time.monotonic() < end and not lifted:
+        lifted = _nav2_applied(stack) > 0.0
+        time.sleep(0.05)
+    assert bridge.goal is None, "the move's loop never ended the goal"
+    assert lifted, "the hold was never lifted after the goal ended"

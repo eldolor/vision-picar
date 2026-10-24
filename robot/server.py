@@ -726,7 +726,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         # before the stops are read, so this verb is not "overtaken" by its
         # own ending loop.
         if req.action in BODY_MOVES and driver_priority(driver) == DRIVER_MANUAL:
-            begin_goal_end()
+            begin_goal_end(now)
         # The stops as the request ARRIVED (3.84, as the goal route since
         # 3.82): a stop pressed after this verb was arbitrated keeps its hold.
         with goal_gen_lock:
@@ -1144,14 +1144,21 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         threading.Thread(target=_end_goal_after_stop, args=(gen,), daemon=True,
                          name="stop-end-goal").start()
 
-    def begin_goal_end() -> None:
+    def begin_goal_end(now: float) -> None:
         """3.97: end a nav2 goal for a person's move -- a Stop's goal-ending
         loop (re-cancels until nav2 reports it over; `ros` wheel posts held
         at zero meanwhile and lifted for a verb's length, 3.84) without its
-        latch or its `robot.stop()`. Only while a goal is pending or active
-        (the same bridge read arbitration makes): a move with no goal counts
-        no stop, so it never refuses a goal or verb sent alongside it."""
-        if not hasattr(world_model, "cancel_goal") or goal_in_progress() is None:
+        latch or its `robot.stop()`. Only while a goal is pending or active:
+        a move with no goal counts no stop, so it never refuses a goal or
+        verb sent alongside it. That is one bridge read on a person's move
+        (new with 3.97; arbitration reads the goal only for the brain), so
+        it is skipped under `drive: ros` while the ROS stack is down, where
+        a hung bridge would hold the person's fallback move for its timeout.
+        Any move counts, even one the safety layer then refuses: a person's
+        press is the take-over."""
+        if not hasattr(world_model, "cancel_goal") or (by_velocity and not ros_up(now)):
+            return
+        if goal_in_progress() is None:
             return
         with goal_gen_lock:
             gen = _count_goal_end()

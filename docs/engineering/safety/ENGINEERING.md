@@ -165,10 +165,13 @@ watchdog.
 one rule under every drive). `do_action` calls `begin_goal_end()` for a
 person's (`DRIVER_MANUAL`) `FORWARD`, `REVERSE`, `LEFT` or `RIGHT`
 (`BODY_MOVES`; never `LOOK_*`) before it reads `goal_stop["stops"]`: on a
-world with `cancel_goal` and only while `goal_in_progress()` (the read
-arbitration already makes), it counts a stop and starts the same loop as
+world with `cancel_goal` and only while `goal_in_progress()` (a bridge
+read new on a person's move -- arbitration reads the goal only for the
+brain -- skipped under `drive: ros` while the ROS stack is down), it counts a stop and starts the same loop as
 `/stop` below (`_count_goal_end()`, `_start_goal_end()`), without the
-latch or `robot.stop()` -- the move itself runs. Counted before the verb's
+latch or `robot.stop()` -- the move itself runs. A move the safety layer
+then refuses still ends the goal (the press is the take-over), and an
+unnamed caller ranks as a person, so a script's `/action` move ends one too. Counted before the verb's
 own count is read, so its own loop never reads as a stop that overtook it.
 Under `drive: ros` the bridge's cancel on a `twin-dpad` twist (3.15) is
 kept; the two cancels are harmless together.
