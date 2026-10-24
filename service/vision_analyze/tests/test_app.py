@@ -1004,20 +1004,44 @@ def test_the_room_call_leaves_room_for_the_models_thinking(monkeypatch):
     assert out["room"] == "bedroom"
     assert "_stop" not in out
     assert fake.kwargs["additionalModelRequestFields"] == {"output_config": {"effort": "low"}}
-    assert fake.kwargs["inferenceConfig"]["maxTokens"] >= 256
+    # Room for the thinking, but still a bound on what one of a survey's
+    # 60 calls can cost.
+    assert 256 <= fake.kwargs["inferenceConfig"]["maxTokens"] <= 512
 
 
-def test_a_cut_room_reply_says_so(monkeypatch, caplog):
-    """A reply cut off before its text is "unclear" -- but said, with the
-    stop reason, never silently, as every call was before S2b."""
+def test_the_effort_field_goes_only_to_a_model_that_takes_it(monkeypatch):
+    """RoomModelId is a deploy parameter; a model that refuses the effort
+    field would make every /room a 502."""
     import vision_core
 
-    _stub_room_converse(monkeypatch, [_REASONING], "max_tokens")
+    monkeypatch.setattr(vision_core, "ROOM_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    fake = _stub_room_converse(monkeypatch, [{"text": "kitchen"}], "end_turn")
+    assert vision_core.describe_image_bytes_room(b"x", "image/jpeg")["room"] == "kitchen"
+    assert "additionalModelRequestFields" not in fake.kwargs
+
+
+@pytest.mark.parametrize("content", [[_REASONING], [_REASONING, {"text": "dining"}]])
+def test_a_cut_room_reply_is_never_a_name_and_says_so(monkeypatch, caplog, content):
+    """A reply cut off is "unclear" -- even when its first word passes as a
+    name ("dining" of "dining room") -- and said once, with the stop reason,
+    never silently, as every call was before S2b."""
+    import vision_core
+
+    _stub_room_converse(monkeypatch, content, "max_tokens")
     with caplog.at_level("WARNING"):
         out = vision_core.describe_image_bytes_room(b"x", "image/jpeg")
     assert out["room"] == "unclear"
     assert out["_stop"] == "max_tokens"
+    assert len([r for r in caplog.records if r.levelname == "WARNING"]) == 1
     assert "max_tokens" in caplog.text
+
+
+def test_a_stop_sequence_is_a_clean_end(monkeypatch):
+    import vision_core
+
+    _stub_room_converse(monkeypatch, [{"text": "office"}], "stop_sequence")
+    out = vision_core.describe_image_bytes_room(b"x", "image/jpeg")
+    assert out["room"] == "office" and "_stop" not in out
 
 
 def test_an_unusable_room_reply_keeps_what_the_model_said():
