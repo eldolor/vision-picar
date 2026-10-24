@@ -1329,12 +1329,16 @@ Answer with the room's name only, lowercase, at most three words. Use one of the
 # any text, so every room was "unclear" (3.70 S2b, 2026-10-24). Low effort
 # keeps the thinking short (57 tokens out with the answer, on a real call);
 # the cap only bounds a call's cost (~$0.006 of output at most). The effort
-# field goes to a model by its name, whatever the region prefix or version
-# suffix, and only to the models confirmed to take it (Opus 5.5, from
+# field goes to a model by its exact name -- a region prefix (a routing
+# profile of the same model) and a version suffix allowed, nothing else -- and
+# only to the models confirmed to take it (Opus 5.5, the us. profile from
 # us-east-2): older Claude models and other vendors' models refuse it, which
 # would make every /room a 502.
 ROOM_EFFORT = "low"
-ROOM_EFFORT_MODELS = ("anthropic.claude-opus-5-5",)
+ROOM_EFFORT_MODELS = ("claude-opus-5-5",)
+_ROOM_EFFORT_ID = re.compile(
+    r"(?:[a-z]+\.)?anthropic\.(" + "|".join(map(re.escape, ROOM_EFFORT_MODELS))
+    + r")(?:-v\d+:\d+)?")
 ROOM_MAX_TOKENS = 256
 _CLEAN_STOPS = (None, "end_turn", "stop_sequence")
 _ROOM_NAME = re.compile(r"[a-z][a-z' -]{0,39}")
@@ -1342,7 +1346,7 @@ _ROOM_UNCLEAR = ("unclear", "unknown", "none", "n/a")
 
 
 def _takes_room_effort(model_id: str) -> bool:
-    return any(name in model_id for name in ROOM_EFFORT_MODELS)
+    return bool(_ROOM_EFFORT_ID.fullmatch(model_id or ""))
 
 
 def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:

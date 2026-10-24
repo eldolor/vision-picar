@@ -141,7 +141,9 @@ Response body (JSON):
       "model_id": "...",
       "usage": {"input_tokens": int, "output_tokens": int},
       "_raw": "..."                    -- only when the reply was not a name
-      "_stop": "max_tokens"            -- only when the reply did not end on end_turn
+      "_stop": "max_tokens"            -- only when the reply did not end cleanly
+                                          (not end_turn or stop_sequence); room is then
+                                          always "unclear"
     }
 """
 

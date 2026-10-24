@@ -1009,12 +1009,17 @@ def test_the_room_call_leaves_room_for_the_models_thinking(monkeypatch):
     assert 256 <= fake.kwargs["inferenceConfig"]["maxTokens"] <= 512
 
 
-def test_the_effort_field_goes_only_to_a_model_that_takes_it(monkeypatch):
+@pytest.mark.parametrize("model_id", [
+    "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "us.anthropic.claude-opus-4-5-20251101-v1:0",
+    "us.anthropic.claude-opus-5", "us.anthropic.claude-opus-5-50", "us.openai.gpt-6-astra",
+    "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-opus-5-5",
+])
+def test_the_effort_field_goes_only_to_a_model_that_takes_it(monkeypatch, model_id):
     """RoomModelId is a deploy parameter; a model that refuses the effort
-    field would make every /room a 502."""
+    field would make every /room a 502. Near misses get none."""
     import vision_core
 
-    monkeypatch.setattr(vision_core, "ROOM_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+    monkeypatch.setattr(vision_core, "ROOM_MODEL_ID", model_id)
     fake = _stub_room_converse(monkeypatch, [{"text": "kitchen"}], "end_turn")
     assert vision_core.describe_image_bytes_room(b"x", "image/jpeg")["room"] == "kitchen"
     assert "additionalModelRequestFields" not in fake.kwargs
@@ -1043,8 +1048,11 @@ def test_the_deployed_room_model_gets_the_effort_field():
     import vision_core
 
     template = (Path(__file__).resolve().parents[3] / "cloudformation" / "serverless.yaml").read_text()
-    deployed = re.search(r"RoomModelId:\s*\n\s*Type: String\s*\n\s*Default: (\S+)", template).group(1)
-    for model_id in (vision_core.ROOM_MODEL_ID, deployed):
+    block = re.search(r"^  RoomModelId:\n((?:    .*\n|      .*\n)+)", template, re.M)
+    assert block, "serverless.yaml has no RoomModelId parameter"
+    default = re.search(r"^    Default:\s*['\"]?([^'\"\s]+)", block.group(1), re.M)
+    assert default, "RoomModelId has no Default"
+    for model_id in (vision_core.ROOM_MODEL_ID, default.group(1)):
         assert vision_core._takes_room_effort(model_id), model_id
 
 
