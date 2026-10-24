@@ -1028,6 +1028,8 @@ def test_the_effort_field_goes_only_to_a_model_that_takes_it(monkeypatch, model_
 @pytest.mark.parametrize("model_id", [
     "us.anthropic.claude-opus-5-5", "global.anthropic.claude-opus-5-5",
     "eu.anthropic.claude-opus-5-5", "anthropic.claude-opus-5-5", "us.anthropic.claude-opus-5-5-v1:0",
+    "us.anthropic.claude-opus-5-5-20261101-v1:0", "us-gov.anthropic.claude-opus-5-5",
+    " us.anthropic.claude-opus-5-5\n",
 ])
 def test_opus_5_5_gets_the_effort_field_under_any_spelling(monkeypatch, model_id):
     """Matched by name: an id spelled another way that missed the effort
@@ -1048,9 +1050,9 @@ def test_the_deployed_room_model_gets_the_effort_field():
     import vision_core
 
     template = (Path(__file__).resolve().parents[3] / "cloudformation" / "serverless.yaml").read_text()
-    block = re.search(r"^  RoomModelId:\n((?:    .*\n|      .*\n)+)", template, re.M)
+    block = re.search(r"RoomModelId:\s*\n((?:[ \t]+.*\n)+)", template.replace("\r\n", "\n"))
     assert block, "serverless.yaml has no RoomModelId parameter"
-    default = re.search(r"^    Default:\s*['\"]?([^'\"\s]+)", block.group(1), re.M)
+    default = re.search(r"Default:\s*['\"]?([^'\"\s]+)", block.group(1))
     assert default, "RoomModelId has no Default"
     for model_id in (vision_core.ROOM_MODEL_ID, default.group(1)):
         assert vision_core._takes_room_effort(model_id), model_id

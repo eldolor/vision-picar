@@ -1330,15 +1330,12 @@ Answer with the room's name only, lowercase, at most three words. Use one of the
 # keeps the thinking short (57 tokens out with the answer, on a real call);
 # the cap only bounds a call's cost (~$0.006 of output at most). The effort
 # field goes to a model by its exact name -- a region prefix (a routing
-# profile of the same model) and a version suffix allowed, nothing else -- and
+# profile of the same model), a date and a -vN:N version allowed -- and
 # only to the models confirmed to take it (Opus 5.5, the us. profile from
 # us-east-2): older Claude models and other vendors' models refuse it, which
 # would make every /room a 502.
 ROOM_EFFORT = "low"
 ROOM_EFFORT_MODELS = ("claude-opus-5-5",)
-_ROOM_EFFORT_ID = re.compile(
-    r"(?:[a-z]+\.)?anthropic\.(" + "|".join(map(re.escape, ROOM_EFFORT_MODELS))
-    + r")(?:-v\d+:\d+)?")
 ROOM_MAX_TOKENS = 256
 _CLEAN_STOPS = (None, "end_turn", "stop_sequence")
 _ROOM_NAME = re.compile(r"[a-z][a-z' -]{0,39}")
@@ -1346,7 +1343,12 @@ _ROOM_UNCLEAR = ("unclear", "unknown", "none", "n/a")
 
 
 def _takes_room_effort(model_id: str) -> bool:
-    return bool(_ROOM_EFFORT_ID.fullmatch(model_id or ""))
+    # A region prefix (us., us-gov.), then the name, then at most a date
+    # and a -vN:N version: never a longer name (opus-5-50) or an ARN. A
+    # model this misses fails loudly, as a cut reply with _stop.
+    names = "|".join(map(re.escape, ROOM_EFFORT_MODELS))
+    pattern = rf"(?:[a-z-]+\.)?anthropic\.(?:{names})(?:-\d{{8}})?(?:-v\d+:\d+)?"
+    return bool(re.fullmatch(pattern, (model_id or "").strip().lower()))
 
 
 def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg") -> dict:
