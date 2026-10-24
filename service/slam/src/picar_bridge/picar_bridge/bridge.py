@@ -1203,7 +1203,11 @@ class Bridge(Node):
         return (self.slam_state == "ready" and self.slam is not None
                 and self.slam.mode == "localisation" and self._remap_saved is not None
                 and self._remap_tracker is not None and not self._remap_latched
-                and time.monotonic() >= self._remap_retry_at)
+                and not self._backing_off())
+
+    def _backing_off(self) -> bool:
+        """The automatic triggers' back-off is running (call under self.lock)."""
+        return time.monotonic() < self._remap_retry_at
 
     def _queue_scan(self, scan) -> None:
         """The poll files each scan it publishes, once, while the watch runs
@@ -1252,7 +1256,10 @@ class Bridge(Node):
                 # tracker's head: one the poll pushed out meanwhile was
                 # counted `overflow` and is not judged as well (review round 4).
                 if not self._watching() or self._remap_tracker is not tracker:
-                    break                   # stopped or replaced while it judged (review round 7)
+                    # Stopped or replaced while it judged (review rounds 7-8):
+                    # nothing filed before that is judged after it.
+                    self._remap_pending.clear()
+                    break
                 if not self._remap_pending or self._remap_pending[0] is not s:
                     continue
                 self._remap_pending.popleft()
@@ -1274,8 +1281,10 @@ class Bridge(Node):
     def _ask_remap(self, trigger, detail, tracker=None) -> None:
         """A trigger's request; one that could not start backs off
         REMAP_RETRY_S (Thermos) rather than ask again on every look."""
-        code, _ = self.remap(trigger, detail, tracker)
-        if code != 200:
+        code, body = self.remap(trigger, detail, tracker)
+        # A stale watch's refusal says nothing about the current one: no
+        # back-off for it, nor a longer one (review round 8).
+        if code != 200 and not body.get("stale"):
             with self.lock:
                 # Never shorten a longer back-off already set (a deferral's).
                 self._remap_retry_at = max(self._remap_retry_at, time.monotonic() + REMAP_RETRY_S)
@@ -1298,12 +1307,12 @@ class Bridge(Node):
                 return 409, {"error": "automatic re-maps are off after a failed one",
                              "slam": self.slam_state, "mode": mode}
             if trigger in AUTOMATIC_TRIGGERS and (
-                    (tracker is not None and tracker is not self._remap_tracker)
-                    or time.monotonic() < self._remap_retry_at):
-                # Review round 7: judged by a tracker since replaced, or
-                # during a back-off -- the watch's view is not the bridge's now.
+                    tracker is None or tracker is not self._remap_tracker or self._backing_off()):
+                # Review rounds 7-8: an automatic trigger names the tracker
+                # that judged it; one since replaced, or one arriving during
+                # a back-off, is not the bridge's view now.
                 return 409, {"error": "the trigger's watch has since stopped or started over",
-                             "slam": self.slam_state, "mode": mode}
+                             "slam": self.slam_state, "mode": mode, "stale": True}
             self.slam_state = "remapping"
             version = self._remap_version
             record = {"trigger": trigger, "at": time.time(), "map_id": version.map_id,

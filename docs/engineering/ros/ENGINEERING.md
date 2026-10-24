@@ -314,11 +314,13 @@ again (the user, 2026-10-23) on any of three triggers:
   it and the drop counts belong to one tracker and are reset with it
   (`_set_tracker`, the one place the tracker changes). A fire from a
   tracker replaced, or a watch stopped, while it judged is not acted on,
-  and `remap()` itself refuses an automatic trigger whose tracker is no
-  longer current or that arrives during a back-off. Known limit: the robot
+  and `remap()` itself refuses an automatic trigger that names no tracker,
+  one whose tracker is no longer current, or one arriving during a
+  back-off -- answered `stale`, which starts or lengthens no back-off. Known limit: the robot
   server stamps `/scan` at the request, so a lidar revolution served to two
   polls is judged twice (one extra look; it cannot hold a contradiction
-  for `HOLD_S` alone). (The swap's rest,
+  for `HOLD_S` alone). The fix is a revolution counter from the lidar
+  driver on `/scan`, a robot-server change left for its own step. (The swap's rest,
   `_at_rest` of amendment 2, is a different question -- still now, no goal
   live -- and keeps its own monotonic `_rest_since`.) Each judged scan is
   laid at `map -> laser` at its own capture stamp (`last_scan.stamp_ns`)

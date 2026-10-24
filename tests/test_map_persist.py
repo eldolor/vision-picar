@@ -950,7 +950,7 @@ def test_the_swap_waits_for_rest_and_no_live_goal(bridge_mod, monkeypatch, tmp_p
         b.goal = {**b.goal, "state": "cancelled"}
         return True
     monkeypatch.setattr(b, "cancel_goal", cancel)
-    assert b.remap("contradiction", {"cells": 12})[0] == 200
+    assert b.remap("contradiction", {"cells": 12}, b._remap_tracker)[0] == 200
     time.sleep(0.15)
     assert live.mode == "localisation" and b.slam_state == "remapping"      # not yet
     assert b.send_goal({"x_m": 2.0, "y_m": 0.0})[0] == 503                 # but goals held
@@ -1337,7 +1337,7 @@ def test_a_robot_that_never_rests_calls_the_swap_off(bridge_mod, monkeypatch, tm
     b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
     b._rest_since = None                                   # a person driving
     monkeypatch.setattr(b, "cancel_goal", lambda why="cancelled": False)
-    assert b.remap("contradiction", {"cells": 12})[0] == 200
+    assert b.remap("contradiction", {"cells": 12}, b._remap_tracker)[0] == 200
     _settle(b)
     assert live.mode == "localisation" and b.slam_state == "ready"
     assert b.health()[1]["slam"]["remap"]["result"] == "deferred"
@@ -1397,7 +1397,7 @@ def test_a_deferral_backs_off_longer_and_is_counted(bridge_mod, monkeypatch, tmp
     b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
     b._rest_since = None
     monkeypatch.setattr(b, "cancel_goal", lambda why="cancelled": False)
-    assert b.remap("contradiction", {"cells": 12})[0] == 200
+    assert b.remap("contradiction", {"cells": 12}, b._remap_tracker)[0] == 200
     _settle(b)
     h = b.health()[1]["slam"]
     assert h["remap"]["result"] == "deferred" and h["remap_deferrals"] == 1
@@ -1468,8 +1468,9 @@ def test_the_bridge_can_bind_loopback_only():
 def test_a_latched_bridge_refuses_a_trigger_but_not_a_person(bridge_mod, monkeypatch, tmp_path):
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
     b._remap_latched = True
-    assert b.remap("entered_unknown", {})[0] == 409
-    assert b.remap("contradiction", {})[0] == 409
+    for trigger in ("entered_unknown", "contradiction"):
+        code, body = b.remap(trigger, {}, b._remap_tracker)
+        assert code == 409 and "after a failed one" in body["error"]
     assert b.remap("request")[0] == 200
     _settle(b)
 
@@ -1658,3 +1659,18 @@ def test_the_poll_itself_files_each_scan(bridge_mod, monkeypatch, tmp_path):
     b._poll_scan()
     b._poll_scan()
     assert len(b._remap_pending) == 2 and b._remap_pending[-1] is b.last_scan
+
+
+def test_a_stale_refusal_starts_no_back_off(bridge_mod, monkeypatch, tmp_path):
+    """Review round 8: a trigger refused for a replaced tracker or a running
+    back-off must not set, or lengthen, the current watch's back-off; and an
+    automatic trigger that names no tracker is refused."""
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
+    monkeypatch.setattr(b, "_remap_run", lambda *a: None)
+    assert b.remap("contradiction", {})[0] == 409
+    b._ask_remap("contradiction", {}, remap.Contradictions(b._remap_saved))
+    assert b._remap_retry_at <= time.monotonic()
+    end = time.monotonic() + 0.5
+    b._remap_retry_at = end
+    b._ask_remap("entered_unknown", {}, b._remap_tracker)
+    assert b._remap_retry_at == end
