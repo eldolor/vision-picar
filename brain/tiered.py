@@ -1864,9 +1864,13 @@ class TieredVision:
         """
         if self.sim_identity_fn is not None:
             # 3.98 (the user, 2026-10-24): a sim arrival is the sim's to judge
-            # -- no call, no cap, no wait on a call in flight.
+            # -- no call and no cap (the runner may still have waited for a
+            # trigger's call in flight before asking).
             verdict = self.sim_identity_fn(frame)
             if verdict is not None:
+                with self._local_lock:
+                    # An arrival frame, as on the cloud path (review round 1).
+                    self._frames_off_arrival = 0
                 return {"confirmed": verdict, "cloud_called": False, "tier": "sim",
                         "reason": ("the simulator's geometry puts the target in front"
                                    if verdict else

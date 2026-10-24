@@ -812,6 +812,7 @@ def create_app(
                 "tier_cold_search_after_cm",
                 "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
                 "tier_local_direction", "tier_steer_on_candidate", "tier_search",
+                "sim_arrival_confirm",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",
                 "tier_spin_guard_after", "tier_consecutive_frames", "tier_sighting_span_s", "tier_frame_vote",
                 "perception_floor_mask", "perception_crop_path",

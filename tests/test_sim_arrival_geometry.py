@@ -134,3 +134,19 @@ def test_a_sim_mission_ends_found_with_no_arrival_call(monkeypatch):
     s = runner.status()
     assert s["outcome"] == FOUND, s["log_tail"]
     assert confirm.calls == 0, "the arrival paid a cloud call"
+
+
+def test_the_step_a_geometry_verdict_ends_is_labelled(monkeypatch):
+    """Review round 1: a geometry verdict made no call, so the agent did not
+    label its step (`identity_tier`, the refused arrival's reasoning)."""
+    from brain.agent import MissionAgent
+    seen = []
+    real = MissionAgent._label_confirmation
+
+    def spy(scene, readout, verdict):
+        seen.append(verdict.get("tier"))
+        return real(scene, readout, verdict)
+
+    monkeypatch.setattr(MissionAgent, "_label_confirmation", staticmethod(spy))
+    test_a_sim_mission_ends_found_with_no_arrival_call(monkeypatch)
+    assert "sim" in seen, seen

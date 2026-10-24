@@ -103,11 +103,17 @@ the simulator's frames under `sim_arrival_confirm: geometry`),
 `confirm_cloud()` first asks it: of the frame's `detections` within
 `SIM_CONFIRM_CENTRE_DEG` (10 deg) of the centre, the nearest must be the
 target (the label test `FrameReportedPipeline` uses). Its answer returns
-`{"confirmed", "cloud_called": false, "tier": "sim"}` before the call cap,
-the wait on a call in flight and the call itself; a sim frame with no
+`{"confirmed", "cloud_called": false, "tier": "sim"}` before the call cap
+and the call itself (`MissionRunner._guarded_confirm` may still have waited
+for a trigger's call in flight); the agent labels the step like any
+confirmation (`identity_tier: sim`), and the metrics row carries
+`sim_arrival_confirm`. A sim frame with no
 `detections` is refused. It answers None on a frame that is not the
 simulator's (`metadata.source`), which then goes to the cloud as below. A
-local tier, when configured, still answers first.
+local tier, when configured, still answers first; but a local-led arrival
+(3.80.O, cloud-only) is answered by the geometry too, so a sim evaluation
+that means to measure the cloud's verdict on such arrivals (3.80.O's blind
+runs) sets `sim_arrival_confirm: cloud`.
 
 `TieredVision.confirm_arrival(frame)` makes one synchronous call to the
 cloud (even under `async_cloud`) -- through `confirm_vision_fn` when one was
