@@ -399,9 +399,12 @@ def _inventory_never_leaves_the_suite(tmp_path_factory):
     """3.46: every mission the brain server runs saves its object inventory.
     In the suite that goes to a temporary directory, never the repo's
     recordings/, and never to S3 -- even from a shell where run.sh's
-    INVENTORY_BUCKET is exported. Live servers the suite spawns inherit it."""
-    saved = {k: os.environ.get(k) for k in ("INVENTORY_DIR", "INVENTORY_BUCKET")}
+    INVENTORY_BUCKET is exported. Live servers the suite spawns inherit it.
+    3.99: the same for every mission's intervention line."""
+    saved = {k: os.environ.get(k) for k in ("INVENTORY_DIR", "INVENTORY_BUCKET",
+                                            "INTERVENTION_DIR")}
     os.environ["INVENTORY_DIR"] = str(tmp_path_factory.mktemp("inventory"))
+    os.environ["INTERVENTION_DIR"] = str(tmp_path_factory.mktemp("interventions"))
     os.environ["INVENTORY_BUCKET"] = ""
     yield
     for k, v in saved.items():

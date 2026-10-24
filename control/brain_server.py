@@ -91,6 +91,7 @@ from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
                             DEFAULT_MATCH_PROBABILITY, PerceptionUnavailable)
 from brain.tiered import parse_frame_vote, tiered_vision_fn_for
 from brain.choice_log import ChoiceLog
+from brain.intervention_log import FILE_NAME as INTERVENTION_FILE, InterventionLog
 from control import drills
 from control.brain_config import load_brain_config
 from control.inventory_store import _slug, inventory_store_from_config
@@ -749,11 +750,10 @@ def create_app(
             tier_search=tier_search,
             explore_ask_timeout_s=config["explore_ask_timeout_s"] if asks else None,
         )
-        if asks:
-            # 3.88 A: which house each recorded choice was made in -- the
-            # simulator's, from the robot server; None on the car.
-            sim_map = getattr(robot, "sim_map", None)
-            kwargs["house"] = sim_map() if sim_map is not None else None
+        # 3.88 A, 3.99: which house each recorded choice and mission end was
+        # in -- the simulator's, from the robot server; None on the car.
+        sim_map = getattr(robot, "sim_map", None)
+        kwargs["house"] = sim_map() if sim_map is not None else None
         if navigator is not None:
             kwargs["navigator"] = navigator
         try:
@@ -796,6 +796,9 @@ def create_app(
         runner.inventory_sink = lambda report: threading.Thread(
             target=store.save, args=(mission_id, report), daemon=True).start()
         runner.mission_id = mission_id
+        # 3.99: one file for every mission's end line, created at the first.
+        runner.intervention_log = InterventionLog(
+            os.path.join(config["intervention_dir"], INTERVENTION_FILE))
         if asks:
             # 3.88 A: one file a mission, created at its first choice.
             runner.choice_log = ChoiceLog(os.path.join(config["explore_choice_dir"],

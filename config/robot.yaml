@@ -455,6 +455,11 @@ brain:
   explore_ask: false
   explore_ask_timeout_s: 60.0
   explore_choice_dir: recordings/explore-choices
+  # 3.99 -- every mission's end, one line each in
+  # <intervention_dir>/interventions.jsonl: whether a person stepped in (a Stop,
+  # a D-pad takeover) and what it was doing then. Local only, never uploaded;
+  # `python -m brain.intervention_log` reports interventions per hour.
+  intervention_dir: recordings/interventions
 
   # Replaying a recorded walk, which is NOT a mission and wants a longer
   # deadline: nothing is driving, and replay is the burstiest caller here

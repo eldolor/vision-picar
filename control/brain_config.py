@@ -266,6 +266,11 @@ DEFAULTS = {
     "explore_ask": False,
     "explore_ask_timeout_s": 60.0,
     "explore_choice_dir": "recordings/explore-choices",
+    # 3.99: every mission's end, one line each -- whether a person stepped in
+    # (a Stop, a D-pad takeover) and what the mission was doing then -- in
+    # <intervention_dir>/interventions.jsonl. Local only; never uploaded.
+    # `python -m brain.intervention_log` reports interventions per hour.
+    "intervention_dir": "recordings/interventions",
     # Replaying a recorded walk (control/walk_replay.py) is a different
     # question from a live mission's vision call, and it wants a different
     # deadline. A mission is impatient on purpose -- there is a robot
@@ -473,6 +478,8 @@ def load_brain_config(config_path=None) -> dict:
         merged["explore_ask"] = raw in ("1", "true")
     if os.environ.get("EXPLORE_CHOICE_DIR"):
         merged["explore_choice_dir"] = os.environ["EXPLORE_CHOICE_DIR"]
+    if os.environ.get("INTERVENTION_DIR"):
+        merged["intervention_dir"] = os.environ["INTERVENTION_DIR"]
     # Same idea, for a brain deployment whose robot has no EFS-backed
     # recordings volume mounted (cloudformation/teleop-brain.yaml) --
     # without this, a recorded frame would silently land on the container's

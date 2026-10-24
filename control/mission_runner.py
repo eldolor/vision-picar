@@ -55,7 +55,8 @@ from typing import Callable, Optional, Tuple
 from brain.agent import ObjectSearchAgent, _takes_local_ok
 from brain.arrival import SOURCE_LOCAL
 from brain.explore import OWN_GOAL_TOLERANCE_M, ExploreAgent  # one tolerance for both (3.76)
-from brain.choice_log import GoalAsk
+from brain.choice_log import BY_PERSON, GoalAsk
+from brain.intervention_log import VIA_BRAIN_STOP, VIA_PREEMPTED, VIA_ROBOT_STOP
 from brain.goal_policy import goal_policy_for
 from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
 from brain.inventory import MAX_RANGE_M as INVENTORY_RANGE_M
@@ -734,6 +735,13 @@ class MissionRunner:
         self.choice_log = None
         self.choices: list = []
         self._choice_error_logged = False
+        # 3.99: one line at the mission's end -- did a person step in, and
+        # what was it doing then. The file is set by the brain server
+        # (`intervention_dir`); None writes nothing. `intervention_done` is
+        # set once the line is down (or none is due).
+        self.intervention_log = None
+        self.intervention: Optional[dict] = None
+        self.intervention_done = threading.Event()
 
         self.memory = MissionMemory(
             mission=mission or ("Survey the house." if job == "survey"
@@ -1224,19 +1232,21 @@ class MissionRunner:
         if isinstance(error, StoppedByPerson):
             # 3.84: the brain was refused because a person pressed Stop (the
             # D-pad's, not only the brain panel's): ended by that Stop.
-            self._finish(CANCELLED, f"stopped by a person: {detail}", cancelled_by="stop")
+            self._finish(CANCELLED, f"stopped by a person: {detail}", cancelled_by="stop",
+                         via=VIA_ROBOT_STOP)
             return
         holder = _PREEMPTED_BY.match(detail)
         if holder and driver_priority(holder.group(1)) != DRIVER_MANUAL:
             self._finish(FAILED, f"preempted by an autonomous driver: {detail}")
             return
-        self._finish(CANCELLED, detail, cancelled_by="dpad")
+        self._finish(CANCELLED, detail, cancelled_by="dpad", via=VIA_PREEMPTED,
+                     by=holder.group(1) if holder else None)
 
     def stop(self, reason: str = "stopped by operator") -> None:
         """Operator stop: ends the mission Cancelled, `cancelled_by: "stop"`
         (3.70 E5). Always stops the car as well as the loop -- stopping the
         thinking is not stopping the robot."""
-        self._finish(CANCELLED, reason, cancelled_by="stop")
+        self._finish(CANCELLED, reason, cancelled_by="stop", via=VIA_BRAIN_STOP)
 
     def abort(self, reason: str) -> None:
         """Failsafe stop (B3.3's hung-tick guard calls this). Same as
@@ -1741,7 +1751,9 @@ class MissionRunner:
     def _finish(self, outcome: str, note: str, arrival: Optional[dict] = None,
                 tier_stats: Optional[dict] = None,
                 arrival_frame: Optional[dict] = None,
-                cancelled_by: Optional[str] = None) -> None:
+                cancelled_by: Optional[str] = None, via: Optional[str] = None,
+                by: Optional[str] = None) -> None:
+        line = None     # 3.99: this end's intervention line, built below
         with self._lock:
             if self._ended():
                 return
@@ -1775,6 +1787,13 @@ class MissionRunner:
                 self._arrival_frame = arrival_frame
             if outcome == FAILED:
                 self._error = note
+            # 3.99: the end's line, its context taken now, in the same locked
+            # step as the outcome; written after the stop (`_log_intervention`).
+            # Nothing here may raise before the stop (3.55).
+            try:
+                line = self._intervention_line(outcome, note, cancelled_by, via, by)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("intervention line not built: %s", e)
             # 3.46: before the end line, which stays the log's last word --
             # the twin and the tests read the end reason off log_tail[-1].
             if self.inventory is not None:
@@ -1795,6 +1814,13 @@ class MissionRunner:
                              name="mission-goal-end").start()
         # Outside the lock: this is an HTTP call when the robot is remote.
         self._safe_stop()
+        # 3.99: on a thread of its own, like the report below: the pose is an
+        # HTTP read, and a Stop runs this on the brain's event loop.
+        if line is not None and self.intervention_log is not None:
+            threading.Thread(target=self._log_intervention, args=(line,), daemon=True,
+                             name="mission-intervention").start()
+        else:
+            self.intervention_done.set()
         # 3.70 E3-E5: where it looked -- after the stop, because it reads the
         # map (an HTTP call when the world is remote, up to its timeout) and
         # walks it. On a thread of its own: `_finish` also runs on the brain's
@@ -1825,6 +1851,55 @@ class MissionRunner:
         # that rule, the same one the odometry read above follows.
         self._ship_metrics()
         self.finished.set()
+
+    def _intervention_line(self, outcome, note, cancelled_by, via, by) -> Optional[dict]:
+        """3.99: the end's record, under `_lock`, or None for a mission that
+        never started. Only a person's end (`cancelled`) carries an
+        intervention; its pose is added after the stop."""
+        if self._started_clock is None:
+            return None
+        elapsed = self._elapsed_s() or 0.0
+        autonomous = max(0.0, elapsed - self._paused_s())
+        ended_at = time.time()
+        intervention = None
+        if outcome == CANCELLED and cancelled_by is not None:
+            intervention = {
+                "kind": cancelled_by, "via": via, "by": by, "detail": note,
+                "at_s": round(autonomous, 2), "step": len(self.agent.history),
+                "last_action": self._last_action,
+                "explore_event": getattr(self.agent, "last_event", None) if self.explores else None,
+            }
+        return {
+            "mission_id": self.mission_id, "house": self.house,
+            "policy": self.policy, "job": self.job,
+            "target_object": self.memory.target_object, "target_room": self.memory.target_room,
+            "started_at": round(ended_at - (time.monotonic() - self._started_at), 3),
+            "ended_at": round(ended_at, 3),
+            "autonomous_s": round(autonomous, 2),
+            "outcome": outcome,
+            "person_picks": sum(1 for c in self.choices if c.get("by") == BY_PERSON),
+            "intervention": intervention,
+        }
+
+    def _log_intervention(self, line: dict) -> None:
+        """3.99: the pose after the stop, then the line. A read or a write
+        that fails is logged and never reaches the mission."""
+        try:
+            if line["intervention"] is not None:
+                pose = None
+                try:
+                    p = self.world.get_pose()
+                    if isinstance(p, dict) and p.get("usable"):
+                        pose = {k: p.get(k) for k in ("map_id", "x_m", "y_m", "heading_deg")}
+                except Exception as e:  # noqa: BLE001 -- the line without it
+                    logger.warning("intervention pose unreadable: %s", e)
+                line["intervention"]["pose_after_stop"] = pose
+            self.intervention = line
+            self.intervention_log.append(line)
+        except Exception as e:  # noqa: BLE001 -- a record lost, never the mission
+            logger.warning("mission end not recorded in the intervention log: %s", e)
+        finally:
+            self.intervention_done.set()
 
     def _report_in_background(self) -> None:
         try:
