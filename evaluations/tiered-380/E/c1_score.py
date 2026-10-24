@@ -68,6 +68,8 @@ def score_frame(rec: dict, cfg: dict) -> dict:
         if not v.get("undecided"):
             verdict = bool(v["confirmed"])
             break
+    else:
+        by = "unresolved"  # still undecided after every ask: cloud_unknown
     if by == "cloud":
         # The cloud's recorded answer, where 3.48's row pins it (docstring).
         verdict = (False if not rec["visible"] and rec["walk"] != TEAL_WALK
@@ -97,7 +99,8 @@ def main():
         "thresholds": {k: cfg[k] for k in ("tier_local_no_below", "tier_local_max_unable")},
         "yes": tp + fp, "tp": tp, "fp": fp, "precision": prec, "recall": rec,
         "decided_by": {"local": sum(r["by"] == "local" for r in rows),
-                       "cloud": sum(r["by"] == "cloud" for r in rows)},
+                       "cloud": sum(r["by"] == "cloud" for r in rows),
+                       "unresolved": sum(r["by"] == "unresolved" for r in rows)},
         "cloud_escalations": sum(r["cloud_asks"] for r in rows),
         "cloud_unknown": unknown,
         "teal_bin_walk_yes": sum(1 for r in rows if r["yes"] and not r["visible"]
