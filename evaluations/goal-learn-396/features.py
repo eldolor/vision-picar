@@ -16,7 +16,7 @@ import numpy as np
 
 from brain.frontier import _cell_of
 from brain.room_labels import segment
-from world.interface import CELL_UNKNOWN
+from world.interface import CELL_FREE, CELL_OCCUPIED, CELL_UNKNOWN
 
 # Appended after FEATURES, in this order.
 ROOM_FEATURES = (
@@ -29,6 +29,29 @@ ROOM_FEATURES = (
     "prior_new",     # prior x room_new
 )
 ROOM_AREA_M2 = 20.0
+# Rooms are cut on the training grid's resolution (the simulator's 0.30 m
+# cells): a finer map (SLAM's 0.05 m) is resampled first, so the features
+# read as they did in training and `segment()` sees 36x fewer cells.
+ROOM_RES_M = 0.30
+
+
+def coarse(m: dict, res_m: float = ROOM_RES_M) -> dict:
+    """`m` at `res_m` (an integer factor of its own resolution): a coarse
+    cell is occupied if any of its cells is, free if at least half are, and
+    unknown otherwise. A map already that coarse is returned as it is."""
+    k = int(round(res_m / m["resolution_m"]))
+    if k <= 1:
+        return m
+    w, h = m["width"], m["height"]
+    W, H = -(-w // k), -(-h // k)
+    cells = np.full((H * k, W * k), CELL_UNKNOWN, dtype=np.asarray(m["cells"]).dtype)
+    cells[:h, :w] = np.asarray(m["cells"]).reshape(h, w)
+    blocks = cells.reshape(H, k, W, k).swapaxes(1, 2).reshape(H, W, k * k)
+    out = np.full((H, W), CELL_UNKNOWN, dtype=cells.dtype)
+    out[(blocks == CELL_FREE).sum(axis=2) * 2 >= k * k] = CELL_FREE
+    out[(blocks == CELL_OCCUPIED).any(axis=2)] = CELL_OCCUPIED
+    return {**m, "width": W, "height": H, "resolution_m": m["resolution_m"] * k,
+            "cells": out.ravel().tolist()}
 # The stand-in labeller names a room once this share of its floor is known
 # on the brain's map (amendment 1).
 KNOWN_SHARE = 0.25
@@ -51,6 +74,7 @@ def room_features(m: dict, pose: dict, goals: list, *, trail: list, types: list,
     """Each candidate's ROOM_FEATURES. `goals`: the pool's (x_m, y_m) in
     order; `trail`: house-frame points the robot has stood on; `types`: each
     goal's room type from the labels, or None; `prior`: type -> P(target)."""
+    m = coarse(m)
     seg, _ = segment(m)
     res2 = m["resolution_m"] ** 2
     ids, counts = np.unique(seg[seg >= 0], return_counts=True)
