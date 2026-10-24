@@ -54,13 +54,14 @@ OCCUPIED_AT = relocalise.OCCUPIED_AT        # 65
 FREE, OCC, UNKNOWN = 0, 1, 2
 
 
-def _dilate(mask: np.ndarray, radius_cells: int) -> np.ndarray:
-    """Every cell within `radius_cells` (a disc) of a True cell."""
+def _dilate(mask: np.ndarray, radius_cells: float) -> np.ndarray:
+    """Every cell whose centre is within `radius_cells` of a True cell's."""
     out = mask.copy()
     h, w = mask.shape
-    for dr in range(-radius_cells, radius_cells + 1):
-        for dc in range(-radius_cells, radius_cells + 1):
-            if (dr == 0 and dc == 0) or dr * dr + dc * dc > radius_cells * radius_cells:
+    reach = int(math.ceil(radius_cells - 1e-9))
+    for dr in range(-reach, reach + 1):
+        for dc in range(-reach, reach + 1):
+            if (dr == 0 and dc == 0) or dr * dr + dc * dc > radius_cells * radius_cells + 1e-9:
                 continue
             src = mask[max(0, -dr):h - max(0, dr), max(0, -dc):w - max(0, dc)]
             out[max(0, dr):h - max(0, -dr), max(0, dc):w - max(0, -dc)] |= src
@@ -79,7 +80,10 @@ class SavedMap:
         self.state = np.full(data.shape, FREE, dtype=np.int8)
         self.state[data >= OCCUPIED_AT] = OCC
         self.state[data < 0] = UNKNOWN
-        reach = int(math.ceil(NEW_TOL_M / self.res - 1e-9))
+        # The tolerance relocalise judges a reload with (review): a return
+        # within NEW_TOL_M of an occupied cell's square, i.e. its centre
+        # within NEW_TOL_M + res/sqrt(2).
+        reach = NEW_TOL_M / self.res + 1 / math.sqrt(2)
         self.near_occ = _dilate(self.state == OCC, reach)
         self.near_unknown = _dilate(self.state == UNKNOWN, reach)
 
@@ -159,6 +163,8 @@ def judge_scan(saved: SavedMap, scan: dict, laser_pose: Sequence[float]) -> dict
     e_fin = np.where(e_ok, e, np.nan)
     with np.errstate(invalid="ignore"):
         drdt = np.abs(np.roll(e_fin, -1) - np.roll(e_fin, 1)) / (2 * inc)
+        if abs(n * inc - 2 * math.pi) > inc / 2:
+            drdt[0] = drdt[-1] = np.nan      # not a full turn: the ends have one neighbour
         incidence = np.degrees(np.arctan2(e_fin, drdt))
     square = e_ok & np.isfinite(incidence) & (incidence >= MIN_INCIDENCE_DEG)
     e_idx = np.maximum(first, 0)
