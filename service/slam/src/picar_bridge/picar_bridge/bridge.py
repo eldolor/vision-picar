@@ -155,6 +155,11 @@ SAVE_TIMEOUT_S = 30.0
 # it from the dock. PICAR_MAP_RELOAD=0 keeps a fresh map every start (a run
 # that must map from empty while a store is mounted).
 MAP_RELOAD = os.environ.get("PICAR_MAP_RELOAD", "1") != "0"
+# 3.50.D4: the contradiction trigger, OFF unless PICAR_REMAP_CONTRADICTION=1
+# (the user, 2026-10-24: amendment 4 found every real change live but fired
+# on a fixed wall in D4-d). Off, the watch judges no scans; entering the
+# saved unknown and a person's request still re-map.
+REMAP_CONTRADICTION = os.environ.get("PICAR_REMAP_CONTRADICTION", "0") == "1"
 # A stopped node's last map -> odom is stamped up to slam.yaml's
 # transform_timeout (0.2 s) ahead: a fresh node's frame starts after it.
 SLAM_TF_LEAD_S = 0.25
@@ -1214,7 +1219,8 @@ class Bridge(Node):
         """The poll files each scan it publishes, once, while the watch runs
         (call under self.lock). No stamp is compared, so a clock stepping
         back cannot blind the watch (review rounds 4-6)."""
-        if scan is None or scan.get("stamp_ns") is None or not self._watching():
+        if (not REMAP_CONTRADICTION or scan is None or scan.get("stamp_ns") is None
+                or not self._watching()):
             return
         if len(self._remap_pending) >= REMAP_PENDING_MAX:
             self._remap_pending.popleft()
@@ -1632,7 +1638,8 @@ class Bridge(Node):
                                   # 3.50.D4: the re-map, and what its watch has judged
                                   "remap": dict(self.remap_record),
                                   "watch": None if self._remap_tracker is None else
-                                  {"scans": self._remap_tracker.scans,
+                                  {"contradiction": REMAP_CONTRADICTION,
+                                   "scans": self._remap_tracker.scans,
                                    "lost": self._remap_tracker.lost,
                                    "moving": self._remap_tracker.moving,
                                    **self._remap_dropped},

@@ -162,6 +162,9 @@ Notes on those choices:
   first mapping session began); a robot elsewhere is caught within a few
   seconds and gets a fresh map (`/health` `slam.reload`). Goals are
   refused until then. `-e PICAR_MAP_RELOAD=0` maps from empty instead.
+  While localising, entering a part of the saved map that is unknown, or a
+  person's request, starts a re-map; `-e PICAR_REMAP_CONTRADICTION=1` adds
+  re-mapping when scans contradict the saved map (off: 3.50.D4).
 
 * **`-p 127.0.0.1:8765:8765`** publishes Foxglove to this machine only. The
   launch binds `0.0.0.0` inside the container and offers only the

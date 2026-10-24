@@ -300,6 +300,20 @@ import types  # noqa: E402
 
 from tests.test_review_376h1 import _Msg, bridge_mod  # noqa: E402,F401 -- the stubbed bridge
 
+
+@pytest.fixture
+def contradiction_default():
+    """Asked for by a test of the bridge as it ships: the trigger off."""
+
+
+@pytest.fixture(autouse=True)
+def _contradiction_on(request, monkeypatch):
+    """3.50.D4: the contradiction trigger ships off (PICAR_REMAP_CONTRADICTION);
+    the tests of its behaviour run it on, except those asking for
+    `contradiction_default`."""
+    if "bridge_mod" in request.fixturenames and "contradiction_default" not in request.fixturenames:
+        monkeypatch.setattr(request.getfixturevalue("bridge_mod"), "REMAP_CONTRADICTION", True)
+
 RES = 0.05
 
 
@@ -857,7 +871,7 @@ def test_a_matched_reload_freezes_its_map_for_the_watch(bridge_mod, monkeypatch,
     assert b._remap_saved is not None and b._remap_saved.w == _room_grid()["width"]
     b.last_map = {**_room_grid(), "data": [0] * len(_room_grid()["data"])}    # /map fills in
     assert b._remap_saved.state.max() == remap.OCC                           # the frozen copy does not
-    assert b.health()[1]["slam"]["watch"] == {"scans": 0, "lost": 0, "moving": 0,
+    assert b.health()[1]["slam"]["watch"] == {"contradiction": True, "scans": 0, "lost": 0, "moving": 0,
                                               "no_tf": 0, "overflow": 0}
 
 
@@ -1029,6 +1043,30 @@ def test_the_watch_re_maps_on_entering_the_saved_map_s_unknown(bridge_mod, monke
     monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (200, {}))
     b.remap_step()
     assert asked == []
+    monkeypatch.setattr(b, "_fresh_pose",
+                        lambda: {"x_m": 3.0, "y_m": 0.5, "yaw_rad": 0.0, "age_s": 0.0})
+    b.remap_step()
+    assert asked == ["entered_unknown"]
+
+
+def test_the_contradiction_trigger_ships_off_and_entered_unknown_still_re_maps(
+        bridge_mod, contradiction_default, monkeypatch, tmp_path):
+    """3.50.D4 (the user, 2026-10-24): off unless PICAR_REMAP_CONTRADICTION=1.
+    Off, no scan is filed or judged, and entering the saved unknown still
+    asks for the re-map."""
+    assert os.environ.get("PICAR_REMAP_CONTRADICTION") is None
+    assert bridge_mod.REMAP_CONTRADICTION is False
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.5, 0.5, 0.0))
+    b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    asked = []
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (200, {}))
+    _queue(b, [1000.0, 1000.1, 1000.2])
+    assert not b._remap_pending
+    b.remap_step()
+    assert b._remap_tracker.scans == 0 and asked == []
     monkeypatch.setattr(b, "_fresh_pose",
                         lambda: {"x_m": 3.0, "y_m": 0.5, "yaw_rad": 0.0, "age_s": 0.0})
     b.remap_step()
