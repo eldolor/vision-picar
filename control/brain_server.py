@@ -698,18 +698,20 @@ def create_app(
 
             # 3.70 S2's car half: a survey's rooms named by the cloud's /room,
             # one paid call an ask, only when the config says so. Its timeout
-            # is held to half the tick's: the ask runs inside the tick.
-            room_label_fn = None
+            # is held to half the tick's, and the runner skips an ask that
+            # would not end inside what the step left of the tick.
+            room_label_fn = room_label_timeout_s = None
             if req.job == "survey" and config["room_label_source"] == "cloud":
                 if not config["vision_url"]:
                     raise ValueError(
                         "brain.room_label_source 'cloud' needs a vision service. Set "
                         "brain.vision_url in config/robot.yaml (or VISION_URL in the "
                         "environment).")
+                room_label_timeout_s = min(float(config["room_label_timeout_s"]),
+                                           float(config["tick_timeout_s"]) / 2)
                 room_label_fn = room_label_fn_for(
                     vision_url=config["vision_url"], secret=vision_secret,
-                    timeout_s=min(float(config["room_label_timeout_s"]),
-                                  float(config["tick_timeout_s"]) / 2))
+                    timeout_s=room_label_timeout_s)
 
         except BaseException:
             if navigator is not None:
@@ -728,6 +730,7 @@ def create_app(
             room_label_max_calls=config["room_label_max_calls"] or None,
             room_label_mode=config["room_label_mode"],
             room_label_fn=room_label_fn,
+            room_label_timeout_s=room_label_timeout_s,
             battery_floor_v=config["battery_floor_v"] or None,
             vision_max_calls=config["vision_max_calls"] or None,
             stuck_after=config["stuck_after"],

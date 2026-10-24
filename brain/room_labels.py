@@ -70,6 +70,31 @@ UNCLEAR = "unclear"
 # whose `room` is "unknown"): nothing counted, asked again after RETRY_S.
 NO_SOURCE = object()
 NOT_HERE = object()
+
+
+class SourceRefused(RuntimeError):
+    """The label source refused us for good -- a wrong secret, a route not
+    deployed, a reply that is not the API's: our fault, not an outage. The
+    labeller stops asking (no back-off loop spending calls all survey) and
+    names the reason on its status."""
+
+
+# Replies that name no room. One list for every source, so a reply the
+# service passes through cannot become a room called "none" (3.76 L2).
+_NO_ROOM = ("", "unclear", "unknown", "none", "n/a")
+_ARTICLES = ("the ", "a ", "an ")
+
+
+def clean_room_name(name) -> str:
+    """One spelling per room: lowercase, single spaces, no leading article
+    ("The kitchen" and "kitchen" are one room, 3.76 L2); a reply naming no
+    room is UNCLEAR."""
+    name = " ".join(name.split()).lower() if isinstance(name, str) else ""
+    for article in _ARTICLES:
+        if name.startswith(article):
+            name = name[len(article):]
+            break
+    return UNCLEAR if name in _NO_ROOM else name
 # The map's rooms are re-cut at most this often (on the labeller's clock):
 # a cut is pure Python, ~0.2-0.9 s on a 200-400 cell square map, and a SLAM
 # map changes -- size and origin too -- about once a second while the robot
@@ -324,6 +349,7 @@ class RoomLabeller:
         self.calls = 0
         self.capped = False            # the cap was reached: no more asks
         self.no_source = False         # NO_SOURCE seen: no more asks, no frames
+        self.source_error: Optional[str] = None   # why a SourceRefused stopped it
         self._cut: Optional[_Cut] = None
         self._geo = None               # spacing: (cut, seeds counted, distances)
         self._retry_at: Optional[float] = None
@@ -403,6 +429,10 @@ class RoomLabeller:
         self.calls += 1                # counted when SENT: a failed paid call may be billed
         try:
             name = self.label_fn(frame)
+        except SourceRefused as e:
+            self.no_source = True      # the call stays counted: it was sent
+            self.source_error = str(e)[:200]
+            return None
         except Exception:
             self._back_off()
             raise
@@ -415,7 +445,7 @@ class RoomLabeller:
             self._back_off()
             return None
         self._failures, self._retry_at = 0, None
-        name = (name or UNCLEAR).strip().lower() or UNCLEAR
+        name = clean_room_name(name)
         self.seeds.append([round(x, 3), round(y, 3), name])
         if self.max_calls and self.calls >= self.max_calls:
             self.capped = True
@@ -463,5 +493,6 @@ class RoomLabeller:
         return {"mode": self.mode, "label_calls": self.calls,
                 "label_call_limit": self.max_calls, "capped": self.capped,
                 "no_source": self.no_source,
+                "source_error": self.source_error,
                 "rooms_named": sorted({n for _x, _y, n in self.seeds if n != UNCLEAR}),
                 "seeds": [list(s) for s in self.seeds]}

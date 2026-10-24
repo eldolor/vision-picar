@@ -585,6 +585,7 @@ class MissionRunner:
         room_label_fn: Optional[Callable[[dict], Optional[str]]] = None,
         room_label_max_calls: Optional[int] = None,
         room_label_mode: str = "spacing",
+        room_label_timeout_s: Optional[float] = None,
         explore_ask_timeout_s: Optional[float] = None,
         house: Optional[str] = None,
     ):
@@ -631,6 +632,10 @@ class MissionRunner:
                                            clock=lambda: self.clock())
                               if job == "survey" else None)
         self._label_error_logged = False
+        # A paid source's own timeout: an ask that could not finish inside
+        # what is left of the tick's deadline waits for a later tick (review).
+        self.room_label_timeout_s = room_label_timeout_s
+        self._tick_began = time.monotonic()
         # WORLD state, and the first consumer `control/` has ever had for it
         # (`PLAN-mapping.md` N1 built the routes; nothing here read them).
         # Optional and defaulting to `NullWorld()` rather than None, so every
@@ -880,6 +885,7 @@ class MissionRunner:
         mission is still running, so a caller can `while runner.tick():`."""
         if not self._running:
             return False
+        self._tick_began = time.monotonic()
 
         # The step backstop is checked at the END of a tick, below, where
         # _finish() then sets _running False -- so a duplicate check here
@@ -1031,7 +1037,7 @@ class MissionRunner:
         if self.memory.is_complete():
             self._finish(FOUND if self.memory.found else ROOM_REACHED, self.memory.summary())
             return False
-        if self.room_labeller is not None and self.is_running():
+        if self.room_labeller is not None and self.is_running() and self._label_fits():
             # The pose now, and -- only if it asks -- a frame taken now: the
             # step's own frame was taken before its move. A label is never
             # worth a survey: any error here (the pose, the frame, the label
@@ -2200,6 +2206,22 @@ class MissionRunner:
             f"{frame.get('room', 'unknown')}, facing {frame.get('facing', '?')}, "
             f"free space {scene.get('free_space', '?')}, sees {objects}"
         )
+
+    # Left of the tick's deadline beyond the label call's own timeout, for
+    # the rest of the tick and the hung-tick guard's own polling.
+    LABEL_TICK_MARGIN_S = 2.0
+
+    def _label_fits(self) -> bool:
+        """Whether a label call with its full timeout still ends inside
+        brain_server's hung-tick deadline (B3.3, `tick_timeout_s`, set on the
+        runner by brain_server -- a drill's shorter one too). The ask runs
+        after the step in the same tick, so a long step (an escape's creeps)
+        leaves less room. No timeout or no deadline: always."""
+        deadline = getattr(self, "tick_timeout_s", None)
+        if not self.room_label_timeout_s or not deadline:
+            return True
+        spent = time.monotonic() - self._tick_began
+        return spent + self.room_label_timeout_s + self.LABEL_TICK_MARGIN_S <= deadline
 
     def _label_frame(self) -> Optional[dict]:
         """The frame a survey's room label is asked about, taken now -- or

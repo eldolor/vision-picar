@@ -979,3 +979,12 @@ def test_an_unusable_room_reply_keeps_what_the_model_said():
     out = vision_core._parse_room_name("I cannot tell from this angle, sorry")
     assert out["room"] == "unclear"
     assert out["_raw"].startswith("I cannot tell")
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("The kitchen", "kitchen"), ("A bedroom.", "bedroom"), ("an office", "office"),
+])
+def test_a_room_reply_drops_a_leading_article(raw, expected):
+    import vision_core
+
+    assert vision_core._parse_room_name(raw)["room"] == expected

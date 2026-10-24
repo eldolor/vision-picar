@@ -591,3 +591,109 @@ def test_a_survey_on_the_cloud_source_backs_off_through_an_outage_and_keeps_goin
     assert s["outcome"] == EXHAUSTED, s["log_tail"]
     assert 1 <= len(asked) < 15
     assert s["survey"]["rooms_named"] == []
+
+
+# ---------- review: the ask fits inside the tick ----------
+
+def test_a_paid_ask_is_skipped_when_the_step_left_too_little_of_the_tick(monkeypatch):
+    """The ask runs after the step in the same tick, so a long step (an
+    escape's creeps) plus a slow /room must not pass B3.3's deadline: with
+    less than the label's timeout left, this tick asks nobody."""
+    import time as _time
+    asked = []
+    runner, _robot, _grid = _survey(room_label_fn=lambda f: asked.append(1) or "kitchen",
+                                    room_label_timeout_s=15.0)
+    runner.tick_timeout_s = 30.0
+    real = runner.agent.step
+
+    def slow_step():
+        out = real()
+        runner._tick_began -= 20.0          # the step took 20 s of the 30
+        return out
+
+    monkeypatch.setattr(runner.agent, "step", slow_step)
+    runner.start()
+    for _ in range(30):
+        runner.tick()
+    assert asked == []
+    runner.stop()
+
+
+def test_a_paid_ask_goes_ahead_when_the_tick_has_room():
+    asked = []
+    runner, _robot, _grid = _survey(room_label_fn=lambda f: asked.append(1) or "kitchen",
+                                    room_label_timeout_s=15.0)
+    runner.tick_timeout_s = 30.0
+    runner.start()
+    for _ in range(30):
+        runner.tick()
+    assert asked
+    runner.stop()
+
+
+def test_a_drill_s_short_tick_deadline_skips_paid_asks():
+    asked = []
+    runner, _robot, _grid = _survey(room_label_fn=lambda f: asked.append(1) or "kitchen",
+                                    room_label_timeout_s=15.0)
+    runner.tick_timeout_s = 3.0                  # drills.apply's drill_tick_timeout_s
+    runner.start()
+    for _ in range(30):
+        runner.tick()
+    assert asked == []
+    runner.stop()
+
+
+# ---------- review: one spelling per room; a refused source says so ----------
+
+@pytest.mark.parametrize("raw, expected", [
+    ("The kitchen", "kitchen"), ("a  Bedroom", "bedroom"), ("an office", "office"),
+    ("none", "unclear"), ("N/A", "unclear"), ("unknown", "unclear"), ("", "unclear"),
+    (None, "unclear"), ("theatre room", "theatre room"),
+])
+def test_one_room_has_one_spelling(raw, expected):
+    from brain.room_labels import clean_room_name
+    assert clean_room_name(raw) == expected
+
+
+def test_the_labeller_keeps_one_seed_name_for_the_kitchen_and_the_kitchen(monkeypatch):
+    from brain.room_labels import RoomLabeller
+    names = iter(["The Kitchen", "kitchen"])
+    lab = RoomLabeller(lambda f: next(names), mode="spacing")
+    monkeypatch.setattr(lab, "_wants", lambda m, x, y: True)
+    m = {"usable": True, "cells": [], "width": 0, "height": 0}
+    for x in (0.0, 5.0):
+        lab.observe(m, {"usable": True, "x_m": x, "y_m": 0.0}, lambda: {})
+    assert [n for _x, _y, n in lab.seeds] == ["kitchen", "kitchen"]
+
+
+def test_a_refused_secret_stops_asking_and_is_named_on_the_status():
+    """A 401 (or a /room not yet deployed) is our fault: no back-off loop
+    spending calls all survey, and the reason on the status."""
+    import httpx
+    from brain.navigate import room_label_fn_for
+
+    asked = []
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid)
+    runner = MissionRunner(robot, job="survey", policy="explore", navigator=FakeNav(robot),
+                           world=MockWorld(grid), clock=lambda: grid.sim_time,
+                           idle=robot.pass_time, room_label_max_calls=60,
+                           room_label_fn=room_label_fn_for("https://v", client=_room_client(
+                               lambda r: asked.append(1) or httpx.Response(401, text="bad secret"))))
+    runner.start()
+    s = _drive(runner)
+    assert s["outcome"] == EXHAUSTED
+    assert len(asked) == 1
+    assert s["survey"]["no_source"] is True
+    assert "401" in s["survey"]["source_error"]
+
+
+def test_a_200_that_is_not_json_is_a_refused_source_not_an_outage():
+    import httpx
+    from brain.navigate import room_label_fn_for
+    from brain.room_labels import SourceRefused
+
+    fn = room_label_fn_for("https://v", client=_room_client(
+        lambda r: httpx.Response(200, text="<html>not the api</html>")))
+    with pytest.raises(SourceRefused):
+        fn({"image_base64": "aW1n"})

@@ -305,9 +305,10 @@ def vision_fn_for(
     return vision_fn
 
 
-# 3.70 S2's car half. Each ask runs inside the mission's tick, so it ends
-# well inside `tick_timeout_s` (30 s; brain_config checks the order). A
-# name is a few tokens out: ~3-6 s on Opus 5.5.
+# 3.70 S2's car half. Each ask runs inside the mission's tick: brain_server
+# holds this to half of `tick_timeout_s`, and the runner skips an ask the
+# step left too little of the tick for. A name is a few tokens out: ~3-6 s
+# on Opus 5.5 (an estimate).
 ROOM_TIMEOUT_S = 15.0
 
 
@@ -325,10 +326,17 @@ def room_name(frame: dict, vision_url: str, secret: Optional[str] = None,
     headers = {"Content-Type": "application/json"}
     if secret:
         headers["x-app-secret"] = secret
+    from brain.room_labels import clean_room_name
+
     result = _post(vision_url.rstrip("/") + "/room", body, headers, timeout_s, client)
-    name = result.get("room") if isinstance(result, dict) else None
-    name = " ".join(name.split()).lower() if isinstance(name, str) else ""
-    return name if name and name not in ("unclear", "unknown") else "unclear"
+    if not isinstance(result, dict):
+        raise ValueError(f"/room answered {type(result).__name__}, not an object")
+    # Which model named the room, and what it cost: the survey's log is its
+    # record (the labeller keeps names only).
+    usage = result.get("usage") or {}
+    logger.info("room %r from %s (%s in / %s out tokens)", result.get("room"),
+                result.get("model_id"), usage.get("input_tokens"), usage.get("output_tokens"))
+    return clean_room_name(result.get("room"))
 
 
 def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = None,
@@ -336,8 +344,11 @@ def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = 
                       client: Optional[httpx.Client] = None):
     """A survey's paid room-label source, `label_fn(frame) -> name` in
     brain/room_labels.py's sense: each call is one /room call. A frame with
-    no pixels is NOT_HERE (nothing asked, nothing counted)."""
-    from brain.room_labels import NOT_HERE
+    no pixels is NOT_HERE (nothing asked, nothing counted). An outage
+    (CloudUnavailable) raises into the labeller's back-off; our own fault --
+    a 401, a /room not deployed, a reply that is not JSON -- is
+    SourceRefused, which stops the asking and names the reason."""
+    from brain.room_labels import NOT_HERE, SourceRefused
 
     url = vision_url or os.environ.get("VISION_URL", "")
     if not url:
@@ -352,5 +363,9 @@ def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = 
             return room_name(frame, url, secret=app_secret, timeout_s=timeout_s, client=client)
         except FrameHasNoImage:
             return NOT_HERE
+        except CloudUnavailable:
+            raise
+        except (RuntimeError, ValueError) as e:
+            raise SourceRefused(f"/room: {e}") from e
 
     return label_fn

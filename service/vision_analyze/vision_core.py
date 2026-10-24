@@ -1374,6 +1374,8 @@ def _parse_room_name(text: str) -> dict:
     garbage label would land on the map as a room."""
     first = next((line for line in (text or "").splitlines() if line.strip()), "")
     name = re.sub(r"\s+", " ", first.strip().strip("*_`\"'.,:;!").strip()).lower()
+    # One spelling per room (3.76 L2): "The kitchen" is "kitchen".
+    name = re.sub(r"^(the|a|an) ", "", name)
     if name in _ROOM_UNCLEAR:
         return {"room": "unclear"}
     if _ROOM_NAME.fullmatch(name) and len(name.split()) <= 3:
