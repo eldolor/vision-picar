@@ -102,5 +102,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.94](3.94-tier-tree.md) | The tiered ladder as a behavior tree: today's logic redrawn, no behaviour change |
 | [3.95](3.95-py-trees.md) | The tiered trees on py_trees |
 | [3.96](3.96-explore-goal-learning-revisited.md) | Explore's goal choice, learned again: richer features (rooms, indirect search) toward the oracle's ceiling |
-| [3.97](3.97-nudge-goal-label.md) | A person's nudge during a nav2 goal: today's rule kept, the twin says the goal resumes |
+| [3.97](3.97-nudge-goal-label.md) | A person's move ends a nav2 goal, under every drive |
 <!-- /sections -->
