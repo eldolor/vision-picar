@@ -24,8 +24,8 @@
   {
    "house": "home_first_floor",
    "outcome": "found",
-   "sim_s": 454,
-   "goals": 46,
+   "sim_s": 285,
+   "goals": 36,
    "arrivals": [
     0.55
    ],
@@ -35,22 +35,22 @@
    "local_identity_asked": 0,
    "guarded": 1,
    "cloud_confirms": 1,
-   "close_ins": 5,
+   "close_ins": 7,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 388,
-    "local_track": 223
+    "cold_search": 259,
+    "local_track": 157
    },
-   "decoy_false_yes": 34,
+   "decoy_false_yes": 22,
    "tail": [
-    "mission ended (found): Breakfast, den, family room, foyer, garage, garage hall, half bath, hall, kitchen, living room searched. Found."
+    "mission ended (found): Breakfast, den, family room, foyer, half bath, hall, kitchen, living room searched. Found."
    ]
   },
   {
    "house": "procthor:val:0",
    "outcome": "found",
-   "sim_s": 288,
-   "goals": 21,
+   "sim_s": 250,
+   "goals": 20,
    "arrivals": [
     0.55
    ],
@@ -60,68 +60,47 @@
    "local_identity_asked": 0,
    "guarded": 1,
    "cloud_confirms": 1,
-   "close_ins": 3,
+   "close_ins": 4,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 232,
-    "local_track": 125
+    "cold_search": 199,
+    "local_track": 84
    },
-   "decoy_false_yes": 15,
+   "decoy_false_yes": 9,
    "tail": [
     "mission ended (found): Bathroom, bedroom, bedroom 2, kitchen, living room, living room 2 searched. Found."
    ]
   },
   {
    "house": "procthor:val:2",
-   "outcome": "exhausted",
-   "sim_s": 1000,
-   "goals": 53,
-   "arrivals": [],
-   "first_arrival_target_m": null,
-   "end_target_m": 7.31,
+   "outcome": "found",
+   "sim_s": 286,
+   "goals": 26,
+   "arrivals": [
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 0.5,
    "found_far": false,
    "local_identity_asked": 0,
-   "guarded": 0,
-   "cloud_confirms": 0,
-   "close_ins": 2,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 4,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 770,
-    "local_track": 277
+    "cold_search": 242,
+    "local_track": 168
    },
-   "decoy_false_yes": 45,
+   "decoy_false_yes": 19,
    "tail": [
-    "mission ended (exhausted): no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)"
+    "mission ended (found): Bathroom, bathroom 2, bathroom 3, bedroom, bedroom 2, bedroom 3, living room 2, living room 3 searched. Found."
    ]
   },
   {
    "house": "procthor:val:3",
-   "outcome": "exhausted",
-   "sim_s": 489,
-   "goals": 33,
-   "arrivals": [],
-   "first_arrival_target_m": null,
-   "end_target_m": 8.19,
-   "found_far": false,
-   "local_identity_asked": 0,
-   "guarded": 0,
-   "cloud_confirms": 0,
-   "close_ins": 3,
-   "local_triggers": {
-    "mission_start": 1,
-    "cold_search": 368,
-    "local_track": 182
-   },
-   "decoy_false_yes": 14,
-   "tail": [
-    "mission ended (exhausted): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"
-   ]
-  },
-  {
-   "house": "procthor:val:4",
    "outcome": "found",
-   "sim_s": 94,
-   "goals": 13,
+   "sim_s": 333,
+   "goals": 34,
    "arrivals": [
     0.55
    ],
@@ -131,13 +110,38 @@
    "local_identity_asked": 0,
    "guarded": 1,
    "cloud_confirms": 1,
-   "close_ins": 3,
+   "close_ins": 9,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 92,
-    "local_track": 25
+    "cold_search": 214,
+    "local_track": 231
    },
-   "decoy_false_yes": 3,
+   "decoy_false_yes": 23,
+   "tail": [
+    "mission ended (found): Bathroom, bedroom, bedroom 2, kitchen, living room searched. Found."
+   ]
+  },
+  {
+   "house": "procthor:val:4",
+   "outcome": "found",
+   "sim_s": 96,
+   "goals": 12,
+   "arrivals": [
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 0.5,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 2,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 77,
+    "local_track": 42
+   },
+   "decoy_false_yes": 6,
    "tail": [
     "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
    ]
@@ -145,25 +149,24 @@
   {
    "house": "procthor:val:5",
    "outcome": "found",
-   "sim_s": 66,
-   "goals": 7,
+   "sim_s": 60,
+   "goals": 5,
    "arrivals": [
-    4.43,
     0.55
    ],
-   "first_arrival_target_m": 4.43,
+   "first_arrival_target_m": 0.55,
    "end_target_m": 0.55,
    "found_far": false,
    "local_identity_asked": 0,
-   "guarded": 2,
-   "cloud_confirms": 2,
+   "guarded": 1,
+   "cloud_confirms": 1,
    "close_ins": 3,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 34,
-    "local_track": 50
+    "cold_search": 41,
+    "local_track": 21
    },
-   "decoy_false_yes": 5,
+   "decoy_false_yes": 0,
    "tail": [
     "mission ended (found): Kitchen, living room searched. Found."
    ]
@@ -171,22 +174,22 @@
   {
    "house": "procthor:val:9",
    "outcome": "exhausted",
-   "sim_s": 980,
-   "goals": 58,
+   "sim_s": 1060,
+   "goals": 62,
    "arrivals": [],
    "first_arrival_target_m": null,
-   "end_target_m": 3.51,
+   "end_target_m": 3.95,
    "found_far": false,
    "local_identity_asked": 0,
    "guarded": 0,
    "cloud_confirms": 0,
-   "close_ins": 5,
+   "close_ins": 3,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 796,
-    "local_track": 265
+    "cold_search": 814,
+    "local_track": 292
    },
-   "decoy_false_yes": 37,
+   "decoy_false_yes": 49,
    "tail": [
     "mission ended (exhausted): no reachable frontier left (2 on the map: 2 reached twice, 0 set aside or dropped)"
    ]
@@ -194,8 +197,8 @@
   {
    "house": "procthor:val:10",
    "outcome": "found",
-   "sim_s": 142,
-   "goals": 10,
+   "sim_s": 145,
+   "goals": 8,
    "arrivals": [
     0.55
    ],
@@ -208,10 +211,10 @@
    "close_ins": 2,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 115,
-    "local_track": 25
+    "cold_search": 114,
+    "local_track": 27
    },
-   "decoy_false_yes": 2,
+   "decoy_false_yes": 3,
    "tail": [
     "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
    ]
@@ -219,7 +222,7 @@
   {
    "house": "procthor:val:11",
    "outcome": "found",
-   "sim_s": 153,
+   "sim_s": 147,
    "goals": 15,
    "arrivals": [
     0.5
@@ -233,10 +236,10 @@
    "close_ins": 3,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 115,
-    "local_track": 87
+    "cold_search": 110,
+    "local_track": 79
    },
-   "decoy_false_yes": 10,
+   "decoy_false_yes": 11,
    "tail": [
     "mission ended (found): Bedroom, kitchen, living room searched. Found."
    ]
@@ -244,8 +247,8 @@
   {
    "house": "procthor:val:12",
    "outcome": "found",
-   "sim_s": 150,
-   "goals": 16,
+   "sim_s": 561,
+   "goals": 46,
    "arrivals": [
     0.3
    ],
@@ -255,22 +258,22 @@
    "local_identity_asked": 0,
    "guarded": 1,
    "cloud_confirms": 1,
-   "close_ins": 0,
+   "close_ins": 2,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 134,
-    "local_track": 28
+    "cold_search": 448,
+    "local_track": 240
    },
-   "decoy_false_yes": 1,
+   "decoy_false_yes": 33,
    "tail": [
-    "mission ended (found): Kitchen, living room, living room 2, living room 3 searched. Found."
+    "mission ended (found): Bathroom, bathroom 2, bathroom 3, bedroom, bedroom 2, bedroom 3, kitchen, living room, living room 2, living room 3 searched. Found."
    ]
   },
   {
    "house": "procthor:val:13",
    "outcome": "found",
-   "sim_s": 89,
-   "goals": 8,
+   "sim_s": 131,
+   "goals": 9,
    "arrivals": [
     0.5
    ],
@@ -283,18 +286,18 @@
    "close_ins": 3,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 63,
-    "local_track": 40
+    "cold_search": 96,
+    "local_track": 38
    },
-   "decoy_false_yes": 4,
+   "decoy_false_yes": 6,
    "tail": [
-    "mission ended (found): Bedroom, kitchen searched. Found."
+    "mission ended (found): Bathroom, bedroom, kitchen searched. Found."
    ]
   },
   {
    "house": "procthor:val:15",
    "outcome": "found",
-   "sim_s": 126,
+   "sim_s": 119,
    "goals": 9,
    "arrivals": [
     0.55
@@ -308,10 +311,10 @@
    "close_ins": 3,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 102,
-    "local_track": 53
+    "cold_search": 111,
+    "local_track": 17
    },
-   "decoy_false_yes": 4,
+   "decoy_false_yes": 1,
    "tail": [
     "mission ended (found): Bedroom, living room, living room 2, living room 3 searched. Found."
    ]
@@ -319,7 +322,7 @@
   {
    "house": "procthor:val:17",
    "outcome": "found",
-   "sim_s": 82,
+   "sim_s": 88,
    "goals": 10,
    "arrivals": [
     0.55
@@ -330,170 +333,45 @@
    "local_identity_asked": 0,
    "guarded": 1,
    "cloud_confirms": 1,
-   "close_ins": 3,
+   "close_ins": 4,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 84,
-    "local_track": 26
+    "cold_search": 71,
+    "local_track": 65
    },
-   "decoy_false_yes": 2,
+   "decoy_false_yes": 7,
    "tail": [
     "mission ended (found): Kitchen, living room searched. Found."
    ]
   },
   {
    "house": "procthor:val:18",
-   "outcome": "found",
-   "sim_s": 310,
-   "goals": 22,
-   "arrivals": [
-    0.55
-   ],
-   "first_arrival_target_m": 0.55,
-   "end_target_m": 0.55,
-   "found_far": false,
-   "local_identity_asked": 0,
-   "guarded": 1,
-   "cloud_confirms": 1,
-   "close_ins": 5,
-   "local_triggers": {
-    "mission_start": 1,
-    "cold_search": 249,
-    "local_track": 130
-   },
-   "decoy_false_yes": 18,
-   "tail": [
-    "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
-   ]
-  },
-  {
-   "house": "procthor:val:21",
-   "outcome": "found",
-   "sim_s": 18,
-   "goals": 3,
-   "arrivals": [
-    0.5
-   ],
-   "first_arrival_target_m": 0.5,
-   "end_target_m": 0.5,
-   "found_far": false,
-   "local_identity_asked": 0,
-   "guarded": 1,
-   "cloud_confirms": 1,
-   "close_ins": 1,
-   "local_triggers": {
-    "mission_start": 1,
-    "cold_search": 11,
-    "local_track": 18
-   },
-   "decoy_false_yes": 1,
-   "tail": [
-    "mission ended (found): Bathroom, bedroom searched. Found."
-   ]
-  },
-  {
-   "house": "procthor:val:26",
-   "outcome": "found",
-   "sim_s": 88,
-   "goals": 5,
-   "arrivals": [
-    0.5
-   ],
-   "first_arrival_target_m": 0.5,
-   "end_target_m": 0.5,
-   "found_far": false,
-   "local_identity_asked": 0,
-   "guarded": 1,
-   "cloud_confirms": 1,
-   "close_ins": 1,
-   "local_triggers": {
-    "mission_start": 1,
-    "cold_search": 56,
-    "local_track": 26
-   },
-   "decoy_false_yes": 3,
-   "tail": [
-    "mission ended (found): Bedroom, kitchen, living room searched. Found."
-   ]
-  },
-  {
-   "house": "procthor:val:27",
-   "outcome": "found",
-   "sim_s": 62,
-   "goals": 9,
-   "arrivals": [
-    0.55
-   ],
-   "first_arrival_target_m": 0.55,
-   "end_target_m": 0.55,
-   "found_far": false,
-   "local_identity_asked": 0,
-   "guarded": 1,
-   "cloud_confirms": 1,
-   "close_ins": 1,
-   "local_triggers": {
-    "mission_start": 1,
-    "cold_search": 53,
-    "local_track": 64
-   },
-   "decoy_false_yes": 6,
-   "tail": [
-    "mission ended (found): Kitchen, living room searched. Found."
-   ]
-  },
-  {
-   "house": "procthor:val:32",
-   "outcome": "found",
-   "sim_s": 635,
-   "goals": 49,
-   "arrivals": [
-    0.46
-   ],
-   "first_arrival_target_m": 0.46,
-   "end_target_m": 0.46,
-   "found_far": false,
-   "local_identity_asked": 0,
-   "guarded": 1,
-   "cloud_confirms": 1,
-   "close_ins": 5,
-   "local_triggers": {
-    "mission_start": 1,
-    "cold_search": 515,
-    "local_track": 219
-   },
-   "decoy_false_yes": 32,
-   "tail": [
-    "mission ended (found): Bathroom, bathroom 2, bathroom 3, bedroom, bedroom 2, bedroom 3, kitchen, living room, living room 2, living room 3 searched. Found."
-   ]
-  },
-  {
-   "house": "procthor:val:34",
    "outcome": "exhausted",
-   "sim_s": 893,
-   "goals": 48,
+   "sim_s": 574,
+   "goals": 30,
    "arrivals": [],
    "first_arrival_target_m": null,
-   "end_target_m": 13.53,
+   "end_target_m": 3.71,
    "found_far": false,
    "local_identity_asked": 0,
    "guarded": 0,
    "cloud_confirms": 0,
-   "close_ins": 3,
+   "close_ins": 1,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 705,
-    "local_track": 259
+    "cold_search": 407,
+    "local_track": 200
    },
-   "decoy_false_yes": 40,
+   "decoy_false_yes": 21,
    "tail": [
     "mission ended (exhausted): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
    ]
   },
   {
-   "house": "procthor:val:36",
+   "house": "procthor:val:21",
    "outcome": "found",
-   "sim_s": 147,
-   "goals": 12,
+   "sim_s": 174,
+   "goals": 14,
    "arrivals": [
     0.55
    ],
@@ -506,8 +384,8 @@
    "close_ins": 3,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 124,
-    "local_track": 73
+    "cold_search": 127,
+    "local_track": 84
    },
    "decoy_false_yes": 9,
    "tail": [
@@ -515,10 +393,10 @@
    ]
   },
   {
-   "house": "procthor:val:37",
+   "house": "procthor:val:26",
    "outcome": "found",
-   "sim_s": 639,
-   "goals": 37,
+   "sim_s": 79,
+   "goals": 7,
    "arrivals": [
     0.54
    ],
@@ -528,17 +406,138 @@
    "local_identity_asked": 0,
    "guarded": 1,
    "cloud_confirms": 1,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 60,
+    "local_track": 36
+   },
+   "decoy_false_yes": 2,
+   "tail": [
+    "mission ended (found): Bedroom, kitchen, living room searched. Found."
+   ]
+  },
+  {
+   "house": "procthor:val:27",
+   "outcome": "exhausted",
+   "sim_s": 46,
+   "goals": 8,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 3.06,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 0,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 52,
+    "local_track": 6
+   },
+   "decoy_false_yes": 2,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:32",
+   "outcome": "found",
+   "sim_s": 574,
+   "goals": 45,
+   "arrivals": [
+    0.46
+   ],
+   "first_arrival_target_m": 0.46,
+   "end_target_m": 0.46,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
    "close_ins": 2,
    "local_triggers": {
     "mission_start": 1,
-    "cold_search": 490,
-    "local_track": 168
+    "cold_search": 504,
+    "local_track": 110
    },
-   "decoy_false_yes": 21,
+   "decoy_false_yes": 18,
+   "tail": [
+    "mission ended (found): Bathroom, bathroom 2, bathroom 3, bedroom, bedroom 2, bedroom 3, kitchen, living room, living room 2, living room 3 searched. Found."
+   ]
+  },
+  {
+   "house": "procthor:val:34",
+   "outcome": "exhausted",
+   "sim_s": 870,
+   "goals": 50,
+   "arrivals": [],
+   "first_arrival_target_m": null,
+   "end_target_m": 13.32,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 0,
+   "cloud_confirms": 0,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 670,
+    "local_track": 184
+   },
+   "decoy_false_yes": 29,
+   "tail": [
+    "mission ended (exhausted): no reachable frontier left (0 on the map: 0 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  {
+   "house": "procthor:val:36",
+   "outcome": "found",
+   "sim_s": 157,
+   "goals": 13,
+   "arrivals": [
+    0.55
+   ],
+   "first_arrival_target_m": 0.55,
+   "end_target_m": 0.55,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 4,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 134,
+    "local_track": 44
+   },
+   "decoy_false_yes": 5,
+   "tail": [
+    "mission ended (found): Bathroom, bedroom, kitchen, living room searched. Found."
+   ]
+  },
+  {
+   "house": "procthor:val:37",
+   "outcome": "found",
+   "sim_s": 446,
+   "goals": 33,
+   "arrivals": [
+    0.5
+   ],
+   "first_arrival_target_m": 0.5,
+   "end_target_m": 0.5,
+   "found_far": false,
+   "local_identity_asked": 0,
+   "guarded": 1,
+   "cloud_confirms": 1,
+   "close_ins": 1,
+   "local_triggers": {
+    "mission_start": 1,
+    "cold_search": 357,
+    "local_track": 106
+   },
+   "decoy_false_yes": 14,
    "tail": [
     "mission ended (found): Bathroom, bathroom 2, bedroom, bedroom 2, kitchen, living room searched. Found."
    ]
   }
  ],
- "wall_s": 227
+ "wall_s": 207
 }

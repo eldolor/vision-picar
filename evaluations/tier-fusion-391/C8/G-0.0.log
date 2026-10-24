@@ -19,4 +19,4 @@
 {"house": "procthor:val:34", "outcome": "exhausted", "sim_s": 187, "goals": 88, "arrival_checks": 0, "first_check_target_m": null, "end_target_m": 11.13, "close_ins": 0, "cloud_calls": 0, "tail": ["mission ended (exhausted): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"]}
 {"house": "procthor:val:36", "outcome": "exhausted", "sim_s": 88, "goals": 42, "arrival_checks": 0, "first_check_target_m": null, "end_target_m": 0.85, "close_ins": 0, "cloud_calls": 0, "tail": ["mission ended (exhausted): no reachable frontier left (3 on the map: 3 reached twice, 0 set aside or dropped)"]}
 {"house": "procthor:val:37", "outcome": "exhausted", "sim_s": 129, "goals": 61, "arrival_checks": 0, "first_check_target_m": null, "end_target_m": 6.61, "close_ins": 0, "cloud_calls": 0, "tail": ["mission ended (exhausted): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"]}
-{"score": 0.0, "missions": 21, "arrivals_at_true_target": 2, "found": 0, "cloud_calls": 0, "wall_s": 151}
+{"score": 0.0, "missions": 21, "arrivals_at_true_target": 2, "found": 0, "cloud_calls": 0, "wall_s": 133}
