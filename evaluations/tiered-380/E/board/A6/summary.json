@@ -1,0 +1,213 @@
+{
+ "valid": true,
+ "mission_exit": 0,
+ "mission_end": {
+  "running": false,
+  "outcome": "found",
+  "step": 33,
+  "end_reason": "Bedroom, kitchen, living room searched. Found.",
+  "arrival": {
+   "state": "arrived",
+   "streak": 2,
+   "reason": "target centred at 0.37 m, 2 frame(s) running",
+   "bearing_deg": -0.2,
+   "range_m": 0.37,
+   "radius_m": 0.4,
+   "source": "perception",
+   "identity": {
+    "cloud_called": false,
+    "local_called": true,
+    "tier": "local",
+    "local_status": "answered",
+    "local_score": 0.8336567918079949,
+    "confirmed": true,
+    "stats": {
+     "cloud_ms": null,
+     "perception_ms": {
+      "n": 532,
+      "p50": 0,
+      "p90": 0,
+      "p99": 0,
+      "max": 2,
+      "mean": 0
+     },
+     "local_ms": {
+      "n": 1,
+      "p50": 760,
+      "p90": 760,
+      "p99": 760,
+      "max": 760,
+      "mean": 760
+     },
+     "local_calls": 1,
+     "local": {
+      "yes": 1
+     },
+     "escalations": 0,
+     "guarded": 0,
+     "local_triggers": {
+      "mission_start": 1,
+      "cold_search": 465,
+      "candidate_sighting": 9,
+      "staleness": 4
+     },
+     "local_frame": {
+      "no": 470,
+      "yes": 8,
+      "unable_band": 1
+     },
+     "local_frame_calls": 479,
+     "local_frame_ms": {
+      "n": 479,
+      "p50": 506,
+      "p90": 559,
+      "p99": 635,
+      "max": 2097,
+      "mean": 522
+     },
+     "frame_escalations": {},
+     "local_direction": {},
+     "local_direction_ms": null,
+     "candidate_steers": 0,
+     "cloud_errors": 0,
+     "cloud_answers_dropped": 0,
+     "frames": 532,
+     "frames_skipped": 0,
+     "vote": null,
+     "cloud_calls": 0,
+     "claims": 0,
+     "corroborated": 0,
+     "verdicts": {},
+     "frames_per_call": null,
+     "triggers": {},
+     "perception": {
+      "absent": 470,
+      "detected": 62
+     }
+    },
+    "reason": "the local model sees the target (score 0.83)",
+    "verdict_s": 0.761
+   }
+  },
+  "tier": {
+   "cloud_called": false,
+   "trigger": "arrival_confirmation",
+   "cloud_landed": false,
+   "models": {
+    "detector": "sim ground truth",
+    "scorer": null,
+    "proposer": null,
+    "target": "red backpack",
+    "crop_source": "frame_reported"
+   },
+   "corroboration": null,
+   "in_flight": null,
+   "in_flight_tier": null,
+   "local_called": null,
+   "local_landed": null,
+   "holding": "FORWARD",
+   "vocabulary": null,
+   "pacing": {
+    "rule": "frames",
+    "frames_absent": 0,
+    "frames_bar": 1,
+    "cloud_frames_bar": 6,
+    "cm_since_call": 26.0,
+    "cm_bar": null,
+    "odometry_usable": true,
+    "reason": "cold_search_after_cm is not set"
+   },
+   "stats": {
+    "cloud_ms": null,
+    "perception_ms": {
+     "n": 532,
+     "p50": 0,
+     "p90": 0,
+     "p99": 0,
+     "max": 2,
+     "mean": 0
+    },
+    "local_ms": {
+     "n": 1,
+     "p50": 760,
+     "p90": 760,
+     "p99": 760,
+     "max": 760,
+     "mean": 760
+    },
+    "local_calls": 1,
+    "local": {
+     "yes": 1
+    },
+    "escalations": 0,
+    "guarded": 0,
+    "local_triggers": {
+     "mission_start": 1,
+     "cold_search": 465,
+     "candidate_sighting": 9,
+     "staleness": 4
+    },
+    "local_frame": {
+     "no": 470,
+     "yes": 8,
+     "unable_band": 1
+    },
+    "local_frame_calls": 479,
+    "local_frame_ms": {
+     "n": 479,
+     "p50": 506,
+     "p90": 559,
+     "p99": 635,
+     "max": 2097,
+     "mean": 522
+    },
+    "frame_escalations": {},
+    "local_direction": {},
+    "local_direction_ms": null,
+    "candidate_steers": 0,
+    "cloud_errors": 0,
+    "cloud_answers_dropped": 0,
+    "frames": 532,
+    "frames_skipped": 0,
+    "vote": null,
+    "cloud_calls": 0,
+    "claims": 0,
+    "corroborated": 0,
+    "verdicts": {},
+    "frames_per_call": null,
+    "triggers": {},
+    "perception": {
+     "absent": 470,
+     "detected": 62
+    }
+   },
+   "identity_tier": "local"
+  },
+  "error": null
+ },
+ "window_s": 488,
+ "mem_min_mb": 809,
+ "mem_median_mb": 840.0,
+ "mem_first_min_median_mb": 869.0,
+ "mem_last_min_median_mb": 817.0,
+ "drift_mb": 52.0,
+ "oom_events": 0,
+ "wheel_moving_ticks": 7450,
+ "wheel_late_ticks": 0,
+ "perception_frames": 1948,
+ "perception_p50_ms": 98,
+ "perception_p90_ms": 172,
+ "perception_p99_ms": 227,
+ "vlm_calls": 480,
+ "vlm_calls_per_min": 59.0,
+ "robot_health": "200",
+ "brain_health": "200",
+ "arrivals": [
+  {
+   "tier": "local",
+   "confirmed": true,
+   "verdict_s": 0.761,
+   "local_score": 0.8336567918079949
+  }
+ ]
+}

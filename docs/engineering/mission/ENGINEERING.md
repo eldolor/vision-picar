@@ -463,8 +463,8 @@ seed `[x_m, y_m, name]`), `mission`, `target_object`,
 `target_room`, `step`, `max_steps`, `found`, `room_reached`, `complete`,
 `last_action`, `turns` (`count`, `reversals`, `last_turn_deg`, `share`,
 `spinning`), `last_reasoning`, `rooms_visited`, `rooms_searched`,
-`vision_failures`, `tier`, `perception`, `arrival`, `late_confirmation`,
-`last_frame_seq`, `ticks`, `seconds_since_last_tick`, `tick_rate_hz`,
+`vision_failures`, `tier`, `perception`, `arrival`, `arrival_verdicts`,
+`late_confirmation`, `last_frame_seq`, `ticks`, `seconds_since_last_tick`, `tick_rate_hz`,
 `sighting`, `explore` (null unless explore searches: `goals_sent`,
 `goals_failed`, `last_event`, `camera_seen_m2`, `choice_ms`, and 3.88 A's
 `asks`, `ask` -- the open choice, `{choice, candidates, default, picked,
@@ -474,7 +474,14 @@ are null under any policy without a perception tier. `late_confirmation`
 (3.53) is null except after an `arrived_unconfirmed` ending: `{state,
 probes, paid_calls, reason, at, confirmed?}`, `state` one of `waiting`,
 `confirmed`, `refused`, `failed`, `not_asked`, `expired`, `dropped`.
-`AGENT-HARNESS.md` section 8 describes each.
+`AGENT-HARNESS.md` section 8 describes each. A decided arrival identity
+(`arrival.identity`, confirmed or refused, not undecided) carries
+`verdict_s` (3.80.E): seconds from the arrival's first identity question to
+the verdict, across undecided frames, the clock restarting after
+`ARRIVAL_GONE_FRAMES` (3) frames off the arrival rule (`brain/agent.py`).
+`arrival_verdicts` lists the mission's decided identities, newest last, at
+most `ARRIVAL_VERDICTS_KEPT` (50): `{n, tier, confirmed, verdict_s,
+local_score, cloud_called}`, `n` counting from 1 past the cap.
 
 **Outcome strings:** `idle`, `running`; the end states `found`,
 `exhausted`, `out_of_budget`, `cancelled` (`END_STATES`); beside them

@@ -1,0 +1,12 @@
+/home/picar/vision-picar/.venv/lib/python3.10/site-packages/open_clip/factory.py:450: UserWarning: QuickGELU mismatch between final model config (quick_gelu=False) and pretrained tag 'openai' (quick_gelu=True).
+  warnings.warn(
+Traceback (most recent call last):
+  File "/home/picar/vp-380e/tools/jetson/perception_loop.py", line 84, in <module>
+    r = holder.pipeline.perceive(frame_dict(Path("recordings") / f["walk"] / f["file"]))
+  File "/home/picar/vp-380e/control/perception_eval.py", line 249, in frame_dict
+    data = path.read_bytes()
+  File "/usr/lib/python3.10/pathlib.py", line 1126, in read_bytes
+    with self.open(mode='rb') as f:
+  File "/usr/lib/python3.10/pathlib.py", line 1119, in open
+    return self._accessor.open(self, mode, buffering, encoding, errors,
+FileNotFoundError: [Errno 2] No such file or directory: 'recordings/a-white-phone-charger-ca-20260921-203250/frame-0000.jpg'

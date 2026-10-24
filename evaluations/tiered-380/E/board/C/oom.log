@@ -1,0 +1,3 @@
+[1062876.924763] python invoked oom-killer: gfp_mask=0x1100cca(GFP_HIGHUSER_MOVABLE), order=0, oom_score_adj=-900
+[1062876.925402] oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=user.slice,mems_allowed=0,global_oom,task_memcg=/user.slice/user-1000.slice/session-5469.scope,task=edgellm_identit,pid=1599176,uid=1000
+[1062876.925441] Out of memory: Killed process 1599176 (edgellm_identit) total-vm:8962456kB, anon-rss:98288kB, file-rss:30088kB, shmem-rss:0kB, UID:1000 pgtables:1836kB oom_score_adj:1000

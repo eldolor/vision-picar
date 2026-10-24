@@ -1,0 +1,9 @@
+== desktop: inactive; twin units: inactive inactive; runtime none
+== run L 22:58:00 rev 28149296 image vision-picar-ros:plan-3.78 NV Power Mode: 15W
+== policy tiered; vlm service; cloud off; ros from tree 1; text cache default
+== MemAvailable before anything: 5763 MB
+== local VLM ready 22:58:10; MemAvailable: 2835 MB
+OK: robot and brain both running 28149296 (log: /home/picar/.vision-picar-tunnel.log)
+WARNING: ngrok is not running -- the deployed twin cannot reach this machine. Start it with: ngrok start picar
+STOP: bridge up not reached in 180s
+== torn down; desktop: active

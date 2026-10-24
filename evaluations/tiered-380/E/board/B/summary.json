@@ -1,0 +1,157 @@
+{
+ "valid": true,
+ "mission_exit": 0,
+ "mission_end": {
+  "running": false,
+  "outcome": "out_of_budget",
+  "step": 88,
+  "end_reason": "time limit of 1200 s reached (1200.6 s)",
+  "arrival": {
+   "state": "approaching",
+   "streak": 0,
+   "reason": "target not detected",
+   "bearing_deg": null,
+   "range_m": null,
+   "radius_m": 0.4
+  },
+  "tier": {
+   "cloud_called": false,
+   "trigger": null,
+   "cloud_landed": false,
+   "models": {
+    "detector": "sim ground truth",
+    "scorer": null,
+    "proposer": null,
+    "target": "red backpack",
+    "crop_source": "frame_reported"
+   },
+   "corroboration": null,
+   "in_flight": "cold_search",
+   "in_flight_tier": "local",
+   "local_called": "cold_search",
+   "local_landed": {
+    "trigger": "cold_search",
+    "answer": "absent",
+    "score": null
+   },
+   "holding": "RIGHT",
+   "vocabulary": null,
+   "pacing": {
+    "rule": "frames",
+    "frames_absent": 3,
+    "frames_bar": 1,
+    "cloud_frames_bar": 6,
+    "cm_since_call": 6.0,
+    "cm_bar": null,
+    "odometry_usable": true,
+    "reason": "cold_search_after_cm is not set"
+   },
+   "stats": {
+    "cloud_ms": {
+     "n": 181,
+     "p50": 86,
+     "p90": 100,
+     "p99": 132,
+     "max": 144,
+     "mean": 88
+    },
+    "perception_ms": {
+     "n": 1252,
+     "p50": 0,
+     "p90": 0,
+     "p99": 0,
+     "max": 1,
+     "mean": 0
+    },
+    "local_ms": {
+     "n": 1,
+     "p50": 2,
+     "p90": 2,
+     "p99": 2,
+     "max": 2,
+     "mean": 2
+    },
+    "local_calls": 0,
+    "local": {
+     "absent": 1
+    },
+    "escalations": 0,
+    "guarded": 0,
+    "local_triggers": {
+     "mission_start": 1,
+     "cold_search": 1128,
+     "candidate_sighting": 4,
+     "staleness": 11
+    },
+    "local_frame": {
+     "no": 127,
+     "absent": 1016
+    },
+    "local_frame_calls": 127,
+    "local_frame_ms": {
+     "n": 1143,
+     "p50": 2,
+     "p90": 6,
+     "p99": 540,
+     "max": 636,
+     "mean": 47
+    },
+    "frame_escalations": {
+     "absent": 180
+    },
+    "local_direction": {},
+    "local_direction_ms": null,
+    "candidate_steers": 0,
+    "cloud_errors": 0,
+    "cloud_answers_dropped": 0,
+    "frames": 1252,
+    "frames_skipped": 0,
+    "vote": null,
+    "cloud_calls": 181,
+    "claims": 0,
+    "corroborated": 0,
+    "verdicts": {
+     "no_claim": 180
+    },
+    "frames_per_call": 6.92,
+    "triggers": {
+     "cold_search": 165,
+     "candidate_sighting": 4,
+     "staleness": 11,
+     "arrival_confirmation": 1
+    },
+    "perception": {
+     "absent": 1129,
+     "detected": 123
+    }
+   }
+  },
+  "error": null
+ },
+ "window_s": 1202,
+ "mem_min_mb": 872,
+ "mem_median_mb": 3846,
+ "mem_first_min_median_mb": 893.0,
+ "mem_last_min_median_mb": 3809.0,
+ "drift_mb": -2916.0,
+ "oom_events": 0,
+ "wheel_moving_ticks": 16729,
+ "wheel_late_ticks": 0,
+ "perception_frames": 4802,
+ "perception_p50_ms": 83,
+ "perception_p90_ms": 139,
+ "perception_p99_ms": 222,
+ "vlm_calls": 127,
+ "vlm_calls_per_min": 6.3,
+ "robot_health": "200",
+ "brain_health": "200",
+ "cloud_calls": 181,
+ "arrivals": [
+  {
+   "tier": "cloud",
+   "confirmed": false,
+   "verdict_s": 0.082,
+   "local_score": null
+  }
+ ]
+}

@@ -1,0 +1,93 @@
+INFO:     Started server process [1523747]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8005 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59784 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59800 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59806 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59816 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59832 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59844 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59854 - "GET /health HTTP/1.1" 200 OK
+2026-10-23 23:58:16,528 local_vlm INFO local VLM ready in 7.7 s
+INFO:     127.0.0.1:59870 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45810 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41670 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41670 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41670 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41670 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41670 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41670 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55698 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55698 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55698 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55698 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55698 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55698 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41620 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41620 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41620 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41620 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41620 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41620 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41620 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53410 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57550 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57550 - "POST /identity HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59540 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1523747]
