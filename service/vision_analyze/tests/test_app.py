@@ -968,9 +968,157 @@ def test_the_room_call_is_short_and_asks_the_room_model(monkeypatch):
     assert out["room"] == "dining room"
     assert out["model_id"] == vision_core.ROOM_MODEL_ID
     assert fake.kwargs["modelId"] == vision_core.ROOM_MODEL_ID
-    # A name, not /navigate's reply: a few tokens out, not 300.
-    assert fake.kwargs["inferenceConfig"]["maxTokens"] <= 20
     assert out["usage"] == {"input_tokens": 1, "output_tokens": 2}
+
+
+def _stub_room_converse(monkeypatch, content, stop):
+    """A Converse reply shaped like Opus 5.5's on 2026-10-24: a reasoning
+    block (its text empty, as Bedrock returns it) before any text."""
+    import vision_core
+
+    class FakeClient:
+        def converse(self, **kwargs):
+            self.kwargs = kwargs
+            return {"output": {"message": {"content": content}}, "stopReason": stop,
+                    "usage": {"inputTokens": 1364, "outputTokens": 57}}
+
+    fake = FakeClient()
+    monkeypatch.setattr(vision_core, "_get_client", lambda *a, **kw: fake)
+    monkeypatch.setattr(vision_core, "_prepare_image", lambda b, m: (b, "jpeg"))
+    return fake
+
+
+_REASONING = {"reasoningContent": {"reasoningText": {"text": "", "signature": "x"}}}
+
+
+def test_the_room_call_leaves_room_for_the_models_thinking(monkeypatch):
+    """3.70 S2b: Opus 5.5 always thinks (it cannot be turned off), and its
+    thinking counts against maxTokens. At 16 every real call stopped on
+    max_tokens with no text, so every room came back "unclear". Low effort
+    keeps the thinking short (57 tokens out on a real call); the cap is a
+    ceiling on cost, not the answer's length."""
+    import vision_core
+
+    fake = _stub_room_converse(monkeypatch, [_REASONING, {"text": "bedroom"}], "end_turn")
+    out = vision_core.describe_image_bytes_room(b"x", "image/jpeg")
+    assert out["room"] == "bedroom"
+    assert "_stop" not in out
+    assert fake.kwargs["additionalModelRequestFields"] == {"output_config": {"effort": "low"}}
+    # Room for the thinking, but still a bound on what one of a survey's
+    # 60 calls can cost.
+    assert 256 <= fake.kwargs["inferenceConfig"]["maxTokens"] <= 512
+
+
+@pytest.mark.parametrize("model_id", [
+    "us.anthropic.claude-sonnet-4-5-20250929-v1:0", "us.anthropic.claude-opus-4-5-20251101-v1:0",
+    "us.anthropic.claude-opus-5", "us.anthropic.claude-opus-5-50", "us.openai.gpt-6-astra",
+    "arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-opus-5-5",
+    # Opus 5.5 under spellings no real call has confirmed: no guessed ids.
+    "eu.anthropic.claude-opus-5-5", "global.anthropic.claude-opus-5-5",
+])
+def test_the_effort_field_goes_only_to_a_confirmed_model(monkeypatch, model_id):
+    """RoomModelId is a deploy parameter; a model that refuses the effort
+    field would make every /room a 502. Only ids a real call confirmed get
+    it; any other shows as cut replies with _stop, never silently."""
+    import vision_core
+
+    monkeypatch.setattr(vision_core, "ROOM_MODEL_ID", model_id)
+    fake = _stub_room_converse(monkeypatch, [{"text": "kitchen"}], "end_turn")
+    assert vision_core.describe_image_bytes_room(b"x", "image/jpeg")["room"] == "kitchen"
+    assert "additionalModelRequestFields" not in fake.kwargs
+
+
+@pytest.fixture
+def restore_vision_core(monkeypatch):
+    yield
+    monkeypatch.undo()
+    import importlib
+    import vision_core
+    importlib.reload(vision_core)
+
+
+@pytest.mark.parametrize("raw, expected", [
+    (" us.anthropic.claude-opus-5-5\n", "us.anthropic.claude-opus-5-5"),
+    ("", "us.anthropic.claude-opus-5-5"), ("  ", "us.anthropic.claude-opus-5-5"),
+])
+def test_the_room_model_id_is_read_stripped(monkeypatch, restore_vision_core, raw, expected):
+    """A pasted id with a trailing newline is the id sent and the id the
+    effort list is checked against -- one value, not two; an empty one is
+    the default, never a modelId of ''."""
+    import importlib
+    import vision_core
+
+    monkeypatch.setenv("BEDROCK_ROOM_MODEL_ID", raw)
+    assert importlib.reload(vision_core).ROOM_MODEL_ID == expected
+
+
+def test_a_room_model_off_the_effort_list_is_said_at_start_up(monkeypatch, restore_vision_core, caplog):
+    import importlib
+    import vision_core
+
+    monkeypatch.setenv("BEDROCK_ROOM_MODEL_ID", "eu.anthropic.claude-opus-5-5")
+    with caplog.at_level("WARNING"):
+        importlib.reload(vision_core)
+    assert "eu.anthropic.claude-opus-5-5" in caplog.text and "ROOM_EFFORT_MODELS" in caplog.text
+
+
+def _template_parameter_default(template: str, name: str):
+    """The Default of one entry under the template's top-level Parameters,
+    read from that entry's own indented block only (never a later one's)."""
+    lines = template.replace("\r\n", "\n").split("\n")
+    top = lines.index("Parameters:")
+    end = next((i for i in range(top + 1, len(lines)) if lines[i][:1].isalpha()), len(lines))
+    heads = [i for i in range(top + 1, end) if lines[i].strip() == f"{name}:"]
+    assert heads, f"serverless.yaml has no {name} parameter"
+    head = heads[0]
+    indent = len(lines[head]) - len(lines[head].lstrip())
+    for line in lines[head + 1:end]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip()) <= indent:
+            return None
+        if len(line) - len(line.lstrip()) == indent + 2 and line.strip().startswith("Default:"):
+            return line.split("Default:", 1)[1].split(" #")[0].strip().strip("'\"")
+    return None
+
+
+def test_the_deployed_room_model_gets_the_effort_field():
+    """The code's default and the template's RoomModelId (the env var that
+    wins when deployed) both name a model the effort field goes to."""
+    from pathlib import Path
+    import vision_core
+
+    template = (Path(__file__).resolve().parents[3] / "cloudformation" / "serverless.yaml").read_text()
+    deployed = _template_parameter_default(template, "RoomModelId")
+    assert deployed, "RoomModelId has no Default of its own"
+    for model_id in (vision_core.ROOM_MODEL_ID, deployed):
+        assert model_id in vision_core.ROOM_EFFORT_MODELS, model_id
+
+
+@pytest.mark.parametrize("content", [[_REASONING], [_REASONING, {"text": "dining"}]])
+def test_a_cut_room_reply_is_never_a_name_and_says_so(monkeypatch, caplog, content):
+    """A reply cut off is "unclear" -- even when its first word passes as a
+    name ("dining" of "dining room") -- and said once, with the stop reason,
+    never silently, as every call was before S2b."""
+    import vision_core
+
+    _stub_room_converse(monkeypatch, content, "max_tokens")
+    with caplog.at_level("WARNING"):
+        out = vision_core.describe_image_bytes_room(b"x", "image/jpeg")
+    assert out["room"] == "unclear"
+    assert out["_stop"] == "max_tokens"
+    # _raw only when the model wrote something (the spec's contract).
+    assert ("_raw" in out) == (len(content) > 1)
+    assert len([r for r in caplog.records if r.levelname == "WARNING"]) == 1
+    assert "max_tokens" in caplog.text
+
+
+def test_a_stop_sequence_is_a_clean_end(monkeypatch):
+    import vision_core
+
+    _stub_room_converse(monkeypatch, [{"text": "office"}], "stop_sequence")
+    out = vision_core.describe_image_bytes_room(b"x", "image/jpeg")
+    assert out["room"] == "office" and "_stop" not in out
 
 
 def test_an_unusable_room_reply_keeps_what_the_model_said():

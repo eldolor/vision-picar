@@ -379,13 +379,19 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   estimate). FAILED the 95%-per-room bar: 46 of 90 rooms (was 36), even
   asking at every stop tops out at 57 (open plans, rooms never entered).
   Objects during a survey FAILED on duplicates only (1.30, bar 1.2).
-  **S2's car half, merged 2026-10-23, NOT DEPLOYED, off by default:** the
-  vision service's `POST /room` (one room name, Opus 5.5, 16 tokens out)
-  and `brain.room_label_source: cloud` (default `frame`); each ask bounded
-  on the wall clock and fitted inside the tick; 401/403/404 stop the asking
-  with `status.survey.source_error` (the twin does not show it yet). Est.
-  ~$0.003-0.008 a call, unmeasured; deploy, one real call and the cost
-  wait on the user. Open: time the map cut
+  **S2's car half, merged 2026-10-23, deployed 2026-10-24, off by default:**
+  the vision service's `POST /room` (one room name, Opus 5.5) and
+  `brain.room_label_source: cloud` (default `frame`); each ask bounded on
+  the wall clock and fitted inside the tick; 401/403/404 stop the asking
+  with `status.survey.source_error` (the twin does not show it yet). Its
+  first real call found **every reply cut**: Opus 5.5 always thinks, and
+  at 16 tokens the thinking ate the cap (`unclear` every time, unlogged).
+  **S2b (merged and deployed 2026-10-24, `969cfe2`):** effort `low` (only
+  to ids a real call confirmed), cap 256, a reply not ending cleanly is
+  `unclear` with `_stop` and a warning. Three real calls: bedroom,
+  bedroom, office; 6-145 tokens out, 1.7-2.9 s; ~$0.006-0.009 a call,
+  ~$0.18-0.27 a median survey, ~$0.36-0.55 at the cap -- the cost waits
+  on the user's approval. Open: time the map cut
   (`segment()`, ~1 s on the laptop, every 5 s) on the Jetson. Missions on a
   saved map (S4, M1-M3) wait on 3.50's build. **S5, merged and the twin
   deployed 2026-10-14:** the Sim tab's Remote brain panel picks Find or

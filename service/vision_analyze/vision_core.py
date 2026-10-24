@@ -83,7 +83,8 @@ GUIDANCE_MODEL_ID = os.environ.get("BEDROCK_GUIDANCE_MODEL_ID", "amazon.nova-lit
 # Claude Opus 5.5, the user's choice for labels (2026-10-13), confirmed with
 # two real Converse calls on recorded walk frames from us-east-2 that day.
 # Keep in step with cloudformation/serverless.yaml's RoomModelId.
-ROOM_MODEL_ID = os.environ.get("BEDROCK_ROOM_MODEL_ID", "us.anthropic.claude-opus-5-5")
+# Stripped once here, so the id sent and the id the effort rule checks agree.
+ROOM_MODEL_ID = (os.environ.get("BEDROCK_ROOM_MODEL_ID") or "").strip() or "us.anthropic.claude-opus-5-5"
 
 # /navigate's model A/B set -- a request may pick one of these by id (app.py
 # validates against this exact set before it ever reaches Bedrock, so an
@@ -1324,7 +1325,27 @@ ROOM_PROMPT = """You are the camera of a small indoor robot mapping a house, abo
 
 Answer with the room's name only, lowercase, at most three words. Use one of these if one fits: kitchen, living room, family room, dining room, bedroom, bathroom, hallway, foyer, office, laundry room, pantry, closet, garage. Otherwise give another short room-type name. If the photo does not show enough to tell, answer: unclear"""
 
-ROOM_MAX_TOKENS = 16
+# Opus 5.5 always thinks -- Bedrock refuses to turn it off -- and the thinking
+# counts against maxTokens. At 16 every real call stopped on max_tokens before
+# any text, so every room was "unclear" (3.70 S2b, 2026-10-24). Low effort
+# keeps the thinking short (57 tokens out with the answer, on a real call);
+# the cap only bounds a call's cost (~$0.006 of output at most). The effort
+# field goes only to ids confirmed to take it by a real Converse call (never
+# a guessed spelling, CLAUDE.md section 6): older Claude models and other
+# vendors' models refuse it, which would make every /room a 502. An Opus 5.5
+# id not listed here gets no effort and shows as cut replies with _stop;
+# confirm it with a real call, then add it.
+ROOM_EFFORT = "low"
+ROOM_EFFORT_MODELS = frozenset({
+    "us.anthropic.claude-opus-5-5",  # us-east-2, 2026-10-24: "bedroom", 57 tokens out
+})
+if ROOM_MODEL_ID not in ROOM_EFFORT_MODELS:
+    # Said at start-up, not only as each reply's _stop: a thinking model
+    # missing from the list labels every room "unclear".
+    logger.warning(f"/room's model {ROOM_MODEL_ID!r} gets no effort field (not in "
+                   f"ROOM_EFFORT_MODELS); if it thinks, its replies may be cut")
+ROOM_MAX_TOKENS = 256
+_CLEAN_STOPS = (None, "end_turn", "stop_sequence")
 _ROOM_NAME = re.compile(r"[a-z][a-z' -]{0,39}")
 _ROOM_UNCLEAR = ("unclear", "unknown", "none", "n/a")
 
@@ -1334,6 +1355,9 @@ def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg"
 
     image_bytes, fmt = _prepare_image(image_bytes, media_type)
 
+    extra = {}
+    if ROOM_MODEL_ID in ROOM_EFFORT_MODELS:
+        extra["additionalModelRequestFields"] = {"output_config": {"effort": ROOM_EFFORT}}
     response = _converse(client,
         modelId=ROOM_MODEL_ID,
         messages=[
@@ -1351,11 +1375,23 @@ def describe_image_bytes_room(image_bytes: bytes, media_type: str = "image/jpeg"
             }
         ],
         inferenceConfig={"maxTokens": ROOM_MAX_TOKENS},
+        **extra,
     )
 
     content_blocks = response["output"]["message"]["content"]
     text = "".join(b["text"] for b in content_blocks if "text" in b)
-    result = _parse_room_name(text)
+    stop = response.get("stopReason")
+    if stop in _CLEAN_STOPS:
+        result = _parse_room_name(text)
+    else:
+        # A reply that did not end cleanly (cut on max_tokens, a guardrail)
+        # is never a name, even when its first word passes as one ("dining"
+        # of "dining room"); and it is said, with why, or a survey's rooms
+        # all go unlabelled with nothing in the log (as they did before S2b).
+        logger.warning(f"Room reply did not end cleanly ({stop}): {text[:200]!r}")
+        result = {"room": "unclear", "_stop": stop}
+        if text.strip():
+            result["_raw"] = text[:200]
     # Carried on the reply for the same reason /navigate's are: a survey's
     # record has to say which model named its rooms, and at what cost.
     result["model_id"] = ROOM_MODEL_ID
