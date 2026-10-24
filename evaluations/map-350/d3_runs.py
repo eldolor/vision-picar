@@ -194,7 +194,8 @@ def session(house, maps, bridge_c, saved_map, saved_id, moved=None):
     """A session on the dock: servers and container fresh."""
     robot, brain = servers(house)
     for src, dst in (moved or []):
-        robot.post("/sim/objects/move", json={"src": src, "dst": dst})
+        r = robot.post("/sim/objects/move", json={"src": src, "dst": dst})
+        assert r.status_code == 200, f"move {src} -> {dst}: {r.status_code} {r.text[:200]}"
     w = container(maps, bridge_c)
     rel = w["health"]["slam"]["reload"]
     out = {"watch": {k: v for k, v in w.items() if k != "health"}, "reload": rel,
@@ -257,6 +258,7 @@ def house_runs(house):
     h = bridge.get("/health").json()["map"]
     saved_map = bridge.get("/slam/map").json()
     res["map_run"].update(saved=h, final_error=error(robot))
+    assert h["saved"] >= 1, f"the map run saved nothing: {h}"
     saved_id = h["map_id"]
 
     sessions = []
@@ -289,6 +291,7 @@ def off_dock(house, maps, bridge, saved_map, saved_id):
     robot, _ = servers(house)
     dock = truth(robot)
     s, robot = session(house, maps, bridge, saved_map, saved_id)
+    assert s["reload"].get("result") == "matched", f"the on-dock session did not match: {s['reload']}"
     for _ in range(3):
         x, y, h = truth(robot)
         if math.hypot(x - dock[0], y - dock[1]) >= 1.0 and abs((h - dock[2] + 180) % 360 - 180) >= 30:
@@ -300,9 +303,13 @@ def off_dock(house, maps, bridge, saved_map, saved_id):
     for _ in range(5):
         w = container(maps, bridge)
         rel = w["health"]["slam"]["reload"]
-        took = rel.get("took_s")
+        st = dict(w["states"])
+        # From the localisation node's start (~checking) to the FRESH node's
+        # ready, not only to the verdict (harness review).
+        took = (round(st["ready"] - st["checking"], 2)
+                if "ready" in st and "checking" in st else None)
         trials.append({"reload": rel, "watch": {k: v for k, v in w.items() if k != "health"},
-                       "map_id": w["health"]["map"]["map_id"],
+                       "map_id": w["health"]["map"]["map_id"], "fresh_ready_s": took,
                        "criteria": {"fell_back": rel.get("result") == "fell_back",
                                     "within_10s": took is not None and took <= 10.0,
                                     "new_map_id": w["health"]["map"]["map_id"] != saved_id,
@@ -318,7 +325,7 @@ def verdicts(res):
          and bool(a) and s[0]["at_rest_s_after_verdict"] <= WITHIN_S,
          "D3-b": all(x.get("criteria") and all(x["criteria"].get(k) for k in
                      ("map_id_same", "at_rest", "after_drive", "drive_done", "nothing_leaked"))
-                     for x in s),
+                     and x["at_rest_s_after_verdict"] <= WITHIN_S for x in s),
          "D3-d": bool(res["clutter"].get("criteria")) and all(
              res["clutter"]["criteria"].get(k) for k in ("at_rest", "after_drive", "drive_done")),
          "D3-e": res["off_dock_drive"]["from_dock_m"] >= 1.0 and res["off_dock_drive"]["from_dock_deg"] >= 30
@@ -372,6 +379,7 @@ def main(which):
             sessions = [session(house, maps, bridge, None, saved_id)[0] for _ in range(3)]
             res = {"house": house, "sessions": sessions,
                    "D3-b": "MET" if all(x.get("criteria") and all(x["criteria"].values())
+                                        and x["at_rest_s_after_verdict"] <= WITHIN_S
                                         for x in sessions) else "FAILED"}
             name = f"{house}-ab"
         elif name.startswith("e:"):
