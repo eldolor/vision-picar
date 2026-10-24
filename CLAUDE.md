@@ -259,9 +259,18 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     option a) paces only questions the local tier takes; any question handed
     to the cloud waits `tier_cold_search_after` (6).
   * The local tier stays off unless `tier_local_vlm_url` is set.
+  * **E (criteria 1-6, merged 2026-10-24):** 1 met offline on the 299
+    (97.2% / 94.6%, VE never in the band, 0 cloud calls); on the Jetson, 3
+    met (arrival to verdict p90 1.91 s, bar 2.0, five arrivals; the wait for
+    a frame question holding VE is what nears it), 4 met (3 `found` with
+    the cloud refused), 5 met (VE killed: 0 late ticks, the cloud takes
+    over), 6's memory met (776 MB) and its OOM drill kills VE's driver only,
+    but one wheel tick ran late (0.127 s) as memory ran out -- FAILED as
+    written; D10 met (box p90 2.86 s). Status now reports `verdict_s` and
+    `arrival_verdicts`. `evaluations/tiered-380/E/board/`.
   * Open: a person's D-pad Stop during a local-led arrival's cloud confirm
     can still end `found` (the brain cannot read 3.84's latch); 3.80.H
-    criterion 4; 3.80.E. `vision-picar-ros:latest` rebuilt from `dev` 778846d on 2026-10-18.
+    criterion 4. `vision-picar-ros:latest` rebuilt from `dev` 778846d on 2026-10-18.
 * **Calibrating the tiers (3.92), merged 2026-10-22; nothing changed in
   the code.** VE and YOLOE + CLIP on all 2,261 labelled frames (free):
   * The raw scores are already calibrated on average (VE ECE 0.034), but
