@@ -21,6 +21,11 @@ pytest-playwright
 # Coverage, for the command in CLAUDE.md section 6.
 pytest-cov
 
+# tests/chassis_fit.py (ndimage, signal), which tests/test_mission_ends.py's
+# coverage tests import. Was only in requirements-perception.txt, so a venv
+# from this file alone failed them.
+scipy>=1.11
+
 # S3-backed recorded-walk storage (control/walk_store.py's S3WalkStore) and
 # the Bedrock calls control/admin_server.py's judge tier makes. Was an
 # ambient install before the walks left EFS; named here now that a code
