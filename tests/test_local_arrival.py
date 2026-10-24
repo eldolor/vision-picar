@@ -458,7 +458,7 @@ def test_391c_once_the_cloud_spoke_the_arrival_is_the_clouds():
         spoke = False
 
         def cloud_spoke(self):
-            return self.spoke
+            return "ask" if self.spoke else None
 
     grid = build_world("scaled_house")
     agent = MissionAgent(MockRobot(grid, render=False),
@@ -469,3 +469,58 @@ def test_391c_once_the_cloud_spoke_the_arrival_is_the_clouds():
     agent.vision_fn.spoke = True
     agent._confirm_identity({"state": ARRIVED, "source": SOURCE_PERCEPTION}, {})
     assert calls == [True, False]
+
+
+
+def _runner_at_rest(cloud=None, **kw):
+    """A tiered explore runner, started, no tick run: the arrival step is
+    called by hand through MissionRunner._guarded_confirm (round 5: the
+    agent's vision_fn is the runner's wrapper, so only this path is real)."""
+    grid = build_world("scaled_house")
+    robot = MockRobot(grid, render=False)
+    pipeline = FrameReportedPipeline(TARGET, blind=True)
+    pipeline.hfov_deg = HFOV
+    identity = TruthLocal()
+    cloud = cloud or TruthCloud(answer=True)
+    tier = TieredVision(pipeline, TruthCloud(answer=False), confirm_vision_fn=cloud,
+                        local_identity_fn=identity, local_sighting_fn=TruthLocal(), **kw)
+    runner = MissionRunner(robot, target_object=TARGET, policy="tiered", vision_fn=tier,
+                           tier_search="explore", navigator=FakeNav(robot),
+                           world=MockWorld(grid), max_steps=10,
+                           clock=lambda: grid.sim_time, idle=robot.pass_time,
+                           vision_timeout_s=5.0)
+    runner.start()
+    return runner, robot, tier, identity, cloud
+
+
+def test_391c_through_the_runner_the_cloud_decides_once_it_spoke():
+    runner, robot, tier, identity, cloud = _runner_at_rest()
+    try:
+        tier._lost, tier._episode = 0, 1
+        tier._on_yes("cloud", 1)                  # the cloud said yes about this run
+        assert tier.cloud_spoke() == "ask"
+        verdict = runner._guarded_confirm(robot.get_camera_frame())
+        assert cloud.calls == 1 and identity.asked == 0 and verdict["cloud_called"]
+    finally:
+        runner.stop()
+
+
+def test_391c_through_the_runner_a_held_cloud_no_refuses_free():
+    runner, robot, tier, identity, cloud = _runner_at_rest()
+    try:
+        tier._lost, tier._episode = 0, 1
+        tier._reject("cloud", None, 1)
+        verdict = runner._guarded_confirm(robot.get_camera_frame())
+        assert verdict["confirmed"] is False and verdict["cloud_called"] is False
+        assert cloud.calls == 0 and identity.asked == 0
+    finally:
+        runner.stop()
+
+
+def test_391c_through_the_runner_nothing_spoken_asks_the_local_vlm_first():
+    runner, robot, tier, identity, cloud = _runner_at_rest()
+    try:
+        runner._guarded_confirm(robot.get_camera_frame())
+        assert identity.asked == 1 and cloud.calls == 0
+    finally:
+        runner.stop()

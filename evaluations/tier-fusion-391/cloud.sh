@@ -23,6 +23,7 @@ REGION="${AWS_REGION:-us-east-2}"
 BUCKET="${GPU_BUCKET:-vision-picar-deploy-303351622021-us-east-2}"
 S3="s3://$BUCKET/$GPU_PREFIX"
 MAX_HOURS="${MAX_HOURS:-2}"   # the instance powers itself off (terminate) by then
+case "$MAX_HOURS" in ''|*[!0-9]*) echo "MAX_HOURS must be a whole number of hours" >&2; exit 1 ;; esac
 EC2=tools/gpu/ec2.sh
 HERE=evaluations/tier-fusion-391
 ARMS="G-0.9 G-0.0 O1-blind-1 O1-blind-6 O2-decoy-1 O2-decoy-6 sighted-6"
@@ -57,12 +58,16 @@ push_code() {
 
 run_remote() {
   # Canonical's Ubuntu image has the SSM agent but no AWS CLI.
-  bash "$EC2" run "export PATH=\$PATH:/snap/bin; command -v aws >/dev/null || snap install aws-cli --classic >/dev/null; aws s3 cp --only-show-errors $S3/remote.sh /tmp/remote.sh && sudo -u ubuntu env PATH=\$PATH bash /tmp/remote.sh $S3 $MAX_HOURS"
+  # The dead-man switch first, as root (SSM): a failure in anything after it
+  # (snap, the copy) must not leave the instance billing (round 5).
+  bash "$EC2" run "shutdown -h +$((MAX_HOURS * 60)) '3.91 dead-man switch'; export PATH=\$PATH:/snap/bin; command -v aws >/dev/null || snap install aws-cli --classic >/dev/null; aws s3 cp --only-show-errors $S3/remote.sh /tmp/remote.sh && sudo -u ubuntu env PATH=\$PATH bash /tmp/remote.sh $S3 $MAX_HOURS"
 }
 
 case "${1:-}" in
-  start)  if aws --region "$REGION" s3 ls "$S3/out/" >/dev/null 2>&1; then
-            echo "$S3/out/ holds an earlier run -- pull + down first" >&2; exit 1
+  start)  # Any file under the prefix is a run (out/ fills only as arms finish;
+          # a second start would relabel the first run's results).
+          if [ -n "$(aws --region "$REGION" s3 ls "$S3/" 2>/dev/null)" ]; then
+            echo "$S3/ holds an earlier or running run -- pull + down first" >&2; exit 1
           fi
           ami; push_code; rm -f "$HERE/C8/.pulled"; bash "$EC2" up; run_remote ;;
   status) bash "$EC2" status
@@ -75,6 +80,9 @@ case "${1:-}" in
           done ;;
   pull)   mkdir -p "$HERE/C8"
           complete=0; bash "$SELF" done && complete=1
+          # This run's files only: an arm that failed must not leave an
+          # earlier run's result beside this run's HEAD.
+          rm -f "$HERE/C8/"*.json "$HERE/C8/"*.log "$HERE/C8/HEAD"
           aws --region "$REGION" s3 sync --only-show-errors "$S3/out/" "$HERE/C8/"
           aws --region "$REGION" s3 sync --only-show-errors "$S3/logs/" "$HERE/C8/"
           aws --region "$REGION" s3 cp --only-show-errors "$S3/HEAD" "$HERE/C8/HEAD" || true

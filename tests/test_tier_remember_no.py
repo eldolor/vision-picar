@@ -735,14 +735,15 @@ def test_a_local_track_yes_steers_nothing_while_the_cloud_holds_a_no():
     assert tier._local_held is None and tier._local_turn is None
 
 
-def test_a_cannot_tell_no_on_the_clouds_probation_still_asks_the_cloud():
-    # Kept after round 4 on the replay's data: the renewed cloud no is held,
-    # and a held no outlives the next loss where a probation does not.
+def test_a_cannot_tell_no_on_the_clouds_probation_renews_the_clouds_no_free():
+    # Round 4's data: the cloud's no must be HELD again (a held no outlives
+    # the next loss, where a probation does not); round 5: without a call.
     tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()))
     tier._lost, tier._episode = 0, 2
     tier._probation, tier._probation_episode, tier._probation_by = True, 2, "cloud"
     tier._apply_local(_local_answer(no(), episode=2, share=0.05))
-    assert tier._escalate_episode == 2 and tier.stats.cannot_tell == 1
+    assert tier._escalate_episode is None and tier.stats.cannot_tell == 1
+    assert tier._rejection["rank"] == "cloud"
 
 
 def test_a_later_cloud_no_ends_its_earlier_yes_about_the_run():
@@ -785,15 +786,59 @@ def test_explore_does_not_sight_or_close_in_on_a_refused_candidate():
 def test_the_arrival_goes_to_the_cloud_once_the_cloud_spoke():
     tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()))
     tier._lost, tier._episode = 0, 1
-    assert not tier.cloud_spoke()
+    assert tier.cloud_spoke() is None
     tier._on_yes("cloud", 1)
-    assert tier.cloud_spoke()
+    assert tier.cloud_spoke() == "ask"
     tier._episode = 2
-    assert not tier.cloud_spoke()
+    assert tier.cloud_spoke() is None
     tier._reject("cloud", None, 2)
-    assert tier.cloud_spoke()
+    assert tier.cloud_spoke() == "no"            # refused without a call
     tier._release("lost")
-    assert tier._probation_by == "cloud" and tier.cloud_spoke()
+    assert tier._probation_by == "cloud" and tier.cloud_spoke() == "ask"
+
+
+def test_cloud_spoke_is_off_with_remember_no_off_and_at_a_spent_cap():
+    off = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()),
+                       remember_no=False)
+    off._on_yes("cloud", off._episode)
+    assert off.cloud_spoke() is None
+    capped = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()), max_calls=1)
+    capped._lost, capped._episode = 0, 1
+    capped._on_yes("cloud", 1)
+    capped.stats.cloud_calls = 1
+    assert capped.cloud_spoke() is None          # no answer can come: the local tier
+    capped._reject("cloud", None, 1)
+    assert capped.cloud_spoke() == "no"          # a held no still refuses free
+
+
+def test_the_arrivals_cloud_no_is_remembered():
+    tier = TieredVision(Pipeline([D()]), Cloud(direction="REVERSE"),
+                        local_sighting_fn=Local(no()))
+    tier._lost, tier._episode = 0, 1
+    tier._perception_this_frame = D()
+    verdict = tier.confirm_cloud({"image_base64": "x"})
+    assert verdict["confirmed"] is False
+    assert tier._rejection is not None and tier._rejection["by"] == "cloud"
+    assert tier.cloud_spoke() == "no"
+
+
+def test_on_a_phone_a_far_bag_both_tiers_refuse_costs_one_call():
+    # Round 5: the local far no on the cloud's probation renews the cloud's
+    # no for free -- it paid every 20 s (400 frames: 10 calls).
+    frames = [A] + [D(share=0.10)] * 400
+    tier, cloud, _ = run(frames, Local(no()), cloud=Cloud(direction="REVERSE"),
+                         stale_after=0)
+    assert cloud.calls == 1
+    assert tier.stats.releases.get("timeout", 0) >= 5
+
+
+def test_a_sync_cloud_no_marks_its_own_frame_refused():
+    from brain.tiered import candidate_refused
+    frames = [A] + [D()] * 6
+    tier, cloud, scenes = run(frames, None, cloud=Cloud(direction="REVERSE"))
+    landed = next(i for i, s in enumerate(scenes) if s["_tier"].get("cloud_called")
+                  and i > 0)
+    assert candidate_refused(scenes[landed])
 
 
 def test_a_local_yes_on_the_clouds_probation_asks_again_after_a_new_release():

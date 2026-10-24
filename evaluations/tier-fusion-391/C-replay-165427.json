@@ -3139,12 +3139,12 @@
   },
   "local_first/on": {
    "reversals": 1,
-   "cloud_calls": 2,
+   "cloud_calls": 1,
    "local_answers": 48,
    "borrowed": 0,
    "steered_after_first_no": 1,
    "steered_after_first_no_on_a_detection": 0,
-   "probation_frames": 8,
+   "probation_frames": 7,
    "masked_after_a_yes": 0,
    "detected_frames": 55,
    "actions": {
@@ -3153,16 +3153,16 @@
     "REVERSE": 33
    },
    "rejections": {
-    "local": 5,
-    "cloud": 2
+    "local": 6,
+    "cloud": 1
    },
    "releases": {
     "lost": 6
    },
    "cannot_tell": 2,
-   "masked_frames": 46,
+   "masked_frames": 47,
    "triggers": {
-    "disagreement": 2
+    "disagreement": 1
    },
    "local_triggers": {
     "mission_start": 1,
@@ -4296,32 +4296,32 @@
      "perception": "detected",
      "action": "REVERSE",
      "steered": false,
-     "masked": false,
-     "probation": true,
+     "masked": true,
+     "probation": false,
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": null,
+     "rejected": "local",
      "cloud": 0,
      "local": 1,
      "local_answer": "no",
-     "why": "[reactive tier, local question: candidate_sighting] asked the local tier -- not steering at a candidate once refused, until a yes (probation) -- holding last cloud goal REVERSE"
+     "why": "[reactive tier, local question: candidate_sighting] asked the local tier -- not steering at a candidate the local said is not the target -- holding last cloud goal REVERSE"
     },
     {
      "seq": 439,
      "perception": "detected",
      "action": "REVERSE",
      "steered": false,
-     "masked": false,
+     "masked": true,
      "probation": false,
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": null,
-     "cloud": 1,
+     "rejected": "local",
+     "cloud": 0,
      "local": 0,
      "local_answer": null,
-     "why": "replay stub: not visible"
+     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the local said is not the target -- holding last cloud goal REVERSE"
     },
     {
      "seq": 441,
@@ -4333,11 +4333,11 @@
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": "cloud",
+     "rejected": "local",
      "cloud": 0,
      "local": 0,
      "local_answer": null,
-     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the cloud said is not the target -- holding last cloud goal REVERSE"
+     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the local said is not the target -- holding last cloud goal REVERSE"
     },
     {
      "seq": 444,
@@ -4349,11 +4349,11 @@
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": "cloud",
+     "rejected": "local",
      "cloud": 0,
      "local": 0,
      "local_answer": null,
-     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the cloud said is not the target -- holding last cloud goal REVERSE"
+     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the local said is not the target -- holding last cloud goal REVERSE"
     },
     {
      "seq": 447,
@@ -4365,11 +4365,11 @@
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": "cloud",
+     "rejected": "local",
      "cloud": 0,
      "local": 0,
      "local_answer": null,
-     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the cloud said is not the target -- holding last cloud goal REVERSE"
+     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the local said is not the target -- holding last cloud goal REVERSE"
     },
     {
      "seq": 449,
@@ -4381,11 +4381,11 @@
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": "cloud",
+     "rejected": "local",
      "cloud": 0,
      "local": 0,
      "local_answer": null,
-     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the cloud said is not the target -- holding last cloud goal REVERSE"
+     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the local said is not the target -- holding last cloud goal REVERSE"
     },
     {
      "seq": 452,
@@ -4397,11 +4397,11 @@
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": "cloud",
+     "rejected": "local",
      "cloud": 0,
      "local": 0,
      "local_answer": null,
-     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the cloud said is not the target -- holding last cloud goal REVERSE"
+     "why": "[reactive tier, no cloud call] no trigger (detected) -- not steering at a candidate the local said is not the target -- holding last cloud goal REVERSE"
     },
     {
      "seq": 454,
@@ -4413,7 +4413,7 @@
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": "cloud",
+     "rejected": "local",
      "cloud": 0,
      "local": 1,
      "local_answer": "no",
@@ -4429,7 +4429,7 @@
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": "cloud",
+     "rejected": "local",
      "cloud": 0,
      "local": 1,
      "local_answer": "no",
@@ -4445,7 +4445,7 @@
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": "cloud",
+     "rejected": "local",
      "cloud": 0,
      "local": 1,
      "local_answer": "no",
@@ -4461,7 +4461,7 @@
      "after_yes": false,
      "after_no": true,
      "after_no_detected": true,
-     "rejected": "cloud",
+     "rejected": "local",
      "cloud": 0,
      "local": 1,
      "local_answer": "no",

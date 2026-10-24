@@ -1549,6 +1549,19 @@ class MissionRunner:
         if confirm is None:
             return {"confirmed": False, "cloud_called": False,
                     "reason": "this policy has no cloud to confirm identity"}
+        # 3.91.C, the tiers' order (the user, 2026-10-24): once the cloud has
+        # spoken about the candidate in view, the local VLM may not overrule
+        # it. Decided here, where the policy itself is in hand (the agent's
+        # vision_fn is this runner's wrapper): a no the cloud holds refuses
+        # the arrival free; otherwise the cloud alone is asked (3.80.O's path).
+        spoke = getattr(self.vision_fn, "cloud_spoke", None)
+        verdict = spoke() if spoke is not None else None
+        if verdict == "no":
+            return {"confirmed": False, "cloud_called": False, "tier": "cloud",
+                    "reason": "the cloud said this candidate is not the target; "
+                              "not asked again"}
+        if verdict == "ask":
+            local_ok = False
         # 3.56: the whole step -- waiting for calls still out, then the call
         # -- shares ONE deadline, B3.2's `vision_timeout_s`, as it did before
         # the confirmation had a deadline of its own. The arrival tick stays

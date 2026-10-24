@@ -1499,7 +1499,7 @@ class TieredVision:
         and the cloud is asked."""
         with self._reject_lock:
             r = self._rejection
-            if by == "cloud":
+            if by == "cloud" and self.remember_no:
                 self._cloud_yes_episode = episode
             no_outranks = r is not None and TIER_RANK[r["rank"]] > TIER_RANK[by]
             probation_outranks = (self._probation
@@ -1539,16 +1539,26 @@ class TieredVision:
         return perception.status == DETECTED and (
             self._rejection is not None or self._probation)
 
-    def cloud_spoke(self) -> bool:
-        """The tiers' order at arrival (the user, 2026-10-24): the cloud has
-        answered about the candidate in view -- a yes about this run, a no
-        it holds, or its probation -- so the identity check is the cloud's,
-        not the local VLM's."""
+    def cloud_spoke(self) -> Optional[str]:
+        """The tiers' order at arrival (the user, 2026-10-24): has the cloud
+        answered about the candidate in view? "no": it holds a no about it --
+        the arrival is refused without a call (round 5: each flicker of the
+        arrival paid the cloud again). "ask": a yes about this run, or its
+        probation -- the identity check is the cloud's, not the local VLM's.
+        None: it has not, or the cap is spent (no answer can come; the local
+        tier is the best left), or `remember_no` is off (`dev`)."""
+        if not self.remember_no:
+            return None
         with self._reject_lock:
             r = self._rejection
-            return (self._cloud_yes_episode == self._episode
-                    or (r is not None and r["rank"] == "cloud")
-                    or (self._probation and self._probation_by == "cloud"))
+            if r is not None and r["rank"] == "cloud":
+                return "no"
+            if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
+                return None
+            if (self._cloud_yes_episode == self._episode
+                    or (self._probation and self._probation_by == "cloud")):
+                return "ask"
+            return None
 
     def _on_probation(self, perception: Perception) -> bool:
         """Amendment 3: a candidate in view whose no was released by loss or
@@ -1981,15 +1991,21 @@ class TieredVision:
                         self._reject("local", ans.q.pose, ans.q.episode)
                     elif self._cloud_yes_episode != ans.q.episode:
                         with self._reject_lock:
-                            # Option (a) (the user, 2026-10-24): a no Qwen
-                            # cannot vouch for goes up to the cloud, once per
-                            # run; perception steers until it answers. Also on
-                            # the cloud's probation, where the local no agrees:
-                            # the cloud's renewed no is HELD, and outlives the
-                            # next loss of the object, where a probation ends
-                            # (round 4 skipped the call: the taupe replay then
-                            # steered at the re-found bag, 2 reversals).
-                            self._escalate_episode = ans.q.episode
+                            agrees = self._probation and self._probation_by == "cloud"
+                            if not agrees:
+                                # Option (a) (the user, 2026-10-24): a no Qwen
+                                # cannot vouch for goes up to the cloud, once
+                                # per run; perception steers until it answers.
+                                self._escalate_episode = ans.q.episode
+                        if agrees:
+                            # On the cloud's probation the local no agrees
+                            # with the cloud: the cloud's no is held again,
+                            # free (it keeps the cloud's rank). Held, it
+                            # outlives the object's next loss, where a
+                            # probation ends -- round 4's skipped call let the
+                            # taupe replay steer at the re-found bag; asking
+                            # the cloud paid every 20 s on a phone (round 5).
+                            self._reject("local", ans.q.pose, ans.q.episode)
                             if share < lo and self._probation_by == "local":
                                 # Amendment 4 (the user, 2026-10-23/24): a far
                                 # no ends a local probation -- the far view is
@@ -2285,6 +2301,11 @@ class TieredVision:
             self.stats.record("cloud_ms", (time.perf_counter() - started) * 1000)
         nav = scene.get("_navigate") or {}
         confirmed = nav.get("target_visible") is True
+        # 3.91.C (round 5): the arrival's answer is the cloud's about the
+        # candidate in view, remembered like any other -- a no held then
+        # refuses the next arrival at it without a call.
+        self._learn_from_cloud(scene, self._perception_this_frame, self._pose_now(),
+                               self._episode)
         return {"confirmed": confirmed, "cloud_called": True, "tier": "cloud",
                 "reason": ("the cloud sees the target in the arrival frame" if confirmed
                            else "the cloud does not see the target in the arrival frame"),
@@ -3419,6 +3440,9 @@ class TieredVision:
                         "corroboration": corroboration,
                         "vocabulary": self._vocabulary_readout(),
                         "pacing": self._pacing_readout(),
+                        # 3.91.C (round 5): on the frame a sync cloud no lands
+                        # too, or explore sights the candidate it refused.
+                        "candidate_refused": self._refused_in_view(perception),
                         "stats": self.stats.as_dict()}
         return out
 

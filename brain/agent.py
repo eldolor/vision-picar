@@ -383,11 +383,11 @@ class MissionAgent(ConstrainedAgent):
         # confirmed by the local VLM -- the same model would confirm its own
         # mistake -- so its identity question goes to the cloud.
         local_ok = readout.get("source") != SOURCE_LOCAL
+        # 3.91.C, the tiers' order: once the cloud has spoken about this
+        # candidate, MissionRunner._guarded_confirm routes the identity check
+        # (the agent's vision_fn there is the runner's wrapper, round 5).
         spoke = getattr(self.vision_fn, "cloud_spoke", None)
-        if local_ok and spoke is not None and spoke():
-            # 3.91.C, the tiers' order (the user, 2026-10-24): the cloud has
-            # answered about this candidate, so the local VLM may not overrule
-            # it at arrival -- the cloud decides, as for a local-led arrival.
+        if local_ok and spoke is not None and spoke() == "ask":
             local_ok = False
         if not local_ok and confirm is not None and not _takes_local_ok(confirm):
             # A confirmer that cannot be told to skip the local tier is not
