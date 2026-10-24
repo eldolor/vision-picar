@@ -56,7 +56,8 @@ from brain.agent import ObjectSearchAgent, _takes_local_ok
 from brain.arrival import SOURCE_LOCAL
 from brain.explore import OWN_GOAL_TOLERANCE_M, ExploreAgent  # one tolerance for both (3.76)
 from brain.choice_log import BY_PERSON, GoalAsk
-from brain.intervention_log import VIA_BRAIN_STOP, VIA_PREEMPTED, VIA_ROBOT_STOP
+from brain.intervention_log import (VIA_BRAIN_STOP, VIA_LOOP_CANCELLED, VIA_PREEMPTED,
+                                    VIA_ROBOT_STOP)
 from brain.goal_policy import goal_policy_for
 from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
 from brain.inventory import MAX_RANGE_M as INVENTORY_RANGE_M
@@ -742,6 +743,12 @@ class MissionRunner:
         self.intervention_log = None
         self.intervention: Optional[dict] = None
         self.intervention_done = threading.Event()
+        # The house, read at the end and only when the line is written (a
+        # /health round trip), unless `house` was given; set by the server.
+        self.house_fn: Optional[Callable[[], Optional[str]]] = None
+        # Set by the brain server when its loop was cancelled by anything but
+        # a person's Stop (the process shutting down): no intervention.
+        self.loop_cancelled = False
 
         self.memory = MissionMemory(
             mission=mission or ("Survey the house." if job == "survey"
@@ -1246,7 +1253,8 @@ class MissionRunner:
         """Operator stop: ends the mission Cancelled, `cancelled_by: "stop"`
         (3.70 E5). Always stops the car as well as the loop -- stopping the
         thinking is not stopping the robot."""
-        self._finish(CANCELLED, reason, cancelled_by="stop", via=VIA_BRAIN_STOP)
+        self._finish(CANCELLED, reason, cancelled_by="stop",
+                     via=VIA_LOOP_CANCELLED if self.loop_cancelled else VIA_BRAIN_STOP)
 
     def abort(self, reason: str) -> None:
         """Failsafe stop (B3.3's hung-tick guard calls this). Same as
@@ -1817,7 +1825,9 @@ class MissionRunner:
         # 3.99: on a thread of its own, like the report below: the pose is an
         # HTTP read, and a Stop runs this on the brain's event loop.
         if line is not None and self.intervention_log is not None:
-            threading.Thread(target=self._log_intervention, args=(line,), daemon=True,
+            # Not a daemon: the interpreter waits for it at exit, so a restart
+            # straight after a Stop still writes the line (review round 1).
+            threading.Thread(target=self._log_intervention, args=(line,), daemon=False,
                              name="mission-intervention").start()
         else:
             self.intervention_done.set()
@@ -1862,7 +1872,7 @@ class MissionRunner:
         autonomous = max(0.0, elapsed - self._paused_s())
         ended_at = time.time()
         intervention = None
-        if outcome == CANCELLED and cancelled_by is not None:
+        if outcome == CANCELLED and cancelled_by is not None and via != VIA_LOOP_CANCELLED:
             intervention = {
                 "kind": cancelled_by, "via": via, "by": by, "detail": note,
                 "at_s": round(autonomous, 2), "step": len(self.agent.history),
@@ -1877,6 +1887,7 @@ class MissionRunner:
             "ended_at": round(ended_at, 3),
             "autonomous_s": round(autonomous, 2),
             "outcome": outcome,
+            "end_via": via,
             "person_picks": sum(1 for c in self.choices if c.get("by") == BY_PERSON),
             "intervention": intervention,
         }
@@ -1885,15 +1896,25 @@ class MissionRunner:
         """3.99: the pose after the stop, then the line. A read or a write
         that fails is logged and never reaches the mission."""
         try:
+            if line["house"] is None and self.house_fn is not None:
+                try:
+                    line["house"] = self.house_fn()
+                except Exception as e:  # noqa: BLE001 -- a label, never the line
+                    logger.warning("intervention house unreadable: %s", e)
             if line["intervention"] is not None:
-                pose = None
+                pose, note = None, None
                 try:
                     p = self.world.get_pose()
                     if isinstance(p, dict) and p.get("usable"):
                         pose = {k: p.get(k) for k in ("map_id", "x_m", "y_m", "heading_deg")}
+                    else:
+                        note = "unusable" + (f": {p.get('reason')}" if isinstance(p, dict)
+                                             and p.get("reason") else "")
                 except Exception as e:  # noqa: BLE001 -- the line without it
+                    note = f"read failed: {e}"
                     logger.warning("intervention pose unreadable: %s", e)
                 line["intervention"]["pose_after_stop"] = pose
+                line["intervention"]["pose_note"] = note
             self.intervention = line
             self.intervention_log.append(line)
         except Exception as e:  # noqa: BLE001 -- a record lost, never the mission

@@ -752,8 +752,11 @@ def create_app(
         )
         # 3.88 A, 3.99: which house each recorded choice and mission end was
         # in -- the simulator's, from the robot server; None on the car.
+        # A /health round trip: at the start only for ask mode; for 3.99's line
+        # it is read at the mission's end (`runner.house_fn`, set below).
         sim_map = getattr(robot, "sim_map", None)
-        kwargs["house"] = sim_map() if sim_map is not None else None
+        if asks:
+            kwargs["house"] = sim_map() if sim_map is not None else None
         if navigator is not None:
             kwargs["navigator"] = navigator
         try:
@@ -799,6 +802,7 @@ def create_app(
         # 3.99: one file for every mission's end line, created at the first.
         runner.intervention_log = InterventionLog(
             os.path.join(config["intervention_dir"], INTERVENTION_FILE))
+        runner.house_fn = sim_map
         if asks:
             # 3.88 A: one file a mission, created at its first choice.
             runner.choice_log = ChoiceLog(os.path.join(config["explore_choice_dir"],
@@ -977,6 +981,10 @@ def create_app(
             # Synchronous on purpose: awaiting inside a cancellation
             # handler is how a stop gets silently skipped. One localhost
             # POST is a fine thing to block the loop for.
+            if not getattr(runner, "operator_stopped", False):
+                # 3.99: no person's Stop asked for this (the process shutting
+                # down), so it is no intervention.
+                runner.loop_cancelled = True
             runner.stop("mission loop cancelled")
             raise
 

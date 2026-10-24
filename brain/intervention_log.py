@@ -26,7 +26,9 @@ loss is skipped (`read_choices`' rule).
 """
 
 import argparse
+import os
 import sys
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -39,11 +41,24 @@ KINDS = ("stop", "dpad")
 VIA_BRAIN_STOP = "brain_stop"      # POST /mission/stop
 VIA_ROBOT_STOP = "robot_stop"      # 3.84: the robot server's latch refused the brain
 VIA_PREEMPTED = "preempted"        # a person outranked the brain (M4)
+# Not a person: the brain's loop cancelled by anything but a Stop (shutdown).
+VIA_LOOP_CANCELLED = "loop_cancelled"
+DEFAULT_DIR = "recordings/interventions"   # brain_config's default, for the CLI
+_FILE_LOCKS: dict = {}
+_FILE_LOCKS_GUARD = threading.Lock()
 
 
 class InterventionLog(ChoiceLog):
     """The one file every mission's end line is appended to. Same durable
-    append as a goal choice's: created on the first line, each line fsynced."""
+    append as a goal choice's: created on the first line, each line fsynced.
+    Each mission builds its own, and one mission's writer can still be in
+    its pose read when the next ends, so the lock is the FILE's, shared."""
+
+    def __init__(self, path):
+        super().__init__(path)
+        key = os.path.abspath(self.path)
+        with _FILE_LOCKS_GUARD:
+            self._lock = _FILE_LOCKS.setdefault(key, threading.Lock())
 
 
 def read_missions(path) -> list:
@@ -88,7 +103,9 @@ def report(directory) -> str:
 
 def main(argv: Optional[list] = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("directory", nargs="?", default="recordings/interventions")
+    parser.add_argument("directory", nargs="?",
+                        default=os.environ.get("INTERVENTION_DIR") or DEFAULT_DIR,
+                        help="default: $INTERVENTION_DIR, else " + DEFAULT_DIR)
     args = parser.parse_args(argv)
     print(report(args.directory))
 

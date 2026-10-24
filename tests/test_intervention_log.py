@@ -301,3 +301,112 @@ def test_the_brain_server_writes_a_line_for_a_stopped_mission(monkeypatch, tmp_p
     assert line["mission_id"] == runner.mission_id
     assert line["intervention"]["kind"] == "stop"
     assert line["intervention"]["via"] == "brain_stop"
+
+
+# ---------- review round 1 ----------
+
+def test_a_loop_cancelled_without_a_person_s_stop_is_no_intervention(tmp_path):
+    """Both reviewers: the loop's cancellation handler calls `stop()`, and a
+    cancel that no person's Stop asked for (the process shutting down) was
+    logged as a person's `stop`."""
+    runner = fresh_mock_runner(target_object="red backpack", max_steps=150)
+    path = _logged(runner, tmp_path)
+    runner.start()
+    runner.tick()
+    runner.loop_cancelled = True        # what the brain server sets
+    runner.stop("mission loop cancelled")
+    _wait(runner)
+    [line] = _lines(path)
+    assert line["outcome"] == CANCELLED and line["intervention"] is None
+    assert line["end_via"] == il.VIA_LOOP_CANCELLED
+
+
+def test_the_brain_server_s_shutdown_cancel_is_no_intervention(monkeypatch, tmp_path):
+    import asyncio
+    from control import brain_server
+
+    monkeypatch.setenv("INTERVENTION_DIR", str(tmp_path))
+    robot = fresh_mock_robot()
+    app = brain_server.create_app(robot_factory=lambda: robot,
+                                  world_factory=lambda _r: mock_world_for(robot))
+    from fastapi.testclient import TestClient
+    with TestClient(app) as client:
+        assert client.post("/mission/start",
+                           json={"target_object": "purple elephant"}).status_code == 200
+        runner = app.state.brain_state["runner"]
+        task = app.state.brain_state["task"]
+        # What the event loop's teardown does: cancel the task, no route.
+        client.portal.call(lambda: task.cancel())
+        _wait(runner)
+    [line] = _lines(tmp_path / "interventions.jsonl")
+    assert line["intervention"] is None
+
+
+def test_the_start_reads_no_house_and_the_line_reads_it_at_the_end(tmp_path):
+    """Both reviewers: `sim_map()` (a /health round trip) ran on every start."""
+    runner = fresh_mock_runner(target_object="red backpack", max_steps=150)
+    path = _logged(runner, tmp_path)
+    calls = []
+    runner.house_fn = lambda: (calls.append(1), "scaled_house")[1]
+    runner.start()
+    runner.tick()
+    assert calls == []
+    runner.stop()
+    _wait(runner)
+    assert _lines(path)[0]["house"] == "scaled_house" and calls == [1]
+
+
+def test_the_writer_is_not_a_daemon_thread(tmp_path, monkeypatch):
+    """Both reviewers: a daemon writer dies with the process, so a restart
+    straight after a Stop lost the line. Python joins a non-daemon thread
+    at exit."""
+    import threading
+    seen = []
+    real = threading.Thread
+
+    def spy(*a, **k):
+        t = real(*a, **k)
+        if k.get("name") == "mission-intervention":
+            seen.append(t)
+        return t
+
+    monkeypatch.setattr("control.mission_runner.threading.Thread", spy)
+    runner = fresh_mock_runner(target_object="red backpack", max_steps=150)
+    _logged(runner, tmp_path)
+    runner.start()
+    runner.stop()
+    _wait(runner)
+    assert seen and not seen[0].daemon
+
+
+def test_two_missions_share_one_lock_on_the_file(tmp_path):
+    a = InterventionLog(tmp_path / "interventions.jsonl")
+    b = InterventionLog(tmp_path / "interventions.jsonl")
+    assert a._lock is b._lock
+
+
+def test_the_pose_says_why_it_is_missing(tmp_path):
+    inner = fresh_mock_robot()
+
+    class Unusable(_PoseFails):
+        def get_pose(self):
+            return {"usable": False, "reason": "no map yet"}
+
+    for world, why in ((Unusable(mock_world_for(inner)), "unusable"),
+                       (_PoseFails(mock_world_for(inner)), "read failed")):
+        runner = MissionRunner(inner, target_object="red backpack", world=world,
+                               max_steps=150)
+        runner.intervention_log = InterventionLog(tmp_path / f"{why}.jsonl")
+        runner.start()
+        runner.stop()
+        _wait(runner)
+        iv = _lines(tmp_path / f"{why}.jsonl")[0]["intervention"]
+        assert iv["pose_after_stop"] is None and iv["pose_note"].startswith(why)
+
+
+def test_the_report_reads_intervention_dir_by_default(tmp_path, monkeypatch, capsys):
+    (tmp_path / "interventions.jsonl").write_text(
+        "\n".join(json.dumps(x) for x in FIXTURE) + "\n")
+    monkeypatch.setenv("INTERVENTION_DIR", str(tmp_path))
+    il.main([])
+    assert "4 missions" in capsys.readouterr().out
