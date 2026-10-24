@@ -367,8 +367,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   choice 2026-10-13, ~$0.43 typical, ~$0.88 at the cap on Opus 5.5 (an
   estimate). FAILED the 95%-per-room bar: 46 of 90 rooms (was 36), even
   asking at every stop tops out at 57 (open plans, rooms never entered).
-  Objects during a survey FAILED on duplicates only (1.30, bar 1.2). Not
-  wired: the car's paid label call (S2's car half). Open: time the map cut
+  Objects during a survey FAILED on duplicates only (1.30, bar 1.2).
+  **S2's car half, merged 2026-10-23, NOT DEPLOYED, off by default:** the
+  vision service's `POST /room` (one room name, Opus 5.5, 16 tokens out)
+  and `brain.room_label_source: cloud` (default `frame`); each ask bounded
+  on the wall clock and fitted inside the tick; 401/403/404 stop the asking
+  with `status.survey.source_error` (the twin does not show it yet). Est.
+  ~$0.003-0.008 a call, unmeasured; deploy, one real call and the cost
+  wait on the user. Open: time the map cut
   (`segment()`, ~1 s on the laptop, every 5 s) on the Jetson. Missions on a
   saved map (S4, M1-M3) wait on 3.50's build. **S5, merged and the twin
   deployed 2026-10-14:** the Sim tab's Remote brain panel picks Find or
