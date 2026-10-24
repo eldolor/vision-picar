@@ -878,10 +878,18 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   * 3.81.F: `MemAvailable` over a full tiered mission with VE resident and
     one change of target; below 500 MB (or trending there inside 1,200 s)
     reopens 3.81.D, in amendment 4's order.
-* **Decisions still open:** `PLAN-ros-alignment.md` section 6 (gyro heading, the floor band below the
-  lidar, speed by clearance); `HANDOFF-2026-10-02-spec-review.md` section 3 (3a-3c);
-  review 3's fix 7 (arrival confirmation against the real cloud) and fix
-  11 (whether a person's verb cancels a goal).
+* **A person's move ends a nav2 goal under every drive (3.97), merged
+  2026-10-24** (`SPEC-REVIEW-3.md` fix 11, the user): a person's FORWARD,
+  REVERSE or turn starts the Stop's goal-ending loop without its latch
+  (`begin_goal_end()`); a pan does not. `drive: ros`'s bridge already
+  cancelled; `drive: direct` let nav2 drive on. In process only; the live
+  check under both drives is owed (criterion 4).
+* **Decisions still open:** `PLAN-ros-alignment.md` section 6's gyro
+  heading, floor band and speed by clearance all wait on the car's numbers
+  (their triggers are written); review 3's fix 7 (arrival confirmation
+  against the real cloud). Decided 2026-10-24: 3.50.D4's re-map trigger
+  (scan contradiction, beside entered-unknown) and fix 11 (3.97); the
+  spec-review handoff's 3a-3c were decided 2026-10-05.
 * **Not built:** `brain/planner.py`, room-level planning over
   `MissionMemory`. S7 (chaos and soak). A Stage 1 re-run of a vision
   mission against the lit renderer.
