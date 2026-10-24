@@ -835,3 +835,55 @@ def test_no_skip_is_counted_when_no_ask_was_due():
 def test_an_article_and_its_quotes_are_no_second_spelling(raw, expected):
     from brain.room_labels import clean_room_name
     assert clean_room_name(raw) == expected
+
+
+# ---------- review round 4 ----------
+
+def test_no_second_paid_call_while_an_abandoned_one_is_in_flight():
+    import threading as _threading
+    import httpx
+    from brain.navigate import CloudUnavailable, room_label_fn_for
+    from brain.room_labels import NOT_HERE
+
+    release = _threading.Event()
+    asked = []
+
+    def handler(request):
+        asked.append(1)
+        release.wait(5)
+        return httpx.Response(200, json={"room": "kitchen"})
+
+    fn = room_label_fn_for("https://v", timeout_s=0.2, client=_room_client(handler))
+    with pytest.raises(CloudUnavailable):
+        fn({"image_base64": "aW1n"})
+    assert fn({"image_base64": "aW1n"}) is NOT_HERE      # nothing sent, nothing counted
+    assert len(asked) == 1
+    release.set()
+
+
+def test_refusals_count_in_a_row_only():
+    import httpx
+    from brain.navigate import room_label_fn_for
+    from brain.room_labels import SourceRefused
+
+    replies = iter([413, 503, 413, 503, 413, 503])
+    fn = room_label_fn_for("https://v", client=_room_client(lambda r: httpx.Response(next(replies))))
+    for _ in range(6):
+        with pytest.raises(RuntimeError) as e:
+            fn({"image_base64": "aW1n"})
+        assert not isinstance(e.value, SourceRefused)
+
+
+@pytest.mark.parametrize("status", [405, 409, 410, 415])
+def test_another_4xx_backs_off_before_it_stops_the_asking(status):
+    import httpx
+    from brain.navigate import room_label_fn_for
+    from brain.room_labels import SourceRefused
+
+    fn = room_label_fn_for("https://v", client=_room_client(lambda r: httpx.Response(status)))
+    for _ in range(2):
+        with pytest.raises(RuntimeError) as e:
+            fn({"image_base64": "aW1n"})
+        assert not isinstance(e.value, SourceRefused)
+    with pytest.raises(SourceRefused):
+        fn({"image_base64": "aW1n"})

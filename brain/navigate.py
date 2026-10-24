@@ -321,8 +321,11 @@ def vision_fn_for(
 # step left too little of the tick for. A name is a few tokens out: ~3-6 s
 # on Opus 5.5 (an estimate).
 ROOM_TIMEOUT_S = 15.0
-FRAME_REFUSALS = (400, 413, 422)
-FRAME_REFUSALS_TO_STOP = 3
+# A 4xx no retry can fix: the asking stops at once. Any other 4xx (400 a
+# frame that did not decode, 413 too big, 422, a passing 409...) backs off,
+# and REFUSALS_TO_STOP of them in a row stop the asking.
+REFUSED_FOR_GOOD = (401, 403, 404)
+REFUSALS_TO_STOP = 3
 
 
 def room_name(frame: dict, vision_url: str, secret: Optional[str] = None,
@@ -330,8 +333,9 @@ def room_name(frame: dict, vision_url: str, secret: Optional[str] = None,
               client: Optional[httpx.Client] = None) -> str:
     """The room `frame` was taken in, from the vision service's /room: one
     lowercase name, or "unclear". Raises FrameHasNoImage, CloudUnavailable
-    (an outage) or RuntimeError (our fault) -- no retries in here, for the
-    module docstring's reason: the room labeller backs off."""
+    (an outage), ServiceRefused (a 4xx) or RuntimeError (a bad URL) -- no
+    retries in here, for the module docstring's reason: the room labeller
+    backs off."""
     image_base64 = frame.get("image_base64")
     if not image_base64:
         raise FrameHasNoImage("This frame carries no image_base64: /room needs pixels.")
@@ -356,20 +360,21 @@ def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = 
                       timeout_s: float = ROOM_TIMEOUT_S,
                       client: Optional[httpx.Client] = None):
     """A survey's paid room-label source, `label_fn(frame) -> name` in
-    brain/room_labels.py's sense: each call is one /room call. A frame with
-    no pixels is NOT_HERE (nothing asked, nothing counted). An outage
-    (CloudUnavailable) and a refusal of this frame (a 400 or 413: it did not
-    decode, or is too big) raise into the labeller's back-off; a refusal no
-    retry can fix -- a 401/403, a /room not deployed (404), a bad URL, a
-    reply that is not JSON -- is SourceRefused, which stops the asking and
-    names the reason."""
+    brain/room_labels.py's sense: each call is one /room call, bounded on
+    the wall clock at `timeout_s`. A frame with no pixels, or an ask while
+    an abandoned call is still in flight, is NOT_HERE (nothing sent, nothing
+    counted). An outage (CloudUnavailable, an abandoned call included) and a
+    4xx other than 401/403/404 raise into the labeller's back-off, and
+    REFUSALS_TO_STOP such 4xx in a row are SourceRefused; so are, at once, a
+    401/403, a /room not deployed (404), a bad URL and a reply that is not
+    JSON. SourceRefused stops the asking and names the reason."""
     from brain.room_labels import NOT_HERE, SourceRefused
 
-    # 400, 413 and 422 are about one frame (it did not decode, was too big,
-    # or failed validation) -- all refused before any model call -- so they
-    # back off; FRAME_REFUSALS_TO_STOP of them in a row are about every
-    # frame, and stop the asking with the reason.
-    frame_refusals = [0]
+    # 4xx in a row (any other outcome resets it), and the call last started:
+    # one in flight at most, so a back-off never overlaps a paid call still
+    # running on its abandoned thread.
+    refusals = [0]
+    in_flight: list = [None]
 
     url = vision_url or os.environ.get("VISION_URL", "")
     if not url:
@@ -381,6 +386,8 @@ def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = 
 
     def label_fn(frame: dict):
         if not frame.get("image_base64"):
+            return NOT_HERE
+        if in_flight[0] is not None and in_flight[0].is_alive():
             return NOT_HERE
         # httpx's timeouts are per phase and per gap between bytes, so the
         # call is bounded on the wall clock here: the tick waits timeout_s
@@ -396,20 +403,23 @@ def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = 
                 box["error"] = e
 
         worker = threading.Thread(target=call, name="room-label", daemon=True)
+        in_flight[0] = worker
         worker.start()
         worker.join(timeout_s)
         if worker.is_alive():
+            refusals[0] = 0
             raise CloudUnavailable(f"/room gave no answer within {timeout_s} s")
         e = box.get("error")
+        if not (isinstance(e, ServiceRefused) and e.status not in REFUSED_FOR_GOOD):
+            refusals[0] = 0
         if e is None:
-            frame_refusals[0] = 0
             return box["name"]
         if isinstance(e, CloudUnavailable):
             raise e
-        if isinstance(e, ServiceRefused) and e.status in FRAME_REFUSALS:
-            frame_refusals[0] += 1
-            if frame_refusals[0] < FRAME_REFUSALS_TO_STOP:
-                raise e            # this frame's fault: back off, ask again later
+        if isinstance(e, ServiceRefused) and e.status not in REFUSED_FOR_GOOD:
+            refusals[0] += 1
+            if refusals[0] < REFUSALS_TO_STOP:
+                raise e            # maybe this frame's fault: back off, ask again later
         if isinstance(e, (RuntimeError, ValueError)):
             raise SourceRefused(f"/room: {e}") from e
         raise e
