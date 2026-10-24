@@ -16,6 +16,7 @@ import pytest
 
 from brain import intervention_log as il
 from brain.intervention_log import InterventionLog, read_missions, report, summarise
+from control import intervention_report
 from control.mission_runner import CANCELLED, FAILED, OUT_OF_BUDGET, MissionRunner
 from robot.interface import StoppedByPerson
 from tests.conftest import fresh_mock_robot, fresh_mock_runner, mock_world_for
@@ -265,7 +266,7 @@ def test_the_report_skips_a_cut_line_and_reads_no_file_as_none(tmp_path):
 def test_the_report_runs_as_a_module(tmp_path, capsys):
     (tmp_path / "interventions.jsonl").write_text(
         "\n".join(json.dumps(x) for x in FIXTURE) + "\n")
-    il.main([str(tmp_path)])
+    intervention_report.main([str(tmp_path)])
     out = capsys.readouterr().out
     assert "1.00 per hour" in out and "explore" in out and "tiered" in out
 
@@ -342,47 +343,73 @@ def test_the_brain_server_s_shutdown_cancel_is_no_intervention(monkeypatch, tmp_
     assert line["intervention"] is None
 
 
-def test_the_start_reads_no_house_and_the_line_reads_it_at_the_end(tmp_path):
-    """Both reviewers: `sim_map()` (a /health round trip) ran on every start."""
-    runner = fresh_mock_runner(target_object="red backpack", max_steps=150)
-    path = _logged(runner, tmp_path)
-    calls = []
-    runner.house_fn = lambda: (calls.append(1), "scaled_house")[1]
-    runner.start()
-    runner.tick()
-    assert calls == []
-    runner.stop()
-    _wait(runner)
-    assert _lines(path)[0]["house"] == "scaled_house" and calls == [1]
-
-
-def test_the_writer_is_not_a_daemon_thread(tmp_path, monkeypatch):
+def test_the_writer_is_not_a_daemon_thread(tmp_path):
     """Both reviewers: a daemon writer dies with the process, so a restart
     straight after a Stop lost the line. Python joins a non-daemon thread
     at exit."""
-    import threading
-    seen = []
-    real = threading.Thread
-
-    def spy(*a, **k):
-        t = real(*a, **k)
-        if k.get("name") == "mission-intervention":
-            seen.append(t)
-        return t
-
-    monkeypatch.setattr("control.mission_runner.threading.Thread", spy)
     runner = fresh_mock_runner(target_object="red backpack", max_steps=150)
     _logged(runner, tmp_path)
     runner.start()
     runner.stop()
     _wait(runner)
-    assert seen and not seen[0].daemon
+    assert runner._intervention_writer is not None
+    assert not runner._intervention_writer.daemon
 
 
-def test_two_missions_share_one_lock_on_the_file(tmp_path):
-    a = InterventionLog(tmp_path / "interventions.jsonl")
-    b = InterventionLog(tmp_path / "interventions.jsonl")
-    assert a._lock is b._lock
+def test_a_hung_pose_read_holds_the_writer_only_its_own_deadline(tmp_path, monkeypatch):
+    """Round 2, both reviewers: the writer is not a daemon, so a hung world
+    held the process's exit for the client's whole timeout."""
+    import threading
+    from control import mission_runner as mr
+    monkeypatch.setattr(mr, "POSE_READ_S", 0.3)
+    inner = fresh_mock_robot()
+    release = threading.Event()
+
+    class Hung(_PoseFails):
+        armed = False
+
+        def get_pose(self):
+            if Hung.armed:
+                release.wait(10)
+            return self.inner.get_pose()
+
+    runner = MissionRunner(inner, target_object="red backpack",
+                           world=Hung(mock_world_for(inner)), max_steps=150)
+    path = _logged(runner, tmp_path)
+    runner.start()
+    runner.tick()
+    Hung.armed = True
+    t0 = time.monotonic()
+    runner.stop()
+    _wait(runner)
+    runner._intervention_writer.join(5)
+    assert time.monotonic() - t0 < 2.0
+    release.set()
+    iv = _lines(path)[0]["intervention"]
+    assert iv["pose_after_stop"] is None and iv["pose_note"].startswith("read timed out")
+
+
+def test_the_brain_server_shares_one_log_between_missions(monkeypatch, tmp_path):
+    """Round 2: one log built with the app, so every mission's writer holds
+    the same lock (round 1's registry of per-file locks, removed)."""
+    from fastapi.testclient import TestClient
+    from control import brain_server
+
+    monkeypatch.setenv("INTERVENTION_DIR", str(tmp_path))
+    robot = fresh_mock_robot()
+    app = brain_server.create_app(robot_factory=lambda: robot,
+                                  world_factory=lambda _r: mock_world_for(robot))
+    logs = []
+    with TestClient(app) as client:
+        for _ in range(2):
+            assert client.post("/mission/start",
+                               json={"target_object": "purple elephant"}).status_code == 200
+            assert client.post("/mission/stop").status_code == 200
+            runner = app.state.brain_state["runner"]
+            _wait(runner)
+            logs.append(runner.intervention_log)
+    assert logs[0] is logs[1]
+    assert len(_lines(tmp_path / "interventions.jsonl")) == 2
 
 
 def test_the_pose_says_why_it_is_missing(tmp_path):
@@ -404,9 +431,10 @@ def test_the_pose_says_why_it_is_missing(tmp_path):
         assert iv["pose_after_stop"] is None and iv["pose_note"].startswith(why)
 
 
-def test_the_report_reads_intervention_dir_by_default(tmp_path, monkeypatch, capsys):
+def test_the_report_reads_the_brain_config_s_directory_by_default(tmp_path, monkeypatch,
+                                                                 capsys):
     (tmp_path / "interventions.jsonl").write_text(
         "\n".join(json.dumps(x) for x in FIXTURE) + "\n")
     monkeypatch.setenv("INTERVENTION_DIR", str(tmp_path))
-    il.main([])
+    intervention_report.main([])
     assert "4 missions" in capsys.readouterr().out

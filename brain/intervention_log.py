@@ -19,16 +19,12 @@ the robot's stop, so under a D-pad the person may already have moved it
 (`pose_after_stop`). Positions only, never an image or a map, and the file
 stays on the machine.
 
-**The report.** `python -m brain.intervention_log [dir]`: missions,
+**The report.** `python -m control.intervention_report [dir]`: missions,
 autonomous hours (elapsed minus 3.88's pauses), interventions by kind, and
 interventions per hour, overall and per policy. A last line cut by a power
 loss is skipped (`read_choices`' rule).
 """
 
-import argparse
-import os
-import sys
-import threading
 from pathlib import Path
 from typing import Optional
 
@@ -43,22 +39,15 @@ VIA_ROBOT_STOP = "robot_stop"      # 3.84: the robot server's latch refused the 
 VIA_PREEMPTED = "preempted"        # a person outranked the brain (M4)
 # Not a person: the brain's loop cancelled by anything but a Stop (shutdown).
 VIA_LOOP_CANCELLED = "loop_cancelled"
-DEFAULT_DIR = "recordings/interventions"   # brain_config's default, for the CLI
-_FILE_LOCKS: dict = {}
-_FILE_LOCKS_GUARD = threading.Lock()
 
 
 class InterventionLog(ChoiceLog):
     """The one file every mission's end line is appended to. Same durable
     append as a goal choice's: created on the first line, each line fsynced.
-    Each mission builds its own, and one mission's writer can still be in
-    its pose read when the next ends, so the lock is the FILE's, shared."""
-
-    def __init__(self, path):
-        super().__init__(path)
-        key = os.path.abspath(self.path)
-        with _FILE_LOCKS_GUARD:
-            self._lock = _FILE_LOCKS.setdefault(key, threading.Lock())
+    The brain server builds ONE and hands it to every mission, so its lock
+    covers a writer still in its pose read when the next mission ends.
+    Lines are in the order written, not always the order missions ended
+    (`ended_at` is the order)."""
 
 
 def read_missions(path) -> list:
@@ -100,15 +89,3 @@ def report(directory) -> str:
     return "\n".join([_row("all", s["all"])]
                      + [_row(f"  {p}", t) for p, t in s["by_policy"].items()])
 
-
-def main(argv: Optional[list] = None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("directory", nargs="?",
-                        default=os.environ.get("INTERVENTION_DIR") or DEFAULT_DIR,
-                        help="default: $INTERVENTION_DIR, else " + DEFAULT_DIR)
-    args = parser.parse_args(argv)
-    print(report(args.directory))
-
-
-if __name__ == "__main__":
-    main(sys.argv[1:])

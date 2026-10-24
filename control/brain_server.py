@@ -504,6 +504,9 @@ def create_app(
     configure_logging()                # PLAN 3.45: PICAR_LOG_LEVEL, unset = unchanged
     ident = log_identity("vision-picar brain server", config_path)
     config = load_brain_config(config_path)
+    # 3.99: built once, so every mission's writer shares its lock.
+    intervention_log = InterventionLog(os.path.join(config["intervention_dir"],
+                                                    INTERVENTION_FILE))
     secret = os.environ.get("APP_SHARED_SECRET")
     # Distinct from `secret` above, which gates callers OF this brain.
     # These gate the brain's OWN outbound calls to the robot and vision
@@ -752,11 +755,8 @@ def create_app(
         )
         # 3.88 A, 3.99: which house each recorded choice and mission end was
         # in -- the simulator's, from the robot server; None on the car.
-        # A /health round trip: at the start only for ask mode; for 3.99's line
-        # it is read at the mission's end (`runner.house_fn`, set below).
         sim_map = getattr(robot, "sim_map", None)
-        if asks:
-            kwargs["house"] = sim_map() if sim_map is not None else None
+        kwargs["house"] = sim_map() if sim_map is not None else None
         if navigator is not None:
             kwargs["navigator"] = navigator
         try:
@@ -799,10 +799,8 @@ def create_app(
         runner.inventory_sink = lambda report: threading.Thread(
             target=store.save, args=(mission_id, report), daemon=True).start()
         runner.mission_id = mission_id
-        # 3.99: one file for every mission's end line, created at the first.
-        runner.intervention_log = InterventionLog(
-            os.path.join(config["intervention_dir"], INTERVENTION_FILE))
-        runner.house_fn = sim_map
+        # 3.99: one log, one file, for every mission's end line.
+        runner.intervention_log = intervention_log
         if asks:
             # 3.88 A: one file a mission, created at its first choice.
             runner.choice_log = ChoiceLog(os.path.join(config["explore_choice_dir"],

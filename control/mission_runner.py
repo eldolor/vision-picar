@@ -236,6 +236,10 @@ def read_outcome(outcome: Optional[str],
 _PREEMPTED_BY = re.compile(r"^(\S+) (?:is driving|took over)\b")
 
 
+# 3.99: the intervention line's pose read waits this long, then the line is
+# written without it.
+POSE_READ_S = 2.0
+
 def derived_max_steps(time_limit_s: Optional[float]) -> int:
     """3.70 E4's step backstop: `time_limit_s / 0.5 s x 2` (a 30 min limit
     gives 7,200). With no time limit, `DEFAULT_MAX_STEPS`."""
@@ -743,9 +747,7 @@ class MissionRunner:
         self.intervention_log = None
         self.intervention: Optional[dict] = None
         self.intervention_done = threading.Event()
-        # The house, read at the end and only when the line is written (a
-        # /health round trip), unless `house` was given; set by the server.
-        self.house_fn: Optional[Callable[[], Optional[str]]] = None
+        self._intervention_writer: Optional[threading.Thread] = None
         # Set by the brain server when its loop was cancelled by anything but
         # a person's Stop (the process shutting down): no intervention.
         self.loop_cancelled = False
@@ -1826,9 +1828,12 @@ class MissionRunner:
         # HTTP read, and a Stop runs this on the brain's event loop.
         if line is not None and self.intervention_log is not None:
             # Not a daemon: the interpreter waits for it at exit, so a restart
-            # straight after a Stop still writes the line (review round 1).
-            threading.Thread(target=self._log_intervention, args=(line,), daemon=False,
-                             name="mission-intervention").start()
+            # straight after a Stop still writes the line (review round 1) --
+            # at most POSE_READ_S, the pose read's own deadline (round 2).
+            self._intervention_writer = threading.Thread(
+                target=self._log_intervention, args=(line,), daemon=False,
+                name="mission-intervention")
+            self._intervention_writer.start()
         else:
             self.intervention_done.set()
         # 3.70 E3-E5: where it looked -- after the stop, because it reads the
@@ -1892,27 +1897,39 @@ class MissionRunner:
             "intervention": intervention,
         }
 
+    def _pose_for_line(self) -> tuple:
+        """3.99: (pose, why it is missing). The read runs on a daemon thread
+        of its own, waited for at most `POSE_READ_S`: the writer is not a
+        daemon, and a hung world must not hold the process's exit for a
+        client's whole timeout (review round 2)."""
+        box: dict = {}
+
+        def read():
+            try:
+                box["pose"] = self.world.get_pose()
+            except Exception as e:  # noqa: BLE001 -- the line without it
+                box["error"] = e
+
+        reader = threading.Thread(target=read, daemon=True, name="mission-intervention-pose")
+        reader.start()
+        reader.join(POSE_READ_S)
+        if reader.is_alive():
+            return None, f"read timed out after {POSE_READ_S:g} s"
+        if "error" in box:
+            logger.warning("intervention pose unreadable: %s", box["error"])
+            return None, f"read failed: {box['error']}"
+        p = box.get("pose")
+        if isinstance(p, dict) and p.get("usable"):
+            return {k: p.get(k) for k in ("map_id", "x_m", "y_m", "heading_deg")}, None
+        return None, "unusable" + (f": {p.get('reason')}" if isinstance(p, dict)
+                                   and p.get("reason") else "")
+
     def _log_intervention(self, line: dict) -> None:
         """3.99: the pose after the stop, then the line. A read or a write
         that fails is logged and never reaches the mission."""
         try:
-            if line["house"] is None and self.house_fn is not None:
-                try:
-                    line["house"] = self.house_fn()
-                except Exception as e:  # noqa: BLE001 -- a label, never the line
-                    logger.warning("intervention house unreadable: %s", e)
             if line["intervention"] is not None:
-                pose, note = None, None
-                try:
-                    p = self.world.get_pose()
-                    if isinstance(p, dict) and p.get("usable"):
-                        pose = {k: p.get(k) for k in ("map_id", "x_m", "y_m", "heading_deg")}
-                    else:
-                        note = "unusable" + (f": {p.get('reason')}" if isinstance(p, dict)
-                                             and p.get("reason") else "")
-                except Exception as e:  # noqa: BLE001 -- the line without it
-                    note = f"read failed: {e}"
-                    logger.warning("intervention pose unreadable: %s", e)
+                pose, note = self._pose_for_line()
                 line["intervention"]["pose_after_stop"] = pose
                 line["intervention"]["pose_note"] = note
             self.intervention = line
