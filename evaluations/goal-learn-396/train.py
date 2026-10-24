@@ -53,7 +53,7 @@ from features import Labeller, room_features, room_type       # noqa: E402
 from harness import CRASH_COST, GOAL_COST, METRE_COST, MeteredNav  # noqa: E402
 from model import crops, layers, score_np, to_np, torch_net   # noqa: E402
 from brain.frontier import _cell_of                            # noqa: E402
-from brain.goal_policy import FEATURES, LinearGoalPolicy      # noqa: E402
+from brain.goal_policy import FEATURES, LinearGoalPolicy, NetGoalPolicy  # noqa: E402
 from control.mission_runner import MissionRunner              # noqa: E402
 from sim.maps import build_world                              # noqa: E402
 from sim.maps.procthor import usable                          # noqa: E402
@@ -96,8 +96,19 @@ def select_houses() -> list:
 
 # ---------- one mission under any chooser ----------
 
-def mission(split: str, index: int, mode: str, spec, seed: int = 0) -> dict:
-    """spec: "rule" | "oracle" | ("sample"|"greedy", kind, params)."""
+def dropped_rooms(grid, index: int, share: float) -> frozenset:
+    """Criterion 3: `share` of the house's rooms (rounded) whose labels are
+    withheld, chosen by a draw seeded by the house index."""
+    if share <= 0:
+        return frozenset()
+    names = sorted(grid.rooms)
+    return frozenset(random.Random(SEED * 7919 + index).sample(names, round(share * len(names))))
+
+
+def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float = 0.0) -> dict:
+    """spec: "rule" | "net365" (3.65's shipped network, its own ten
+    features) | "oracle" | ("sample"|"greedy", kind, params). `drop`: the
+    share of rooms whose labels are withheld (criterion 3)."""
     grid = build_world(f"procthor:{split}:{index}")
     target, dist = pick_target(grid, index, mode)
     row = {"split": split, "index": index, "mode": mode, "target": target}
@@ -110,10 +121,12 @@ def mission(split: str, index: int, mode: str, spec, seed: int = 0) -> dict:
                            world=MockWorld(grid), max_steps=MAX_STEPS,
                            clock=lambda: grid.sim_time, idle=robot.pass_time)
     trail, records = [], []
-    if spec != "rule":
+    if spec == "net365":
+        runner.agent.goal_policy = NetGoalPolicy.load()
+    elif spec != "rule":
         agent = runner.agent
         agent.goal_policy = LinearGoalPolicy([0.0] * len(FEATURES))
-        labeller = Labeller(grid, CELL)
+        labeller = Labeller(grid, CELL, drop=dropped_rooms(grid, index, drop))
         prior = PRIOR.get(target, {})
         kind = None if spec == "oracle" else spec[1]
         params = None if spec == "oracle" else to_np(spec[2])
