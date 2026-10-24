@@ -361,14 +361,15 @@ def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = 
                       client: Optional[httpx.Client] = None):
     """A survey's paid room-label source, `label_fn(frame) -> name` in
     brain/room_labels.py's sense: each call is one /room call, bounded on
-    the wall clock at `timeout_s`. A frame with no pixels, or an ask while
-    an abandoned call is still in flight, is NOT_HERE (nothing sent, nothing
-    counted). An outage (CloudUnavailable, an abandoned call included) and a
+    the wall clock at `timeout_s`. A frame with no pixels is NOT_HERE, an
+    ask while an abandoned call is still in flight BUSY (neither sends nor
+    counts anything; BUSY leaves the back-off alone). An abandoned call's
+    late answer is dropped, a late 401 too: the next call finds it. An outage (CloudUnavailable, an abandoned call included) and a
     4xx other than 401/403/404 raise into the labeller's back-off, and
     REFUSALS_TO_STOP such 4xx in a row are SourceRefused; so are, at once, a
     401/403, a /room not deployed (404), a bad URL and a reply that is not
     JSON. SourceRefused stops the asking and names the reason."""
-    from brain.room_labels import NOT_HERE, SourceRefused
+    from brain.room_labels import BUSY, NOT_HERE, SourceRefused
 
     # 4xx in a row (any other outcome resets it), and the call last started:
     # one in flight at most, so a back-off never overlaps a paid call still
@@ -388,7 +389,7 @@ def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = 
         if not frame.get("image_base64"):
             return NOT_HERE
         if in_flight[0] is not None and in_flight[0].is_alive():
-            return NOT_HERE
+            return BUSY
         # httpx's timeouts are per phase and per gap between bytes, so the
         # call is bounded on the wall clock here: the tick waits timeout_s
         # at most (the runner budgets on it). An abandoned call finishes, or
@@ -410,14 +411,13 @@ def room_label_fn_for(vision_url: Optional[str] = None, secret: Optional[str] = 
             refusals[0] = 0
             raise CloudUnavailable(f"/room gave no answer within {timeout_s} s")
         e = box.get("error")
-        if not (isinstance(e, ServiceRefused) and e.status not in REFUSED_FOR_GOOD):
-            refusals[0] = 0
+        countable = isinstance(e, ServiceRefused) and e.status not in REFUSED_FOR_GOOD
+        refusals[0] = refusals[0] + 1 if countable else 0
         if e is None:
             return box["name"]
         if isinstance(e, CloudUnavailable):
             raise e
-        if isinstance(e, ServiceRefused) and e.status not in REFUSED_FOR_GOOD:
-            refusals[0] += 1
+        if countable:
             if refusals[0] < REFUSALS_TO_STOP:
                 raise e            # maybe this frame's fault: back off, ask again later
         if isinstance(e, (RuntimeError, ValueError)):

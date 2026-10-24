@@ -843,7 +843,7 @@ def test_no_second_paid_call_while_an_abandoned_one_is_in_flight():
     import threading as _threading
     import httpx
     from brain.navigate import CloudUnavailable, room_label_fn_for
-    from brain.room_labels import NOT_HERE
+    from brain.room_labels import BUSY
 
     release = _threading.Event()
     asked = []
@@ -856,7 +856,7 @@ def test_no_second_paid_call_while_an_abandoned_one_is_in_flight():
     fn = room_label_fn_for("https://v", timeout_s=0.2, client=_room_client(handler))
     with pytest.raises(CloudUnavailable):
         fn({"image_base64": "aW1n"})
-    assert fn({"image_base64": "aW1n"}) is NOT_HERE      # nothing sent, nothing counted
+    assert fn({"image_base64": "aW1n"}) is BUSY          # nothing sent, nothing counted
     assert len(asked) == 1
     release.set()
 
@@ -887,3 +887,15 @@ def test_another_4xx_backs_off_before_it_stops_the_asking(status):
         assert not isinstance(e.value, SourceRefused)
     with pytest.raises(SourceRefused):
         fn({"image_base64": "aW1n"})
+
+
+def test_a_busy_source_does_not_lengthen_the_back_off():
+    from brain.room_labels import BUSY, RoomLabeller
+
+    t = [0.0]
+    lab = RoomLabeller(lambda f: BUSY, mode="spacing", clock=lambda: t[0])
+    lab._wants = lambda m, x, y: True
+    m = {"usable": True, "cells": [], "width": 0, "height": 0}
+    for _ in range(5):
+        assert lab.observe(m, {"usable": True, "x_m": 0.0, "y_m": 0.0}, lambda: {}) is None
+    assert lab.calls == 0 and lab._failures == 0 and lab._retry_at is None

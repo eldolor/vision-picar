@@ -70,6 +70,9 @@ UNCLEAR = "unclear"
 # whose `room` is "unknown"): nothing counted, asked again after RETRY_S.
 NO_SOURCE = object()
 NOT_HERE = object()
+# BUSY -- the source is still answering an earlier ask (a paid call it gave
+# up waiting for): nothing sent, nothing counted, the back-off untouched.
+BUSY = object()
 
 
 class SourceRefused(RuntimeError):
@@ -452,6 +455,9 @@ class RoomLabeller:
         if name is NO_SOURCE:
             self.calls -= 1            # nobody was asked
             self.no_source = True
+            return None
+        if name is BUSY:
+            self.calls -= 1
             return None
         if name is NOT_HERE:
             self.calls -= 1
