@@ -893,6 +893,19 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   evaluations). Real frames always ask the tiers. Offline in the sim a
   tiered mission now ends `found` (3.49's `arrived_unconfirmed` is the
   `cloud` arm's). Live: `found` on `scaled_house`, no arrival call.
+* **A person's interventions are logged (3.99), merged 2026-10-24** (the
+  user's parked idea, started on their word): every mission's end is one
+  fsynced line in `<intervention_dir>/interventions.jsonl` (`brain.intervention_dir`,
+  default `recordings/interventions`, env `INTERVENTION_DIR`; local only,
+  never uploaded). A line carries the mission's autonomous time and, if a
+  person ended it (`cancelled` by `stop` or `dpad`; every intervention
+  ends the mission today), the kind, how it came, the driver, step, last
+  action and the pose read after the stop. A 3.88 pick is counted beside
+  it, never as one; a shutdown's cancel is none. `python -m
+  control.intervention_report` prints interventions per hour, overall and
+  per policy. Live: `dpad`, `stop`, `null` on three missions. Whether to
+  learn from them waits on the Rover's data. Known limits in the section
+  (a Stop during the arrival's cloud confirm can still end `found`).
 * **Decisions still open:** `PLAN-ros-alignment.md` section 6's gyro
   heading, floor band and speed by clearance all wait on the car's numbers
   (their triggers are written). Decided 2026-10-24: fix 7 (3.98), 3.50.D4's re-map trigger
