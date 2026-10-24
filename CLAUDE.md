@@ -674,7 +674,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   sweep and ProcTHOR pin (99) unchanged. Known limits: a slow bridge adds to
   the bound, and a ROS verb planned over 4/3 s now reads `timeout` to
   `SHORT_MOVES` if cut (no policy sends one).
-* **The saved map (3.50.D), D1-D2 merged 2026-10-23 (`a12c8ad5`).** Option
+* **The saved map (3.50.D), D1-D3 merged 2026-10-23.** Option
   D (the user, 2026-10-09/11). D2: the bridge saves slam_toolbox's pose graph
   at every mission end into `PICAR_MAP_DIR` (`/maps`, a volume: run the
   container with `-v picar-maps:/maps`), versioned, 3 kept, `current.json`
@@ -685,8 +685,18 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   so mapping stays on the async node and a reload (D3) restarts slam_toolbox
   in localisation mode (the user, 2026-10-23). The async node itself missed
   the room bar once in two on today's `dev` (3.40: 2/2), its own section.
-  Next: D3 reload from the dock, D4 re-map trigger, D5 sightings; D6 (S3) asks
-  first. Maps are a home's floor plan: never commit or upload one unasked.
+  **D3: the bridge starts slam_toolbox** (not the launch file;
+  `picar_bridge/slam_process.py`). With a saved map in the store a container
+  start localises on it from the dock (`localization_slam_toolbox_node`),
+  checks the scans against it (`relocalise.py`: >= 60% of returns on the map,
+  within 0.5 m / 15 deg of the dock) and falls back to a fresh map if not;
+  goals, the map pose and `/slam/map` are held until `/health` `slam.state`
+  is `ready`. Verdict in ~1.7 s; 3 reloads per house within 0.9 cm / 0.4 deg
+  after a drive; off the dock 10/10 fell back. `PICAR_MAP_RELOAD=0` maps from
+  empty. The robot must start on the dock. One `home_first_floor` session
+  saved 50.7 MB (criterion 6's ten-session bar is 50). Next: D4 re-map
+  trigger, D5 sightings; D6 (S3) asks first. Maps are a home's floor plan:
+  never commit or upload one unasked.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,

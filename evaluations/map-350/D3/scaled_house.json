@@ -1,0 +1,531 @@
+{
+ "house": "scaled_house",
+ "image": "vision-picar-ros:plan-3.50",
+ "map_run": {
+  "watch_reload": {
+   "result": "none"
+  },
+  "mission": {
+   "outcome": "exhausted",
+   "seconds": 406,
+   "target_at": [],
+   "status_file": "explore_status_explore-purple_unicorn-1792802020.json",
+   "steps": 18,
+   "explore": {
+    "goals_sent": 17,
+    "goals_failed": 2,
+    "last_event": "no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)",
+    "camera_seen_m2": 23.11,
+    "choice_ms": {
+     "n": 52,
+     "p50_ms": 10.1,
+     "p90_ms": 14.4,
+     "max_ms": 25.1
+    },
+    "asks": false,
+    "ask": null,
+    "choices": 0
+   },
+   "stuck_episodes": 0,
+   "travel_m": 43.5,
+   "min_gap_cm": 1.6,
+   "contact_samples": 0,
+   "inside_samples": 0,
+   "samples": 798,
+   "last_log": [
+    "step 17: STOP (ok) -- no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped) -- living room, facing ?, free space some, sees nothing of note",
+    "inventory: 4 reported, 0 candidates from 725 frames -- bed, red backpack, refrigerator, sofa",
+    "mission ended (exhausted): no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  "saved": {
+   "map_id": "map-95684e8d",
+   "saving": false,
+   "store": true,
+   "saved": 1,
+   "failed": 0,
+   "skipped": 0,
+   "last_version": 1,
+   "last_at": 1792802426.681707,
+   "last_error": null
+  },
+  "final_error": {
+   "usable": true,
+   "position_error_m": 0.0058,
+   "heading_error_deg": 0.3
+  }
+ },
+ "sessions": [
+  {
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "checking",
+      0.97
+     ],
+     [
+      "ready",
+      2.52
+     ]
+    ],
+    "ready_at": 1792802436.7310028
+   },
+   "reload": {
+    "map_id": "map-95684e8d",
+    "version": 1,
+    "took_s": 1.62,
+    "agreement": 0.975,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": true,
+    "reason": "matched",
+    "result": "matched"
+   },
+   "map_id": "map-95684e8d",
+   "map_agreement": 1.0,
+   "at_rest": {
+    "usable": true,
+    "position_error_m": 0.0,
+    "heading_error_deg": 0.0
+   },
+   "at_rest_s_after_verdict": 2.0,
+   "drive": {
+    "moved_m": 1.19,
+    "turned_deg": 89.8
+   },
+   "after_drive": {
+    "usable": true,
+    "position_error_m": 0.0088,
+    "heading_error_deg": 0.408
+   },
+   "criteria": {
+    "map_id_same": true,
+    "at_rest": true,
+    "after_drive": true,
+    "drive_done": true,
+    "nothing_leaked": true,
+    "map_99": true
+   }
+  },
+  {
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "starting",
+      0.87
+     ],
+     [
+      "checking",
+      0.98
+     ],
+     [
+      "ready",
+      2.63
+     ]
+    ],
+    "ready_at": 1792802465.231667
+   },
+   "reload": {
+    "map_id": "map-95684e8d",
+    "version": 1,
+    "took_s": 1.73,
+    "agreement": 0.975,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": true,
+    "reason": "matched",
+    "result": "matched"
+   },
+   "map_id": "map-95684e8d",
+   "map_agreement": 1.0,
+   "at_rest": {
+    "usable": true,
+    "position_error_m": 0.0,
+    "heading_error_deg": 0.0
+   },
+   "at_rest_s_after_verdict": 2.0,
+   "drive": {
+    "moved_m": 1.19,
+    "turned_deg": 89.9
+   },
+   "after_drive": {
+    "usable": true,
+    "position_error_m": 0.0086,
+    "heading_error_deg": 0.325
+   },
+   "criteria": {
+    "map_id_same": true,
+    "at_rest": true,
+    "after_drive": true,
+    "drive_done": true,
+    "nothing_leaked": true,
+    "map_99": true
+   }
+  },
+  {
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "checking",
+      0.94
+     ],
+     [
+      "ready",
+      2.69
+     ]
+    ],
+    "ready_at": 1792802493.858973
+   },
+   "reload": {
+    "map_id": "map-95684e8d",
+    "version": 1,
+    "took_s": 1.73,
+    "agreement": 0.975,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": true,
+    "reason": "matched",
+    "result": "matched"
+   },
+   "map_id": "map-95684e8d",
+   "map_agreement": 1.0,
+   "at_rest": {
+    "usable": true,
+    "position_error_m": 0.0,
+    "heading_error_deg": 0.0
+   },
+   "at_rest_s_after_verdict": 2.0,
+   "drive": {
+    "moved_m": 1.19,
+    "turned_deg": 89.8
+   },
+   "after_drive": {
+    "usable": true,
+    "position_error_m": 0.0086,
+    "heading_error_deg": 0.342
+   },
+   "criteria": {
+    "map_id_same": true,
+    "at_rest": true,
+    "after_drive": true,
+    "drive_done": true,
+    "nothing_leaked": true,
+    "map_99": true
+   }
+  }
+ ],
+ "moved_objects": [
+  [
+   [
+    2,
+    2
+   ],
+   [
+    3,
+    2
+   ],
+   "sofa"
+  ],
+  [
+   [
+    2,
+    10
+   ],
+   [
+    3,
+    10
+   ],
+   "bed"
+  ],
+  [
+   [
+    23,
+    5
+   ],
+   [
+    24,
+    5
+   ],
+   "red backpack"
+  ]
+ ],
+ "clutter": {
+  "watch": {
+   "leaked_pose": 0,
+   "leaked_map": 0,
+   "goal_during_check": 503,
+   "states": [
+    [
+     "checking",
+     0.96
+    ],
+    [
+     "ready",
+     2.62
+    ]
+   ],
+   "ready_at": 1792802529.6034062
+  },
+  "reload": {
+   "map_id": "map-95684e8d",
+   "version": 1,
+   "took_s": 1.72,
+   "agreement": 0.925,
+   "dock_error_m": 0.0,
+   "dock_error_deg": 0.0,
+   "ok": true,
+   "reason": "matched",
+   "result": "matched"
+  },
+  "map_id": "map-95684e8d",
+  "map_agreement": 0.9998,
+  "at_rest": {
+   "usable": true,
+   "position_error_m": 0.0,
+   "heading_error_deg": 0.0
+  },
+  "at_rest_s_after_verdict": 2.0,
+  "drive": {
+   "moved_m": 1.19,
+   "turned_deg": 89.7
+  },
+  "after_drive": {
+   "usable": true,
+   "position_error_m": 0.0116,
+   "heading_error_deg": 0.35
+  },
+  "criteria": {
+   "map_id_same": true,
+   "at_rest": true,
+   "after_drive": true,
+   "drive_done": true,
+   "nothing_leaked": true,
+   "map_99": true
+  }
+ },
+ "off_dock_drive": {
+  "moved_m": 0.7,
+  "turned_deg": 29.6
+ },
+ "off_dock": [
+  {
+   "reload": {
+    "map_id": "map-95684e8d",
+    "version": 1,
+    "took_s": 1.73,
+    "agreement": 0.339,
+    "dock_error_m": 0.301,
+    "dock_error_deg": 15.4,
+    "ok": false,
+    "reason": "scans agree with the saved map 34% (< 60%)",
+    "result": "fell_back"
+   },
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "checking",
+      0.96
+     ],
+     [
+      "starting",
+      2.75
+     ],
+     [
+      "ready",
+      3.08
+     ]
+    ],
+    "ready_at": 1792802646.1893451
+   },
+   "map_id": "map-a45af30b",
+   "criteria": {
+    "fell_back": true,
+    "within_10s": true,
+    "new_map_id": true,
+    "nothing_leaked": true
+   }
+  },
+  {
+   "reload": {
+    "map_id": "map-95684e8d",
+    "version": 1,
+    "took_s": 1.74,
+    "agreement": 0.339,
+    "dock_error_m": 0.301,
+    "dock_error_deg": 15.4,
+    "ok": false,
+    "reason": "scans agree with the saved map 34% (< 60%)",
+    "result": "fell_back"
+   },
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "starting",
+      0.85
+     ],
+     [
+      "checking",
+      0.96
+     ],
+     [
+      "starting",
+      2.63
+     ],
+     [
+      "ready",
+      3.06
+     ]
+    ],
+    "ready_at": 1792802649.612714
+   },
+   "map_id": "map-02853831",
+   "criteria": {
+    "fell_back": true,
+    "within_10s": true,
+    "new_map_id": true,
+    "nothing_leaked": true
+   }
+  },
+  {
+   "reload": {
+    "map_id": "map-95684e8d",
+    "version": 1,
+    "took_s": 1.73,
+    "agreement": 0.339,
+    "dock_error_m": 0.301,
+    "dock_error_deg": 15.4,
+    "ok": false,
+    "reason": "scans agree with the saved map 34% (< 60%)",
+    "result": "fell_back"
+   },
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "checking",
+      0.97
+     ],
+     [
+      "starting",
+      2.63
+     ],
+     [
+      "ready",
+      3.07
+     ]
+    ],
+    "ready_at": 1792802653.05909
+   },
+   "map_id": "map-f80c04a4",
+   "criteria": {
+    "fell_back": true,
+    "within_10s": true,
+    "new_map_id": true,
+    "nothing_leaked": true
+   }
+  },
+  {
+   "reload": {
+    "map_id": "map-95684e8d",
+    "version": 1,
+    "took_s": 1.73,
+    "agreement": 0.339,
+    "dock_error_m": 0.301,
+    "dock_error_deg": 15.4,
+    "ok": false,
+    "reason": "scans agree with the saved map 34% (< 60%)",
+    "result": "fell_back"
+   },
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "checking",
+      0.85
+     ],
+     [
+      "starting",
+      2.61
+     ],
+     [
+      "ready",
+      3.06
+     ]
+    ],
+    "ready_at": 1792802656.486124
+   },
+   "map_id": "map-85b797f4",
+   "criteria": {
+    "fell_back": true,
+    "within_10s": true,
+    "new_map_id": true,
+    "nothing_leaked": true
+   }
+  },
+  {
+   "reload": {
+    "map_id": "map-95684e8d",
+    "version": 1,
+    "took_s": 1.63,
+    "agreement": 0.339,
+    "dock_error_m": 0.301,
+    "dock_error_deg": 15.4,
+    "ok": false,
+    "reason": "scans agree with the saved map 34% (< 60%)",
+    "result": "fell_back"
+   },
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "checking",
+      0.86
+     ],
+     [
+      "starting",
+      2.54
+     ],
+     [
+      "ready",
+      2.99
+     ]
+    ],
+    "ready_at": 1792802659.8448892
+   },
+   "map_id": "map-e48b12ce",
+   "criteria": {
+    "fell_back": true,
+    "within_10s": true,
+    "new_map_id": true,
+    "nothing_leaked": true
+   }
+  }
+ ],
+ "verdicts": {
+  "D3-a": "MET",
+  "D3-b": "MET",
+  "D3-d": "MET",
+  "D3-e": "FAILED"
+ }
+}

@@ -1,0 +1,46 @@
+{
+ "fresh": {
+  "reload": {
+   "result": "none"
+  },
+  "final": {
+   "usable": true,
+   "position_error_m": 0.013,
+   "heading_error_deg": 0.2
+  },
+  "blocked": 3,
+  "max_m": 0.0423,
+  "saved": {
+   "map_id": "map-1d427010",
+   "saving": false,
+   "store": true,
+   "saved": 1,
+   "failed": 0,
+   "skipped": 0,
+   "last_version": 1,
+   "last_at": 1792801909.5332866,
+   "last_error": null
+  }
+ },
+ "reload": {
+  "reload": {
+   "map_id": "map-1d427010",
+   "version": 1,
+   "took_s": 1.62,
+   "agreement": 1.0,
+   "dock_error_m": 0.0,
+   "dock_error_deg": 0.0,
+   "ok": true,
+   "reason": "matched",
+   "result": "matched"
+  },
+  "final": {
+   "usable": true,
+   "position_error_m": 0.0049,
+   "heading_error_deg": 0.15
+  },
+  "blocked": 3,
+  "max_m": 0.0379
+ },
+ "D3-c": "MET"
+}

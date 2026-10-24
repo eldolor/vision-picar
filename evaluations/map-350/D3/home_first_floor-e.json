@@ -1,0 +1,218 @@
+{
+ "house": "home_first_floor",
+ "off_dock_drive": {
+  "from_dock_m": 1.19,
+  "from_dock_deg": 89.9
+ },
+ "off_dock": [
+  {
+   "reload": {
+    "map_id": "map-eafe14cb",
+    "version": 1,
+    "took_s": 1.74,
+    "agreement": 0.267,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": false,
+    "reason": "scans agree with the saved map 27% (< 60%)",
+    "result": "fell_back"
+   },
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "checking",
+      0.85
+     ],
+     [
+      "starting",
+      2.65
+     ],
+     [
+      "ready",
+      3.09
+     ]
+    ],
+    "ready_at": 1792804010.181377
+   },
+   "map_id": "map-e18e78f7",
+   "criteria": {
+    "fell_back": true,
+    "within_10s": true,
+    "new_map_id": true,
+    "nothing_leaked": true
+   }
+  },
+  {
+   "reload": {
+    "map_id": "map-eafe14cb",
+    "version": 1,
+    "took_s": 1.73,
+    "agreement": 0.267,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": false,
+    "reason": "scans agree with the saved map 27% (< 60%)",
+    "result": "fell_back"
+   },
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "starting",
+      0.85
+     ],
+     [
+      "checking",
+      0.96
+     ],
+     [
+      "starting",
+      2.64
+     ],
+     [
+      "ready",
+      3.09
+     ]
+    ],
+    "ready_at": 1792804013.634208
+   },
+   "map_id": "map-eae74971",
+   "criteria": {
+    "fell_back": true,
+    "within_10s": true,
+    "new_map_id": true,
+    "nothing_leaked": true
+   }
+  },
+  {
+   "reload": {
+    "map_id": "map-eafe14cb",
+    "version": 1,
+    "took_s": 1.84,
+    "agreement": 0.267,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": false,
+    "reason": "scans agree with the saved map 27% (< 60%)",
+    "result": "fell_back"
+   },
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "starting",
+      0.86
+     ],
+     [
+      "checking",
+      0.98
+     ],
+     [
+      "starting",
+      2.79
+     ],
+     [
+      "ready",
+      3.22
+     ]
+    ],
+    "ready_at": 1792804017.199175
+   },
+   "map_id": "map-b8afae5a",
+   "criteria": {
+    "fell_back": true,
+    "within_10s": true,
+    "new_map_id": true,
+    "nothing_leaked": true
+   }
+  },
+  {
+   "reload": {
+    "map_id": "map-eafe14cb",
+    "version": 1,
+    "took_s": 1.73,
+    "agreement": 0.267,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": false,
+    "reason": "scans agree with the saved map 27% (< 60%)",
+    "result": "fell_back"
+   },
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "checking",
+      0.86
+     ],
+     [
+      "starting",
+      2.65
+     ],
+     [
+      "ready",
+      3.09
+     ]
+    ],
+    "ready_at": 1792804020.642625
+   },
+   "map_id": "map-32d6747e",
+   "criteria": {
+    "fell_back": true,
+    "within_10s": true,
+    "new_map_id": true,
+    "nothing_leaked": true
+   }
+  },
+  {
+   "reload": {
+    "map_id": "map-eafe14cb",
+    "version": 1,
+    "took_s": 1.74,
+    "agreement": 0.267,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": false,
+    "reason": "scans agree with the saved map 27% (< 60%)",
+    "result": "fell_back"
+   },
+   "watch": {
+    "leaked_pose": 0,
+    "leaked_map": 0,
+    "goal_during_check": 503,
+    "states": [
+     [
+      "checking",
+      0.86
+     ],
+     [
+      "starting",
+      2.65
+     ],
+     [
+      "ready",
+      3.2
+     ]
+    ],
+    "ready_at": 1792804024.220437
+   },
+   "map_id": "map-1f7497e2",
+   "criteria": {
+    "fell_back": true,
+    "within_10s": true,
+    "new_map_id": true,
+    "nothing_leaked": true
+   }
+  }
+ ],
+ "D3-e": "MET"
+}
