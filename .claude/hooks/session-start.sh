@@ -44,9 +44,13 @@ fi
 #    the newest), and the newest may expect a newer browser build -- then
 #    all ~133 UI tests error and the merge gate can never pass. Keep what
 #    pip chose unless it cannot launch the installed browser; only then
-#    fall back to the release that matches it (chromium-1194 -> playwright
-#    1.56.0). requirements.txt is never changed, and a later
-#    `pip install -r` keeps the fallback, since nothing pins a newer one.
+#    fall back to the release that matches it. The image ships Node's
+#    Playwright beside its browsers, and the Python release of the same
+#    version expects the same build (1.63.0 -> chromium-1243), so that
+#    version is tried first; 1.56.0 (chromium-1194, the image before
+#    2026-10-25) is the last resort. requirements.txt is never changed, and
+#    a later `pip install -r` keeps the fallback, since nothing pins a
+#    newer one.
 can_launch() {
   .venv/bin/python - <<'PY' >/dev/null 2>&1
 from playwright.sync_api import sync_playwright
@@ -54,9 +58,19 @@ with sync_playwright() as p:
     p.chromium.launch().close()
 PY
 }
+image_playwright() {
+  for d in /opt/node-tools/node_modules/playwright-core "$(npm root -g 2>/dev/null)/playwright-core"; do
+    [ -f "$d/package.json" ] || continue
+    sed -n 's/^ *"version": *"\([0-9.]*\)".*/\1/p' "$d/package.json" | head -1
+    return
+  done
+}
 if ! can_launch; then
-  .venv/bin/pip install -q --disable-pip-version-check "playwright==1.56.0" \
-    || warn "could not install playwright 1.56.0"
+  for v in $(image_playwright) 1.56.0; do
+    .venv/bin/pip install -q --disable-pip-version-check "playwright==$v" \
+      || { warn "could not install playwright $v"; continue; }
+    can_launch && break
+  done
   can_launch || warn "no Playwright here can launch the installed Chromium; the UI tests will error"
 fi
 exit 0
