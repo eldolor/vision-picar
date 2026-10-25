@@ -809,7 +809,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   same policy (the same 6 houses gained and 4 lost; equal goals in 559 of
   608). Both methods land on -11%, so the ten features are the limit, not
   the learner. Run in the cloud: `4cd6eb7` re-run there reproduces the
-  Mac's rows (network 40/40).
+  Mac's rows (network 40/40). **3.101 (2026-10-25, the user; records
+  only):** F-rich, 3.96's F-large plus 25 features (route, raycast
+  information gain, room graph, search history, budget, pool-relative),
+  trained exactly as F-large in the cloud: clone agreement 43% (F-large
+  35%), selection R 0.644 (0.574); on the 588 test houses criterion 1
+  FAILED (R reward 0.563 vs bar 0.573, +0.010 inside the noise), finds,
+  trips and clean met; fewer goals than F-large in 199 vs 121 houses.
+  `lidar_gain` is the one new feature that clearly matters; the choice
+  costs 213 ms p90 here vs 117 (Jetson owed). Nothing in `brain/` changed.
 * **Fast goal choice (3.77), merged 2026-10-13.** `brain/frontier.py`'s
   grid work in numpy with **exactly** the old answers (0 differences
   against the frozen `tests/frontier_reference.py`; do not "simplify" its
