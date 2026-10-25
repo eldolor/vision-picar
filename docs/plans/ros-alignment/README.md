@@ -107,4 +107,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.99](3.99-intervention-log.md) | Log a person's interventions; interventions per hour |
 | [3.100](3.100-fresh-houses-cem.md) | The evolutionary (CEM) goal policy on 3.65's 613 fresh houses |
 | [3.101](3.101-rich-goal-features.md) | Explore's goal choice on ~40 features: 3.96's F-large plus route, information gain, room graph, history, budget and relative features |
+| [3.102](3.102-evolutionary-on-rich-features.md) | The evolutionary method on 3.96's and 3.101's fact sets: E-small, E-large, E-rich against their gradient twins |
 <!-- /sections -->
