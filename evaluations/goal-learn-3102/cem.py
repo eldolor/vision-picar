@@ -247,7 +247,8 @@ def cmd_score(out: str) -> dict:
                           **{m: {"reward": r[m]["summary"]["mean_reward"], "found": r[m]["summary"]["found"],
                                  "goals": r[m]["summary"]["median_goals_found"],
                                  "vs_twin": r[m].get("vs_twin", {}).get("reward")} for m in ("R", "U")}}
-                      for a, r in report.items()}, indent=1))
+                      for a, r in report.items() if a != "ceiling"}, indent=1))
+    print(json.dumps(report["ceiling"], indent=1))
     return report
 
 
