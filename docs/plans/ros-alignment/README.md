@@ -105,4 +105,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.97](3.97-nudge-goal-label.md) | A person's move ends a nav2 goal, under every drive |
 | [3.98](3.98-sim-arrival-geometry.md) | In the simulator an arrival is confirmed from geometry; the paid cloud call is opt-in |
 | [3.99](3.99-intervention-log.md) | Log a person's interventions; interventions per hour |
+| [3.100](3.100-fresh-houses-cem.md) | The evolutionary (CEM) goal policy on 3.65's 613 fresh houses |
 <!-- /sections -->
