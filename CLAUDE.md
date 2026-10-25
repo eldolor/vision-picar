@@ -803,7 +803,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   and scores higher, but saves only 11% of median goals (bar 20%).
   Goal choice was slow on the Jetson at SLAM resolution (1.4 s p90, the
   rule's own); fixed by 3.77. Trainers and `time_choice.py` in
-  `evaluations/explore-365/`.
+  `evaluations/explore-365/`. **3.100 (2026-10-25, the user):** `learned`
+  on the same 613 fresh houses, never run there before: 608 found, median
+  goals -11.1%, metres +4.7% -- FAILED as the network did, and nearly the
+  same policy (the same 6 houses gained and 4 lost; equal goals in 559 of
+  608). Both methods land on -11%, so the ten features are the limit, not
+  the learner. Run in the cloud: `4cd6eb7` re-run there reproduces the
+  Mac's rows (network 40/40).
 * **Fast goal choice (3.77), merged 2026-10-13.** `brain/frontier.py`'s
   grid work in numpy with **exactly** the old answers (0 differences
   against the frozen `tests/frontier_reference.py`; do not "simplify" its
