@@ -75,6 +75,9 @@ SMOKE = os.environ.get("SMOKE") == "1"
 if SMOKE:
     HOUSES, ROLLOUTS, ITERS, EPOCHS, SELECT_EVERY, CLONE_EPOCHS, SHARD = 2, 2, 3, 1, 2, 1, 3
 PRIOR = json.load(open(os.path.join(HERE, "prior.json")))
+# 3.101: f(agent, m, pose, pool, feats, trail, now) -> one row per candidate,
+# appended to X. None (the default) leaves every 3.96 run as it was.
+EXTRA_FEATURES = None
 
 
 def train_houses(arm: str) -> list:
@@ -148,6 +151,9 @@ def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float 
             types_ = labeller.types(m, goals, known)
             room = room_features(m, pose, goals, trail=trail, types=types_, prior=prior)
             X = np.asarray([a + b for a, b in zip(feats, room)], dtype=np.float32)
+            if EXTRA_FEATURES is not None:
+                X = np.concatenate([X, np.asarray(EXTRA_FEATURES(self, m, pose, pool, feats, trail, now),
+                                                  dtype=np.float32)], axis=1)
             C = None
             if want_crops:
                 pc = {}
