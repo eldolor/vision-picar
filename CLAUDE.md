@@ -818,6 +818,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   trips and clean met; fewer goals than F-large in 199 vs 121 houses.
   `lidar_gain` is the one new feature that clearly matters; the choice
   costs 213 ms p90 here vs 117 (Jetson owed). Nothing in `brain/` changed.
+  **3.102 (2026-10-25, the user; records only):** the evolutionary method
+  on the same fact sets (E-small, E-large, E-rich; weighted sums, 23,040
+  searches each): worse than its gradient twins in mode R (paired: E-large
+  -0.147, E-rich -0.129 reward), level in U; no E arm meets the 20% goal.
+  The oracle on the 588 test houses (amendment 1) scores 0.783 (R, median
+  2 goals, 8.4 m): F-rich's gap is 0.012 finds and 0.208 goals + metres,
+  so the chooser has room and **3.103** (lean facts and a shape sweep,
+  then pool attention; criteria written) may start on the user's word.
 * **Fast goal choice (3.77), merged 2026-10-13.** `brain/frontier.py`'s
   grid work in numpy with **exactly** the old answers (0 differences
   against the frozen `tests/frontier_reference.py`; do not "simplify" its
