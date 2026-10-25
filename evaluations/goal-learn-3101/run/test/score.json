@@ -1,0 +1,174 @@
+{
+ "summary": {
+  "rule-R": {
+   "n": 583,
+   "found": 570,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 7.0,
+   "median_metres_found": 19.65,
+   "mean_reward": 0.4497
+  },
+  "rule-U": {
+   "n": 588,
+   "found": 582,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 9.0,
+   "median_metres_found": 24.515,
+   "mean_reward": 0.351
+  },
+  "F-large-R": {
+   "n": 583,
+   "found": 569,
+   "exceptions": 0,
+   "capped": 1,
+   "median_goals_found": 4.0,
+   "median_metres_found": 14.7,
+   "mean_reward": 0.5529
+  },
+  "F-large-U": {
+   "n": 588,
+   "found": 583,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 19.93,
+   "mean_reward": 0.4014
+  },
+  "F-rich-R": {
+   "n": 583,
+   "found": 567,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 14.1,
+   "mean_reward": 0.5629
+  },
+  "F-rich-U": {
+   "n": 588,
+   "found": 585,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 18.9,
+   "mean_reward": 0.4485
+  },
+  "F-rich-drop-R": {
+   "n": 583,
+   "found": 568,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 16.2,
+   "mean_reward": 0.4714
+  },
+  "F-rich-drop-U": {
+   "n": 588,
+   "found": 586,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 6.0,
+   "median_metres_found": 20.85,
+   "mean_reward": 0.4056
+  }
+ },
+ "criteria": {
+  "1_reward": {
+   "F-rich": 0.5629,
+   "bar": 0.5729,
+   "met": false
+  },
+  "2_finds": {
+   "R": {
+    "F-rich": 567,
+    "bar": 563.31,
+    "met": true
+   },
+   "U": {
+    "F-rich": 585,
+    "bar": 577.17,
+    "met": true
+   }
+  },
+  "3_trips": {
+   "R": {
+    "F-rich": 4.0,
+    "bar": 4.0,
+    "met": true
+   },
+   "U": {
+    "F-rich": 5.0,
+    "bar": 5.0,
+    "met": true
+   }
+  },
+  "4_clean": {
+   "unclean": 0,
+   "met": true
+  },
+  "won": false
+ },
+ "vs_F_large": {
+  "R": {
+   "gained": [
+    1103,
+    1109,
+    1204,
+    1373,
+    1395,
+    1504,
+    1600,
+    1772,
+    1969
+   ],
+   "lost": [
+    1144,
+    1402,
+    1418,
+    1460,
+    1598,
+    1627,
+    1633,
+    1846,
+    1928,
+    1957,
+    1985
+   ]
+  },
+  "U": {
+   "gained": [
+    1046,
+    1266,
+    1634,
+    1907
+   ],
+   "lost": [
+    1721,
+    1892
+   ]
+  }
+ },
+ "vs_rule": {
+  "F-large-R": {
+   "goal_saving": 0.428571,
+   "metre_saving": 0.251908,
+   "found_vs_rule": -1
+  },
+  "F-rich-R": {
+   "goal_saving": 0.428571,
+   "metre_saving": 0.282443,
+   "found_vs_rule": -3
+  },
+  "F-large-U": {
+   "goal_saving": 0.444444,
+   "metre_saving": 0.187028,
+   "found_vs_rule": 1
+  },
+  "F-rich-U": {
+   "goal_saving": 0.444444,
+   "metre_saving": 0.229043,
+   "found_vs_rule": 3
+  }
+ }
+}

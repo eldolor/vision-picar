@@ -1,0 +1,17 @@
+{
+ "host": "vm",
+ "machine": "x86_64",
+ "F-large": {
+  "poses": 120,
+  "whole_p50_ms": 95.1,
+  "whole_p90_ms": 116.6,
+  "whole_max_ms": 162.2
+ },
+ "F-rich": {
+  "poses": 120,
+  "whole_p50_ms": 180.5,
+  "whole_p90_ms": 213.1,
+  "whole_max_ms": 447.0,
+  "rich_features_p90_ms": 109.7
+ }
+}
