@@ -18,7 +18,7 @@ from world.interface import CELL_FREE, CELL_OCCUPIED, CELL_UNKNOWN
 
 import os as _os, sys as _sys  # noqa: E401
 _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "goal-learn-396"))
-from features import coarse  # noqa: E402  (3.96's: the room cut runs on the 0.30 m grid)
+from features import _seg_at, coarse  # noqa: E402  (3.96's: the room cut runs on the 0.30 m grid)
 
 RICH_FEATURES = (
     # route
@@ -42,10 +42,10 @@ RICH_FEATURES = (
     # this search
     "trail_min",       # the trail's closest approach to the goal, / 5 m
     "trail_near",      # share of the trail's cells within 1.5 m
-    "since_new_room",  # goals sent since the robot last stood in a new room, / 10
+    "since_new_ground",  # goals sent since the trail last covered NEW_GROUND_M2 of new floor, / 10
     "since_growth",    # seconds since the map last grew 1%, / 120 s
     # budget
-    "time_used",       # share of the time limit used
+    "time_used",       # sim seconds since the mission started, / ELAPSED_S
     "pool_size",       # candidates in the pool, / 50
     "known_share",     # known share of the map's box
     # relative
@@ -54,7 +54,10 @@ RICH_FEATURES = (
     "dominated",       # share of the pool shorter AND with more gain
 )
 RAY_M, RAYS = 3.0, 16
-TIME_LIMIT_S = 1200.0      # mission_time_limit_s, the default the sweeps run under
+# The sweeps' missions run tens of sim seconds, not the car's 1200 s limit,
+# so elapsed time is scaled to 120 s (the sim clock starts at 0 each mission).
+ELAPSED_S = 120.0
+NEW_GROUND_M2 = 3.0
 
 _ANG = np.linspace(0.0, 2 * math.pi, RAYS, endpoint=False)
 _DIRS = np.stack([np.cos(_ANG), np.sin(_ANG)], axis=1)
@@ -70,9 +73,11 @@ def _rank(v: np.ndarray, descending: bool = False) -> np.ndarray:
     return r / (n - 1)
 
 
-def _disc_share(mask: np.ndarray, cx: np.ndarray, cy: np.ndarray, r: int) -> np.ndarray:
-    """Share of `mask` cells inside a disc of `r` cells round each centre
-    (off the map counts as not-mask and inside the disc)."""
+def _disc_share(mask: np.ndarray, cx: np.ndarray, cy: np.ndarray, r: int,
+                off: bool = False) -> np.ndarray:
+    """Share of `mask` cells inside a disc of `r` cells round each centre;
+    a cell off the map counts as `off` (unknown counts it as unknown, as
+    3.96's crop does)."""
     h, w = mask.shape
     oy, ox = np.mgrid[-r:r + 1, -r:r + 1]
     keep = ox ** 2 + oy ** 2 <= r * r
@@ -80,17 +85,29 @@ def _disc_share(mask: np.ndarray, cx: np.ndarray, cy: np.ndarray, r: int) -> np.
     X = cx[:, None] + ox[None, :]
     Y = cy[:, None] + oy[None, :]
     ok = (X >= 0) & (X < w) & (Y >= 0) & (Y < h)
-    v = np.where(ok, mask[np.clip(Y, 0, h - 1), np.clip(X, 0, w - 1)], False)
+    v = np.where(ok, mask[np.clip(Y, 0, h - 1), np.clip(X, 0, w - 1)], off)
     return v.mean(axis=1)
+
+
+def _mask_of(m: dict, pts) -> np.ndarray:
+    """A boolean grid of `m`'s shape, True under each (x_m, y_m) point."""
+    w, h, res = m["width"], m["height"], m["resolution_m"]
+    out = np.zeros((h, w), dtype=bool)
+    P = np.asarray(list(pts), dtype=float).reshape(-1, 2)
+    if len(P):
+        i = np.floor((P[:, 0] - m["origin_x_m"]) / res).astype(int)
+        j = np.floor((P[:, 1] - m["origin_y_m"]) / res).astype(int)
+        ok = (i >= 0) & (i < w) & (j >= 0) & (j < h)
+        out[j[ok], i[ok]] = True
+    return out
 
 
 class RichState:
     """What the features remember across one mission's choices."""
 
     def __init__(self):
-        self.t0 = None
-        self.stood_rooms = 0
-        self.goal_at_new_room = 0
+        self.ground = 0
+        self.goal_at_new_ground = 0
         self.known = None
         self.t_growth = None
 
@@ -100,19 +117,13 @@ def rich_features(agent, m: dict, pose: dict, pool: list, feats: list, trail: li
     st = getattr(agent, "_rich3101", None)
     if st is None:
         st = agent._rich3101 = RichState()
-    if st.t0 is None:
-        st.t0 = now
     n = len(pool)
     w, h, res = m["width"], m["height"], m["resolution_m"]
     cells = np.asarray(m["cells"]).reshape(h, w)
     unknown = cells == CELL_UNKNOWN
     occ = cells == CELL_OCCUPIED
     free = cells == CELL_FREE
-    seen = np.zeros((h, w), dtype=bool)
-    for c in agent.seen:
-        i, j = _cell_of(m, c[0], c[1])
-        if 0 <= i < w and 0 <= j < h:
-            seen[j, i] = True
+    seen = _mask_of(m, agent.seen)
 
     goals = np.asarray([c.goal for _, c, _ in pool], dtype=float)
     path = np.asarray([f[0] * 10.0 for f in feats])
@@ -142,8 +153,8 @@ def rich_features(agent, m: dict, pose: dict, pool: list, feats: list, trail: li
     total = visible.shape[1] * visible.shape[2]
     lidar_gain = (visible & unknown[Jc, Ic]).sum(axis=(1, 2)) / total
     cam_gain = (visible & free[Jc, Ic] & ~seen[Jc, Ic]).sum(axis=(1, 2)) / total
-    u2 = _disc_share(unknown, gi, gj, int(round(2.0 / res)))
-    u4 = _disc_share(unknown, gi, gj, int(round(4.0 / res)))
+    u2 = _disc_share(unknown, gi, gj, int(round(2.0 / res)), off=True)
+    u4 = _disc_share(unknown, gi, gj, int(round(4.0 / res)), off=True)
     gain_pm = lidar_gain / (1.0 + path / 5.0)
 
     # room graph, cut on the 0.30 m grid as 3.96's room features are (the
@@ -151,14 +162,7 @@ def rich_features(agent, m: dict, pose: dict, pool: list, feats: list, trail: li
     rm = coarse(m)
     rw, rh = rm["width"], rm["height"]
     seg, _ = segment(rm)
-    rseen = seen
-    if rm is not m:
-        rseen = np.zeros((rh, rw), dtype=bool)
-        jj, ii = np.nonzero(seen)
-        for x, y in zip(m["origin_x_m"] + (ii + 0.5) * res, m["origin_y_m"] + (jj + 0.5) * res):
-            i, j = _cell_of(rm, x, y)
-            if 0 <= i < rw and 0 <= j < rh:
-                rseen[j, i] = True
+    rseen = seen if rm is m else _mask_of(rm, agent.seen)
     a, b = seg[:, :-1], seg[:, 1:]
     c, d = seg[:-1, :], seg[1:, :]
     pairs = np.concatenate([np.stack([a[(a >= 0) & (b >= 0) & (a != b)],
@@ -171,12 +175,7 @@ def rich_features(agent, m: dict, pose: dict, pool: list, feats: list, trail: li
         nbr.setdefault(q, set()).add(p)
 
     def seg_at(x, y):
-        i, j = _cell_of(rm, x, y)
-        for di, dj in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
-            ii, jj = i + di, j + dj
-            if 0 <= ii < rw and 0 <= jj < rh and seg[jj, ii] >= 0:
-                return int(seg[jj, ii])
-        return -1
+        return _seg_at(seg, rm, x, y)      # 3.96's lookup: the cell, else its 8 neighbours
 
     here = seg_at(pose["x_m"], pose["y_m"])
     hops = {here: 0} if here >= 0 else {}
@@ -206,19 +205,19 @@ def rich_features(agent, m: dict, pose: dict, pool: list, feats: list, trail: li
         td = np.hypot(goals[:, None, 0] - Tm[None, :, 0], goals[:, None, 1] - Tm[None, :, 1])
         trail_min = np.clip(td.min(axis=1) / 5.0, 0, 1)
         trail_near = (td < 1.5).mean(axis=1)
-        stood = {seg_at(x, y) for x, y in Tm.tolist()} - {-1}
+        ground = len(T) * res * res
     else:
-        trail_min, trail_near, stood = np.ones(n), np.zeros(n), set()
-    if len(stood) > st.stood_rooms:
-        st.stood_rooms, st.goal_at_new_room = len(stood), agent.goals_sent
-    since_room = min(1.0, (agent.goals_sent - st.goal_at_new_room) / 10.0)
+        trail_min, trail_near, ground = np.ones(n), np.zeros(n), 0.0
+    if ground >= st.ground + NEW_GROUND_M2:
+        st.ground, st.goal_at_new_ground = ground, agent.goals_sent
+    since_ground = min(1.0, (agent.goals_sent - st.goal_at_new_ground) / 10.0)
     known = int((~unknown).sum())
     if st.known is None or known > 1.01 * st.known:
         st.known, st.t_growth = known, now
     since_growth = min(1.0, (now - st.t_growth) / 120.0)
 
     # budget
-    time_used = min(1.0, (now - st.t0) / TIME_LIMIT_S)
+    time_used = min(1.0, now / ELAPSED_S)
     pool_size = min(1.0, n / 50.0)
     known_share = known / unknown.size
 
@@ -232,7 +231,7 @@ def rich_features(agent, m: dict, pose: dict, pool: list, feats: list, trail: li
     cols = [detour, _rank(path), np.clip((path - path.min()) / 10.0, 0, 1), nearest, cluster, wall,
             lidar_gain, cam_gain, u2, u4, gain_pm,
             room_hops, room_dead, room_deg, room_seen,
-            trail_min, trail_near, np.full(n, since_room), np.full(n, since_growth),
+            trail_min, trail_near, np.full(n, since_ground), np.full(n, since_growth),
             np.full(n, time_used), np.full(n, pool_size), np.full(n, known_share),
             rule_pick, gain_rank, dominated]
     assert len(cols) == len(RICH_FEATURES)

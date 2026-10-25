@@ -87,6 +87,9 @@ def cmd_run(out: str) -> None:
 def cmd_score(out: str) -> dict:
     have = [a for a in ARMS if all(os.path.exists(os.path.join(out, f"{a}-{m}.json"))
                                    for m in ("R", "U"))]
+    missing = [a for a in ("rule", "F-large", "F-rich") if a not in have]
+    if missing:
+        raise SystemExit(f"arms not run yet: {missing} -- not scoring")
     rows = {(a, m): json.load(open(os.path.join(out, f"{a}-{m}.json"))) for a in have
             for m in ("R", "U")}
     want = sorted(h for _, h in C396.test_houses())
@@ -132,4 +135,6 @@ def cmd_score(out: str) -> dict:
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.set_start_method("fork", force=True)
     {"gate": cmd_gate, "run": cmd_run, "score": cmd_score}[sys.argv[1]](sys.argv[2])

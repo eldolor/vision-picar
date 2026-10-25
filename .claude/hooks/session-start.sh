@@ -61,8 +61,8 @@ PY
 image_playwright() {
   for d in /opt/node-tools/node_modules/playwright-core "$(npm root -g 2>/dev/null)/playwright-core"; do
     [ -f "$d/package.json" ] || continue
-    sed -n 's/^ *"version": *"\([0-9.]*\)".*/\1/p' "$d/package.json" | head -1
-    return
+    v=$(sed -n 's/^ *"version": *"\([0-9.]*\)".*/\1/p' "$d/package.json" | head -1)
+    [ -n "$v" ] && { echo "$v"; return; }
   done
 }
 if ! can_launch; then

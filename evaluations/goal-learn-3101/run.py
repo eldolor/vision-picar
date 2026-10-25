@@ -7,8 +7,11 @@ trained F-large (its `train.py`), with RICH_FEATURES appended to X.
 
 Resumable, as 3.96's stages are. WORKERS sets the pool (default: every core).
 """
+import glob
 import json
+import multiprocessing
 import os
+import pickle
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -23,13 +26,27 @@ F_LARGE = os.path.join(HERE, "..", "goal-learn-396", "cloud", "ckpt", "F-large",
 
 
 def use_rich(on: bool) -> None:
-    """Set in the parent before the pool forks, so every worker inherits it."""
+    """Set in the parent before the pool forks, so every worker inherits it
+    (the start method is pinned to fork below: under spawn or forkserver the
+    workers would re-import train with the hook off)."""
     T.EXTRA_FEATURES = rich_features if on else None
     M.N_FEAT = 17 + (len(RICH_FEATURES) if on else 0)
 
 
+def check_width(root: str) -> None:
+    """Refuse oracle shards whose stored features are not F-rich's width
+    (shards from another feature set, reused because the name matches)."""
+    for p in sorted(glob.glob(os.path.join(root, "oracle-*", "*.pkl")))[:1]:
+        for r in pickle.load(open(p, "rb")):
+            for c in r["choices"]:
+                if c["X"].shape[1] != M.N_FEAT:
+                    raise SystemExit(f"{p}: {c['X'].shape[1]} features, not {M.N_FEAT}")
+                return
+
+
 def cmd_train(root: str) -> None:
     use_rich(True)
+    check_width(root)
     T.main("F-rich", os.path.join(root, "F-rich"))
 
 
@@ -46,4 +63,5 @@ def cmd_baseline(out: str) -> None:
 
 
 if __name__ == "__main__":
+    multiprocessing.set_start_method("fork", force=True)
     {"train": cmd_train, "baseline": cmd_baseline}[sys.argv[1]](sys.argv[2])
