@@ -1,0 +1,302 @@
+{
+ "choices": 609,
+ "clone_agreement": 0.4302,
+ "features": [
+  {
+   "feature": "type_known",
+   "new": false,
+   "clone_agreement_drop": 0.0821,
+   "best_pick_changed": 0.6897
+  },
+  {
+   "feature": "lidar_gain",
+   "new": true,
+   "clone_agreement_drop": 0.1396,
+   "best_pick_changed": 0.5961
+  },
+  {
+   "feature": "prior",
+   "new": false,
+   "clone_agreement_drop": 0.0542,
+   "best_pick_changed": 0.5074
+  },
+  {
+   "feature": "pool_size",
+   "new": true,
+   "clone_agreement_drop": 0.064,
+   "best_pick_changed": 0.3957
+  },
+  {
+   "feature": "since_new_ground",
+   "new": true,
+   "clone_agreement_drop": 0.1002,
+   "best_pick_changed": 0.3793
+  },
+  {
+   "feature": "unknown_near",
+   "new": false,
+   "clone_agreement_drop": 0.0181,
+   "best_pick_changed": 0.3383
+  },
+  {
+   "feature": "size",
+   "new": false,
+   "clone_agreement_drop": 0.0213,
+   "best_pick_changed": 0.3268
+  },
+  {
+   "feature": "trail_min",
+   "new": true,
+   "clone_agreement_drop": 0.0148,
+   "best_pick_changed": 0.3251
+  },
+  {
+   "feature": "unknown_2m",
+   "new": true,
+   "clone_agreement_drop": 0.0131,
+   "best_pick_changed": 0.3186
+  },
+  {
+   "feature": "gain_rank",
+   "new": true,
+   "clone_agreement_drop": 0.0542,
+   "best_pick_changed": 0.3136
+  },
+  {
+   "feature": "room_new",
+   "new": false,
+   "clone_agreement_drop": 0.0854,
+   "best_pick_changed": 0.3087
+  },
+  {
+   "feature": "room_other",
+   "new": false,
+   "clone_agreement_drop": 0.0788,
+   "best_pick_changed": 0.3038
+  },
+  {
+   "feature": "path",
+   "new": false,
+   "clone_agreement_drop": 0.0394,
+   "best_pick_changed": 0.3005
+  },
+  {
+   "feature": "path_rank",
+   "new": true,
+   "clone_agreement_drop": 0.0246,
+   "best_pick_changed": 0.2874
+  },
+  {
+   "feature": "is_view",
+   "new": false,
+   "clone_agreement_drop": -0.0033,
+   "best_pick_changed": 0.2857
+  },
+  {
+   "feature": "gain_per_m",
+   "new": true,
+   "clone_agreement_drop": -0.0115,
+   "best_pick_changed": 0.2512
+  },
+  {
+   "feature": "time_used",
+   "new": true,
+   "clone_agreement_drop": 0.0591,
+   "best_pick_changed": 0.2512
+  },
+  {
+   "feature": "unseen_near",
+   "new": false,
+   "clone_agreement_drop": -0.0016,
+   "best_pick_changed": 0.1675
+  },
+  {
+   "feature": "cam_gain",
+   "new": true,
+   "clone_agreement_drop": 0.0099,
+   "best_pick_changed": 0.1626
+  },
+  {
+   "feature": "room_seen",
+   "new": true,
+   "clone_agreement_drop": 0.0197,
+   "best_pick_changed": 0.1609
+  },
+  {
+   "feature": "known_share",
+   "new": true,
+   "clone_agreement_drop": 0.0066,
+   "best_pick_changed": 0.1511
+  },
+  {
+   "feature": "detour",
+   "new": true,
+   "clone_agreement_drop": 0.0,
+   "best_pick_changed": 0.1494
+  },
+  {
+   "feature": "room_dead_end",
+   "new": true,
+   "clone_agreement_drop": -0.0066,
+   "best_pick_changed": 0.1346
+  },
+  {
+   "feature": "unknown_4m",
+   "new": true,
+   "clone_agreement_drop": 0.0181,
+   "best_pick_changed": 0.1314
+  },
+  {
+   "feature": "path_gap",
+   "new": true,
+   "clone_agreement_drop": 0.0197,
+   "best_pick_changed": 0.1264
+  },
+  {
+   "feature": "rule_pick",
+   "new": true,
+   "clone_agreement_drop": 0.0033,
+   "best_pick_changed": 0.1232
+  },
+  {
+   "feature": "dominated",
+   "new": true,
+   "clone_agreement_drop": -0.0099,
+   "best_pick_changed": 0.1182
+  },
+  {
+   "feature": "room_hops",
+   "new": true,
+   "clone_agreement_drop": 0.0049,
+   "best_pick_changed": 0.1034
+  },
+  {
+   "feature": "turn",
+   "new": false,
+   "clone_agreement_drop": -0.0082,
+   "best_pick_changed": 0.0887
+  },
+  {
+   "feature": "room_degree",
+   "new": true,
+   "clone_agreement_drop": 0.0,
+   "best_pick_changed": 0.0706
+  },
+  {
+   "feature": "wall_clear",
+   "new": true,
+   "clone_agreement_drop": 0.0049,
+   "best_pick_changed": 0.0591
+  },
+  {
+   "feature": "area",
+   "new": false,
+   "clone_agreement_drop": 0.0131,
+   "best_pick_changed": 0.0558
+  },
+  {
+   "feature": "prior_new",
+   "new": false,
+   "clone_agreement_drop": 0.0099,
+   "best_pick_changed": 0.0558
+  },
+  {
+   "feature": "view_late",
+   "new": false,
+   "clone_agreement_drop": -0.0033,
+   "best_pick_changed": 0.0509
+  },
+  {
+   "feature": "cluster_2m",
+   "new": true,
+   "clone_agreement_drop": 0.0164,
+   "best_pick_changed": 0.0476
+  },
+  {
+   "feature": "trail_near",
+   "new": true,
+   "clone_agreement_drop": 0.0213,
+   "best_pick_changed": 0.046
+  },
+  {
+   "feature": "room_share",
+   "new": false,
+   "clone_agreement_drop": -0.0033,
+   "best_pick_changed": 0.0361
+  },
+  {
+   "feature": "room_area",
+   "new": false,
+   "clone_agreement_drop": -0.0049,
+   "best_pick_changed": 0.0312
+  },
+  {
+   "feature": "nearest_other",
+   "new": true,
+   "clone_agreement_drop": -0.0016,
+   "best_pick_changed": 0.0296
+  },
+  {
+   "feature": "since_growth",
+   "new": true,
+   "clone_agreement_drop": 0.0049,
+   "best_pick_changed": 0.0164
+  },
+  {
+   "feature": "failed",
+   "new": false,
+   "clone_agreement_drop": 0.0,
+   "best_pick_changed": 0.0
+  },
+  {
+   "feature": "reached",
+   "new": false,
+   "clone_agreement_drop": -0.0016,
+   "best_pick_changed": 0.0
+  }
+ ],
+ "linear_weights": {
+  "path": -0.03400000184774399,
+  "turn": -0.04899999871850014,
+  "is_view": -0.02800000086426735,
+  "size": 0.014000000432133675,
+  "area": -0.08799999952316284,
+  "unknown_near": 0.03500000014901161,
+  "unseen_near": -0.21899999678134918,
+  "failed": -0.07000000029802322,
+  "reached": 0.04600000008940697,
+  "view_late": 0.07800000160932541,
+  "room_new": 0.04699999839067459,
+  "room_area": 0.04699999839067459,
+  "room_other": 0.08299999684095383,
+  "room_share": -0.2370000034570694,
+  "type_known": 0.07800000160932541,
+  "prior": 0.38499999046325684,
+  "prior_new": 0.11800000071525574,
+  "detour": -0.04100000113248825,
+  "path_rank": -0.2329999953508377,
+  "path_gap": -0.003000000026077032,
+  "nearest_other": -0.17100000381469727,
+  "cluster_2m": -0.21799999475479126,
+  "wall_clear": 0.20600000023841858,
+  "lidar_gain": -0.07000000029802322,
+  "cam_gain": 0.028999999165534973,
+  "unknown_2m": -0.17800000309944153,
+  "unknown_4m": -0.24799999594688416,
+  "gain_per_m": -0.07999999821186066,
+  "room_hops": -0.05900000035762787,
+  "room_dead_end": -0.008999999612569809,
+  "room_degree": -0.029999999329447746,
+  "room_seen": 0.20000000298023224,
+  "trail_min": -0.23999999463558197,
+  "trail_near": 0.3529999852180481,
+  "since_new_ground": -0.2160000056028366,
+  "since_growth": 0.13099999725818634,
+  "time_used": -0.16099999845027924,
+  "pool_size": 0.04600000008940697,
+  "known_share": -0.14000000059604645,
+  "rule_pick": 0.21199999749660492,
+  "gain_rank": -0.22499999403953552,
+  "dominated": -0.00800000037997961
+ }
+}
