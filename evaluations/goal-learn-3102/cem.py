@@ -60,9 +60,12 @@ def linear_params(w) -> dict:
 
 def _job(args):
     arm, s, h, mode, w, drop = args
-    T.EXTRA_FEATURES = rich_features if ARMS[arm][1] == 42 else None
+    # Amendment 1: "oracle" is the ceiling arm (3.88 B's oracle: the true
+    # shortest floor path to the target), on the 17 facts it never reads.
+    T.EXTRA_FEATURES = rich_features if arm != "oracle" and ARMS[arm][1] == 42 else None
+    spec = "oracle" if arm == "oracle" else ("greedy", "F", linear_params(w))
     try:
-        r = T.mission(s, h, mode, ("greedy", "F", linear_params(w)), 0, drop)
+        r = T.mission(s, h, mode, spec, 0, drop)
     except Exception as e:  # noqa: BLE001 -- a house that cannot start is a row, not a lost run
         r = {"split": s, "index": h, "mode": mode, "outcome": "exception",
              "error": f"{type(e).__name__}: {e}", "goals": 0, "metres": 0.0,
@@ -147,8 +150,9 @@ def cmd_train(arm: str, out: str) -> None:
 def cmd_test(out: str) -> None:
     hs = C396.test_houses()
     with ProcessPoolExecutor(WORKERS) as ex:
-        for arm in ARMS:
-            w = json.load(open(os.path.join(out, f"{arm}.json")))["best"]["w"]
+        for arm in list(ARMS) + ["oracle"]:
+            w = (None if arm == "oracle"
+                 else json.load(open(os.path.join(out, f"{arm}.json")))["best"]["w"])
             for mode in ("R", "U"):
                 path = os.path.join(out, "test", f"{arm}-{mode}.json")
                 if os.path.exists(path):
@@ -170,6 +174,39 @@ def _boot(a, b, rng, n=10000):
     lo, hi = np.percentile(bs, [2.5, 97.5])
     return {"diff": round(float(d.mean()), 4), "ci95": [round(float(lo), 4), round(float(hi), 4)],
             "verdict": "level" if lo <= 0 <= hi else ("better" if lo > 0 else "worse")}
+
+
+def _parts(rows: dict) -> dict:
+    """Mean reward split as it is built: finds (+1 each, -100 an exception),
+    goals (-0.02 each) and metres (-0.01 each), over every mission."""
+    rs = [r for r in rows.values() if r["reward"] is not None]
+    n = len(rs)
+    found = sum(r["outcome"] == "found" for r in rs) - T.CRASH_COST * sum(
+        r["outcome"] == "exception" for r in rs)
+    return {"finds": round(found / n, 4),
+            "goals": round(-T.GOAL_COST * sum(r["goals"] for r in rs) / n, 4),
+            "metres": round(-T.METRE_COST * sum(r["metres"] for r in rs) / n, 4)}
+
+
+def ceiling(out: str, rule: dict) -> dict:
+    """Amendment 1: the oracle on the test houses, and each arm's gap to it
+    split into finds, goals and metres."""
+    res = {}
+    for m in ("R", "U"):
+        o = _rows(os.path.join(out, "test", f"oracle-{m}.json"))
+        arms = {"rule": rule[m], "F-large": _rows(os.path.join(F_RICH_ROWS, f"F-large-{m}.json")),
+                "F-rich": _rows(os.path.join(F_RICH_ROWS, f"F-rich-{m}.json"))}
+        arms.update({a: _rows(os.path.join(out, "test", f"{a}-{m}.json")) for a in ARMS})
+        po = _parts(o)
+        gaps = {}
+        for a, rows in arms.items():
+            pa = _parts(rows)
+            g = {k: round(po[k] - pa[k], 4) for k in po}
+            g["total"] = round(sum(g.values()), 4)
+            g["larger"] = "finds" if g["finds"] >= g["goals"] + g["metres"] else "trips"
+            gaps[a] = g
+        res[m] = {"oracle": T.summary(list(o.values())), "oracle_parts": po, "gap": gaps}
+    return res
 
 
 def cmd_score(out: str) -> dict:
@@ -204,6 +241,7 @@ def cmd_score(out: str) -> dict:
         res["met_20pct"] = res["R"]["vs_rule"]["met"] and res["U"]["vs_rule"]["met"]
         res["weights"] = [round(x, 3) for x in st["best"]["w"]]
         report[arm] = res
+    report["ceiling"] = ceiling(out, rule)
     T.save_atomic(os.path.join(out, "score.json"), lambda p: json.dump(report, open(p, "w"), indent=1))
     print(json.dumps({a: {"met_20pct": r["met_20pct"],
                           **{m: {"reward": r[m]["summary"]["mean_reward"], "found": r[m]["summary"]["found"],
