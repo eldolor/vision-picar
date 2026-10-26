@@ -35,6 +35,10 @@ os.environ.setdefault("WORKERS", str(os.cpu_count() or 4))
 import c as C396                                              # noqa: E402
 import train as T                                             # noqa: E402
 from lean import LEAN_COLS, SHAPES, lean_features, make_torch_net, score_np, size  # noqa: E402
+from brain import frontier as fr                              # noqa: E402
+from brain.goal_policy import features                        # noqa: E402
+from features import room_features                            # noqa: E402
+from tests import frontier_compare as fc                      # noqa: E402
 
 F_ROWS = os.path.join(ROOT_REPO, "evaluations", "goal-learn-3101", "run", "test")
 SEED = 3103
@@ -173,10 +177,6 @@ def cmd_score(root: str) -> dict:
 def lean_choice(m, x, y, heading, trail, P, score=score_np) -> int:
     """One whole choice on F-lean's 18 facts (3.96's 17 plus lidar_gain),
     scored by `score(P, "F", X)`; returns the pool's size (0: no choice)."""
-    from brain import frontier as fr
-    from brain.goal_policy import features
-    from features import room_features
-    from tests import frontier_compare as fc
     pose = {"x_m": x, "y_m": y, "heading_deg": heading}
     r = fr.reach(m, x, y, clearance_m=fc.LEAVE)
     fs = fr.find_frontiers(m, x, y, clearance_m=fc.LEAVE, reach_map=r)
@@ -203,7 +203,6 @@ def bench(arms: dict) -> dict:
     import time_choice as T396
     from brain.room_labels import segment
     from features import coarse
-    from tests import frontier_compare as fc
     out = {"host": platform.node(), "machine": platform.machine()}
     for name, choose in arms.items():
         rng, whole = random.Random(fc.SEED), []

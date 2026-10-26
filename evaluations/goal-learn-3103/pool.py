@@ -21,6 +21,7 @@ import numpy as np
 
 N_FEAT, WIDTH, HEADS = 18, 64, 4
 HD = WIDTH // HEADS
+PAD_CELLS = 1 << 20          # B x L x L per padded group in training (x4 heads x 4 bytes: 16 MB)
 
 
 def _softmax(z: np.ndarray, axis: int = -1) -> np.ndarray:
@@ -58,22 +59,43 @@ def torch_net(kind: str = "F", w_init=None):
             nn.init.zeros_(self.o.bias)
             self.out = nn.Linear(WIDTH, 1)
 
-        def forward(self, f, crop=None, seg=None):
-            """f: candidates of one pool, or of several concatenated with
-            their lengths in `seg`; returns one score per row of f."""
-            seg = [len(f)] if seg is None else list(seg)
+        def _attend(self, e, seg):
+            """Attention for pools of lengths `seg` whose rows are e, in order,
+            padded to the longest of them."""
             B, L = len(seg), max(seg)
-            lens = torch.tensor(seg)
-            valid = torch.arange(L)[None, :] < lens[:, None]           # B x L
-            e = torch.tanh(self.embed(f))
+            valid = torch.arange(L)[None, :] < torch.tensor(seg)[:, None]  # B x L
             E = e.new_zeros(B, L, WIDTH)
             E[valid] = e
             split = lambda x: x.view(B, L, HEADS, HD).transpose(1, 2)  # noqa: E731
             Q, K, V = split(self.q(E)), split(self.k(E)), split(self.v(E))
             z = Q @ K.transpose(-1, -2) / math.sqrt(HD)                 # B x H x L x L
             z = z.masked_fill(~valid[:, None, None, :], float("-inf"))
-            A = (torch.softmax(z, dim=-1) @ V).transpose(1, 2).reshape(B, L, WIDTH)
-            h = e + self.o(A[valid])
+            return (torch.softmax(z, dim=-1) @ V).transpose(1, 2).reshape(B, L, WIDTH)[valid]
+
+        def forward(self, f, crop=None, seg=None):
+            """f: candidates of one pool, or of several concatenated with
+            their lengths in `seg`; returns one score per row of f. Pools
+            are padded in groups of like length, at most PAD_CELLS of B x L
+            x L each, so a few long pools never pad thousands of short ones."""
+            seg = [len(f)] if seg is None else list(seg)
+            e = torch.tanh(self.embed(f))
+            if len(seg) == 1:
+                a = self._attend(e, seg)
+            else:
+                start = np.concatenate([[0], np.cumsum(seg)[:-1]])
+                order = sorted(range(len(seg)), key=lambda q: seg[q])
+                a = e.new_zeros(len(e), WIDTH)
+                g = 0
+                while g < len(order):
+                    h = g + 1
+                    while h < len(order) and (h + 1 - g) * seg[order[h]] ** 2 <= PAD_CELLS:
+                        h += 1
+                    group = order[g:h]
+                    rows = torch.from_numpy(np.concatenate(
+                        [np.arange(start[q], start[q] + seg[q]) for q in group]))
+                    a = a.index_copy(0, rows, self._attend(e[rows], [seg[q] for q in group]))
+                    g = h
+            h = e + self.o(a)
             return (self.lin(f) + self.out(h)).squeeze(-1)
 
         def export(self):
@@ -108,7 +130,7 @@ def check(seed: int = 0) -> dict:
         net.o.weight.normal_(0, 0.3)
         net.o.bias.normal_(0, 0.1)
     P = {k: np.asarray(v, dtype=np.float32) for k, v in net.export().items()}
-    pools = [rng.random((n, N_FEAT)).astype(np.float32) for n in (1, 7, 85, 3)]
+    pools = [rng.random((n, N_FEAT)).astype(np.float32) for n in [1, 7, 85, 3] + [2] * 300]
     with torch.no_grad():
         batch = net(torch.tensor(np.concatenate(pools)), seg=[len(p) for p in pools]).numpy()
         alone = np.concatenate([net(torch.tensor(p)).numpy() for p in pools])

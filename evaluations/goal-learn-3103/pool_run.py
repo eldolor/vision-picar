@@ -19,6 +19,7 @@ a per-candidate network does not care where one pool ends, attention does.
 `_batch_loss` and `ppo_update` below are 3.96's, line for line, with the
 pools' lengths handed to the network (`seg=`).
 """
+import glob
 import json
 import multiprocessing
 import os
@@ -39,9 +40,13 @@ C396, T = B.C396, B.T
 ARM = "F-pool"
 LEAN = "F-lean-S64"          # B's chosen arm: C's comparison and cost base
 ORACLE_ROWS = os.path.join(ROOT_REPO, "evaluations", "goal-learn-3102", "run", "test")
+# B's oracle sets (amendment 1): the regenerated ones must give the same counts.
+B_CHOICES = {"n_train": 37064, "n_held": 609}
 
 
 def _batch_loss(net, batch, kind, torch, poni=False):
+    if poni:
+        raise ValueError("F-pool has no PONI loss")
     X = torch.tensor(np.concatenate([b[0] for b in batch]))
     s = net(X, seg=[len(b[0]) for b in batch])
     loss, k = 0.0, 0
@@ -116,7 +121,22 @@ def _torch():
     return torch
 
 
+def check_oracle(root: str) -> None:
+    """Refuse to start unless 3.101's 42-column oracle sets are in ROOT:
+    under the patched hook a missing set would be rebuilt with 18 columns,
+    which the column slice cannot read, and cached there."""
+    import pickle
+    for d in ("oracle-large", "oracle-select"):
+        ps = sorted(glob.glob(os.path.join(root, d, "*.pkl")))
+        if not ps:
+            raise SystemExit(f"{root}/{d}: no oracle shards; make them with 3.101's harness first")
+        x = next((c["X"] for r in pickle.load(open(ps[0], "rb")) for c in r["choices"]), None)
+        if x is None or x.shape[1] != 42:
+            raise SystemExit(f"{ps[0]}: not 3.101's 42-column oracle shard")
+
+
 def cmd_clone(root: str) -> None:
+    check_oracle(root)
     use_pool()
     out = os.path.join(root, ARM)
     os.makedirs(out, exist_ok=True)
@@ -125,6 +145,9 @@ def cmd_clone(root: str) -> None:
         shards = T.stage_oracle("large", root, ex)        # all exist: nothing is run
         st = T.stage_clone(ARM, out, shards, ex)
     print(f"{ARM}: {POOL.size()} numbers, held-out agreement {st['held_out_agreement']}", flush=True)
+    got = {k: st[k] for k in B_CHOICES}
+    print(f"oracle choices {got}: " + ("the same as B's" if got == B_CHOICES
+                                       else f"MISMATCH, B's were {B_CHOICES}"), flush=True)
 
 
 def cmd_ppo(root: str) -> None:
