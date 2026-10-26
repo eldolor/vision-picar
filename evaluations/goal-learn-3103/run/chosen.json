@@ -1,0 +1,45 @@
+{
+ "selection": {
+  "S64": {
+   "R": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.5,
+    "median_metres_found": 19.950000000000003,
+    "mean_reward": 0.5605
+   },
+   "U": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 18.9,
+    "mean_reward": 0.519
+   }
+  },
+  "S32x32": {
+   "R": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 18.9,
+    "mean_reward": 0.5421
+   },
+   "U": {
+    "n": 100,
+    "found": 98,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 16.950000000000003,
+    "mean_reward": 0.3543
+   }
+  }
+ },
+ "chosen": "S64"
+}
