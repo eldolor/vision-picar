@@ -744,8 +744,11 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   moved object but fired on a fixed wall. D4-c, D4-e met; D4-a (nav2 does
   not enter the just-re-mapped room), D4-b (harness) and D4-d FAILED.
   Open: the bridge reports `ready` after a reload before nav2 is active,
-  so the brain's first goal is rejected. Next: D4b (the twin's control),
-  D5 sightings; D6 (S3) asks first. Maps are a home's floor plan:
+  so the brain's first goal is rejected. **D4b (merged 2026-10-26, NOT YET
+  DEPLOYED):** the Sim tab's "Re-map now" under a SLAM map -- two taps, a
+  person's `POST /world/remap`, the server's answer toasted (the page cannot
+  see `slam.state`); five review rounds. Next: D5 sightings; D6 (S3) asks
+  first. Maps are a home's floor plan:
   never commit or upload one unasked.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
