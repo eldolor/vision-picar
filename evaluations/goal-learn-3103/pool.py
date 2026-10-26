@@ -16,10 +16,14 @@ Training batches hold many pools concatenated, so the torch net takes the
 pools' lengths (`seg`); `score_np` scores one pool, as the mission does.
 """
 import math
+import os
 
 import numpy as np
 
-N_FEAT, WIDTH, HEADS = 18, 64, 4
+# Amendment 2: the width (embedding and attention alike) is swept, 32 / 64 / 128,
+# always 4 heads; POOL_WIDTH picks it for training (score_np reads it off P).
+N_FEAT, HEADS = 18, 4
+WIDTH = int(os.environ.get("POOL_WIDTH", "64"))
 HD = WIDTH // HEADS
 PAD_CELLS = 1 << 20          # B x L x L per padded group in training (x4 heads x 4 bytes: 16 MB)
 
@@ -36,10 +40,12 @@ def score_np(P: dict, kind: str, feats, crop=None) -> np.ndarray:
     n = len(f)
     g = lambda k: np.asarray(P[k], dtype=np.float32)  # noqa: E731
     e = np.tanh(f @ g("W1").T + g("b1"))
-    q, k, v = ((e @ g(f"W{x}").T + g(f"b{x}")).reshape(n, HEADS, HD).transpose(1, 0, 2)
+    width = e.shape[1]
+    hd = width // HEADS
+    q, k, v = ((e @ g(f"W{x}").T + g(f"b{x}")).reshape(n, HEADS, hd).transpose(1, 0, 2)
                for x in ("q", "k", "v"))
-    att = _softmax(q @ k.transpose(0, 2, 1) / math.sqrt(HD))
-    a = (att @ v).transpose(1, 0, 2).reshape(n, WIDTH)
+    att = _softmax(q @ k.transpose(0, 2, 1) / math.sqrt(hd))
+    a = (att @ v).transpose(1, 0, 2).reshape(n, width)
     h = e + a @ g("Wo").T + g("bo")
     return f @ g("w") + (h @ g("W3").T + g("b3")).ravel()
 
@@ -114,8 +120,8 @@ def torch_net(kind: str = "F", w_init=None):
     return net
 
 
-def size() -> int:
-    return N_FEAT + (N_FEAT * WIDTH + WIDTH) + 4 * (WIDTH * WIDTH + WIDTH) + WIDTH + 1
+def size(width: int = WIDTH) -> int:
+    return N_FEAT + (N_FEAT * width + width) + 4 * (width * width + width) + width + 1
 
 
 def check(seed: int = 0) -> dict:

@@ -2,3 +2,9 @@ __pycache__/
 run/oracle-large
 run/oracle-select
 run/*/*.pt
+# Amendment 2, pulled from the instance: the JSON results and logs are
+# committed; the torch files, the oracle shards and the marker are not.
+cloud/**/*.pt
+cloud/**/*.tmp
+cloud/ckpt/oracle-*
+cloud/.pulled

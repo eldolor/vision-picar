@@ -4,11 +4,12 @@ F-lean's 18 facts, by 3.96's own stages (`goal-learn-396/train.py`) with the
 network, the fact and the pool-aware losses patched in; 3.96's files and
 B's `run.py` stages are unchanged.
 
-    python evaluations/goal-learn-3103/pool_run.py clone ROOT   # oracle clone -> ROOT/F-pool/clone.pt
-    python evaluations/goal-learn-3103/pool_run.py ppo ROOT     # PPO from the clone, 3.101's budget -> best.json
-    python evaluations/goal-learn-3103/pool_run.py test ROOT    # best.json on the 588 test houses, R and U
+    POOL_WIDTH=W python evaluations/goal-learn-3103/pool_run.py clone ROOT  # oracle clone -> ROOT/F-pool-WW/clone.pt
+    POOL_WIDTH=W python evaluations/goal-learn-3103/pool_run.py ppo ROOT    # PPO from the clone, 3.101's budget -> best.json
+    python evaluations/goal-learn-3103/pool_run.py choose ROOT  # amendment 2's rule over the widths -> ROOT/chosen-pool.json
+    python evaluations/goal-learn-3103/pool_run.py test ROOT    # the chosen width on the 588 test houses, R and U
     python evaluations/goal-learn-3103/pool_run.py score ROOT   # C's criteria 1-4 against B's F-lean rows; the oracle gap
-    python evaluations/goal-learn-3103/pool_run.py time ROOT    # criterion 5: one choice, F-lean vs F-pool
+    python evaluations/goal-learn-3103/pool_run.py time ROOT    # criterion 5: one choice, F-lean vs the chosen F-pool
 
 ROOT is B's (`run/`: `oracle-large` and `oracle-select` from 3.101, B's
 `F-lean-S64/best.json` and `test/F-lean-*.json`). Every stage resumes as
@@ -37,7 +38,10 @@ import run as B                                               # noqa: E402  (3.9
 from cem import _parts                                        # noqa: E402  (3.102 amendment 1's split)
 
 C396, T = B.C396, B.T
-ARM = "F-pool"
+# Amendment 2: one arm per width, F-pool-W32 / -W64 / -W128 (POOL_WIDTH, default 64).
+WIDTHS = (32, 64, 128)
+MATCH = 0.02                 # within this of the best mode-R selection reward "matches" it
+ARM = f"F-pool-W{POOL.WIDTH}"
 LEAN = "F-lean-S64"          # B's chosen arm: C's comparison and cost base
 ORACLE_ROWS = os.path.join(ROOT_REPO, "evaluations", "goal-learn-3102", "run", "test")
 # B's oracle sets (amendment 1): the regenerated ones must give the same counts.
@@ -162,6 +166,25 @@ def cmd_ppo(root: str) -> None:
         T.stage_ppo(ARM, out, clone, ex)
 
 
+def cmd_choose(root: str) -> None:
+    """Amendment 2: the smallest width whose best mode-R selection reward is
+    within MATCH of the best width's."""
+    sel = {w: json.load(open(os.path.join(root, f"F-pool-W{w}", "best.json")))["best_selection"]
+           for w in WIDTHS}
+    r = {w: sel[w]["R"]["mean_reward"] for w in WIDTHS}
+    top = max(r.values())
+    chosen = min(w for w in WIDTHS if r[w] >= top - MATCH)
+    T.save_atomic(os.path.join(root, "chosen-pool.json"),
+                  lambda p: json.dump({"selection": {f"F-pool-W{w}": sel[w] for w in WIDTHS},
+                                       "best_R": top, "match": MATCH,
+                                       "chosen": f"F-pool-W{chosen}"}, open(p, "w"), indent=1))
+    print("selection R", r, "-> test", f"F-pool-W{chosen}", flush=True)
+
+
+def chosen(root: str) -> str:
+    return json.load(open(os.path.join(root, "chosen-pool.json")))["chosen"]
+
+
 def _job(args):
     s, h, mode, params = args
     use_pool()
@@ -176,6 +199,7 @@ def _job(args):
 
 
 def cmd_test(root: str) -> None:
+    ARM = chosen(root)
     params = json.load(open(os.path.join(root, ARM, "best.json")))["params"]
     hs = C396.test_houses()
     with ProcessPoolExecutor(T.WORKERS) as ex:
@@ -190,10 +214,12 @@ def cmd_test(root: str) -> None:
 
 
 def cmd_score(root: str) -> dict:
+    ARM = chosen(root)
     rng = np.random.default_rng(B.SEED)
     want = sorted(h for _, h in C396.test_houses())
     best = json.load(open(os.path.join(root, ARM, "best.json")))
-    rep = {"best_it": best["best_it"], "selection": best["best_selection"],
+    rep = {"arm": ARM, "widths": json.load(open(os.path.join(root, "chosen-pool.json"))),
+           "best_it": best["best_it"], "selection": best["best_selection"],
            "clone_agreement": best["log"]["clone_agreement"]}
     for m in ("R", "U"):
         arms = {ARM: B._rows(os.path.join(root, "test", f"{ARM}-{m}.json")),
@@ -239,17 +265,19 @@ def cmd_time(root: str) -> None:
     one run (the base is measured here, beside it, not taken from B)."""
     load = lambda a: {k: np.asarray(v, dtype=np.float32)  # noqa: E731
                       for k, v in json.load(open(os.path.join(root, a, "best.json")))["params"].items()}
+    ARM = chosen(root)
     P_lean, P_pool = load(LEAN), load(ARM)
     out = B.bench({"F-lean": lambda m, x, y, h, t: B.lean_choice(m, x, y, h, t, P_lean),
                    ARM: lambda m, x, y, h, t: B.lean_choice(m, x, y, h, t, P_pool, POOL.score_np)})
     out["5_cost"] = {"bar_ms": round(1.1 * out["F-lean"]["p90_ms"], 1),
                      "met": out[ARM]["p90_ms"] <= 1.1 * out["F-lean"]["p90_ms"]}
     print(out["5_cost"])
+    out["arm"] = ARM
     T.save_atomic(os.path.join(root, f"time-{ARM}.json"), lambda p: json.dump(out, open(p, "w"), indent=1))
 
 
 if __name__ == "__main__":
     multiprocessing.set_start_method("fork", force=True)
     cmd, root = sys.argv[1:]
-    {"clone": cmd_clone, "ppo": cmd_ppo, "test": cmd_test, "score": cmd_score,
+    {"clone": cmd_clone, "ppo": cmd_ppo, "choose": cmd_choose, "test": cmd_test, "score": cmd_score,
      "time": cmd_time}[cmd](root)
