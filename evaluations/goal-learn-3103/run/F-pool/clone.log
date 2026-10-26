@@ -1,0 +1,9 @@
+clone epoch 4: held-out loss 1.7035
+clone epoch 9: held-out loss 1.6882
+clone epoch 14: held-out loss 1.6751
+clone epoch 19: held-out loss 1.6746
+clone epoch 24: held-out loss 1.6715
+clone epoch 29: held-out loss 1.6622
+clone: 37064 choices, held-out agreement 0.4007
+F-pool: 17939 numbers, held-out agreement 0.4007
+oracle choices {'n_train': 37064, 'n_held': 609}: the same as B's
