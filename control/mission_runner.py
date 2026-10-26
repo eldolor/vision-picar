@@ -244,6 +244,9 @@ POSE_READ_S = 2.0
 # 3.104: the probe that hears a person's Stop before a mission is finished
 # found waits this long; no answer keeps the found (logged).
 PERSON_PROBE_S = 2.0
+# The robot server's refusal while any nav2 goal is pending or active
+# (robot/server.py); it names no owner.
+GOAL_IN_PROGRESS = "a nav2 goal is "
 
 
 def derived_max_steps(time_limit_s: Optional[float]) -> int:
@@ -346,6 +349,11 @@ class _GatedNavigator:
             # mission's own is ended by cancel_own().
             return {"canceled": False, "reason": "mission_ended"}
         return self._nav.cancel_goal()
+
+    @property
+    def sent_goal(self) -> bool:
+        """3.104: this mission had a goal accepted (`_own` is never cleared)."""
+        return self._own is not None
 
     def cancel_own(self) -> None:
         own = self._own
@@ -1248,23 +1256,26 @@ class MissionRunner:
         `found`. Ask once with 3.88's probe (LOOK_CENTER through the halt
         gate: nothing moves but the camera, and nothing once the mission has
         ended) and raise a person's refusal for `_finish_preempted`: the
-        latch, a person holding the robot, or a holder named by no one. A
-        veto, the mission's own goal, an autonomous holder, or no answer keep
-        the end as it was."""
+        latch, a person holding the robot, a holder named by no one, or a
+        goal in progress when this mission never sent one (the phone's
+        tap-to-goal). A veto, a goal that may be the mission's own, an
+        autonomous holder, or no answer keep the end as it was."""
         try:
             call_with_timeout(self._gated.look_center, timeout_s=PERSON_PROBE_S)
         except (SafetyViolation, MissionHalted):
             pass
-        except StoppedByPerson:
-            raise
         except Preempted as e:
+            # The server's goal refusal names no owner: one this mission
+            # sent may still hold the robot (pending, active, or `ros`'s
+            # lapsing authority after it), so it is read as the mission's own.
+            own = self._navigator is not None and self._navigator.sent_goal
+            if own and (is_own_goal_refusal(e) or str(e).startswith(GOAL_IN_PROGRESS)):
+                return
             holder = _PREEMPTED_BY.match(str(e))
-            if is_own_goal_refusal(e):
-                pass
-            elif holder and driver_priority(holder.group(1)) != DRIVER_MANUAL:
+            if holder and driver_priority(holder.group(1)) != DRIVER_MANUAL:
                 logger.info("an autonomous holder at the end keeps it: %s", e)
-            else:
-                raise
+                return
+            raise
         except Exception as e:  # noqa: BLE001 -- an unheard Stop is no reason to fail a find
             logger.warning("could not ask the robot server for a person's Stop: %s", e)
 

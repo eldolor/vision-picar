@@ -13,6 +13,7 @@ asked, as a person pressing Stop while it waits would.
 
 import json
 import logging
+import types
 
 import pytest
 
@@ -38,12 +39,15 @@ def _quiet_logs():
 # What the robot server answers a brain verb after the press (robot/server.py):
 # a person's Stop latch, a person holding the robot, a veto, the mission's own
 # nav2 goal still holding, or no answer at all.
+GOAL = "-- one autonomous driver at a time, so brain was refused until it ends or is cancelled"
 REFUSALS = {
     "stop": StoppedByPerson("twin-dpad pressed Stop -- autonomy stays stopped until a new "
                             "mission starts"),
     "dpad": Preempted("twin-dpad is driving"),
     "veto": SafetyViolation("forward clearance 12.0 cm < 20.0 cm"),
-    "own goal": Preempted("ros is driving (nav2 goal is active)"),
+    "goal active": Preempted(f"a nav2 goal is active {GOAL}"),
+    "goal pending": Preempted(f"a nav2 goal is pending {GOAL}"),
+    "ros lapsing": Preempted("ros is driving -- brain was refused"),
     "autonomous": Preempted("brain is driving"),
     "down": ConnectionError("robot server unreachable"),
 }
@@ -71,7 +75,7 @@ class PressedDuringConfirm(MockRobot):
         return super().look_center()
 
 
-def _mission(refusal=None, press=True, log_to=None):
+def _mission(refusal=None, press=True, log_to=None, sent_goal=False):
     robot = PressedDuringConfirm(_placed(), refusal)
 
     def confirm(frame):
@@ -83,6 +87,9 @@ def _mission(refusal=None, press=True, log_to=None):
                         hold_goal=True, confirm_vision_fn=confirm)
     runner = MissionRunner(robot, target_object=TARGET, max_steps=60, policy="tiered",
                            vision_fn=tier, world=mock_world_for(robot))
+    if sent_goal:
+        # As if this mission's explore had a goal accepted (_GatedNavigator).
+        runner._navigator = types.SimpleNamespace(sent_goal=True, end=lambda: None)
     if log_to is not None:
         runner.intervention_log = InterventionLog(log_to)
     runner.start()
@@ -120,10 +127,28 @@ def test_without_a_press_it_is_still_found():
     assert status["outcome"] == FOUND, status["log_tail"][-3:]
 
 
-@pytest.mark.parametrize("kind", ["veto", "own goal", "autonomous", "down"])
-def test_a_veto_its_own_goal_an_autonomous_holder_or_no_answer_keeps_the_found(kind):
+@pytest.mark.parametrize("kind", ["veto", "autonomous", "ros lapsing", "down"])
+def test_a_veto_an_autonomous_holder_or_no_answer_keeps_the_found(kind):
     """Review of c0432da (both passes): only a person's refusal ends it; an
-    autonomous holder at the probe is no person and read `failed` there.""" 
+    autonomous holder at the probe is no person and read `failed` there."""
     status, robot, _ = _mission(REFUSALS[kind])
     assert status["outcome"] == FOUND, (kind, status["log_tail"][-3:])
     assert robot.probes == 1, robot.probes
+
+
+@pytest.mark.parametrize("kind", ["goal active", "goal pending", "ros lapsing"])
+def test_a_goal_the_mission_sent_still_holding_keeps_the_found(kind):
+    """Review of b52af0f (both passes): the server's `a nav2 goal is pending`
+    did not read as the mission's own goal, so a find ended `cancelled`."""
+    status, robot, _ = _mission(REFUSALS[kind], sent_goal=True)
+    assert status["outcome"] == FOUND, (kind, status["log_tail"][-3:])
+    assert robot.probes == 1, robot.probes
+
+
+@pytest.mark.parametrize("kind", ["goal active", "goal pending"])
+def test_a_goal_in_progress_the_mission_never_sent_is_a_persons_tap(kind):
+    """A tiered mission sends no nav2 goal; one in progress at its end is
+    the phone's tap-to-goal, which 3.70 E5 ends `cancelled`/`dpad`."""
+    status, _, _ = _mission(REFUSALS[kind])
+    assert status["outcome"] == CANCELLED, (kind, status["log_tail"][-3:])
+    assert status["cancelled_by"] == "dpad", status
