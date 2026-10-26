@@ -885,7 +885,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   test houses (-0.041, paired interval [-0.102, +0.021]; criterion 1
   FAILED), with the most finds of any learned arm (573) and F-large's
   choice time (102 ms p90 here). The network's shape is not the lever.
-  C (attention over the pool) waits on the user's word.
+  **3.103.C (2026-10-26, the user's go; records only):** F-pool, B's S64
+  layer plus one 4-head self-attention layer over the candidate pool, its
+  width swept 32 / 64 / 128 (4,883 to 68,627 numbers; W32 and W128 on AWS
+  spot): the widths copy the oracle within two points (39-41%) and select
+  level (0.594 / 0.590 / 0.596), so W32 was tested: R 0.555, +0.043 over
+  F-lean [-0.007, +0.091] (criterion 1 FAILED), level with F-large and
+  F-rich, the least driving of any learned arm (median 13.8 m), choice
+  time F-lean's (90.5 ms p90). Every chooser since 3.96 lands at
+  0.55-0.56, ~0.22 under the oracle, whatever its facts, shape or pool
+  attention: the facts are the limit. Section closed.
 * **Explore's in-sight livelock bounded (3.106), merged 2026-10-26**
   (3.96 criterion 5's house `train:1395`, the user's pick): in the band, the
   target in sight, nothing to close in with (the `explore` policy's frame
