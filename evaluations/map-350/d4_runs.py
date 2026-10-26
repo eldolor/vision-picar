@@ -611,7 +611,9 @@ def check_image():
 
 def main(argv):
     # The trigger under test ships off (the user, 2026-10-24): D4 measures
-    # it on, unless the caller says otherwise, and each result records which.
+    # it on. A caller may set 0 (a baseline), but D4-b and D4-d judge the
+    # trigger, so their verdicts then read INVALID; each result records the
+    # bridge's own reading.
     os.environ.setdefault("PICAR_REMAP_CONTRADICTION", "1")
     d3.remap_contradiction()
     check_image()
@@ -635,7 +637,8 @@ def main(argv):
             # The bridge's own reading, not the shell's (review): a run the
             # trigger was not on for judges nothing about it.
             res["remap_contradiction"] = seen = d3.bridge_remap_contradiction()
-            if kind in ("b", "d") and seen is not True and res.get("verdict"):
+            # None is an unread /health (recorded as such), not a verdict.
+            if kind in ("b", "d") and seen is False and res.get("verdict"):
                 res["verdict"] = {k: f"INVALID (the bridge's contradiction trigger read {seen}; "
                                      f"criteria said {v})" for k, v in res["verdict"].items()}
             with open(os.path.join(OUT, f"{name}.json"), "w") as f:

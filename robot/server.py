@@ -1543,9 +1543,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         reloaded map that is being localised on is mapped again from the
         robot's pose, and the mission-end save keeps the result as its next
         version. Not arbitrated: the bridge holds goals while it re-maps and,
-        with a goal still live or the robot moving after its deferral
-        (REMAP_DEFER_MAX_S), cancels that goal (a stop, never a move),
-        whoever sent it. 409 when the bridge
+        with a goal still live or the robot moving after REMAP_DEFER_MAX_S,
+        cancels that goal (a stop, never a move), whoever sent it; if the
+        robot then does not come to rest, the re-map is called off
+        ("deferred") and the goal stays cancelled. 409 when the bridge
         is not localising on a saved map; a world without SLAM cannot."""
         if not hasattr(world_model, "remap"):
             raise HTTPException(status_code=501, detail=(
