@@ -54,8 +54,8 @@ from typing import Callable, Optional, Tuple
 
 from brain.agent import ObjectSearchAgent, _takes_local_ok
 from brain.arrival import SOURCE_LOCAL
-from brain.explore import OWN_GOAL_TOLERANCE_M, ExploreAgent  # one tolerance for both (3.76)
-from brain.explore import OWN_GOAL_HOLDER, OWN_GOAL_REFUSAL
+from brain.explore import (OWN_GOAL_TOLERANCE_M,  # one tolerance for both (3.76)
+                           ExploreAgent, is_own_goal_refusal)
 from brain.choice_log import BY_PERSON, GoalAsk
 from brain.intervention_log import (VIA_BRAIN_STOP, VIA_LOOP_CANCELLED, VIA_PREEMPTED,
                                     VIA_ROBOT_STOP)
@@ -1245,19 +1245,25 @@ class MissionRunner:
         """3.104: the brain hears a person's Stop (3.84's latch) or take-over
         only as a refused verb, and the arrival's confirmation sends none, so
         one pressed while it waited was never heard and the mission read
-        `found`. Ask once with 3.88's probe (LOOK_CENTER: nothing moves but
-        the camera) and raise a person's refusal for `_finish_preempted`. A
-        veto, the mission's own goal still holding, or no answer keep the
-        end as it was."""
-        with self._lock:
-            if not self._running:
-                return
+        `found`. Ask once with 3.88's probe (LOOK_CENTER through the halt
+        gate: nothing moves but the camera, and nothing once the mission has
+        ended) and raise a person's refusal for `_finish_preempted`: the
+        latch, a person holding the robot, or a holder named by no one. A
+        veto, the mission's own goal, an autonomous holder, or no answer keep
+        the end as it was."""
         try:
-            call_with_timeout(self.robot.look_center, timeout_s=PERSON_PROBE_S)
-        except SafetyViolation:
+            call_with_timeout(self._gated.look_center, timeout_s=PERSON_PROBE_S)
+        except (SafetyViolation, MissionHalted):
             pass
+        except StoppedByPerson:
+            raise
         except Preempted as e:
-            if OWN_GOAL_REFUSAL not in str(e) and not str(e).startswith(OWN_GOAL_HOLDER):
+            holder = _PREEMPTED_BY.match(str(e))
+            if is_own_goal_refusal(e):
+                pass
+            elif holder and driver_priority(holder.group(1)) != DRIVER_MANUAL:
+                logger.info("an autonomous holder at the end keeps it: %s", e)
+            else:
                 raise
         except Exception as e:  # noqa: BLE001 -- an unheard Stop is no reason to fail a find
             logger.warning("could not ask the robot server for a person's Stop: %s", e)

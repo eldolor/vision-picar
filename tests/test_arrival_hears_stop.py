@@ -44,6 +44,7 @@ REFUSALS = {
     "dpad": Preempted("twin-dpad is driving"),
     "veto": SafetyViolation("forward clearance 12.0 cm < 20.0 cm"),
     "own goal": Preempted("ros is driving (nav2 goal is active)"),
+    "autonomous": Preempted("brain is driving"),
     "down": ConnectionError("robot server unreachable"),
 }
 
@@ -119,8 +120,10 @@ def test_without_a_press_it_is_still_found():
     assert status["outcome"] == FOUND, status["log_tail"][-3:]
 
 
-@pytest.mark.parametrize("kind", ["veto", "own goal", "down"])
-def test_a_veto_its_own_goal_or_no_answer_keeps_the_found(kind):
+@pytest.mark.parametrize("kind", ["veto", "own goal", "autonomous", "down"])
+def test_a_veto_its_own_goal_an_autonomous_holder_or_no_answer_keeps_the_found(kind):
+    """Review of c0432da (both passes): only a person's refusal ends it; an
+    autonomous holder at the probe is no person and read `failed` there.""" 
     status, robot, _ = _mission(REFUSALS[kind])
     assert status["outcome"] == FOUND, (kind, status["log_tail"][-3:])
     assert robot.probes == 1, robot.probes

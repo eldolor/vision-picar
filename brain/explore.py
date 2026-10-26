@@ -135,6 +135,12 @@ OWN_GOAL_REFUSAL = "nav2 goal is active"
 # robot until its authority lapses (watchdog_timeout_s after nav2's last
 # wheel post). A move refused for that waits too.
 OWN_GOAL_HOLDER = "ros is driving"
+
+
+def is_own_goal_refusal(exc: Exception) -> bool:
+    """A refusal because the mission's own nav2 goal (or `ros`'s lapsing
+    authority after it) still holds the robot -- not a person taking over."""
+    return OWN_GOAL_REFUSAL in str(exc) or str(exc).startswith(OWN_GOAL_HOLDER)
 # A goal read back through the SLAM anchor (world/ros_world.py) comes back a
 # little moved; within this it is still the mission's own (3.76).
 OWN_GOAL_TOLERANCE_M = 0.05
@@ -1139,7 +1145,7 @@ class ExploreAgent(MissionAgent):
         except SafetyViolation:
             pass
         except Preempted as exc:
-            if OWN_GOAL_REFUSAL not in str(exc) and not str(exc).startswith(OWN_GOAL_HOLDER):
+            if not is_own_goal_refusal(exc):
                 raise
 
     def _record_choice(self, a: dict, by: str, cid: str, waited: Optional[float]) -> None:
@@ -1684,7 +1690,7 @@ class ExploreAgent(MissionAgent):
         except SafetyViolation as exc:
             out = action, False, str(exc)
         except Preempted as exc:
-            if OWN_GOAL_REFUSAL not in str(exc) and not str(exc).startswith(OWN_GOAL_HOLDER):
+            if not is_own_goal_refusal(exc):
                 raise
             self._pending.insert(0, action)
             out = "WAIT", False, f"{action} waits: the mission's own goal still holds the robot"
