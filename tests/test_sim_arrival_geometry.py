@@ -11,6 +11,13 @@ from control.brain_config import load_brain_config
 from control.brain_server import _tiered_vision_fn
 from tests.test_tiered_frames import Cloud
 
+
+class SeeingCloud(Cloud):
+    def __call__(self, frame):
+        scene = super().__call__(frame)
+        scene["_navigate"]["target_visible"] = True
+        return scene
+
 SIM = {"source": "sim"}
 
 
@@ -124,7 +131,10 @@ def test_a_sim_mission_ends_found_with_no_arrival_call(monkeypatch):
     grid.theta = math.atan2(GOAL[1] - y, GOAL[0] - x) + math.radians(off)
     robot = MockRobot(grid, render=True)
     confirm = NoArrivalCall()
-    tier = _tiered_vision_fn(TARGET, Cloud(), load_brain_config(), simulated=True,
+    # The triggers' cloud sees the target: since 3.91.C a cloud no about it
+    # is remembered, and a stub saying "not visible" about the target in
+    # plain view would hold the robot off it (the merge with 3.91.C).
+    tier = _tiered_vision_fn(TARGET, SeeingCloud(), load_brain_config(), simulated=True,
                              confirm_vision_fn=confirm)
     runner = MissionRunner(robot, target_object=TARGET, max_steps=80, policy="tiered",
                            vision_fn=tier, world=mock_world_for(robot), vision_timeout_s=5.0)
