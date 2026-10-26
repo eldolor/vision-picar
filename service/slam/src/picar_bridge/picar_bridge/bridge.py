@@ -513,17 +513,23 @@ class Bridge(Node):
             return 409, {"error": "the SLAM session changed", "session": self.session}
         with self.lock:
             state, why = self.slam_state, self.reload.get("error")
-            nav2 = dict(self._nav2)
+            refusal = None if self._nav2["active"] else self._nav2_refusal()
         if state != "ready":
             # 3.50.D3: nav2 is held while slam_toolbox starts or a reload is
             # judged -- a bad match swaps the whole frame.
             return 503, {"error": f"SLAM is not ready ({state})" + (f": {why}" if why else ""),
                          "slam": state}
-        if not nav2["active"]:
+        if refusal is not None:
             # 3.105: before anything is sent or cancelled, as above.
-            return 503, self._nav2_refusal()
+            return 503, refusal
         if not self.nav.wait_for_server(timeout_sec=NAV2_WAIT_S):
             return 503, {"error": "nav2 is not up (navigate_to_pose has no server)"}
+        with self.lock:
+            # Review: read again after the wait (up to 1 s), and before the
+            # cancel, so a reset meanwhile leaves the live goal alone.
+            refusal = None if self._nav2["active"] else self._nav2_refusal()
+        if refusal is not None:
+            return 503, refusal
         self.cancel_goal()
         ps = PoseStamped()
         ps.header.frame_id = "map"
@@ -541,8 +547,6 @@ class Bridge(Node):
                 # rest wait must see every goal, so none is sent past it.
                 return 503, {"error": f"SLAM is not ready ({self.slam_state})",
                              "slam": self.slam_state}
-            if not self._nav2["active"]:
-                return 503, self._nav2_refusal()     # 3.105 (review): reset meanwhile
             self.plan = []
             # The superseded goal was sent its cancel above, and nav2's
             # navigator preempts it for this one anyway; its handle must not
@@ -715,11 +719,14 @@ class Bridge(Node):
                 "inactive_s": None if since is None else round(now - since, 1)}
 
     def _nav2_stuck(self):
+        """Under self.lock. Counted only while SLAM is ready (review): a slow
+        reload is SLAM's time, not nav2's."""
         since = self._nav2_inactive_since
-        return since is not None and time.monotonic() - since > NAV2_STUCK_S
+        return (self.slam_state == "ready" and since is not None
+                and time.monotonic() - since > NAV2_STUCK_S)
 
     def _nav2_refusal(self):
-        """Under self.lock or not: the 503 body while goals are held."""
+        """Under self.lock: the 503 body while goals are held."""
         nav2 = self._nav2_view()
         return {"error": "nav2 is not active" + (f": {nav2['why']}" if nav2["why"] else ""),
                 "nav2": nav2}

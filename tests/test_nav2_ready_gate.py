@@ -191,6 +191,9 @@ def test_nav2_going_inactive_during_the_send_is_seen_under_the_lock(bridge_mod):
     b = _bridge(bridge_mod, m)
     b._poll_nav2()
     m.answer(True)
+    b.send_goal({"x_m": 1.0, "y_m": 0.0})
+    handle = _Handle()
+    b.nav.futures[-1].complete(handle)
     wait = b.nav.wait_for_server
 
     def reset_meanwhile(timeout_sec):
@@ -198,7 +201,21 @@ def test_nav2_going_inactive_during_the_send_is_seen_under_the_lock(bridge_mod):
         m.answer(False)
         return wait(timeout_sec)
     b.nav.wait_for_server = reset_meanwhile
-    _refused(b)
+    code, body = b.send_goal({"x_m": 2.0, "y_m": 0.0})
+    assert code == 503 and "nav2 is not active" in body["error"]
+    assert body["nav2"]["active"] is False
+    assert len(b.nav.futures) == 1 and handle.cancels == 0, "the live goal is left alone"
+
+
+def test_the_stuck_count_runs_only_while_slam_is_ready(bridge_mod):
+    """Review: a slow reload must not spend nav2's NAV2_STUCK_S."""
+    m = _Manager()
+    b = _bridge(bridge_mod, m)
+    b.slam_state = "checking"
+    b._nav2_inactive_since -= bridge_mod.NAV2_STUCK_S + 1
+    assert b.health()[1]["ok"] is True
+    b.slam_state = "ready"
+    assert b.health()[1]["ok"] is False
 
 
 def test_a_given_up_ask_leaves_rclpys_pending_requests(bridge_mod):
