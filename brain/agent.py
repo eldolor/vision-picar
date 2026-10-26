@@ -389,6 +389,14 @@ class MissionAgent(ConstrainedAgent):
         # (the agent's vision_fn there is the runner's wrapper, round 5).
         spoke = getattr(self.vision_fn, "cloud_spoke", None)
         said = spoke() if spoke is not None else None
+        if said in ("no", "wait"):
+            # 3.91.D2: in the simulator the geometry judges it first, free --
+            # a wrong held no never overrules the sim's ground truth.
+            sim = getattr(self.vision_fn, "sim_verdict", None)
+            judged = sim(frame) if sim is not None else None
+            if judged is not None:
+                said = None
+                confirm = lambda frame, local_ok=True: judged  # noqa: E731
         if said == "ask":
             local_ok = False
         if said == "wait":
@@ -452,6 +460,7 @@ class MissionAgent(ConstrainedAgent):
             # next arrival frame asks again (the cloud, after max_unable).
             return {**readout, "state": CHECKING,
                     "reason": f"arrived, identity being checked: {verdict.get('reason')}"}
+
         self._identity_refused = True
         self._refusal = verdict
         if point is not None:

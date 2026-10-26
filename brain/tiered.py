@@ -2298,6 +2298,25 @@ class TieredVision:
                 "reason": (f"the local model could not decide ({what}); "
                            + ("asking the cloud next" if last else "asking again"))}
 
+    def sim_verdict(self, frame: dict) -> Optional[dict]:
+        """3.98 (the user, 2026-10-24): a sim arrival is the sim's to judge --
+        no call and no cap. None when this is no sim frame the geometry can
+        judge. 3.91.D2: asked also before a held cloud no refuses (or waits
+        on) an arrival, so a wrong no never overrules the sim's ground truth."""
+        if self.sim_identity_fn is None:
+            return None
+        verdict = self.sim_identity_fn(frame)
+        if verdict is None:
+            return None
+        with self._local_lock:
+            # An arrival frame, as on the cloud path (review round 1).
+            self._frames_off_arrival = 0
+        return {"confirmed": verdict, "cloud_called": False, "tier": "sim",
+                "reason": ("the simulator's geometry puts the target in front"
+                           if verdict else
+                           "the simulator's geometry puts something else in front"),
+                "stats": self.stats.as_dict()}
+
     def confirm_cloud(self, frame: dict, guarded: bool = False) -> dict:
         """One paid, synchronous cloud call on the ARRIVAL frame: is the
         target in it? (Handoff 2026-10-02 1a, decided by the user.)
@@ -2311,20 +2330,9 @@ class TieredVision:
         about to end on the answer, so there is nothing to hold meanwhile.
         A failure raises, and the runner counts it against B3.2's budget.
         """
-        if self.sim_identity_fn is not None:
-            # 3.98 (the user, 2026-10-24): a sim arrival is the sim's to judge
-            # -- no call and no cap (the runner may still have waited for a
-            # trigger's call in flight before asking).
-            verdict = self.sim_identity_fn(frame)
-            if verdict is not None:
-                with self._local_lock:
-                    # An arrival frame, as on the cloud path (review round 1).
-                    self._frames_off_arrival = 0
-                return {"confirmed": verdict, "cloud_called": False, "tier": "sim",
-                        "reason": ("the simulator's geometry puts the target in front"
-                                   if verdict else
-                                   "the simulator's geometry puts something else in front"),
-                        "stats": self.stats.as_dict()}
+        judged = self.sim_verdict(frame)
+        if judged is not None:
+            return judged
         if self.max_calls is not None and self.stats.cloud_calls >= self.max_calls:
             return {"confirmed": False, "cloud_called": False,
                     "reason": "call cap reached -- identity not confirmed",
