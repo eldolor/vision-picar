@@ -215,7 +215,8 @@ def _bridge(bridge_mod):
     b = bridge_mod.Bridge()
     b.nav = _Nav()
     b.slam_state = "ready"             # 3.50.D3: slam_toolbox up, no reload being judged
-    b._set_nav2(True, None, answered=True)   # 3.105: nav2's nodes active
+    with b.lock:
+        b._set_nav2(True, None)          # 3.105: nav2's nodes active
     return b
 
 

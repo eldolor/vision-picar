@@ -177,6 +177,8 @@ def test_a_nav2_that_never_activates_turns_health_not_ok(bridge_mod):
     m.answer(False)
     assert b.health()[1]["ok"] is True
     b._nav2_inactive_since -= bridge_mod.NAV2_STUCK_S + 1
+    b._nav2_polled_at -= bridge_mod.NAV2_STUCK_S + 1          # as if polled since
+    b._poll_nav2()
     body = b.health()[1]
     assert body["ok"] is False and body["nav2"]["inactive_s"] > bridge_mod.NAV2_STUCK_S
     b._poll_nav2()
@@ -184,9 +186,9 @@ def test_a_nav2_that_never_activates_turns_health_not_ok(bridge_mod):
     assert b.health()[1]["ok"] is True
 
 
-def test_nav2_going_inactive_during_the_send_is_seen_under_the_lock(bridge_mod):
-    """Review: the first read is before wait_for_server (up to 1 s); the
-    send re-reads it under the lock, as it does slam.state."""
+def test_a_nav2_reset_during_the_wait_leaves_the_live_goal_alone(bridge_mod):
+    """Review: the first read is before wait_for_server (up to 1 s); it is
+    read again after the wait and before the cancel."""
     m = _Manager()
     b = _bridge(bridge_mod, m)
     b._poll_nav2()
@@ -208,14 +210,39 @@ def test_nav2_going_inactive_during_the_send_is_seen_under_the_lock(bridge_mod):
 
 
 def test_the_stuck_count_runs_only_while_slam_is_ready(bridge_mod):
-    """Review: a slow reload must not spend nav2's NAV2_STUCK_S."""
-    m = _Manager()
+    """Review: a slow reload must not spend nav2's NAV2_STUCK_S, even once
+    SLAM is ready after it."""
+    m = _Manager(up=False)
     b = _bridge(bridge_mod, m)
     b.slam_state = "checking"
-    b._nav2_inactive_since -= bridge_mod.NAV2_STUCK_S + 1
-    assert b.health()[1]["ok"] is True
+    b._poll_nav2()
+    b._nav2_polled_at -= bridge_mod.NAV2_STUCK_S + 1
+    b._poll_nav2()                                # SLAM's time: not counted
     b.slam_state = "ready"
+    assert b.health()[1]["ok"] is True
+    b._nav2_polled_at -= bridge_mod.NAV2_STUCK_S + 1
+    b._poll_nav2()                                # nav2's
     assert b.health()[1]["ok"] is False
+
+
+def test_a_re_map_during_the_wait_leaves_the_live_goal_alone(bridge_mod):
+    """Review: the SLAM re-read is before the cancel too (it was after)."""
+    m = _Manager()
+    b = _bridge(bridge_mod, m)
+    b._poll_nav2()
+    m.answer(True)
+    b.send_goal({"x_m": 1.0, "y_m": 0.0})
+    handle = _Handle()
+    b.nav.futures[-1].complete(handle)
+    wait = b.nav.wait_for_server
+
+    def remap_meanwhile(timeout_sec):
+        b.slam_state = "remapping"
+        return wait(timeout_sec)
+    b.nav.wait_for_server = remap_meanwhile
+    code, body = b.send_goal({"x_m": 2.0, "y_m": 0.0})
+    assert code == 503 and body["slam"] == "remapping"
+    assert handle.cancels == 0 and len(b.nav.futures) == 1
 
 
 def test_a_given_up_ask_leaves_rclpys_pending_requests(bridge_mod):

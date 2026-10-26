@@ -266,6 +266,10 @@ class Bridge(Node):
                                            callback_group=ReentrantCallbackGroup())
         self._nav2 = {"active": False, "why": "not asked yet", "answered_at": None}  # monotonic
         self._nav2_inactive_since = time.monotonic()
+        # Seconds inactive while SLAM was ready, added by _poll_nav2 (review:
+        # a slow reload is SLAM's time, not nav2's); 0 once active.
+        self._nav2_stuck_s = 0.0
+        self._nav2_polled_at = None
         self._nav2_ask = None            # the ask in flight, under self.lock
         self._nav2_ask_since = 0.0       # monotonic
         self.create_timer(NAV2_ASK_S, self._poll_nav2)
@@ -512,22 +516,16 @@ class Bridge(Node):
         if body.get("session") not in (None, self.session):
             return 409, {"error": "the SLAM session changed", "session": self.session}
         with self.lock:
-            state, why = self.slam_state, self.reload.get("error")
-            refusal = None if self._nav2["active"] else self._nav2_refusal()
-        if state != "ready":
-            # 3.50.D3: nav2 is held while slam_toolbox starts or a reload is
-            # judged -- a bad match swaps the whole frame.
-            return 503, {"error": f"SLAM is not ready ({state})" + (f": {why}" if why else ""),
-                         "slam": state}
+            refusal = self._goal_refusal()
         if refusal is not None:
-            # 3.105: before anything is sent or cancelled, as above.
             return 503, refusal
         if not self.nav.wait_for_server(timeout_sec=NAV2_WAIT_S):
             return 503, {"error": "nav2 is not up (navigate_to_pose has no server)"}
         with self.lock:
-            # Review: read again after the wait (up to 1 s), and before the
-            # cancel, so a reset meanwhile leaves the live goal alone.
-            refusal = None if self._nav2["active"] else self._nav2_refusal()
+            # 3.105 (review): read again after the wait (up to 1 s) and before
+            # the cancel, so a re-map or a nav2 reset meanwhile leaves the
+            # live goal alone.
+            refusal = self._goal_refusal()
         if refusal is not None:
             return 503, refusal
         self.cancel_goal()
@@ -542,11 +540,12 @@ class Bridge(Node):
         goal = NavigateToPose.Goal()
         goal.pose = ps
         with self.lock:
-            if self.slam_state != "ready":
-                # 3.50.D4 (review): a re-map began after the check above; its
-                # rest wait must see every goal, so none is sent past it.
-                return 503, {"error": f"SLAM is not ready ({self.slam_state})",
-                             "slam": self.slam_state}
+            # 3.50.D4 (review): a re-map began after the check above; its
+            # rest wait must see every goal, so none is sent past it. And
+            # (3.105) none to a nav2 reset during the cancel.
+            refusal = self._goal_refusal()
+            if refusal is not None:
+                return 503, refusal
             self.plan = []
             # The superseded goal was sent its cancel above, and nav2's
             # navigator preempts it for this one anyway; its handle must not
@@ -560,6 +559,18 @@ class Bridge(Node):
         future = self.nav.send_goal_async(goal)
         future.add_done_callback(lambda f: self._on_goal_response(f, record))
         return 200, {"state": "pending"}
+
+    def _goal_refusal(self):
+        """Under self.lock: the 503 body if no goal may be sent now, else None."""
+        if self.slam_state != "ready":
+            # 3.50.D3: nav2 is held while slam_toolbox starts or a reload is
+            # judged -- a bad match swaps the whole frame.
+            why = self.reload.get("error")
+            return {"error": f"SLAM is not ready ({self.slam_state})" + (f": {why}" if why else ""),
+                    "slam": self.slam_state}
+        if not self._nav2["active"]:
+            return self._nav2_refusal()          # 3.105
+        return None
 
     def _on_goal_response(self, future, record):
         handle = future.result()
@@ -667,6 +678,9 @@ class Bridge(Node):
         one ask at a time; rclpy is called outside bridge.lock."""
         now = time.monotonic()
         with self.lock:
+            last, self._nav2_polled_at = self._nav2_polled_at, now
+            if last is not None and not self._nav2["active"] and self.slam_state == "ready":
+                self._nav2_stuck_s += now - last
             stale = self._nav2_ask
             if stale is not None:
                 if now - self._nav2_ask_since < NAV2_ASK_TIMEOUT_S:
@@ -707,6 +721,7 @@ class Bridge(Node):
             self.get_logger().info("nav2 active: goals taken" if active
                                    else f"nav2 not active, goals held: {why}")
             self._nav2_inactive_since = None if active else time.monotonic()
+            self._nav2_stuck_s = 0.0
         self._nav2 = {"active": active, "why": why,
                       "answered_at": time.monotonic() if answered else self._nav2["answered_at"]}
 
@@ -719,11 +734,8 @@ class Bridge(Node):
                 "inactive_s": None if since is None else round(now - since, 1)}
 
     def _nav2_stuck(self):
-        """Under self.lock. Counted only while SLAM is ready (review): a slow
-        reload is SLAM's time, not nav2's."""
-        since = self._nav2_inactive_since
-        return (self.slam_state == "ready" and since is not None
-                and time.monotonic() - since > NAV2_STUCK_S)
+        """Under self.lock: inactive over NAV2_STUCK_S of SLAM's ready time."""
+        return not self._nav2["active"] and self._nav2_stuck_s > NAV2_STUCK_S
 
     def _nav2_refusal(self):
         """Under self.lock: the 503 body while goals are held."""
