@@ -957,7 +957,8 @@ class TieredVision:
     ):
         self.pipeline = pipeline
         # 3.91.C: a no about a candidate, remembered (see DEFAULT_REMEMBER_NO).
-        # `_rejection` is {"by", "episode", "at_s", "pose"} or None; an
+        # `_rejection` is {"by", "rank", "episode", "pose", "at_stamp",
+        # "at_mono"}, plus "wait_mono" once an arrival waits on it, or None; an
         # episode is a run of detections broken by REJECT_LOST_FRAMES absent
         # frames. `_masked`: this frame shows the rejected candidate.
         self.remember_no = bool(remember_no)
@@ -1552,7 +1553,8 @@ class TieredVision:
         arrival paid the cloud again). "ask": a yes about this run, or its
         probation -- the identity check is the cloud's, not the local VLM's.
         "wait": the cap is spent and a cloud-ranked no is held -- undecided
-        until it is released, or for `reject_hold_s` at most. None: it has
+        until it is released, or for `reject_hold_s` at most (so a call
+        starts that wait: call it only at an arrival). None: it has
         not, the cap is spent with nothing of the cloud's held (the local tier
         is the best left), or `remember_no` is off (`dev`)."""
         if not self.remember_no:
@@ -1582,7 +1584,8 @@ class TieredVision:
                 # monotonic clock only: a wait with the body still is real
                 # time, and stamps that start over, jump or stall made it
                 # endless or end at once (review). A new no is a new wait.
-                waited = time.monotonic() - r.setdefault("wait_mono", time.monotonic())
+                now = time.monotonic()
+                waited = now - r.setdefault("wait_mono", now)
                 return "wait" if waited < self.reject_hold_s else None
             if r is not None and r["rank"] == "cloud":
                 return "ask"
