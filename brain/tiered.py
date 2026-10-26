@@ -966,9 +966,6 @@ class TieredVision:
         self.reject_turn_deg = max(0.0, float(reject_turn_deg))
         self.no_box_range = (float(no_box_range[0]), float(no_box_range[1]))
         self._rejection: Optional[dict] = None
-        # The arrival's wait on a held cloud no with the cap spent: the no,
-        # and the monotonic time the wait began (review 2026-10-26).
-        self._cap_wait: Optional[dict] = None
         # Review: `wait_inflight()` can apply an answer on the runner's
         # abandoned thread while a tick tracks the candidate.
         self._reject_lock = threading.RLock()
@@ -1467,7 +1464,6 @@ class TieredVision:
             if self._rejection is None:
                 return
             rank, self._rejection = self._rejection["rank"], None
-            self._cap_wait = None
             # Each release is a new chance for the disagreement question
             # (Thermos round 4: a local yes on the cloud's probation in a run
             # whose question was spent was never asked).
@@ -1582,23 +1578,18 @@ class TieredVision:
                 # with nothing of the cloud's held, the local tier.
                 if r is None or r["rank"] != "cloud":
                     return None
-                return "wait" if self._cap_waited_s(r) < self.reject_hold_s else None
+                # Timed from the first wait on this no (it may be old), on the
+                # monotonic clock only: a wait with the body still is real
+                # time, and stamps that start over, jump or stall made it
+                # endless or end at once (review). A new no is a new wait.
+                waited = time.monotonic() - r.setdefault("wait_mono", time.monotonic())
+                return "wait" if waited < self.reject_hold_s else None
             if r is not None and r["rank"] == "cloud":
                 return "ask"
             if (self._cloud_yes_episode == self._episode
                     or (self._probation and self._probation_by == "cloud")):
                 return "ask"
             return None
-
-    def _cap_waited_s(self, r: dict) -> float:
-        """How long arrivals have waited on this held no, from the first
-        wait (not from the no: it may be old). On the monotonic clock only:
-        a wait while the body stands is real time, and stamps that start
-        over, jump or stall made it endless or end at once (review)."""
-        w = self._cap_wait
-        if w is None or w["no"] is not r:
-            w = self._cap_wait = {"no": r, "at_mono": time.monotonic()}
-        return time.monotonic() - w["at_mono"]
 
     def _on_probation(self, perception: Perception) -> bool:
         """Amendment 3: a candidate in view whose no was released by loss or
@@ -2539,7 +2530,6 @@ class TieredVision:
         self._pending_error = None
         with self._reject_lock:
             self._rejection = None
-            self._cap_wait = None
             self._end_probation()
             self._masked = False
             self._escalate_episode = None

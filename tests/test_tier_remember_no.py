@@ -1034,3 +1034,16 @@ def test_the_capped_wait_restarts_for_a_new_no(monkeypatch):
     tier._reject("cloud", None, 3)          # a new no: a new wait
     tier._episode = 4
     assert tier.cloud_spoke() == "wait"
+
+
+def test_the_capped_wait_restarts_for_a_no_that_replaces_the_held_one(monkeypatch):
+    # No release between: only the wait's own record of which no it is on.
+    now = [1000.0]
+    monkeypatch.setattr("brain.tiered.time.monotonic", lambda: now[0])
+    tier = _capped_wait()
+    assert tier.cloud_spoke() == "wait"
+    now[0] += tier.reject_hold_s
+    assert tier.cloud_spoke() is None
+    tier._reject("cloud", None, 2)          # a new cloud no about run 2
+    tier._episode = 3
+    assert tier.cloud_spoke() == "wait"
