@@ -49,7 +49,8 @@ LOGDIR = os.environ.get("EXPLORE_LOGDIR", "/tmp")
 # loopback and the bridge on BRIDGE -- plain Docker on Linux has no
 # host.docker.internal (service/slam/README.md, "On the car"). The bridge
 # has no secret (this script strips it), so it listens on loopback only
-# (BRIDGE_HOST, 3.97); it listened on every interface before.
+# (BRIDGE_HOST, 3.97; an image built before 3.50.D4 ignores the variable
+# and still listens on every interface -- rebuild it).
 # Off the container's own network, only ROS_DOMAIN_ID keeps two stacks'
 # nodes apart: set it per section (`plan_section.py env`). Unset, the Docker
 # Desktop wiring below.
@@ -136,6 +137,8 @@ def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None, drive=
     and `nav_yaml` another nav2 config;
     `odom_drift` is SIM_ODOM_DRIFT ("left,right"); `drive` is ROBOT_DRIVE
     (3.97: `direct` with the ROS world)."""
+    if drive not in ("ros", "direct"):
+        raise ValueError(f"drive must be 'ros' or 'direct', not {drive!r}")
     heavy_lock()
     _kill_ports()
     run_dir = _new_run_dir()
