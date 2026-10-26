@@ -59,3 +59,29 @@ def test_a_target_at_the_frames_edge_is_still_faced_first():
     first = _tick(agent)
     assert first[0] in ("LEFT", "RIGHT"), first
     assert agent.retry.failures_near(*point) == 0
+
+
+def test_the_tick_found_fires_on_neither_counts_nor_backs_off():
+    """Thermos on c18acb9: found is recorded after `_choose`, from the scene
+    it already holds; the bound must not back off on that very tick."""
+    agent, point, sent = _stuck()
+    _tick(agent)
+    _tick(agent)
+    frame = agent.robot.get_camera_frame()
+    agent._choose(frame, {"important_objects": ["red backpack"]})
+    assert agent.retry.failures_near(*point) == 0
+    assert "REVERSE" not in sent and "REVERSE" not in agent._pending
+
+
+def test_the_count_belongs_to_one_place():
+    """Thermos on c18acb9: ticks at one sighting must not add to another's."""
+    agent, point, sent = _stuck()
+    _tick(agent)
+    _tick(agent)
+    other = _ahead(agent, 0.64, 2.0)
+    other = (other[0] + 1.0, other[1])            # a sighting a metre off
+    agent._sighting = lambda frame: other
+    agent._approach = other
+    agent._at_target = lambda tx, ty: True
+    _tick(agent)
+    assert agent.retry.failures_near(*other) == 0 and agent.retry.failures_near(*point) == 0

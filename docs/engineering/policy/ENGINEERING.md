@@ -654,6 +654,17 @@ logged and counted in `stats.cloud_errors`, not raised into B3.2).
   counts toward `CLOSE_IN_REFUSED` (3 in a row: the sighting fails,
   REVERSE; any accepted goal starts the count again, 3.76 K3), and a
   refused turn over `FACE_MIN_TURN_DEG` queues explore's FACE.
+* In the band with nothing to close in with (the `frame` mode: close-in is
+  perception's), the target in sight and not found (3.106; the simulator's
+  detector sees any part of an object, its found rule only the centre, so a
+  table leg can hide one from the other: house `train:1395`): the
+  `_in_sight_unfound` ticks are counted at one place (a sighting more than
+  `APPROACH_MOVED_M` off starts again; any goal sent does too), not on the
+  tick the scene names the target (found is recorded from it after
+  `_choose`). The first faces it (`_back_to_sighting`); at
+  `CLOSE_IN_REFUSED` the sighting is given up as close-in's is
+  (`_give_up_sighting()`: one retry failure, forgotten, REVERSE). A WAIT
+  passes no simulated time, so before this nothing ended it.
 * `_note_refusal()`: an arrival REFUSED drops the place it was at
   (`RetryBook` failed to its limit), once per refusal, and explore searches
   on.

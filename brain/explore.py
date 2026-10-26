@@ -251,6 +251,7 @@ class ExploreAgent(MissionAgent):
         # 3.106: ticks in a row in the band, the target in sight, nothing to
         # close in with, and still not found.
         self._in_sight_unfound = 0
+        self._in_sight_at: Optional[tuple] = None     # where they were counted
         self._refusal_noted = False
         self._scene: dict = {}         # 3.80.G: this step's scene (sight_from perception)
         self.navigator = navigator
@@ -493,14 +494,21 @@ class ExploreAgent(MissionAgent):
                 # table leg). Faced first (below), then at CLOSE_IN_REFUSED
                 # such ticks a failure and a back-off, as close-in does: a
                 # WAIT passes no simulated time, so nothing else ended it.
-                unfound = True
-                self._in_sight_unfound += 1
-                if self._in_sight_unfound >= CLOSE_IN_REFUSED:
+                # Not on the tick found is recorded (after this, from this
+                # scene: `MissionMemory.record_observation`), and counted at
+                # one place only.
+                target = (self.memory.target_object or "").lower()
+                found_now = bool(target) and any(
+                    target in str(o).lower() for o in scene.get("important_objects") or ())
+                unfound = not found_now
+                if unfound and (self._in_sight_at is None or math.hypot(
+                        tx - self._in_sight_at[0], ty - self._in_sight_at[1]) > APPROACH_MOVED_M):
+                    self._in_sight_unfound, self._in_sight_at = 0, (tx, ty)
+                if unfound:
+                    self._in_sight_unfound += 1
+                if unfound and self._in_sight_unfound >= CLOSE_IN_REFUSED:
                     self._in_sight_unfound = 0
-                    self.retry.fail(tx, ty, now, known=self._known_at)
-                    self._last_seen = None
-                    self._approach = None
-                    self._pending.insert(0, "REVERSE")
+                    self._give_up_sighting(tx, ty, now)
                     return self._do_pending()
         if not unfound:
             self._in_sight_unfound = 0
@@ -596,6 +604,7 @@ class ExploreAgent(MissionAgent):
         # read timeout after the bridge took the goal) leaves that goal
         # driving; it is still the mission's own, never "someone else's".
         self._attempts.append((x_m, y_m))
+        self._in_sight_unfound = 0          # 3.106: a goal starts the count again
         try:
             reply = self.navigator.set_goal(x_m, y_m) or {}
         except Preempted:
@@ -754,14 +763,20 @@ class ExploreAgent(MissionAgent):
         self._close_in_refused += 1
         if self._close_in_refused >= CLOSE_IN_REFUSED:
             self._close_in_refused = 0
-            self.retry.fail(target[0], target[1], self.clock(), known=self._known_at)
-            self._last_seen = None
-            self._approach = None
-            self._pending.insert(0, "REVERSE")
+            self._give_up_sighting(target[0], target[1], self.clock())
         elif action != "FORWARD" and kwargs["angle"] > FACE_MIN_TURN_DEG:
             self._pending.insert(0, ("FACE", target, max(FACE_MIN_TURN_DEG, kwargs["angle"] / 2),
                                      False, True))
         return out[0], out[1], f"closing in: {out[2]}"
+
+    def _give_up_sighting(self, tx: float, ty: float, now: float) -> None:
+        """The sighting counts one failure on the retry rule, is forgotten,
+        and the robot backs off (close-in's refusals, 3.80.G; 3.106's
+        in-sight-but-never-found ticks)."""
+        self.retry.fail(tx, ty, now, known=self._known_at)
+        self._last_seen = None
+        self._approach = None
+        self._pending.insert(0, "REVERSE")
 
     def _send_approach(self, tx: float, ty: float, now: float, scene: Optional[dict] = None):
         pose = self._pose()
