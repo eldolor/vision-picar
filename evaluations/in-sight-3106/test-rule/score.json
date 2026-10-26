@@ -1,0 +1,32 @@
+{
+ "R": {
+  "before": {
+   "found": 570,
+   "median_goals": 7.0,
+   "capped": 0,
+   "missions": 583
+  },
+  "after": {
+   "found": 570,
+   "median_goals": 7.0,
+   "capped": 0,
+   "missions": 583
+  },
+  "changed": []
+ },
+ "U": {
+  "before": {
+   "found": 582,
+   "median_goals": 9.0,
+   "capped": 0,
+   "missions": 588
+  },
+  "after": {
+   "found": 582,
+   "median_goals": 9.0,
+   "capped": 0,
+   "missions": 588
+  },
+  "changed": []
+ }
+}

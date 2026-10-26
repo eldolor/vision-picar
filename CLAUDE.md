@@ -886,6 +886,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   FAILED), with the most finds of any learned arm (573) and F-large's
   choice time (102 ms p90 here). The network's shape is not the lever.
   C (attention over the pool) waits on the user's word.
+* **Explore's in-sight livelock bounded (3.106), merged 2026-10-26**
+  (3.96 criterion 5's house `train:1395`, the user's pick): in the band, the
+  target in sight, nothing to close in with (the `explore` policy's frame
+  sightings) and never found -- in the simulator a table leg hid the box's
+  centre from the found rule while the detector saw its edge -- explore
+  faced it for ever ("already facing it"; a WAIT passes no sim time). Now
+  three such ticks in a row at one place give the sighting up as close-in
+  does (one retry failure, REVERSE). F-large finds 1395; the rule arm on
+  3.96's 588 test houses is unchanged house for house; explore sweeps hold.
+  Never runs on the car (real frames carry no detections).
 * **Fast goal choice (3.77), merged 2026-10-13.** `brain/frontier.py`'s
   grid work in numpy with **exactly** the old answers (0 differences
   against the frozen `tests/frontier_reference.py`; do not "simplify" its
