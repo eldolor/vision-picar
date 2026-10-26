@@ -960,8 +960,9 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   2026-10-24** (`SPEC-REVIEW-3.md` fix 11, the user): a person's FORWARD,
   REVERSE or turn starts the Stop's goal-ending loop without its latch
   (`begin_goal_end()`); a pan does not. `drive: ros`'s bridge already
-  cancelled; `drive: direct` let nav2 drive on. In process only; the live
-  check under both drives is owed (criterion 4).
+  cancelled; `drive: direct` let nav2 drive on. Live (criterion 4,
+  2026-10-26): a D-pad LEFT or FORWARD during a goal cancels it in
+  0.042-0.115 s and the robot stays put after the verb, under both drives.
 * **A sim arrival is confirmed from geometry (3.98), merged 2026-10-24**
   (`SPEC-REVIEW-3.md` fix 7, the user): on the simulator's frames the
   arrival's cloud step is `brain/arrival.py` `geometry_identity()` -- the
