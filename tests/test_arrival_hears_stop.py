@@ -75,7 +75,7 @@ class PressedDuringConfirm(MockRobot):
         return super().look_center()
 
 
-def _mission(refusal=None, press=True, log_to=None, sent_goal=False):
+def _mission(refusal=None, press=True, log_to=None, sent_goal=False, navigator=None):
     robot = PressedDuringConfirm(_placed(), refusal)
 
     def confirm(frame):
@@ -87,6 +87,8 @@ def _mission(refusal=None, press=True, log_to=None, sent_goal=False):
                         hold_goal=True, confirm_vision_fn=confirm)
     runner = MissionRunner(robot, target_object=TARGET, max_steps=60, policy="tiered",
                            vision_fn=tier, world=mock_world_for(robot))
+    if navigator is not None:
+        runner._navigator = navigator(runner)
     if sent_goal:
         # As if this mission's explore had a goal accepted (_GatedNavigator).
         runner._navigator = types.SimpleNamespace(sent_goal=True, end=lambda: None)
@@ -171,3 +173,46 @@ def test_a_goal_sent_whose_reply_was_lost_counts_as_sent():
     with pytest.raises(httpx.ReadTimeout):
         nav.set_goal(1.0, 2.0)
     assert nav.sent_goal is True
+
+
+
+def test_end_to_end_a_lost_reply_then_its_goal_at_the_probe_keeps_the_found():
+    """Review of 2b516bb: through the real _GatedNavigator, a send whose
+    reply was lost and then that goal's refusal at the probe keeps `found`."""
+    import httpx
+    from control.mission_runner import _GatedNavigator
+
+    class LostReply:
+        def set_goal(self, x_m, y_m):
+            raise httpx.ReadTimeout("no reply in 10 s")
+
+        def get_goal(self):
+            return {}
+
+        def cancel_goal(self):
+            return {}
+
+    def lost(runner):
+        nav = _GatedNavigator(LostReply(), lambda: True)
+        with pytest.raises(httpx.ReadTimeout):
+            nav.set_goal(1.0, 2.0)
+        return nav
+
+    status, robot, _ = _mission(REFUSALS["goal active"], navigator=lost)
+    assert status["outcome"] == FOUND, status["log_tail"][-3:]
+    assert robot.probes == 1, robot.probes
+
+
+def test_a_send_the_server_refused_does_not_count_as_sent():
+    """Review of 2b516bb: `_sent` set before the send counted a goal the
+    server refused (`accepted: False`), so a person's tap-to-goal at the end
+    read as the mission's own and kept `found`."""
+    from control.mission_runner import _GatedNavigator
+
+    class Refused:
+        def set_goal(self, x_m, y_m):
+            return {"accepted": False, "reason": "busy", "detail": "a nav2 goal is active"}
+
+    nav = _GatedNavigator(Refused(), lambda: True)
+    nav.set_goal(1.0, 2.0)
+    assert nav.sent_goal is False

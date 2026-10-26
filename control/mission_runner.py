@@ -307,8 +307,8 @@ class _GatedNavigator:
     def __init__(self, navigator, is_running: Callable[[], bool]):
         self._nav, self._is_running = navigator, is_running
         self._own: Optional[Tuple[float, float]] = None
-        # 3.104: a goal was sent (accepted, or its answer lost: a lost answer
-        # may leave it driving, still the mission's own -- explore's `_send`).
+        # 3.104: a goal was accepted, or its answer was lost (it may still be
+        # driving, the mission's own -- explore's `_send`); a refusal is not.
         self._sent = False
         # The client is closed by whichever finishes last: `end()`, or a
         # goal still on its way when the mission ended -- which must still
@@ -323,10 +323,14 @@ class _GatedNavigator:
             if not self._is_running() or self._ending:
                 return {"accepted": False, "reason": "mission_ended"}
             self._in_flight += 1
-            self._sent = True
         try:
-            reply = self._nav.set_goal(x_m, y_m) or {}
+            try:
+                reply = self._nav.set_goal(x_m, y_m) or {}
+            except Exception:
+                self._sent = True               # the answer is lost, not the goal
+                raise
             if reply.get("accepted"):
+                self._sent = True
                 self._own = (x_m, y_m)
                 if not self._is_running():
                     self.cancel_own()           # the mission ended while it was on its way
@@ -355,8 +359,8 @@ class _GatedNavigator:
 
     @property
     def sent_goal(self) -> bool:
-        """3.104: this mission sent a goal (never cleared): one of its own may
-        still hold the robot."""
+        """3.104: this mission had a goal accepted or lost its answer (never
+        cleared): one of its own may still hold the robot."""
         return self._sent
 
     def cancel_own(self) -> None:
