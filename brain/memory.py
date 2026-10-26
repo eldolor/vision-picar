@@ -86,9 +86,14 @@ class MissionMemory:
                 step=step, object_name=obj, room=room, position=frame.get("pose")
             )
             self.sightings.append(sighting)
-            if self.target_object and not self.found and self.target_object in obj.lower():
+            if not self.found and self.names_target(obj):
                 self.found = True
                 self.found_sighting = sighting
+
+    def names_target(self, obj) -> bool:
+        """Does this scene object name the target -- the found rule's match
+        (explore's 3.106 bound asks the same question before it is recorded)."""
+        return bool(self.target_object) and self.target_object in str(obj).lower()
 
     def record_action(self, step: int, room: str, action: str, executed: bool) -> None:
         self.actions.append(

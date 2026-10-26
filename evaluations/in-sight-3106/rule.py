@@ -35,17 +35,19 @@ def main(out):
         jobs = [(s, h, mode, "rule", 0.0) for s, h in houses]
         with ProcessPoolExecutor(WORKERS) as pool:
             rows = list(pool.map(c._job, jobs, chunksize=4))
-        json.dump(rows, open(os.path.join(out, f"rule-{mode}.json"), "w"))
-        before = json.load(open(os.path.join(C396, "test-c", f"rule-{mode}.json")))
-        old = {(r["index"]): r for r in before}
-        changed = [{"index": r["index"], "before": {k: old[r["index"]].get(k) for k in ("outcome", "goals")},
+        with open(os.path.join(out, f"rule-{mode}.json"), "w") as f:
+            json.dump(rows, f)
+        with open(os.path.join(C396, "test-c", f"rule-{mode}.json")) as f:
+            before = json.load(f)
+        old = {(r["split"], r["index"]): r for r in before}
+        changed = [{"index": r["index"], "before": {k: o.get(k) for k in ("outcome", "goals")},
                     "after": {k: r.get(k) for k in ("outcome", "goals")}}
-                   for r in rows if r["index"] in old
-                   and (r.get("outcome"), r.get("goals")) != (old[r["index"]].get("outcome"),
-                                                               old[r["index"]].get("goals"))]
+                   for r in rows if (o := old.get((r["split"], r["index"]))) is not None
+                   and (r.get("outcome"), r.get("goals")) != (o.get("outcome"), o.get("goals"))]
         result[mode] = {"before": summary(before), "after": summary(rows), "changed": changed}
         print(mode, json.dumps(result[mode]), flush=True)
-    json.dump(result, open(os.path.join(out, "score.json"), "w"), indent=1)
+    with open(os.path.join(out, "score.json"), "w") as f:
+        json.dump(result, f, indent=1)
 
 
 if __name__ == "__main__":

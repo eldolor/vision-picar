@@ -85,3 +85,18 @@ def test_the_count_belongs_to_one_place():
     agent._at_target = lambda tx, ty: True
     _tick(agent)
     assert agent.retry.failures_near(*other) == 0 and agent.retry.failures_near(*point) == 0
+
+
+def test_a_detector_that_flickers_does_not_livelock():
+    """/code-review on 37d4930 claimed a frame that misses the target restarts
+    the count for ever. It does not loop (a guard, not red on dev): a missed
+    frame finds the sighting already let go and sends a frontier goal."""
+    agent, point, sent = _stuck()
+    seen = {"n": 0}
+
+    def flicker(frame):
+        seen["n"] += 1
+        return point if seen["n"] % 2 else None
+    agent._sighting = flicker
+    outs = [_tick(agent) for _ in range(4 * CLOSE_IN_REFUSED)]
+    assert any(o[0] == "GOAL" for o in outs) or agent.retry.failures_near(*point), outs

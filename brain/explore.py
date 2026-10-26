@@ -472,21 +472,18 @@ class ExploreAgent(MissionAgent):
             return self._do_pending()
 
         sighting = self._sighting(frame)
-        unfound = False
         if sighting is not None:
             tx, ty = sighting
             self._last_seen = (tx, ty)
             moved = (self._approach is None
                      or math.hypot(tx - self._approach[0], ty - self._approach[1]) > APPROACH_MOVED_M)
             if moved and self.retry.available(tx, ty, now):
-                self._in_sight_unfound = 0
                 return self._send_approach(tx, ty, now, scene)
             if (self._goal is None and self._at_target(tx, ty)
                     and self.retry.available(tx, ty, now)):
                 # 3.80.G: here already, and still in sight -- close in.
                 closed = self._close_in(scene, (tx, ty))
                 if closed is not None:
-                    self._in_sight_unfound = 0
                     return closed
                 # 3.106: nothing closes in (the frame's sightings) and it is
                 # still not found -- in the simulator, a target whose centre
@@ -496,22 +493,18 @@ class ExploreAgent(MissionAgent):
                 # WAIT passes no simulated time, so nothing else ended it.
                 # Not on the tick found is recorded (after this, from this
                 # scene: `MissionMemory.record_observation`), and counted at
-                # one place only.
-                target = (self.memory.target_object or "").lower()
-                found_now = bool(target) and any(
-                    target in str(o).lower() for o in scene.get("important_objects") or ())
-                unfound = not found_now
-                if unfound and (self._in_sight_at is None or math.hypot(
-                        tx - self._in_sight_at[0], ty - self._in_sight_at[1]) > APPROACH_MOVED_M):
-                    self._in_sight_unfound, self._in_sight_at = 0, (tx, ty)
-                if unfound:
+                # one place only; a frame that misses it does not restart it.
+                if any(self.memory.names_target(o) for o in scene.get("important_objects") or ()):
+                    self._in_sight_unfound, self._in_sight_at = 0, None
+                else:
+                    if self._in_sight_at is None or math.hypot(
+                            tx - self._in_sight_at[0], ty - self._in_sight_at[1]) > APPROACH_MOVED_M:
+                        self._in_sight_unfound, self._in_sight_at = 0, (tx, ty)
                     self._in_sight_unfound += 1
-                if unfound and self._in_sight_unfound >= CLOSE_IN_REFUSED:
-                    self._in_sight_unfound = 0
-                    self._give_up_sighting(tx, ty, now)
-                    return self._do_pending()
-        if not unfound:
-            self._in_sight_unfound = 0
+                    if self._in_sight_unfound >= CLOSE_IN_REFUSED:
+                        self._in_sight_unfound, self._in_sight_at = 0, None
+                        self._give_up_sighting(tx, ty, now)
+                        return self._do_pending()
 
         if self._goal is not None:
             return "WAIT", True, f"nav2 {state}: {self._goal['kind']}"
@@ -604,7 +597,6 @@ class ExploreAgent(MissionAgent):
         # read timeout after the bridge took the goal) leaves that goal
         # driving; it is still the mission's own, never "someone else's".
         self._attempts.append((x_m, y_m))
-        self._in_sight_unfound = 0          # 3.106: a goal starts the count again
         try:
             reply = self.navigator.set_goal(x_m, y_m) or {}
         except Preempted:
@@ -638,6 +630,7 @@ class ExploreAgent(MissionAgent):
         # was (3.76 K3: a target reached by a frontier goal began at the
         # last one's count). Not by the target's estimate, which can flip.
         self._close_in_refused = 0
+        self._in_sight_unfound, self._in_sight_at = 0, None    # 3.106, the same
         self.goals_sent += 1
         self.last_event = f"goal sent ({kind}) to ({x_m:.2f}, {y_m:.2f})"
         self._event("goal_sent", kind=kind, goal=[round(x_m, 2), round(y_m, 2)], **info)

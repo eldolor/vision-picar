@@ -659,9 +659,11 @@ logged and counted in `stats.cloud_errors`, not raised into B3.2).
   detector sees any part of an object, its found rule only the centre, so a
   table leg can hide one from the other: house `train:1395`): the
   `_in_sight_unfound` ticks are counted at one place (a sighting more than
-  `APPROACH_MOVED_M` off starts again; any goal sent does too), not on the
-  tick the scene names the target (found is recorded from it after
-  `_choose`). The first faces it (`_back_to_sighting`); at
+  `APPROACH_MOVED_M` off starts again; so does a goal accepted, where
+  close-in's count restarts), not on the tick the scene names the target
+  (`MissionMemory.names_target()`, the found rule's own match: found is
+  recorded from that scene after `_choose`). A frame that misses the target
+  neither counts nor restarts it. The first faces it (`_back_to_sighting`); at
   `CLOSE_IN_REFUSED` the sighting is given up as close-in's is
   (`_give_up_sighting()`: one retry failure, forgotten, REVERSE). A WAIT
   passes no simulated time, so before this nothing ended it.
