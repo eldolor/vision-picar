@@ -248,6 +248,9 @@ class ExploreAgent(MissionAgent):
         self._local_track_fn = local_track_fn   # the tier's `set_local_track`
         self.close_ins = 0             # 3.80.G: last-approach verbs executed
         self._close_in_refused = 0
+        # 3.106: ticks in a row in the band, the target in sight, nothing to
+        # close in with, and still not found.
+        self._in_sight_unfound = 0
         self._refusal_noted = False
         self._scene: dict = {}         # 3.80.G: this step's scene (sight_from perception)
         self.navigator = navigator
@@ -468,19 +471,39 @@ class ExploreAgent(MissionAgent):
             return self._do_pending()
 
         sighting = self._sighting(frame)
+        unfound = False
         if sighting is not None:
             tx, ty = sighting
             self._last_seen = (tx, ty)
             moved = (self._approach is None
                      or math.hypot(tx - self._approach[0], ty - self._approach[1]) > APPROACH_MOVED_M)
             if moved and self.retry.available(tx, ty, now):
+                self._in_sight_unfound = 0
                 return self._send_approach(tx, ty, now, scene)
             if (self._goal is None and self._at_target(tx, ty)
                     and self.retry.available(tx, ty, now)):
                 # 3.80.G: here already, and still in sight -- close in.
                 closed = self._close_in(scene, (tx, ty))
                 if closed is not None:
+                    self._in_sight_unfound = 0
                     return closed
+                # 3.106: nothing closes in (the frame's sightings) and it is
+                # still not found -- in the simulator, a target whose centre
+                # something hides from the found rule (house train:1395, a
+                # table leg). Faced first (below), then at CLOSE_IN_REFUSED
+                # such ticks a failure and a back-off, as close-in does: a
+                # WAIT passes no simulated time, so nothing else ended it.
+                unfound = True
+                self._in_sight_unfound += 1
+                if self._in_sight_unfound >= CLOSE_IN_REFUSED:
+                    self._in_sight_unfound = 0
+                    self.retry.fail(tx, ty, now, known=self._known_at)
+                    self._last_seen = None
+                    self._approach = None
+                    self._pending.insert(0, "REVERSE")
+                    return self._do_pending()
+        if not unfound:
+            self._in_sight_unfound = 0
 
         if self._goal is not None:
             return "WAIT", True, f"nav2 {state}: {self._goal['kind']}"
