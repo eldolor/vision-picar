@@ -962,8 +962,9 @@
                 "and a goal still driving may be cancelled", "ok");
     } catch (e) {
       if (!mine()) return;
-      // Aborted with no answer read: an answer whose body was being read when
-      // the timer fired still carries its status and goes to its own branch.
+      // Aborted with no status: no answer, or a 2xx whose body was cut off
+      // (an error answer keeps its status and goes to its own branch). Either
+      // way the re-map may have started, which is what this says.
       if (ctl.signal.aborted && !e.status) {
         showToast("Re-map: no answer in " + REMAP_GIVE_UP_MS / 1000 + " s, stopped waiting -- " +
                   "it may have started; check the map before asking again", "warn");
@@ -1504,8 +1505,12 @@
     state.remapUnsupported = false;
     state.remapArmedUntil = 0;
     if (state.remapAsk && state.remapAsk.url !== url) {
-      state.remapAsk.ctl.abort();       // not left open on the old server
+      // Not left open on the old server -- but it may have reached it, and a
+      // re-map there can cancel a goal, so the person is told.
+      state.remapAsk.ctl.abort();
       state.remapAsk = null;
+      showToast("A re-map asked of the last server was not answered -- it may have started " +
+                "there", "warn");
     }
     state.lastWorldError = null;
     state.lastGoal = null;

@@ -179,19 +179,26 @@ def test_a_lost_connection_takes_the_button_away(browser, twin_server):
     page.context.close()
 
 
-def test_an_answer_from_another_server_is_dropped(browser, twin_server, private_twin_server):
-    """Review round 1: a 501 from the last server, landing after a reconnect
-    to another, hid the button for the new one."""
+def test_a_request_to_another_server_is_aborted_and_said(browser, twin_server, private_twin_server):
+    """Review rounds 1-5: a reconnect to another server ends the request to the
+    last one -- aborted, not left open, its answer never applied (a 501 there
+    once hid the button for the new server) -- and says it may have started."""
     page, errors = _open(browser, twin_server)
     held = _hold(page)
+    failed = []
+    page.on("requestfailed", lambda r: failed.append(r.url) if "/world/remap" in r.url else None)
     _remap(page)
     page.wait_for_timeout(300)
     assert len(held) == 1
     _reconnect(page, private_twin_server)
     sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now", timeout=8000)
-    held[0].fulfill(status=501, content_type="application/json",
-                    body=json.dumps({"detail": "this world keeps no saved map"}))
     page.wait_for_timeout(500)
+    assert len(failed) == 1, f"the released request was left open: {failed}"
+    toasts = page.locator("#toast-stack").text_content() or ""
+    assert "may have started there" in toasts, toasts
+    # The abort's own rejection reads as nothing else: not "stopped waiting",
+    # not a refusal, and the new server's button is untouched.
+    assert "stopped waiting" not in toasts and "Not re-mapped" not in toasts, toasts
     sync_api.expect(page.locator("#btn-remap")).to_be_visible()
     sync_api.expect(page.locator("#btn-remap")).to_be_enabled()
     assert not errors, errors
@@ -238,6 +245,7 @@ def test_away_and_back_does_not_put_two_requests_out(browser, twin_server, priva
     page.wait_for_timeout(300)
     btn = page.locator("#btn-remap")
     sync_api.expect(btn).to_have_text("Asking\u2026")
+    assert len(held) == 2, f"one aborted and one live, no more: {len(held)}"
     held[-1].fulfill(status=200, content_type="application/json",
                      body=json.dumps({"remapping": True}))
     sync_api.expect(page.locator(".toast").last).to_contain_text("Re-mapping", timeout=3000)
