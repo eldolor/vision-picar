@@ -351,8 +351,8 @@ where noted.
   (tolerant of people and pets, and never on a robot whose scans no longer
   fit at all), is built but ships off (the user, 2026-10-24): live it found
   every moved object, and also fired on a fixed wall. So a moved object
-  heals only on a re-map started otherwise: a person's request, or the
-  robot entering the saved map's unknown with the object then in view.
+  in known space sets nothing off: it heals when a person asks for a
+  re-map, or by chance on a re-map that entering unknown started.
 - **How the robot keeps its place in large furnished rooms** (3.39). This is
   a problem every indoor robot with a low 2D lidar meets: repeated features
   confuse scan matching, open space gives it little to hold, and SLAM must

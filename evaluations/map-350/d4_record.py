@@ -244,6 +244,11 @@ def main(argv):
             moves = changes(house)[3] if kind == "changed" else ()
             print(f"--- {kind}-{house} {time.strftime('%H:%M:%S')} moves {moves}", flush=True)
             try:
+                # An earlier recording here would be replayed beside this
+                # base if this session raised (review): gone first.
+                for old in (f"{kind}-{house}.pkl", f"{kind}-{house}.pkl.ros"):
+                    if os.path.exists(os.path.join(out_dir, old)):
+                        os.remove(os.path.join(out_dir, old))
                 res, _, _ = d4.map_run(house, base, moves)
                 with open(os.path.join(out_dir, f"{kind}-{house}.base.json"), "w") as f:
                     json.dump({"moves": moves, **res}, f, default=str)

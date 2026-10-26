@@ -632,7 +632,12 @@ def main(argv):
             except Exception as e:  # noqa: BLE001 -- recorded, the next run goes on
                 res = {"house": house, "error": f"{type(e).__name__}: {e}"}
             res["image"] = d3.IMAGE
-            res["remap_contradiction"] = d3.remap_contradiction()
+            # The bridge's own reading, not the shell's (review): a run the
+            # trigger was not on for judges nothing about it.
+            res["remap_contradiction"] = seen = d3.bridge_remap_contradiction()
+            if kind in ("b", "d") and seen is not True and res.get("verdict"):
+                res["verdict"] = {k: f"INVALID (the bridge's contradiction trigger read {seen}; "
+                                     f"criteria said {v})" for k, v in res["verdict"].items()}
             with open(os.path.join(OUT, f"{name}.json"), "w") as f:
                 json.dump(res, f, indent=1, default=str)
             print(f"    {res.get('verdict') or res.get('error')}", flush=True)

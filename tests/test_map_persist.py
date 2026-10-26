@@ -1049,10 +1049,15 @@ def test_the_contradiction_trigger_ships_off_and_entered_unknown_still_re_maps(
     """3.50.D4 (the user, 2026-10-24): off unless PICAR_REMAP_CONTRADICTION=1.
     Off, no scan is filed or judged, and entering the saved unknown still
     asks for the re-map."""
-    # The shipped default: the module imported with the variable unset (review).
-    monkeypatch.delenv("PICAR_REMAP_CONTRADICTION", raising=False)
-    importlib.reload(bridge_mod)
-    assert bridge_mod.REMAP_CONTRADICTION is False
+    # The shipped default and the parse, by importing the module (review):
+    # unset is off, and only exactly "1" is on.
+    for value, on in (("true", False), ("0", False), ("1", True), (None, False)):
+        if value is None:
+            monkeypatch.delenv("PICAR_REMAP_CONTRADICTION", raising=False)
+        else:
+            monkeypatch.setenv("PICAR_REMAP_CONTRADICTION", value)
+        importlib.reload(bridge_mod)
+        assert bridge_mod.REMAP_CONTRADICTION is on, value
     pose = (0.0, 0.0, 0.0)
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.5, 0.5, 0.0))
     b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))

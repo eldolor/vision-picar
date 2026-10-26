@@ -98,6 +98,16 @@ def remap_contradiction():
     return v == "1"
 
 
+def bridge_remap_contradiction():
+    """What the running bridge reports (`/health` slam.remap_contradiction):
+    the setting a result was measured under, or None with no bridge up."""
+    try:
+        return httpx.get(f"http://127.0.0.1:{de.BRIDGE}/health",
+                         timeout=10).json()["slam"].get("remap_contradiction")
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return None
+
+
 def container(maps, bridge):
     """Restart only the container; watch it come up at 10 Hz. Returns the
     watch: when the reload was judged, and whether anything leaked before."""
@@ -424,7 +434,7 @@ def main(which):
             name = f"{house}-e"
         else:
             res = lap_runs() if name == "lap" else house_runs(name)
-        res["remap_contradiction"] = remap_contradiction()
+        res["remap_contradiction"] = bridge_remap_contradiction()
         with open(os.path.join(OUT, f"{name}.json"), "w") as f:
             json.dump(res, f, indent=1)
         print(name, json.dumps(res.get("verdicts") or res.get("D3-c") or res.get("D3-e")
