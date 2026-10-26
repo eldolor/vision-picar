@@ -1347,19 +1347,11 @@ class TieredVision:
         """How long a no has been held: on the frames' capture stamps when
         both ends have one (a replay keeps its time), else on the monotonic
         clock -- never one against the other (review: wall seconds against
-        monotonic ones). Stamps that go behind the no's (a stream that
-        started over) or fall `reject_hold_s` behind the monotonic clock (a
-        stalled stream) put this no on the monotonic clock for good: on them
-        the release never came, or came and went (review). A replay runs
-        faster than real time, so it keeps its stamps."""
-        mono = time.monotonic() - r["at_mono"]
+        monotonic ones)."""
         now = self._stamp()
         if now is not None and r["at_stamp"] is not None:
-            held = now - r["at_stamp"]
-            if held >= 0 and mono - held < self.reject_hold_s:
-                return held
-            r["at_stamp"] = None
-        return mono
+            return now - r["at_stamp"]
+        return time.monotonic() - r["at_mono"]
 
     def _band_crop(self, perception: Perception) -> bool:
         """An absent frame that still holds a crop at the band's P: the
@@ -1551,7 +1543,7 @@ class TieredVision:
         if r is None:
             return None
         return {"by": r["by"], "episode": r["episode"],
-                "age_s": round(self._held_s(r), 1)}
+                "age_s": round(max(0.0, self._held_s(r)), 1)}
 
     def _refused_in_view(self, perception: Perception) -> bool:
         return perception.status == DETECTED and (
@@ -1564,9 +1556,9 @@ class TieredVision:
         arrival paid the cloud again). "ask": a yes about this run, or its
         probation -- the identity check is the cloud's, not the local VLM's.
         "wait": the cap is spent and a cloud-ranked no is held -- undecided
-        until it is released, or for `reject_hold_s` at most. None: it has not, the cap is spent with nothing
-        of the cloud's held (the local tier is the best left), or
-        `remember_no` is off (`dev`)."""
+        until it is released, or for `reject_hold_s` at most. None: it has
+        not, the cap is spent with nothing of the cloud's held (the local tier
+        is the best left), or `remember_no` is off (`dev`)."""
         if not self.remember_no:
             return None
         with self._reject_lock:

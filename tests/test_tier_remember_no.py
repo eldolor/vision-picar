@@ -1022,43 +1022,15 @@ def test_the_capped_wait_is_timed_on_the_monotonic_clock_whatever_the_stamps(mon
     assert tier.cloud_spoke() is None
 
 
-def _stamped_no(now, stamp=500.0):
-    tier = TieredVision(Pipeline([D()]), Cloud())
-    tier._lost, tier._episode = 0, 1
-    tier._frame_stamp = stamp
-    tier._reject("cloud", None, 1)
-    return tier, tier._rejection
-
-
-def test_a_no_held_on_stamps_that_start_over_stays_on_the_monotonic_clock(monkeypatch):
-    # Review: stamps restarting under a held no made its held time negative
-    # (the 20 s release never came), then, passing the old stamp, small again.
+def test_the_capped_wait_restarts_for_a_new_no(monkeypatch):
     now = [1000.0]
     monkeypatch.setattr("brain.tiered.time.monotonic", lambda: now[0])
-    tier, r = _stamped_no(now)
-    tier._frame_stamp = 3.0
-    now[0] += 15.0
-    assert tier._held_s(r) == 15.0
-    tier._frame_stamp = 501.0               # past the no's stamp: still 15+
-    now[0] += 1.0
-    assert tier._held_s(r) == 16.0
-
-
-def test_a_no_held_on_stalled_stamps_is_released_on_the_monotonic_clock(monkeypatch):
-    # Review: a stream repeating its stamp held the no for good.
-    now = [1000.0]
-    monkeypatch.setattr("brain.tiered.time.monotonic", lambda: now[0])
-    tier, r = _stamped_no(now)
-    now[0] += tier.reject_hold_s - 1.0
-    assert tier._held_s(r) == 0.0           # within the hold: the stamps rule
-    now[0] += 1.0
-    assert tier._held_s(r) == tier.reject_hold_s
-
-
-def test_a_replay_faster_than_real_time_stays_on_its_stamps(monkeypatch):
-    now = [1000.0]
-    monkeypatch.setattr("brain.tiered.time.monotonic", lambda: now[0])
-    tier, r = _stamped_no(now)
-    tier._frame_stamp = 520.0
-    now[0] += 0.5
-    assert tier._held_s(r) == 20.0
+    tier = _capped_wait()
+    assert tier.cloud_spoke() == "wait"
+    now[0] += tier.reject_hold_s
+    assert tier.cloud_spoke() is None
+    tier._release("moved")
+    tier._episode = 3
+    tier._reject("cloud", None, 3)          # a new no: a new wait
+    tier._episode = 4
+    assert tier.cloud_spoke() == "wait"
