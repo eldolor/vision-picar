@@ -790,7 +790,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   mission started elsewhere that has not moved yet is not seen.
   `HANDOFF-2026-10-11-3.69-3.72.md`.
 * **Explore's next goal can be learned (3.65 phase 2), merged 2026-10-12;
-  default still `rule`.** `explore_goal_policy: rule | learned | network`
+  default still `rule`.** `explore_goal_policy: rule | learned | network | rooms`
   (env `EXPLORE_GOAL_POLICY`; `brain/goal_policy.py`). Only explore's
   choice among the goals the rules already allow is learned; nothing else.
   `learned` (10 weights, cross-entropy method) FAILED criterion 1 (-18%
@@ -803,7 +803,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   and scores higher, but saves only 11% of median goals (bar 20%).
   Goal choice was slow on the Jetson at SLAM resolution (1.4 s p90, the
   rule's own); fixed by 3.77. Trainers and `time_choice.py` in
-  `evaluations/explore-365/`. **3.100 (2026-10-25, the user):** `learned`
+  `evaluations/explore-365/`. **3.96 (merged 2026-10-26; default still
+  `rule`):** F-large, a network on room features (unentered rooms, doorways,
+  a room prior for the target), is `explore_goal_policy: rooms`
+  (`brain/explore_goal_rooms.json`). On the 588 test houses criteria 2-4 met
+  (median goals R 7 -> 4, U 9 -> 5, finds held); 5 FAILED (one close-in
+  livelock, house 1395), 6 FAILED (312.9 ms p90 a choice on the Jetson,
+  bar 100), 8 FAILED (3 rule-pinning tests); live 7 met on EC2 (3/3 found
+  per arm, 0 contacts, median 427 s each). A find mission's map has no room
+  labels, and without them it saves little. **3.100 (2026-10-25, the user):** `learned`
   on the same 613 fresh houses, never run there before: 608 found, median
   goals -11.1%, metres +4.7% -- FAILED as the network did, and nearly the
   same policy (the same 6 houses gained and 4 lost; equal goals in 559 of
