@@ -395,12 +395,13 @@
     return err;
   }
 
-  async function apiPost(path, body, extraHeaders) {
+  async function apiPost(path, body, extraHeaders, signal) {
     const res = await fetch(state.serverUrl + path, {
       method: "POST",
       headers: authHeaders(Object.assign({ "Content-Type": "application/json" },
                                          extraHeaders || {})),
       body: JSON.stringify(body || {}),
+      signal: signal,
     });
     if (!res.ok) throw apiError(res, errorDetail(await res.json().catch(() => ({}))));
     return res.json();
@@ -906,12 +907,14 @@
   // or 404 a world with no saved map, and the button goes. A re-map can
   // cancel a live goal (the brain's too), so it takes two taps: the first
   // arms it for REMAP_ARM_MS, and a second sooner than REMAP_MIN_GAP_MS (a
-  // double-tap, a bounce) does not count. One request at a time: the button
-  // stays "Asking..." until the server answers; past REMAP_SLOW_MS it says the
-  // re-map may have started, and the answer is still shown when it lands.
+  // double-tap, a bounce) does not count. One request at a time
+  // (`state.remapAsk`, numbered): the button reads "Asking..." until it
+  // settles; past REMAP_SLOW_MS a warning says it may have started, and past
+  // REMAP_GIVE_UP_MS the request is aborted and the button freed.
   var REMAP_ARM_MS = 4000;
   var REMAP_MIN_GAP_MS = 400;
   var REMAP_SLOW_MS = 20000;
+  var REMAP_GIVE_UP_MS = 60000;
 
   function updateRemapButton() {
     var row = document.querySelector(".remap-row");
@@ -919,7 +922,7 @@
     if (!row || !btn) return;
     var offered = state.connected && isSlamMap(state.lastMap) && !state.remapUnsupported;
     row.style.display = offered ? "" : "none";
-    var busy = !!state.remapAskedOf;
+    var busy = !!state.remapAsk;
     var armed = !busy && Date.now() < (state.remapArmedUntil || 0);
     btn.disabled = !offered || busy;
     btn.textContent = busy ? "Asking\u2026" : armed ? "Tap again to re-map" : "Re-map now";
@@ -927,7 +930,7 @@
   }
 
   async function remapNow() {
-    if (state.remapAskedOf) return;
+    if (state.remapAsk) return;
     var now = Date.now();
     if (now >= (state.remapArmedUntil || 0)) {
       state.remapArmedAt = now;
@@ -938,26 +941,31 @@
     }
     if (now - state.remapArmedAt < REMAP_MIN_GAP_MS) return;   // a double-tap
     state.remapArmedUntil = 0;
-    // The request belongs to the server it went to: a reconnect to another
-    // URL drops its answer, a reconnect to the same one does not.
-    var url = state.serverUrl;
-    state.remapAskedOf = url;
+    // This request is current only while state.remapAsk is this one: a
+    // reconnect to another URL releases it (connect()), and its answer is
+    // then dropped; a reconnect to the same URL keeps it.
+    var ask = {id: (state.remapAskSeq = (state.remapAskSeq || 0) + 1), url: state.serverUrl};
+    var mine = function () { return state.remapAsk === ask; };
+    state.remapAsk = ask;
     updateRemapButton();
+    var ctl = new AbortController();
     var slow = setTimeout(function () {
-      if (state.remapAskedOf === url) {
-        showToast("Re-map: no answer in " + REMAP_SLOW_MS / 1000 + " s -- it may have started; " +
-                  "watch the map", "warn");
-      }
+      if (mine()) showToast("Re-map: no answer in " + REMAP_SLOW_MS / 1000 + " s -- it may have " +
+                            "started; watch the map", "warn");
     }, REMAP_SLOW_MS);
+    var giveUp = setTimeout(function () { ctl.abort(); }, REMAP_GIVE_UP_MS);
     try {
       // A person's request, named as the map tap is.
-      await apiPost("/world/remap", {}, {"x-driver": DRIVER_DPAD});
-      if (state.serverUrl !== url) return;
+      await apiPost("/world/remap", {}, {"x-driver": DRIVER_DPAD}, ctl.signal);
+      if (!mine()) return;
       showToast("Re-mapping from here: goals wait until the map is ready again, " +
                 "and a goal still driving may be cancelled", "ok");
     } catch (e) {
-      if (state.serverUrl !== url) return;
-      if (e.status === 404 || e.status === 501) {
+      if (!mine()) return;
+      if (ctl.signal.aborted) {
+        showToast("Re-map: no answer in " + REMAP_GIVE_UP_MS / 1000 + " s, stopped waiting -- " +
+                  "it may have started; check the map before asking again", "warn");
+      } else if (e.status === 404 || e.status === 501) {
         state.remapUnsupported = true;
         showToast("Not re-mapped: " + (e.message || "this robot keeps no saved map"), "err");
       } else if (e.status === 409) {
@@ -967,7 +975,8 @@
       }
     } finally {
       clearTimeout(slow);
-      if (state.remapAskedOf === url) state.remapAskedOf = null;
+      clearTimeout(giveUp);
+      if (mine()) state.remapAsk = null;
       updateRemapButton();
     }
   }
@@ -1489,10 +1498,10 @@
     state.worldErrorUnsupported = false;
     state.goalsUnsupported = false;
     // 3.50.D4b: a re-map asked of another server answers for it alone; one
-    // asked of this same server still lands (remapNow() checks the URL).
+    // asked of this same server is still the one out.
     state.remapUnsupported = false;
     state.remapArmedUntil = 0;
-    if (state.remapAskedOf && state.remapAskedOf !== url) state.remapAskedOf = null;
+    if (state.remapAsk && state.remapAsk.url !== url) state.remapAsk = null;
     state.lastWorldError = null;
     state.lastGoal = null;
     state.serverSecret = document.getElementById("cfg-server-secret").value.trim();

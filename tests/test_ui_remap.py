@@ -217,6 +217,56 @@ def test_a_reconnect_to_the_same_server_keeps_its_answer(browser, twin_server):
     page.context.close()
 
 
+def test_away_and_back_does_not_put_two_requests_out(browser, twin_server, private_twin_server):
+    """Review round 3: a request was known only by its URL, so after A, B and
+    back to A the first request's end freed the button while the second was
+    still out, and showed the first one's answer."""
+    page, errors = _open(browser, twin_server)
+    held = _hold(page)
+    _remap(page)
+    page.wait_for_timeout(300)
+    _reconnect(page, private_twin_server)
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now", timeout=8000)
+    _reconnect(page, twin_server)
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now", timeout=8000)
+    _remap(page)
+    page.wait_for_timeout(300)
+    assert len(held) == 2, held
+    held[0].fulfill(status=409, content_type="application/json",
+                    body=json.dumps({"detail": "first request's answer"}))
+    page.wait_for_timeout(500)
+    btn = page.locator("#btn-remap")
+    sync_api.expect(btn).to_have_text("Asking\u2026")
+    sync_api.expect(btn).to_be_disabled()
+    assert "first request" not in (page.locator("#toast-stack").text_content() or "")
+    held[1].fulfill(status=200, content_type="application/json",
+                    body=json.dumps({"remapping": True}))
+    sync_api.expect(btn).to_have_text("Re-map now", timeout=3000)
+    assert not errors, errors
+    page.context.close()
+
+
+def test_a_hung_request_is_given_up(browser, twin_server):
+    """Review round 3: with nothing to end it, a request that never answered
+    held the button at "Asking..." until the page was reloaded."""
+    page, errors = _open(browser, twin_server)
+    # The limits are `var`s in the page's closure: the clock is moved instead,
+    # installed before the taps so their timers are the fake clock's.
+    page.clock.install()
+    held = _hold(page)
+    _remap(page)
+    page.wait_for_timeout(300)
+    assert len(held) == 1
+    page.clock.run_for(21000)
+    sync_api.expect(page.locator(".toast").last).to_contain_text("may have started")
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Asking\u2026")
+    page.clock.run_for(40000)
+    sync_api.expect(page.locator(".toast").last).to_contain_text("stopped waiting", timeout=3000)
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now")
+    assert not errors, errors
+    page.context.close()
+
+
 def test_the_phone_screenshot_of_the_control(browser, twin_server):
     """Evidence (CLAUDE.md section 7): the Sim tab at 390 px on a SLAM map,
     the control under the map, no sideways scroll."""

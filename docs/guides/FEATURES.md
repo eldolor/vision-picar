@@ -825,7 +825,8 @@ bridge's reason for a 409 (not localising on a saved map, already
 re-mapping), the button kept. A world without SLAM (501) takes the button
 away for that connection. One request at a time: the button reads "Asking..."
 until the server answers; after 20 s without an answer a warning says the re-map
-may have started, and the answer is still shown when it comes. After a
+may have started (the answer is still shown if it comes), and after 60 s the
+page stops waiting and frees the button. After a
 reconnect to another server the old request's answer is ignored. Phone
 screenshots: `docs/evaluations/twin-3.50-D4b-remap.png` and
 `twin-3.50-D4b-remap-armed.png`.
