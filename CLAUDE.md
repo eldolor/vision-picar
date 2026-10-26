@@ -811,7 +811,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   livelock, house 1395), 6 FAILED (312.9 ms p90 a choice on the Jetson,
   bar 100), 8 FAILED (3 rule-pinning tests); live 7 met on EC2 (3/3 found
   per arm, 0 contacts, median 427 s each). A find mission's map has no room
-  labels, and without them it saves little. **3.100 (2026-10-25, the user):** `learned`
+  labels, and without them it saves nothing in mode R (-20% goals in U).
+  **3.100 (2026-10-25, the user):** `learned`
   on the same 613 fresh houses, never run there before: 608 found, median
   goals -11.1%, metres +4.7% -- FAILED as the network did, and nearly the
   same policy (the same 6 houses gained and 4 lost; equal goals in 559 of
