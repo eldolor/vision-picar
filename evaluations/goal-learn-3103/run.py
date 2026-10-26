@@ -170,43 +170,42 @@ def cmd_score(root: str) -> dict:
     return rep
 
 
-def cmd_time(root: str) -> None:
-    """Criterion 5 on 3.96's benchmark: F-large's whole choice, and the
-    chosen arm's (the same choice plus lidar_gain and its network)."""
-    sys.path.insert(0, os.path.join(ROOT_REPO, "evaluations", "goal-learn-396"))
-    import time_choice as T396
+def lean_choice(m, x, y, heading, trail, P, score=score_np) -> int:
+    """One whole choice on F-lean's 18 facts (3.96's 17 plus lidar_gain),
+    scored by `score(P, "F", X)`; returns the pool's size (0: no choice)."""
     from brain import frontier as fr
     from brain.goal_policy import features
-    from brain.room_labels import segment
-    from features import coarse, room_features
-    from model import to_np
+    from features import room_features
     from tests import frontier_compare as fc
-    shape = json.load(open(os.path.join(root, "chosen.json")))["chosen"]
-    P_lean = {k: np.asarray(v, dtype=np.float32)
-              for k, v in json.load(open(os.path.join(root, arm(shape), "best.json")))["params"].items()}
-    P_large = to_np(json.load(open(T396.BEST))["params"])
+    pose = {"x_m": x, "y_m": y, "heading_deg": heading}
+    r = fr.reach(m, x, y, clearance_m=fc.LEAVE)
+    fs = fr.find_frontiers(m, x, y, clearance_m=fc.LEAVE, reach_map=r)
+    gs = fr.find_view_gaps(m, x, y, set(), clearance_m=fc.LEAVE, reach_map=r)
+    feats = [features(m, pose, f.goal, kind="frontier", path_m=f.distance_m, size_m=f.size_m)
+             for f in fs]
+    feats += [features(m, pose, g.goal, kind="view", path_m=g.distance_m, area_m2=g.area_m2)
+              for g in gs]
+    pool = [("frontier", f, i) for i, f in enumerate(fs)] + [("view", g, None) for g in gs]
+    if not pool:
+        return 0
+    goals = [c.goal for _, c, _ in pool]
+    room = room_features(m, pose, goals, trail=trail, types=[None] * len(goals), prior={})
+    extra = lean_features(None, m, pose, pool, feats, trail, 0.0)
+    X = np.asarray([a + b + c for a, b, c in zip(feats, room, extra)], dtype=np.float32)
+    int(np.argmax(score(P, "F", X)))
+    return len(pool)
 
-    def lean_choice(m, x, y, heading, trail):
-        pose = {"x_m": x, "y_m": y, "heading_deg": heading}
-        r = fr.reach(m, x, y, clearance_m=fc.LEAVE)
-        fs = fr.find_frontiers(m, x, y, clearance_m=fc.LEAVE, reach_map=r)
-        gs = fr.find_view_gaps(m, x, y, set(), clearance_m=fc.LEAVE, reach_map=r)
-        feats = [features(m, pose, f.goal, kind="frontier", path_m=f.distance_m, size_m=f.size_m)
-                 for f in fs]
-        feats += [features(m, pose, g.goal, kind="view", path_m=g.distance_m, area_m2=g.area_m2)
-                  for g in gs]
-        pool = [("frontier", f, i) for i, f in enumerate(fs)] + [("view", g, None) for g in gs]
-        if not pool:
-            return 0
-        goals = [c.goal for _, c, _ in pool]
-        room = room_features(m, pose, goals, trail=trail, types=[None] * len(goals), prior={})
-        extra = lean_features(None, m, pose, pool, feats, trail, 0.0)
-        X = np.asarray([a + b + c for a, b, c in zip(feats, room, extra)], dtype=np.float32)
-        int(np.argmax(score_np(P_lean, "F", X)))
-        return len(pool)
 
-    out = {"host": platform.node(), "machine": platform.machine(), "shape": shape}
-    for name in ("F-large", "F-lean"):
+def bench(arms: dict) -> dict:
+    """3.96's benchmark: every arm's whole choice at the same poses.
+    arms: name -> f(m, x, y, heading, trail) returning the pool's size."""
+    sys.path.insert(0, os.path.join(ROOT_REPO, "evaluations", "goal-learn-396"))
+    import time_choice as T396
+    from brain.room_labels import segment
+    from features import coarse
+    from tests import frontier_compare as fc
+    out = {"host": platform.node(), "machine": platform.machine()}
+    for name, choose in arms.items():
         rng, whole = random.Random(fc.SEED), []
         for path in fc.MAPS:
             m = fc.load(path)
@@ -214,13 +213,28 @@ def cmd_time(root: str) -> None:
             for x, y in fc.poses(m, T396.POSES, rng):
                 trail, heading = T396.trail_near(m, x, y), rng.uniform(0, 360)
                 t = time.perf_counter()
-                n = (T396.choice(m, x, y, heading, P_large, trail)[0] if name == "F-large"
-                     else lean_choice(m, x, y, heading, trail))
+                n = choose(m, x, y, heading, trail)
                 if n:
                     whole.append((time.perf_counter() - t) * 1000)
         out[name] = {"poses": len(whole), "p50_ms": round(statistics.median(whole), 1),
                      "p90_ms": round(T396.p90(whole), 1), "max_ms": round(max(whole), 1)}
         print(name, out[name], flush=True)
+    return out
+
+
+def cmd_time(root: str) -> None:
+    """Criterion 5 on 3.96's benchmark: F-large's whole choice, and the
+    chosen arm's (the same choice plus lidar_gain and its network)."""
+    sys.path.insert(0, os.path.join(ROOT_REPO, "evaluations", "goal-learn-396"))
+    import time_choice as T396
+    from model import to_np
+    shape = json.load(open(os.path.join(root, "chosen.json")))["chosen"]
+    P_lean = {k: np.asarray(v, dtype=np.float32)
+              for k, v in json.load(open(os.path.join(root, arm(shape), "best.json")))["params"].items()}
+    P_large = to_np(json.load(open(T396.BEST))["params"])
+    out = bench({"F-large": lambda m, x, y, h, t: T396.choice(m, x, y, h, P_large, t)[0],
+                 "F-lean": lambda m, x, y, h, t: lean_choice(m, x, y, h, t, P_lean)})
+    out["shape"] = shape
     out["5_cost"] = {"bar_ms": round(1.1 * out["F-large"]["p90_ms"], 1),
                      "met": out["F-lean"]["p90_ms"] <= 1.1 * out["F-large"]["p90_ms"]}
     print(out["5_cost"])
