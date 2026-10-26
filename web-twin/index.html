@@ -533,6 +533,8 @@
      instrument: what the robot sees, and where it has been. */
   .map-wrap { display: flex; flex-direction: column; align-items: center; margin-top: 6px; }
   .house-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+  .remap-row { display: flex; justify-content: center; margin-top: 6px; }
+  #btn-remap.armed { outline: 2px solid var(--accent-warn); }
   #world-map.tappable { cursor: crosshair; touch-action: manipulation; }
   #world-map {
     border-radius: 8px;
@@ -1654,6 +1656,13 @@
         <div class="house-row" style="display: none">
           <button id="btn-random-house" type="button" disabled>Random house</button>
           <span class="depth-readout" id="house-readout">house: not connected</span>
+        </div>
+        <!-- 3.50.D4b: a person's "re-map now" -- the bridge maps the reloaded
+             map again from where the robot is (POST /world/remap). SLAM maps
+             only; the server's answer is shown, since the page cannot see
+             whether the bridge is localising on a saved map. -->
+        <div class="remap-row" style="display: none">
+          <button id="btn-remap" type="button">Re-map now</button>
         </div>
       </div>
       <div class="fpv-source" id="fpv-source">frame source: <span class="local">not connected</span></div>
