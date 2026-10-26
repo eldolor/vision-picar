@@ -181,8 +181,10 @@ def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None, drive=
     deadline = time.time() + 120
     while time.time() < deadline:
         try:
-            if robot.get("/health").json()["drive"]["ros_up"] and \
-                    robot.get("/world/map").json().get("usable"):
+            # Under `direct` the robot server reports no ROS drive (ros_up
+            # None): the ROS world's map alone says the stack is up.
+            ros_up = drive != "ros" or robot.get("/health").json()["drive"]["ros_up"]
+            if ros_up and robot.get("/world/map").json().get("usable"):
                 return robot
         except Exception:  # noqa: BLE001 -- still coming up
             pass

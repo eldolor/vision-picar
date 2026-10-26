@@ -1,0 +1,4 @@
+{"drive": "ros", "run_dir": "/tmp/vision-picar-3.97/run-20261026-101625", "tap": "LEFT", "goal": "study, across the hallway", "executed": true, "reason": null, "verb_reply_s": 1.931, "tap_to_canceled_s": 0.042, "states_seen": {"active": 0.006, "canceled": 0.042}, "moved_after_cm": 0.0, "states_after": ["canceled"], "met": true}
+{"drive": "ros", "run_dir": "/tmp/vision-picar-3.97/run-20261026-101625", "tap": "FORWARD", "goal": "study, across the hallway", "executed": true, "reason": null, "verb_reply_s": 2.126, "tap_to_canceled_s": 0.049, "states_seen": {"active": 0.014, "canceled": 0.049}, "moved_after_cm": 0.0, "states_after": ["canceled"], "met": true}
+{"drive": "direct", "attempt": 1, "died": "RuntimeError('stack did not come up')"}
+{"drive": "direct", "attempt": 2, "died": "RuntimeError('stack did not come up')"}
