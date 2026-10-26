@@ -334,3 +334,10 @@ def test_active_sections_skips_prunable_worktrees(monkeypatch):
                  "worktree /b\nHEAD 2\nbranch refs/heads/plan/3.50-live\n")
     monkeypatch.setattr(ps, "git", lambda *a, **k: porcelain)
     assert ps.active_sections("/x") == ["3.50"]
+
+
+def test_a_far_out_branch_elsewhere_does_not_break_env():
+    """/code-review on f624674: the warning computed every other section's
+    full resources, so a worktree on 3.2400 made `env` fail everywhere."""
+    text = ps.env_text("3.50", others=["3.2400", "3.150"])
+    assert "export PICAR_ROBOT_PORT=9500" in text and "3.150" in text

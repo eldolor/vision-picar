@@ -64,7 +64,8 @@ Continuing an existing section: work in its worktree
 4. **Your own runtime resources.** `tools/plan_section.py env` derives from
    the section number:
    * ports 9000 + 10 x N (robot, brain, body, sensors, bridge; 3.106 ->
-     10060), never shared;
+     10060), shared by no two numbered sections (a lettered step's, 3.50a,
+     are its number's);
    * `ROS_DOMAIN_ID` N (3.44 -> 44; 73 and 74, older stacks' fixed domains,
      map to 100 and 101). Domains must stay within 1-101, so past 3.99 N
      wraps (3.106 shares 3.6's 6), and `env` prints a WARNING comment when

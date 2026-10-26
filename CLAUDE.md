@@ -1057,7 +1057,9 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   * Each section is its own file in `docs/plans/ros-alignment/`.
   * Your own ports, ROS domain, container and image:
     `eval "$(python tools/plan_section.py env)"`. Never rebuild
-    `vision-picar-ros:latest` from a branch.
+    `vision-picar-ros:latest` from a branch. Since 3.107 ports never wrap
+    (3.106 -> 10060); ROS domains still do past 3.99, and `env` prints a
+    WARNING comment naming an active section on yours.
   * `overlap` before editing a shared file.
   * `ready` (rebase check + full suite) before pushing to `dev`; a
     pre-push hook enforces it.

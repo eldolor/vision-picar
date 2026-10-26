@@ -226,14 +226,28 @@ def section_of_branch(root: str) -> str:
     return m.group(1)
 
 
+def _minor(num: str) -> int:
+    return int(num.split(".")[1].rstrip("abcdefghijklmnopqrstuvwxyz"))
+
+
+def ros_domain(num: str) -> int:
+    """The minor number itself (3.44 -> 44): ROS 2 domains above 101 can
+    clash with Linux's ephemeral ports. 73 and 74 are the fixed domains
+    older stacks use (demo_explore's default, 3.42's lidar stack). 3.100
+    would land on 0, the domain of every stack started without one (3.76
+    I8); it shares 100 with 3.73 instead, as everything past 3.99 wraps onto
+    a section 100 older (3.101 is 3.1's; `env` warns, 3.107)."""
+    minor = _minor(num) % 100
+    return {73: 100, 74: 101, 0: 100}.get(minor, minor)
+
+
 def resources(num: str) -> dict:
     """Everything a live stack can collide on, derived from the section
     number. Ports are 9000 + 10 x minor for every section (3.107: they
     wrapped at 100 before; 3.2376 is the last below the ephemeral range).
     The ROS domain must stay within 1-101, so past 3.99 it wraps onto the
     section 100 older, and `env` names an active section that shares it."""
-    minor = int(num.split(".")[1].rstrip("abcdefghijklmnopqrstuvwxyz"))
-    base = 9000 + 10 * minor
+    base = 9000 + 10 * _minor(num)
     if base + 5 >= 32768:
         raise SystemExit(f"section {num}: its ports would reach Linux's ephemeral range "
                          f"(32768+); extend tools/plan_section.py resources()")
@@ -241,13 +255,7 @@ def resources(num: str) -> dict:
         "PICAR_ROBOT_PORT": base, "PICAR_BRAIN_PORT": base + 1,
         "PICAR_BODY_PORT": base + 2, "PICAR_SENSOR_PORT": base + 3,
         "PICAR_SENSOR2_PORT": base + 4, "PICAR_BRIDGE_PORT": base + 5,
-        # The minor number itself (3.44 -> 44): ROS 2 domains above 101 can
-        # clash with Linux's ephemeral ports. 73 and 74 are the fixed domains
-        # older stacks use (demo_explore's default, 3.42's lidar stack).
-        # 3.100 would land on 0, the domain of every stack started without
-        # one (3.76 I8); it shares 100 with 3.73 instead, as everything past
-        # 3.99 already wraps onto a section 100 older (3.101 is 3.1's).
-        "ROS_DOMAIN_ID": {73: 100, 74: 101, 0: 100}.get(minor % 100, minor % 100),
+        "ROS_DOMAIN_ID": ros_domain(num),
         "PICAR_ROS_CONTAINER": f"picar-ros-{num.replace('.', '')}",
         "ROS_IMAGE": f"vision-picar-ros:plan-{num}",
         "EXPLORE_LOGDIR": f"/tmp/vision-picar-{num}",
@@ -281,8 +289,8 @@ def env_text(num: str, others=None) -> str:
             others = active_sections(top())
         except SystemExit:              # outside a checkout: `env 3.N` needs no git
             others = []
-    for o in sorted(set(others) - {num}, key=lambda n: resources(n)["PICAR_ROBOT_PORT"]):
-        if resources(o)["ROS_DOMAIN_ID"] == r["ROS_DOMAIN_ID"]:
+    for o in sorted(set(others) - {num}, key=sort_key):
+        if ros_domain(o) == r["ROS_DOMAIN_ID"]:
             # 3.107: a comment, so `eval` still works.
             lines.append(f"# WARNING: section {o} has a worktree here and shares ROS domain "
                          f"{r['ROS_DOMAIN_ID']}: do not run both sections' stacks at once")
