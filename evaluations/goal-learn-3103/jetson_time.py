@@ -87,6 +87,8 @@ def stats(xs) -> dict:
 
 def main(label: str, out_path: str) -> None:
     A = arms()
+    if os.environ.get("ARMS"):              # a subset, to fit a loaded window
+        A = {n: A[n] for n in os.environ["ARMS"].split(",")}
     P32 = _load(os.path.join(HERE, "cloud", "ckpt", "F-pool-W32", "best.json"))
     names = list(A)
     whole = {n: [] for n in names}
@@ -103,15 +105,16 @@ def main(label: str, out_path: str) -> None:
                 k = A[n](m, x, y, heading, trail)
                 if k:
                     whole[n].append((time.perf_counter() - t) * 1000)
+                if n == names[0]:
+                    counts.append(k)        # every arm builds the same pool
             for part, v in parts(m, x, y, heading, trail, P32).items():
                 split.setdefault(part, []).append(v)
-            counts.append(k)
             i += 1
         print(f"{time.strftime('%T')} {os.path.basename(path)} done", flush=True)
     out = {"label": label, "host": platform.node(), "machine": platform.machine(),
            "start_unix": round(t0), "end_unix": round(time.time()),
            "loadavg": os.getloadavg(), "poses": i,
-           "candidates_median": statistics.median(counts),
+           "candidates_median": statistics.median(c for c in counts if c),
            "whole_choice": {n: {"choices": len(v), **stats(v)} for n, v in whole.items()},
            "F-pool-W32_parts": {p: stats(v) for p, v in split.items()}}
     with open(out_path, "w") as f:
