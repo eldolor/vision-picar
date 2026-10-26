@@ -151,9 +151,9 @@ def test_the_runner_loads_each_committed_policy():
     """The wiring and the committed files, in the fast tier: MissionRunner
     builds explore with each flag value, and a non-finite score is ranked
     last rather than ending the choice."""
-    from brain.goal_policy import NetGoalPolicy
+    from brain.goal_policy import NetGoalPolicy, RoomGoalPolicy
     for name, kind in (("rule", type(None)), ("learned", LinearGoalPolicy),
-                       ("network", NetGoalPolicy)):
+                       ("network", NetGoalPolicy), ("rooms", RoomGoalPolicy)):
         runner, _nav, _g = _mission(explore_goal_policy=name)
         assert type(runner.agent.goal_policy) is kind
     pol = LinearGoalPolicy([1.0] + [0.0] * 9)

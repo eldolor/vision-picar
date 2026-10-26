@@ -5,102 +5,20 @@ simulator's stand-in room labeller.
 What the ten geometric features (`brain/goal_policy.py` FEATURES) cannot
 say: which room a candidate is in, whether the robot has stood there, and
 how likely the target is in a room of that type. Computed from the brain's
-own map (`segment()`), its pose trail, and room labels. They live here for
-step A's separability check; step B moves them into `brain/goal_policy.py`
-if criterion 1 is met.
+own map (`segment()`), its pose trail, and room labels. Since 3.96.C the
+room features live in `brain/goal_policy.py` (what the brain runs) and are
+re-exported here; the stand-in labeller stays here.
 """
 import math
-import re
-
-import numpy as np
 
 from brain.frontier import _cell_of
-from brain.room_labels import segment
-from world.interface import CELL_FREE, CELL_OCCUPIED, CELL_UNKNOWN
+from brain.goal_policy import (ROOM_AREA_M2, ROOM_FEATURES, ROOM_RES_M,  # noqa: F401
+                               _seg_at, coarse, room_features, room_type)
+from world.interface import CELL_UNKNOWN
 
-# Appended after FEATURES, in this order.
-ROOM_FEATURES = (
-    "room_new",      # the candidate's room (a `segment()` piece) never stood in
-    "room_area",     # that room's known floor, / 20 m2
-    "room_other",    # a different room from the robot's
-    "room_share",    # share of the pool's candidates in the same room
-    "type_known",    # a room label names the candidate's room type
-    "prior",         # P(target | that type); 0 when the type is unknown
-    "prior_new",     # prior x room_new
-)
-ROOM_AREA_M2 = 20.0
-# Rooms are cut on the training grid's resolution (the simulator's 0.30 m
-# cells): a finer map (SLAM's 0.05 m) is resampled first, so the features
-# read as they did in training and `segment()` sees 36x fewer cells.
-ROOM_RES_M = 0.30
-
-
-def coarse(m: dict, res_m: float = ROOM_RES_M) -> dict:
-    """`m` at `res_m` (an integer factor of its own resolution): a coarse
-    cell is occupied if any of its cells is, free if at least half are, and
-    unknown otherwise. A map already that coarse is returned as it is."""
-    k = int(round(res_m / m["resolution_m"]))
-    if k <= 1:
-        return m
-    w, h = m["width"], m["height"]
-    W, H = -(-w // k), -(-h // k)
-    cells = np.full((H * k, W * k), CELL_UNKNOWN, dtype=np.asarray(m["cells"]).dtype)
-    cells[:h, :w] = np.asarray(m["cells"]).reshape(h, w)
-    blocks = cells.reshape(H, k, W, k).swapaxes(1, 2).reshape(H, W, k * k)
-    out = np.full((H, W), CELL_UNKNOWN, dtype=cells.dtype)
-    out[(blocks == CELL_FREE).sum(axis=2) * 2 >= k * k] = CELL_FREE
-    out[(blocks == CELL_OCCUPIED).any(axis=2)] = CELL_OCCUPIED
-    return {**m, "width": W, "height": H, "resolution_m": m["resolution_m"] * k,
-            "cells": out.ravel().tolist()}
 # The stand-in labeller names a room once this share of its floor is known
 # on the brain's map (amendment 1).
 KNOWN_SHARE = 0.25
-
-
-def _seg_at(seg, m: dict, x_m: float, y_m: float) -> int:
-    """The segment id under a point, or of the nearest floor cell within one
-    cell (a goal can sit on a frontier's unknown edge); -1 if none."""
-    h, w = seg.shape
-    cx, cy = _cell_of(m, x_m, y_m)
-    for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, -1), (1, -1), (-1, 1)):
-        i, j = cx + dx, cy + dy
-        if 0 <= i < w and 0 <= j < h and seg[j, i] >= 0:
-            return int(seg[j, i])
-    return -1
-
-
-def room_features(m: dict, pose: dict, goals: list, *, trail: list, types: list,
-                  prior: dict) -> list:
-    """Each candidate's ROOM_FEATURES. `goals`: the pool's (x_m, y_m) in
-    order; `trail`: house-frame points the robot has stood on; `types`: each
-    goal's room type from the labels, or None; `prior`: type -> P(target)."""
-    m = coarse(m)
-    seg, _ = segment(m)
-    res2 = m["resolution_m"] ** 2
-    ids, counts = np.unique(seg[seg >= 0], return_counts=True)
-    area = dict(zip(ids.tolist(), counts.tolist()))
-    here = _seg_at(seg, m, pose["x_m"], pose["y_m"])
-    stood = {_seg_at(seg, m, x, y) for x, y in trail} | {here}
-    rooms = [_seg_at(seg, m, x, y) for x, y in goals]
-    out = []
-    for r, t in zip(rooms, types):
-        new = 1.0 if r >= 0 and r not in stood else 0.0
-        p = float(prior.get(t, 0.0)) if t is not None else 0.0
-        out.append([
-            new,
-            (area.get(r, 0) * res2 / ROOM_AREA_M2) if r >= 0 else 0.0,
-            1.0 if r >= 0 and r != here else 0.0,
-            (sum(x == r for x in rooms) / len(rooms)) if r >= 0 else 0.0,
-            0.0 if t is None else 1.0,
-            p,
-            p * new,
-        ])
-    return out
-
-
-def room_type(name: str) -> str:
-    """'bedroom 2' -> 'bedroom'."""
-    return re.sub(r" \d+$", "", name)
 
 
 class Labeller:

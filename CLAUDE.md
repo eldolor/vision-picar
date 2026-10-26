@@ -790,7 +790,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   mission started elsewhere that has not moved yet is not seen.
   `HANDOFF-2026-10-11-3.69-3.72.md`.
 * **Explore's next goal can be learned (3.65 phase 2), merged 2026-10-12;
-  default still `rule`.** `explore_goal_policy: rule | learned | network`
+  default still `rule`.** `explore_goal_policy: rule | learned | network | rooms`
   (env `EXPLORE_GOAL_POLICY`; `brain/goal_policy.py`). Only explore's
   choice among the goals the rules already allow is learned; nothing else.
   `learned` (10 weights, cross-entropy method) FAILED criterion 1 (-18%
@@ -803,7 +803,46 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   and scores higher, but saves only 11% of median goals (bar 20%).
   Goal choice was slow on the Jetson at SLAM resolution (1.4 s p90, the
   rule's own); fixed by 3.77. Trainers and `time_choice.py` in
-  `evaluations/explore-365/`.
+  `evaluations/explore-365/`. **3.96 (merged 2026-10-26; default still
+  `rule`):** F-large, a network on room features (unentered rooms, doorways,
+  a room prior for the target), is `explore_goal_policy: rooms`
+  (`brain/explore_goal_rooms.json`). On the 588 test houses criteria 2-4 met
+  (median goals R 7 -> 4, U 9 -> 5, finds held); 5 FAILED (one close-in
+  livelock, house 1395), 6 FAILED (312.9 ms p90 a choice on the Jetson,
+  bar 100), 8 FAILED (3 rule-pinning tests); live 7 met on EC2 (3/3 found
+  per arm, 0 contacts, median 427 s each). A find mission's map has no room
+  labels, and without them it saves nothing in mode R (-20% goals in U).
+  **3.100 (2026-10-25, the user):** `learned`
+  on the same 613 fresh houses, never run there before: 608 found, median
+  goals -11.1%, metres +4.7% -- FAILED as the network did, and nearly the
+  same policy (the same 6 houses gained and 4 lost; equal goals in 559 of
+  608). Both methods land on -11%, so the ten features are the limit, not
+  the learner. Run in the cloud: `4cd6eb7` re-run there reproduces the
+  Mac's rows (network 40/40). **3.101 (2026-10-25, the user; records
+  only):** F-rich, 3.96's F-large plus 25 features (route, raycast
+  information gain, room graph, search history, budget, pool-relative),
+  trained exactly as F-large in the cloud: clone agreement 43% (F-large
+  35%), selection R 0.644 (0.574); on the 588 test houses criterion 1
+  FAILED (R reward 0.563 vs bar 0.573, +0.010 inside the noise), finds,
+  trips and clean met; fewer goals than F-large in 199 vs 121 houses.
+  `lidar_gain` is the one new feature that clearly matters; the choice
+  costs 213 ms p90 here vs 117 (Jetson owed). Nothing in `brain/` changed.
+  **3.102 (2026-10-25, the user; records only):** the evolutionary method
+  on the same fact sets (E-small, E-large, E-rich; weighted sums, 23,040
+  searches each): worse than its gradient twins in mode R (paired: E-large
+  -0.147, E-rich -0.129 reward), level in U; no E arm meets the 20% goal.
+  The oracle on the 588 test houses (amendment 1) scores 0.783 (R, median
+  2 goals, 8.4 m): F-rich's gap is 0.012 finds and 0.208 goals + metres,
+  so the chooser has room and **3.103** (lean facts and a shape sweep,
+  then pool attention; criteria written) may start on the user's word.
+  **3.103.B (2026-10-26, the user's go; records only):** F-lean, F-large's
+  17 facts plus `lidar_gain` (cast on the 0.30 m grid), in four shapes:
+  the oracle copy is flat across them (36.8-37.8% for 659 to 3,347
+  numbers), and the best (one layer of 64) is level with F-large on the
+  test houses (-0.041, paired interval [-0.102, +0.021]; criterion 1
+  FAILED), with the most finds of any learned arm (573) and F-large's
+  choice time (102 ms p90 here). The network's shape is not the lever.
+  C (attention over the pool) waits on the user's word.
 * **Fast goal choice (3.77), merged 2026-10-13.** `brain/frontier.py`'s
   grid work in numpy with **exactly** the old answers (0 differences
   against the frozen `tests/frontier_reference.py`; do not "simplify" its
@@ -884,10 +923,31 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   (`begin_goal_end()`); a pan does not. `drive: ros`'s bridge already
   cancelled; `drive: direct` let nav2 drive on. In process only; the live
   check under both drives is owed (criterion 4).
+* **A sim arrival is confirmed from geometry (3.98), merged 2026-10-24**
+  (`SPEC-REVIEW-3.md` fix 7, the user): on the simulator's frames the
+  arrival's cloud step is `brain/arrival.py` `geometry_identity()` -- the
+  nearest object within 10 deg of the centre must be the target -- with no
+  paid call; `brain.sim_arrival_confirm: cloud` (env `SIM_ARRIVAL_CONFIRM`)
+  keeps the call for a run that tests it (Stage 1, 3.80.O-style blind
+  evaluations). Real frames always ask the tiers. Offline in the sim a
+  tiered mission now ends `found` (3.49's `arrived_unconfirmed` is the
+  `cloud` arm's). Live: `found` on `scaled_house`, no arrival call.
+* **A person's interventions are logged (3.99), merged 2026-10-24** (the
+  user's parked idea, started on their word): every mission's end is one
+  fsynced line in `<intervention_dir>/interventions.jsonl` (`brain.intervention_dir`,
+  default `recordings/interventions`, env `INTERVENTION_DIR`; local only,
+  never uploaded). A line carries the mission's autonomous time and, if a
+  person ended it (`cancelled` by `stop` or `dpad`; every intervention
+  ends the mission today), the kind, how it came, the driver, step, last
+  action and the pose read after the stop. A 3.88 pick is counted beside
+  it, never as one; a shutdown's cancel is none. `python -m
+  control.intervention_report` prints interventions per hour, overall and
+  per policy. Live: `dpad`, `stop`, `null` on three missions. Whether to
+  learn from them waits on the Rover's data. Known limits in the section
+  (a Stop during the arrival's cloud confirm can still end `found`).
 * **Decisions still open:** `PLAN-ros-alignment.md` section 6's gyro
   heading, floor band and speed by clearance all wait on the car's numbers
-  (their triggers are written); review 3's fix 7 (arrival confirmation
-  against the real cloud). Decided 2026-10-24: 3.50.D4's re-map trigger
+  (their triggers are written). Decided 2026-10-24: fix 7 (3.98), 3.50.D4's re-map trigger
   (scan contradiction, beside entered-unknown) and fix 11 (3.97); the
   spec-review handoff's 3a-3c were decided 2026-10-05.
 * **Not built:** `brain/planner.py`, room-level planning over

@@ -1,0 +1,4 @@
+__pycache__/
+run/oracle-large
+run/oracle-select
+run/*/*.pt

@@ -1,0 +1,7 @@
+{"arm": "R", "load_1m": 0.34, "outcome": "found", "seconds": 399, "steps": 24, "contact_samples": 0, "travel_m": 42.6, "invalid": null}
+{"arm": "N", "load_1m": 0.05, "outcome": "found", "seconds": 427, "steps": 23, "contact_samples": 0, "travel_m": 42.1, "invalid": null}
+{"arm": "R", "load_1m": 0.1, "outcome": "found", "seconds": 555, "steps": 30, "contact_samples": 0, "travel_m": 61.3, "invalid": null}
+{"arm": "N", "load_1m": 0.1, "outcome": "found", "seconds": 536, "steps": 30, "contact_samples": 0, "travel_m": 61.4, "invalid": null}
+{"arm": "R", "load_1m": 0.13, "outcome": "found", "seconds": 427, "steps": 19, "contact_samples": 0, "travel_m": 45.4, "invalid": null}
+{"arm": "N", "load_1m": 0.15, "outcome": "found", "seconds": 268, "steps": 14, "contact_samples": 0, "travel_m": 25.8, "invalid": null}
+live.py exit 0 2026-10-24T19:56:29Z

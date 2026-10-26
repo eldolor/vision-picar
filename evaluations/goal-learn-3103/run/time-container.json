@@ -1,0 +1,21 @@
+{
+ "host": "vm",
+ "machine": "x86_64",
+ "shape": "S64",
+ "F-large": {
+  "poses": 120,
+  "p50_ms": 78.6,
+  "p90_ms": 101.9,
+  "max_ms": 120.1
+ },
+ "F-lean": {
+  "poses": 120,
+  "p50_ms": 82.8,
+  "p90_ms": 102.0,
+  "max_ms": 127.8
+ },
+ "5_cost": {
+  "bar_ms": 112.1,
+  "met": true
+ }
+}

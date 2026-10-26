@@ -195,7 +195,11 @@ Four are deliberately not "failed":
 
 - **cancelled** -- a person ended it, with Stop or the D-pad. Filing a
   normal intervention beside a dead cloud link would invite a retry where
-  retrying is wrong.
+  retrying is wrong. Every mission's end is also one line in a local log
+  (3.99): whether a person stepped in, and what the mission was doing then,
+  so interventions per hour of autonomy can be counted and, once the Rover
+  has data, learned from. A goal pick that answers explore's question is
+  counted beside it, never as an intervention.
 - **out_of_budget** -- it was still trying; the limit is the operator's.
 - **blocked** -- the policy kept asking to drive forward and the safety
   layer kept refusing (R1b, `PLAN-ros-alignment.md` 3.4). Nothing broke;

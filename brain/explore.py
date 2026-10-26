@@ -42,7 +42,7 @@ import math
 
 import httpx
 import time
-from typing import Callable, Optional, Protocol
+from typing import Callable, Optional, Protocol, Union
 
 from brain.agent import MissionAgent, StepResult
 from brain.arrival import ARRIVED, CHECKING, LOCAL_FRESH_S, REFUSED, ArrivalCheck
@@ -55,6 +55,7 @@ from brain.choice_log import BY_RULE_TIMEOUT, GoalAsk
 from brain.goal_policy import FEATURES as GOAL_FEATURES
 from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
+from brain.goal_policy import ROOM_FEATURES, ROOM_RES_M, RoomGoalPolicy, room_type
 from brain.memory import MissionMemory
 from robot.interface import VERB_MAX_TAG, ZONE_UNUSABLE, Preempted, RobotInterface
 from robot.safety import CREEP_MARGIN_CM, FOOTPRINT_LENGTH_M, SafetyViolation, verb_speed_m_s
@@ -123,6 +124,10 @@ BOXED_CELLS = 40
 # tolerance still puts the robot's centre in the room. In metres, not cells:
 # the sim's map is 30 cm a cell and SLAM's 5 cm.
 ROOM_INSET_M = 0.10
+# 3.96: the trail a room-feature goal policy reads keeps one point per
+# TRAIL_M square, so standing still adds nothing and it grows with the floor
+# covered, not with time.
+TRAIL_M = 0.05
 # The robot server's refusal when the mission's OWN goal still holds the
 # robot (3.23) -- not a person taking over. A move refused for this waits.
 OWN_GOAL_REFUSAL = "nav2 goal is active"
@@ -208,7 +213,7 @@ class ExploreAgent(MissionAgent):
         clock: Callable[[], float] = time.monotonic,
         goal_timeout_s: float = GOAL_TIMEOUT_S,
         retry: Optional[RetryBook] = None,
-        goal_policy: Optional[LinearGoalPolicy] = None,
+        goal_policy: Optional[Union[LinearGoalPolicy, RoomGoalPolicy]] = None,
         sight_from: str = "frame",
         local_track_fn: Optional[Callable[[bool], None]] = None,
         ask: Optional[GoalAsk] = None,
@@ -262,6 +267,12 @@ class ExploreAgent(MissionAgent):
         # ...and how often one FAILED: a room nav2 keeps refusing is given up
         # after the retry limit, by name -- not attacked cell by cell.
         self._room_goals_failed: dict = {}
+        # 3.96: where the robot has stood (map frame, kept once per TRAIL_M
+        # square), read by a goal policy with room features (`rooms`). Begun
+        # again when the pose's map_id changes: old points are in another frame.
+        self._trail: list = []
+        self._trail_keys: set = set()
+        self._trail_map: Optional[str] = None
         # 3.70 E4/E5's report: every goal reached, as [x_m, y_m, kind].
         self.goals_reached: list = []
         self._last_map: Optional[dict] = None
@@ -978,7 +989,41 @@ class ExploreAgent(MissionAgent):
                                        area_m2=g.area_m2, seen_cells=seen_cells,
                                        failures=self.retry.failures_near(*g.goal),
                                        goals_sent=self.goals_sent))
+        if getattr(self.goal_policy, "rooms", False):
+            goals = [c.goal for _, c, _ in pool]
+            feats = self.goal_policy.extend(m, pose, goals, feats, trail=self._trail,
+                                            types=self._goal_types(m, goals),
+                                            target=self.memory.target_object)
         return pool, feats
+
+    def _goal_types(self, m: dict, goals: list) -> list:
+        """3.96: each goal's room type by the map's room labels ('bedroom 2'
+        -> 'bedroom'), from its cell or the nearest labelled cell in the
+        square ROOM_RES_M to each side, whatever this map's resolution
+        (training's stand-in labeller looked one 0.30 m house cell around,
+        first match in a fixed order: the two differ only at room edges);
+        None off every labelled room, and for all of them on a map with no
+        labels (a find mission without a survey)."""
+        labels = self._labels(m)
+        if labels is None:
+            return [None] * len(goals)
+        w, h, names = m["width"], m["height"], labels["names"]
+        r = max(1, int(round(ROOM_RES_M / m["resolution_m"])))
+        ring = sorted(((di, dj) for di in range(-r, r + 1) for dj in range(-r, r + 1)),
+                      key=lambda d: d[0] * d[0] + d[1] * d[1])
+        out = []
+        for x, y in goals:
+            i, j = self._to_cell(m, (x, y))
+            name = None
+            for di, dj in ring:
+                a, b = i + di, j + dj
+                if 0 <= a < w and 0 <= b < h:
+                    k = labels["cells"][b * w + a]
+                    if 0 <= k < len(names):
+                        name = names[k]
+                        break
+            out.append(room_type(name) if name else None)
+        return out
 
     def _send_pooled(self, kind, c, rank, now, n, skipped, **info):
         """Send one pooled candidate as the rule's own send would."""
@@ -1022,12 +1067,16 @@ class ExploreAgent(MissionAgent):
         default = 0 if self.goal_policy is None else self.goal_policy.best(feats)
         self._decided()                 # choice time ends here; the pause is not choice time
         candidates = []
+        # Under a room-feature policy each candidate has the seven room
+        # features too: name them all, so the choice log keeps them (3.96).
+        names = GOAL_FEATURES + (ROOM_FEATURES if getattr(self.goal_policy, "rooms", False)
+                                 else ())
         for i, ((kind, c, rank), f) in enumerate(zip(pool, feats)):
             candidates.append({
                 "kind": kind,
                 "x_m": round(c.goal[0], 3), "y_m": round(c.goal[1], 3),
                 "path_m": round(c.distance_m, 2), "rank": rank,
-                "features": {k: round(v, 4) for k, v in zip(GOAL_FEATURES, f)}})
+                "features": {k: round(v, 4) for k, v in zip(names, f)}})
         got = self.ask.open(candidates, default)       # ids minted there
         if got is None:
             return "WAIT", False, "the mission ended while choosing"
@@ -1128,7 +1177,16 @@ class ExploreAgent(MissionAgent):
         return labels
 
     def _note_room(self, pose: dict) -> None:
-        """Record the labelled room under the robot's centre, if any."""
+        """Record the labelled room under the robot's centre, if any, and
+        (under a room-feature goal policy) the point on the trail."""
+        if getattr(self.goal_policy, "rooms", False):
+            if pose.get("map_id") != self._trail_map:
+                self._trail_map = pose.get("map_id")
+                self._trail, self._trail_keys = [], set()
+            key = (round(pose["x_m"] / TRAIL_M), round(pose["y_m"] / TRAIL_M))
+            if key not in self._trail_keys:
+                self._trail_keys.add(key)
+                self._trail.append((pose["x_m"], pose["y_m"]))
         m = self._last_map
         labels = self._labels(m) if m else None
         if labels is None:

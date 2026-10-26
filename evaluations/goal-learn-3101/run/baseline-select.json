@@ -1,0 +1,42 @@
+{
+ "recorded_2026_10_23": {
+  "R": {
+   "n": 100,
+   "found": 99,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 16.5,
+   "mean_reward": 0.5743
+  },
+  "U": {
+   "n": 100,
+   "found": 100,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 6.0,
+   "median_metres_found": 21.9,
+   "mean_reward": 0.4823
+  }
+ },
+ "today": {
+  "R": {
+   "n": 100,
+   "found": 99,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 16.5,
+   "mean_reward": 0.5743
+  },
+  "U": {
+   "n": 100,
+   "found": 100,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 6.0,
+   "median_metres_found": 21.9,
+   "mean_reward": 0.4823
+  }
+ }
+}

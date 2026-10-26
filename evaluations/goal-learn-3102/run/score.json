@@ -1,0 +1,474 @@
+{
+ "E-small": {
+  "best_gen": 7,
+  "selection": {
+   "R": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 9.0,
+    "median_metres_found": 25.5,
+    "mean_reward": 0.4265
+   },
+   "U": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 10.0,
+    "median_metres_found": 25.8,
+    "mean_reward": 0.2889
+   }
+  },
+  "R": {
+   "summary": {
+    "n": 583,
+    "found": 572,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7.0,
+    "median_metres_found": 18.3,
+    "mean_reward": 0.4212
+   },
+   "vs_rule": {
+    "goal_saving": 0.0,
+    "metre_saving": 0.068702,
+    "found_ok": true,
+    "saving_ok": false,
+    "met": false
+   }
+  },
+  "U": {
+   "summary": {
+    "n": 588,
+    "found": 581,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 9.0,
+    "median_metres_found": 25.2,
+    "mean_reward": 0.34
+   },
+   "vs_rule": {
+    "goal_saving": 0.0,
+    "metre_saving": -0.027942,
+    "found_ok": true,
+    "saving_ok": true,
+    "met": true
+   }
+  },
+  "met_20pct": false,
+  "weights": [
+   -10.534,
+   1.248,
+   -14.252,
+   1.863,
+   4.778,
+   -2.77,
+   0.338,
+   0.343,
+   -1.022,
+   0.261,
+   -0.432,
+   -0.142,
+   0.681,
+   -0.504,
+   -1.265,
+   3.044,
+   -0.754
+  ]
+ },
+ "E-large": {
+  "best_gen": 7,
+  "selection": {
+   "R": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 9.0,
+    "median_metres_found": 24.0,
+    "mean_reward": 0.4171
+   },
+   "U": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 8.0,
+    "median_metres_found": 22.8,
+    "mean_reward": 0.3506
+   }
+  },
+  "R": {
+   "summary": {
+    "n": 583,
+    "found": 566,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7.0,
+    "median_metres_found": 18.0,
+    "mean_reward": 0.4057
+   },
+   "vs_rule": {
+    "goal_saving": 0.0,
+    "metre_saving": 0.083969,
+    "found_ok": true,
+    "saving_ok": false,
+    "met": false
+   },
+   "vs_twin": {
+    "twin": "F-large",
+    "twin_summary": {
+     "n": 583,
+     "found": 569,
+     "exceptions": 0,
+     "capped": 1,
+     "median_goals_found": 4.0,
+     "median_metres_found": 14.7,
+     "mean_reward": 0.5529
+    },
+    "reward": {
+     "diff": -0.1472,
+     "ci95": [
+      -0.213,
+      -0.0821
+     ],
+     "verdict": "worse"
+    },
+    "fewer_goals": 98,
+    "more_goals": 356
+   }
+  },
+  "U": {
+   "summary": {
+    "n": 588,
+    "found": 577,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 8.0,
+    "median_metres_found": 22.8,
+    "mean_reward": 0.3363
+   },
+   "vs_rule": {
+    "goal_saving": 0.111111,
+    "metre_saving": 0.069957,
+    "found_ok": true,
+    "saving_ok": true,
+    "met": true
+   },
+   "vs_twin": {
+    "twin": "F-large",
+    "twin_summary": {
+     "n": 588,
+     "found": 583,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 5.0,
+     "median_metres_found": 19.93,
+     "mean_reward": 0.4014
+    },
+    "reward": {
+     "diff": -0.0651,
+     "ci95": [
+      -0.1357,
+      0.0063
+     ],
+     "verdict": "level"
+    },
+    "fewer_goals": 137,
+    "more_goals": 374
+   }
+  },
+  "met_20pct": false,
+  "weights": [
+   -11.005,
+   -1.309,
+   -9.656,
+   3.122,
+   2.466,
+   -2.168,
+   0.564,
+   1.124,
+   0.233,
+   0.335,
+   1.079,
+   -0.336,
+   -0.07,
+   -0.171,
+   -1.189,
+   -0.496,
+   -0.246
+  ]
+ },
+ "E-rich": {
+  "best_gen": 11,
+  "selection": {
+   "R": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 16.950000000000003,
+    "mean_reward": 0.5872
+   },
+   "U": {
+    "n": 100,
+    "found": 98,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 8.0,
+    "median_metres_found": 24.3,
+    "mean_reward": 0.3778
+   }
+  },
+  "R": {
+   "summary": {
+    "n": 583,
+    "found": 569,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 19.5,
+    "mean_reward": 0.4342
+   },
+   "vs_rule": {
+    "goal_saving": 0.142857,
+    "metre_saving": 0.007634,
+    "found_ok": true,
+    "saving_ok": false,
+    "met": false
+   },
+   "vs_twin": {
+    "twin": "F-rich",
+    "twin_summary": {
+     "n": 583,
+     "found": 567,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 4.0,
+     "median_metres_found": 14.1,
+     "mean_reward": 0.5629
+    },
+    "reward": {
+     "diff": -0.1287,
+     "ci95": [
+      -0.1914,
+      -0.0656
+     ],
+     "verdict": "worse"
+    },
+    "fewer_goals": 94,
+    "more_goals": 309
+   }
+  },
+  "U": {
+   "summary": {
+    "n": 588,
+    "found": 583,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7.0,
+    "median_metres_found": 21.3,
+    "mean_reward": 0.4202
+   },
+   "vs_rule": {
+    "goal_saving": 0.222222,
+    "metre_saving": 0.131144,
+    "found_ok": true,
+    "saving_ok": true,
+    "met": true
+   },
+   "vs_twin": {
+    "twin": "F-rich",
+    "twin_summary": {
+     "n": 588,
+     "found": 585,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 5.0,
+     "median_metres_found": 18.9,
+     "mean_reward": 0.4485
+    },
+    "reward": {
+     "diff": -0.0284,
+     "ci95": [
+      -0.0905,
+      0.0357
+     ],
+     "verdict": "level"
+    },
+    "fewer_goals": 142,
+    "more_goals": 331
+   }
+  },
+  "met_20pct": false,
+  "weights": [
+   -9.777,
+   -0.941,
+   -11.635,
+   5.137,
+   1.138,
+   -5.645,
+   -1.625,
+   2.34,
+   -1.55,
+   -0.197,
+   1.092,
+   -1.096,
+   0.003,
+   -0.302,
+   -0.958,
+   0.883,
+   -0.75,
+   1.594,
+   0.513,
+   3.634,
+   0.594,
+   -0.847,
+   2.766,
+   0.723,
+   -1.375,
+   -0.184,
+   -0.081,
+   -4.019,
+   0.901,
+   -1.17,
+   0.536,
+   -0.23,
+   3.107,
+   -2.155,
+   -0.923,
+   0.439,
+   0.117,
+   -3.211,
+   -3.304,
+   1.802,
+   -2.513,
+   0.603
+  ]
+ },
+ "ceiling": {
+  "R": {
+   "oracle": {
+    "n": 583,
+    "found": 574,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 2.0,
+    "median_metres_found": 8.4,
+    "mean_reward": 0.7829
+   },
+   "oracle_parts": {
+    "finds": 0.9846,
+    "goals": -0.0833,
+    "metres": -0.1184
+   },
+   "gap": {
+    "rule": {
+     "finds": 0.0069,
+     "goals": 0.1252,
+     "metres": 0.2011,
+     "total": 0.3332,
+     "larger": "trips"
+    },
+    "F-large": {
+     "finds": 0.0086,
+     "goals": 0.0664,
+     "metres": 0.1549,
+     "total": 0.2299,
+     "larger": "trips"
+    },
+    "F-rich": {
+     "finds": 0.012,
+     "goals": 0.0607,
+     "metres": 0.1472,
+     "total": 0.2199,
+     "larger": "trips"
+    },
+    "E-small": {
+     "finds": 0.0035,
+     "goals": 0.1386,
+     "metres": 0.2197,
+     "total": 0.3618,
+     "larger": "trips"
+    },
+    "E-large": {
+     "finds": 0.0138,
+     "goals": 0.1458,
+     "metres": 0.2177,
+     "total": 0.3773,
+     "larger": "trips"
+    },
+    "E-rich": {
+     "finds": 0.0086,
+     "goals": 0.1158,
+     "metres": 0.2242,
+     "total": 0.3486,
+     "larger": "trips"
+    }
+   }
+  },
+  "U": {
+   "oracle": {
+    "n": 588,
+    "found": 583,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 3.0,
+    "median_metres_found": 10.5,
+    "mean_reward": 0.7812
+   },
+   "oracle_parts": {
+    "finds": 0.9915,
+    "goals": -0.0768,
+    "metres": -0.1334
+   },
+   "gap": {
+    "rule": {
+     "finds": 0.0017,
+     "goals": 0.1679,
+     "metres": 0.2607,
+     "total": 0.4303,
+     "larger": "trips"
+    },
+    "F-large": {
+     "finds": 0.0,
+     "goals": 0.1178,
+     "metres": 0.2622,
+     "total": 0.38,
+     "larger": "trips"
+    },
+    "F-rich": {
+     "finds": -0.0034,
+     "goals": 0.0905,
+     "metres": 0.2456,
+     "total": 0.3327,
+     "larger": "trips"
+    },
+    "E-small": {
+     "finds": 0.0034,
+     "goals": 0.1818,
+     "metres": 0.2561,
+     "total": 0.4413,
+     "larger": "trips"
+    },
+    "E-large": {
+     "finds": 0.0102,
+     "goals": 0.1721,
+     "metres": 0.2627,
+     "total": 0.445,
+     "larger": "trips"
+    },
+    "E-rich": {
+     "finds": 0.0,
+     "goals": 0.1281,
+     "metres": 0.233,
+     "total": 0.3611,
+     "larger": "trips"
+    }
+   }
+  }
+ }
+}

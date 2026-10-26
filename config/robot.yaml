@@ -392,6 +392,12 @@ brain:
   # nav2 like the explore policy; the tiers decide identity and the last
   # approach). TIER_SEARCH overrides.
   tier_search: cloud
+  # 3.98 -- a tiered arrival on the SIMULATOR's frames is confirmed from its
+  # geometry (`geometry`: the nearest object near the centre must be the
+  # target, no paid call) or by one real cloud call on the render (`cloud`,
+  # for a run that means to test it). Real frames always ask the tiers.
+  # SIM_ARRIVAL_CONFIRM overrides.
+  sim_arrival_confirm: geometry
 
   # 3.70 E4: a mission's budget -- a time limit (seconds) and a battery floor
   # (volts, the motor board's `v`). It ends `out_of_budget` at either. The
@@ -452,7 +458,8 @@ brain:
   cloud_probe_s: 15.0
   # 3.65 phase 2 -- explore's next goal: "rule" (hand-written order),
   # "learned" (a linear score trained in simulation, brain/explore_goal_weights.json)
-  # or "network" (that plus a small network, brain/explore_goal_net.json).
+  # or "network" (that plus a small network, brain/explore_goal_net.json);
+  # 3.96: "rooms" (seven room features more, brain/explore_goal_rooms.json).
   explore_goal_policy: rule
   # 3.88 A -- ask mode: explore pauses at each goal choice for a person's pick
   # among the candidates the rules allow (the Sim tab's map), takes the rule's
@@ -461,6 +468,11 @@ brain:
   explore_ask: false
   explore_ask_timeout_s: 60.0
   explore_choice_dir: recordings/explore-choices
+  # 3.99 -- every mission's end, one line each in
+  # <intervention_dir>/interventions.jsonl: whether a person stepped in (a Stop,
+  # a D-pad takeover) and what it was doing then. Local only, never uploaded;
+  # `python -m control.intervention_report` reports interventions per hour.
+  intervention_dir: recordings/interventions
 
   # Replaying a recorded walk, which is NOT a mission and wants a longer
   # deadline: nothing is driving, and replay is the burstiest caller here

@@ -97,6 +97,24 @@ frame)`, which asks `arrival_confirm_fn(frame)` -- `MissionRunner` passes
 `_guarded_confirm`, the policy's `confirm_arrival` under B3.2's
 `vision_timeout_s`, a failure raising `VisionUnavailable` into the budget;
 without a runner the agent falls back to `vision_fn.confirm_arrival`.
+**3.98: in the simulator the cloud step is the sim's own geometry.**
+With `sim_identity_fn` (the brain server sets it to `geometry_identity` on
+the simulator's frames under `sim_arrival_confirm: geometry`),
+`confirm_cloud()` first asks it: of the frame's `detections` within
+`SIM_CONFIRM_CENTRE_DEG` (10 deg) of the centre, the nearest must be the
+target (the label test `FrameReportedPipeline` uses). Its answer returns
+`{"confirmed", "cloud_called": false, "tier": "sim"}` before the call cap
+and the call itself (`MissionRunner._guarded_confirm` may still have waited
+for a trigger's call in flight); the agent labels the step like any
+confirmation (`identity_tier: sim`), and the metrics row carries
+`sim_arrival_confirm`. A sim frame with no
+`detections` is refused. It answers None on a frame that is not the
+simulator's (`metadata.source`), which then goes to the cloud as below. A
+local tier, when configured, still answers first; but a local-led arrival
+(3.80.O, cloud-only) is answered by the geometry too, so a sim evaluation
+that means to measure the cloud's verdict on such arrivals (3.80.O's blind
+runs) sets `sim_arrival_confirm: cloud`.
+
 `TieredVision.confirm_arrival(frame)` makes one synchronous call to the
 cloud (even under `async_cloud`) -- through `confirm_vision_fn` when one was
 given (3.56: the brain's second client, built with the confirmation's
@@ -540,6 +558,7 @@ with `close()`, `reset_epoch()`, `set_searched_rooms()`, `confirm_arrival(frame)
 | `tier_stale_after` | 8 | frames | 6.1's figure; contributed 5.7% of triggers there |
 | `tier_max_calls` | 0 (no cap) | calls | `max_steps` bounds the mission |
 | `tier_search` | `cloud` | -- | 3.80.G: `explore` = explore's nav2 goals choose where to search; env `TIER_SEARCH` |
+| `sim_arrival_confirm` | `geometry` | -- | 3.98 (the user, 2026-10-24): on the simulator's frames (`_frames_are_simulated()`), the arrival's cloud step is `brain/arrival.py` `geometry_identity()` (no call); `cloud` keeps the paid call. Real frames always ask; env `SIM_ARRIVAL_CONFIRM` |
 
 `oov_cold_search_after` exists on `TieredVision` but has no config key.
 `tier_corroboration_bar` is also passed to `TieredVision`; it changes no
@@ -695,7 +714,7 @@ cloud alone.
   (`SIM_PERCEPTION_BLIND=1` on the brain server) never reports the target.
 
 **Explore's learned goal choice (3.65 phase 2).** `explore_goal_policy`
-(`brain:` block; `rule` | `learned` | `network`, default `rule`; the
+(`brain:` block; `rule` | `learned` | `network` | `rooms`, default `rule`; the
 `EXPLORE_GOAL_POLICY` environment variable overrides it for live runs; validated by
 `load_brain_config`) reaches `MissionRunner(explore_goal_policy=...)`, which
 gives `ExploreAgent` a `goal_policy` from `brain/goal_policy.goal_policy_for`
@@ -724,6 +743,34 @@ from `brain/explore_goal_net.json` (the linear weights plus each layer's
 each mission's advantage its reward against the mean of 8 rollouts of the
 same house, the MLP's last layer starting at zero so training starts at the
 linear policy.
+
+`rooms` (3.96.C) is `RoomGoalPolicy`, 3.96's arm F-large: the same pool,
+whose ten features `_pool` extends with seven room features
+(`goal_policy.room_features`, `ROOM_FEATURES`) when the policy says
+`rooms`. The map is resampled to 0.30 m (`coarse()`: occupied if any cell
+is, free if half are), cut into rooms by `brain/room_labels.segment()`, and
+each candidate gets its room's newness (never stood in, by
+`ExploreAgent._trail`: one pose per 5 cm square, `TRAIL_M`, noted with the
+room in `_note_room`), area, whether it is another room than the robot's,
+the pool's share in that room, and -- only where the map carries a
+`room_labels` layer -- the room type's prior for the target
+(`_goal_types`; the prior is the training houses', in the weights file). A
+find mission's map has no labels, so those three read 0. Scored
+`w . f + MLP(f)` (17 -> 32 -> 32 -> 1, tanh) in float32 exactly as the test
+run's `evaluations/goal-learn-396/model.py` `score_np`, argmax with a
+non-finite score last; parameters and prior in
+`brain/explore_goal_rooms.json`, copied unchanged from the test run's
+checkpoint (`tests/test_goal_policy_rooms.py` pins that, and the score).
+`evaluations/goal-learn-396/wired.py` checks the flag's missions against the
+harness's F-large with every label withheld, mission for mission. A whole
+choice costs ~0.3 s p90 on the Jetson (3.96 criterion 6, failed: bar 0.1 s),
+during which the robot stands still. Under ask mode the published
+candidates carry all 17 features by name, so the choice log keeps them.
+Known limits: the prior knows only the ten training targets and ProcTHOR's
+four room types (any other target or label reads `type_known` 1 with a
+prior of 0, a case training saw only where the prior was 0), and the trail
+is never re-anchored, so after a loop closure or a fresh map an old point
+can mark the wrong room as stood in.
 
 **Explore asks a person (3.88 A).** With `explore_ask` on (brain config,
 or a start's own `explore_ask`), `MissionRunner` gives `ExploreAgent` a

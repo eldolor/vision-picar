@@ -103,4 +103,10 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.95](3.95-py-trees.md) | The tiered trees on py_trees |
 | [3.96](3.96-explore-goal-learning-revisited.md) | Explore's goal choice, learned again: richer features (rooms, indirect search) toward the oracle's ceiling |
 | [3.97](3.97-nudge-goal-label.md) | A person's move ends a nav2 goal, under every drive |
+| [3.98](3.98-sim-arrival-geometry.md) | In the simulator an arrival is confirmed from geometry; the paid cloud call is opt-in |
+| [3.99](3.99-intervention-log.md) | Log a person's interventions; interventions per hour |
+| [3.100](3.100-fresh-houses-cem.md) | The evolutionary (CEM) goal policy on 3.65's 613 fresh houses |
+| [3.101](3.101-rich-goal-features.md) | Explore's goal choice on ~40 features: 3.96's F-large plus route, information gain, room graph, history, budget and relative features |
+| [3.102](3.102-evolutionary-on-rich-features.md) | The evolutionary method on 3.96's and 3.101's fact sets: E-small, E-large, E-rich against their gradient twins |
+| [3.103](3.103-chooser-shape-and-pool.md) | Explore's goal chooser after the ceiling: lean facts, network shape, then scoring the whole pool |
 <!-- /sections -->

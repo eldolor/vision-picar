@@ -91,6 +91,7 @@ from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
                             DEFAULT_MATCH_PROBABILITY, PerceptionUnavailable)
 from brain.tiered import parse_frame_vote, tiered_vision_fn_for
 from brain.choice_log import ChoiceLog
+from brain.intervention_log import FILE_NAME as INTERVENTION_FILE, InterventionLog
 from control import drills
 from control.brain_config import load_brain_config
 from control.inventory_store import _slug, inventory_store_from_config
@@ -442,6 +443,11 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
                 target, blind=os.environ.get("SIM_PERCEPTION_BLIND", "") == "1")
             # 3.80.D: a local VLM's box is read in the render's field of view.
             pipeline.hfov_deg = SIM_HFOV_DEG
+            if config["sim_arrival_confirm"] == "geometry":
+                # 3.98: the arrival's identity from the sim's ground truth;
+                # `cloud` keeps the paid call for a run that tests it.
+                from brain.arrival import geometry_identity
+                kwargs["sim_identity_fn"] = functools.partial(geometry_identity, target=target)
             return tiered_vision_fn_for(target, cloud_vision_fn, pipeline=pipeline, **kwargs)
         pipeline_kwargs = {}
         if config["perception_detector"]:
@@ -504,6 +510,9 @@ def create_app(
     configure_logging()                # PLAN 3.45: PICAR_LOG_LEVEL, unset = unchanged
     ident = log_identity("vision-picar brain server", config_path)
     config = load_brain_config(config_path)
+    # 3.99: built once, so every mission's writer shares its lock.
+    intervention_log = InterventionLog(os.path.join(config["intervention_dir"],
+                                                    INTERVENTION_FILE))
     secret = os.environ.get("APP_SHARED_SECRET")
     # Distinct from `secret` above, which gates callers OF this brain.
     # These gate the brain's OWN outbound calls to the robot and vision
@@ -750,11 +759,10 @@ def create_app(
             tier_search=tier_search,
             explore_ask_timeout_s=config["explore_ask_timeout_s"] if asks else None,
         )
-        if asks:
-            # 3.88 A: which house each recorded choice was made in -- the
-            # simulator's, from the robot server; None on the car.
-            sim_map = getattr(robot, "sim_map", None)
-            kwargs["house"] = sim_map() if sim_map is not None else None
+        # 3.88 A, 3.99: which house each recorded choice and mission end was
+        # in -- the simulator's, from the robot server; None on the car.
+        sim_map = getattr(robot, "sim_map", None)
+        kwargs["house"] = sim_map() if sim_map is not None else None
         if navigator is not None:
             kwargs["navigator"] = navigator
         try:
@@ -797,6 +805,8 @@ def create_app(
         runner.inventory_sink = lambda report: threading.Thread(
             target=store.save, args=(mission_id, report), daemon=True).start()
         runner.mission_id = mission_id
+        # 3.99: one log, one file, for every mission's end line.
+        runner.intervention_log = intervention_log
         if asks:
             # 3.88 A: one file a mission, created at its first choice.
             runner.choice_log = ChoiceLog(os.path.join(config["explore_choice_dir"],
@@ -813,6 +823,7 @@ def create_app(
                 "tier_cold_search_after_cm",
                 "tier_async_cloud", "tier_hold_goal", "tier_steer_on_sight",
                 "tier_local_direction", "tier_steer_on_candidate", "tier_search",
+                "sim_arrival_confirm",
                 "tier_hold_bearing", "tier_hold_bearing_max_m",
                 "tier_spin_guard_after", "tier_consecutive_frames", "tier_sighting_span_s", "tier_frame_vote",
                 "perception_floor_mask", "perception_crop_path",
@@ -977,6 +988,10 @@ def create_app(
             # Synchronous on purpose: awaiting inside a cancellation
             # handler is how a stop gets silently skipped. One localhost
             # POST is a fine thing to block the loop for.
+            if not getattr(runner, "operator_stopped", False):
+                # 3.99: no person's Stop asked for this (the process shutting
+                # down), so it is no intervention.
+                runner.loop_cancelled = True
             runner.stop("mission loop cancelled")
             raise
 

@@ -125,6 +125,11 @@ end at `_finish`, and the status's `explore` block). With no
    holder `brain` or `ros`) -- then `failed`, an arbitration fault. A goal in
    progress (the phone's tap-to-goal) and a refusal naming no holder stay
    `cancelled`; anything else -> finish `failed` ("step failed: ...").
+   Each person's end tells `_finish` how it came (`via`: `robot_stop` for
+   `StoppedByPerson`, `preempted` with the holder as `by`; `stop()` passes
+   `brain_stop`, or `loop_cancelled` when the brain server set
+   `runner.loop_cancelled` because its loop was cancelled without a
+   person's Stop -- no intervention), for 3.99's intervention line.
 4. Under the lock: bump `ticks`, reset `vision_failures`, record the action,
    the turn counters, and copy `_tier`, `_perception` and `_arrival` off the
    scene (held, not overwritten with None); `last_frame_seq` is read from
@@ -516,7 +521,33 @@ cancelled_by)` (`stopped` -> `cancelled`/`stop`, `preempted` ->
   way. Whichever finishes last (`end()` or a goal still on its way) first
   clears, when the navigator has `clear_keepout` (`RemoteNavigator`:
   `DELETE /world/keepout`), the keepout marks the mission's wedges left
-  (3.76 K5.3, the user 2026-10-21; a failure is logged, never raised). `discard()` does the same for a runner built and never started, and also closes its policy (perception models, the local VLM client); a start refused after the tiered policy was built, or whose vision drill replaced it, closes that policy too (3.80 rebase review, 2026-10-17).
+  (3.76 K5.3, the user 2026-10-21; a failure is logged, never raised).
+- The intervention line (3.99, `brain/intervention_log.py`): `_finish`
+  builds one record per started mission under its lock
+  (`_intervention_line()`: mission id, house, policy, job, target, start and
+  end in UTC epoch seconds, `autonomous_s` = elapsed minus 3.88's pauses,
+  outcome, `end_via`, `person_picks`, and `intervention` -- null unless the
+  end is `cancelled` and not `loop_cancelled`, then `kind` (=
+  `cancelled_by`), `via`, `by`, `detail`, `at_s`, `step`, `last_action`,
+  `explore_event`). The start and end are wall-clock; `autonomous_s` and
+  `at_s` are the runner's clock, which in-process sweeps inject. After the
+  robot's stop a thread (`mission-intervention`, `runner._intervention_writer`;
+  not a daemon, so the interpreter waits for it at exit) adds
+  `pose_after_stop` -- the world's pose, read on a daemon thread of its own
+  and waited for at most `POSE_READ_S` (2 s), or null with `pose_note`
+  `unusable[: reason]`, `read failed: ...` or `read timed out after 2 s` --
+  appends the line to `runner.intervention_log` (an `InterventionLog`,
+  3.88's durable `ChoiceLog` append; None writes nothing), keeps it as
+  `runner.intervention`, and sets `runner.intervention_done` whatever
+  happened. A mission never started, or a second end, writes nothing. Lines
+  are in the order written (`ended_at` orders missions). The brain server
+  builds ONE log in `create_app` (`<intervention_dir>/interventions.jsonl`)
+  and hands it to every mission, so one lock covers every writer; it reads
+  `house` (`RemoteRobot.sim_map()`, a `/health` GET) at every start, not
+  only for ask mode. `python -m control.intervention_report [dir]` (default:
+  `load_brain_config()`'s `intervention_dir`) prints the per-hour report
+  (`brain/intervention_log.py`'s `summarise()`, `report()`).
+- `discard()` does the same for a runner built and never started, and also closes its policy (perception models, the local VLM client); a start refused after the tiered policy was built, or whose vision drill replaced it, closes that policy too (3.80 rebase review, 2026-10-17).
 
 ## Parameters and configuration
 
@@ -554,6 +585,7 @@ The `brain:` block of `config/robot.yaml`, read by
 | `explore_ask` | false | false | -- | brain_server | 3.88 A: explore pauses at each goal choice for a person's pick; env `EXPLORE_ASK` (0/1/true/false). A start's `explore_ask` overrides it |
 | `explore_ask_timeout_s` | 60.0 | 60.0 | s | runner (`GoalAsk`) | 3.88 criterion 1: no pick in this long takes the rule's (`rule_timeout`). Must be > 0 |
 | `explore_choice_dir` | `recordings/explore-choices` | same | path | brain_server | 3.88 A: one `<mission id>.jsonl` a mission asked in; env `EXPLORE_CHOICE_DIR`. `recordings/` is git-ignored |
+| `intervention_dir` | `recordings/interventions` | same | path | brain_server | 3.99: `interventions.jsonl`, one line per mission end; env `INTERVENTION_DIR`. Local only, never uploaded; the suite points it at a temporary directory (`tests/conftest.py`) |
 
 The `tier_*` and `perception_*` keys are passed straight through to the
 policy and perception pipeline; see [policy](../policy/ENGINEERING.md) and
@@ -654,6 +686,7 @@ tests/test_mission_guarded_verbs.py -q`.
 | Test file (count on 2026-10-02) | What it pins |
 |---|---|
 | `tests/test_mission_ends.py` (43) | 3.70 E1-E5: the four end states named, the retired names gone and read as the new ones, `end_state`/`end_reason` per outcome; Stop and a D-pad takeover end `cancelled` with `cancelled_by`, the wheels at zero within 0.5 s; the time limit ends `out_of_budget` within one tick, the derived backstop with a stuck clock, an explicit `max_steps`; the battery under its floor twice (not once) within 2 s, no reading never ends one; the fake board drains `v` and `HardwareRobot.get_battery()` reads it; the report (rooms, coverage, map); a labelled room never entered keeps a mission from ending `exhausted`; coverage within 2 points of truth at the end of a search |
+| `tests/test_intervention_log.py` (22) | 3.99: one line per started mission; a brain Stop is `stop`/`brain_stop` with the step and a pose, a D-pad takeover `dpad`/`preempted` naming the driver, 3.84's latch `stop`/`robot_stop`; an autonomous preemption, an abort and a time limit carry no intervention; a second end and an unstarted mission write nothing; a failed pose read still writes the line, an unwritable log changes no outcome and skips no stop, the stop never waits on the pose; the report's counts, hours and rate (per policy), a cut last line skipped, no file "no missions recorded"; the config key and its env; the brain server writes the line for a stopped mission; review round 1: a loop cancelled without a person's Stop (in process and through the brain server's task) is none, the writer is no daemon, the pose says why it is missing, the report's default directory is the brain config's; round 2: a hung pose read holds the writer only `POSE_READ_S`, the brain server shares one log between missions |
 | `tests/test_survey.py` (93) | 3.70 S1-S2: a survey needs no target and ends `exhausted`; never `found`, never a confirmation; refused with a target, under another policy, or an unknown job; the room labeller cuts a map at its door, asks once per room and never from the doorway, never past its cap (the survey still ends `exhausted`), keeps `unclear`, spaces asks in `spacing` mode, asks again through a doorway within the spacing and stops `spacing` labels at the doorway, lets an `unclear` hold its room, leaves rooms two doorways from any answer unlabelled, keeps (and does not re-ask beside) a seed whose cell turned occupied, and names the room a survey starts in; a label source or frame read that raises skips the label (the survey still ends `exhausted`); a frame with no room spends no call; no ask after a stop; the cap is checked before any cut; cuts are rate-limited on the labeller's clock; `room_labels()` is a full map layer cut from the map it is given; a boolean `survey_time_limit_s` is refused at load; a growing, shifting map is not re-cut every tick and still finds the robot's room by position; `spacing` never asks on floor its cached distances have not seen; no source is remembered (no more frames); an `unknown` frame spends nothing and waits; a failing source backs off; `capped` is set on the ask that reaches the cap; a stop after the frame never reaches the source; the cloud source asks `/room` with the frame and the secret, reads a reply naming no room as `unclear`, spends nothing on a frame with no pixels, reads 5xx/408/429 as an outage and a 401 as our fault, needs a URL, and a survey through a `/room` outage backs off and still ends `exhausted`; a refused secret or a 200 that is not JSON stops the asking with the reason on the status; one room has one spelling; a paid ask is skipped when the step, the frame read (checked again after it) or a drill's deadline left too little of the tick, and the skips are counted; a 400/413 backs off while 401/403/404 stop the asking; punctuation and an article's quotes are no second spelling, a bare article is `unclear`; a hung call gives the tick back on time; three frame refusals in a row stop the asking, a 422 is a frame refusal; no skip is counted when no ask was due; no second paid call while an abandoned one is in flight; refusals count in a row only; another 4xx backs off before it stops the asking; a busy source does not lengthen the back-off |
 | `tests/test_survey_sweep.py` (4, slow) | 3.70 S1/S2 pinned: the 9 sim surveys end `exhausted` with coverage >= 95%; label calls and rooms labelled >= 95% no worse than recorded, per mode |
 | `tests/test_mission_runner.py` (32) | tick-driven equals blocking `run_mission()` step for step; outcomes and idempotent `_finish`; the gate refuses after stop; a stop landing mid-tick records no step; tiered readouts reach status and survive a scene with no tier; the tick keeps advancing while an async call is in flight |

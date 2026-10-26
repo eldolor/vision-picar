@@ -1,0 +1,161 @@
+{
+ "chosen": {
+  "selection": {
+   "S64": {
+    "R": {
+     "n": 100,
+     "found": 100,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 4.5,
+     "median_metres_found": 19.950000000000003,
+     "mean_reward": 0.5605
+    },
+    "U": {
+     "n": 100,
+     "found": 100,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 5.0,
+     "median_metres_found": 18.9,
+     "mean_reward": 0.519
+    }
+   },
+   "S32x32": {
+    "R": {
+     "n": 100,
+     "found": 100,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 5.0,
+     "median_metres_found": 18.9,
+     "mean_reward": 0.5421
+    },
+    "U": {
+     "n": 100,
+     "found": 98,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 5.0,
+     "median_metres_found": 16.950000000000003,
+     "mean_reward": 0.3543
+    }
+   }
+  },
+  "chosen": "S64"
+ },
+ "picked": {
+  "agreement": {
+   "S32x32": 0.3744,
+   "S64x32": 0.3678,
+   "S32": 0.3744,
+   "S64": 0.3777
+  },
+  "picked": [
+   "S64",
+   "S32x32"
+  ]
+ },
+ "R": {
+  "F-lean": {
+   "n": 583,
+   "found": 573,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 16.8,
+   "mean_reward": 0.5121
+  },
+  "F-large": {
+   "n": 583,
+   "found": 569,
+   "exceptions": 0,
+   "capped": 1,
+   "median_goals_found": 4.0,
+   "median_metres_found": 14.7,
+   "mean_reward": 0.5529
+  },
+  "F-rich": {
+   "n": 583,
+   "found": 567,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 14.1,
+   "mean_reward": 0.5629
+  },
+  "vs_F_large": {
+   "diff": -0.0409,
+   "ci95": [
+    -0.1024,
+    0.0214
+   ]
+  },
+  "vs_F_rich": {
+   "diff": -0.0508,
+   "ci95": [
+    -0.1066,
+    0.0037
+   ]
+  },
+  "fewer_goals_than_F_large": 208,
+  "more_goals_than_F_large": 162,
+  "finds_ok": true,
+  "trips_ok": true,
+  "unclean": 0
+ },
+ "U": {
+  "F-lean": {
+   "n": 588,
+   "found": 581,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 21.0,
+   "mean_reward": 0.3892
+  },
+  "F-large": {
+   "n": 588,
+   "found": 583,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 19.93,
+   "mean_reward": 0.4014
+  },
+  "F-rich": {
+   "n": 588,
+   "found": 585,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 18.9,
+   "mean_reward": 0.4485
+  },
+  "vs_F_large": {
+   "diff": -0.0122,
+   "ci95": [
+    -0.0855,
+    0.0606
+   ]
+  },
+  "vs_F_rich": {
+   "diff": -0.0594,
+   "ci95": [
+    -0.1276,
+    0.0141
+   ]
+  },
+  "fewer_goals_than_F_large": 231,
+  "more_goals_than_F_large": 188,
+  "finds_ok": true,
+  "trips_ok": true,
+  "unclean": 0
+ },
+ "criteria": {
+  "1_better_R": false,
+  "2_finds": true,
+  "3_trips": true,
+  "4_clean": true
+ }
+}

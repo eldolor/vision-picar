@@ -1,0 +1,4 @@
+# 3.101: the oracle shards (~4 GB) and torch checkpoints stay local; results and best.json are kept.
+run/oracle-*/
+run/F-rich/*.pt
+__pycache__/

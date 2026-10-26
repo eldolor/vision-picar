@@ -361,7 +361,8 @@ class MissionAgent(ConstrainedAgent):
 
     def _confirm_identity(self, readout: dict, frame: dict) -> dict:
         """Returns the readout; sets `self._confirmed_this_frame` when this
-        frame asked the cloud."""
+        frame got a verdict (from the cloud, the local tier or, 3.98, the
+        simulator's geometry)."""
         if self._identity_refused:
             who = ("the local model" if (self._refusal or {}).get("tier") == "local"
                    else "the cloud")
@@ -430,8 +431,11 @@ class MissionAgent(ConstrainedAgent):
                 logger.warning("arrival readout lost: %s takes no attributes; "
                                "an outage here will end `failed`", type(e).__name__)
             raise
+        # 3.98: the simulator's geometry judged it with no call; still this
+        # step's verdict, labelled like one (review round 1).
         self._confirmed_this_frame = bool(verdict.get("cloud_called")
-                                          or verdict.get("local_called"))
+                                          or verdict.get("local_called")
+                                          or verdict.get("tier") == "sim")
         if not verdict.get("undecided"):
             verdict = {**verdict, "verdict_s": round(time.monotonic() - self._arrival_t0, 3)}
             self._arrival_t0 = None
