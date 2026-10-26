@@ -1607,7 +1607,7 @@ class TieredVision:
                 # endless or end at once (review). A new no is a new wait.
                 now = time.monotonic()
                 if not start_wait and "wait_mono" not in r:
-                    return "wait"
+                    return "wait" if self.reject_hold_s > 0 else None
                 waited = now - r.setdefault("wait_mono", now)
                 return "wait" if waited < self.reject_hold_s else None
             if r is not None and r["rank"] == "cloud":

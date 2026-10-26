@@ -302,7 +302,11 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   (10, bar 4), C5a FAILED on its own stub -- both kept as written by the
   user. Criterion 8 (AWS spot, 21 houses) found met on all seven arms;
   contacts not measured (needs a live run). Open items for the user are in
-  `docs/plans/ros-alignment/3.91-tier-fusion.md`.
+  `docs/plans/ros-alignment/3.91-tier-fusion.md`. **3.91.D, merged
+  2026-10-26:** in the sim, where a held cloud no would decide an arrival,
+  3.98's geometry judges it first, free (`TieredVision.sim_over_held_no`).
+  D1 (a spent cap ending `arrived_unconfirmed`) was dropped by the user: it
+  broke 3.47's criterion 3 (the twin reads it as an outage).
 * **The tiered ladder as behavior trees (3.94), merged 2026-10-23.**
   `brain/tree.py` (Sequence, Fallback, Condition, Action, Decorator;
   py_trees semantics) builds the tiered policy's three decisions as trees:

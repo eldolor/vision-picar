@@ -115,3 +115,15 @@ def test_d2_a_confirmer_without_local_ok_still_gets_the_geometry(monkeypatch):
     out = agent._confirm_identity({"state": "arrived", "source": "local"},
                                   sim_frame([det(TARGET, 0.0, 0.3)]))
     assert out["identity"]["tier"] == "sim" and out["identity"]["confirmed"] is True
+
+
+def test_d2_with_no_hold_the_private_view_agrees_with_cloud_spoke(monkeypatch):
+    # Review: at reject_hold_s 0 (refused by config, open to the constructor)
+    # the start_wait=False view said "wait" where cloud_spoke() says None.
+    tier = _tier(Cloud(), NoArrivalCall(), monkeypatch, tier_max_calls=1)
+    tier.reject_hold_s = 0.0
+    _held_no(tier)
+    tier._episode = 2
+    tier.stats.cloud_calls = 1
+    assert tier._cloud_said(start_wait=False) is None
+    assert tier.sim_over_held_no(sim_frame([det(TARGET, 0.0, 0.3)])) is None
