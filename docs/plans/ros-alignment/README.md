@@ -109,4 +109,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.101](3.101-rich-goal-features.md) | Explore's goal choice on ~40 features: 3.96's F-large plus route, information gain, room graph, history, budget and relative features |
 | [3.102](3.102-evolutionary-on-rich-features.md) | The evolutionary method on 3.96's and 3.101's fact sets: E-small, E-large, E-rich against their gradient twins |
 | [3.103](3.103-chooser-shape-and-pool.md) | Explore's goal chooser after the ceiling: lean facts, network shape, then scoring the whole pool |
+| [3.104](3.104-arrival-hears-stop.md) | A person's Stop during the arrival's confirmation ends the mission cancelled, not found |
 <!-- /sections -->
