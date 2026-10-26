@@ -286,6 +286,23 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   * Perception is silent on 20.4% of in-view frames, and VE covers 56% of
     those, so no Astra replay is proposed (re-read on Rover frames).
   * Inputs to 3.91.C and the behavior-tree work.
+* **A no about a candidate, remembered (3.91.C), code merged 2026-10-26;
+  the step stays open for criterion 9 (the user's live Drive-via-brain walk
+  on the deployed twin).** `tier_remember_no` (on): a no about the
+  candidate perception calls the target masks it until the body moves
+  0.5 m / turns 30 deg (odometry) or, on a phone, 3 lost frames or 20 s;
+  then a probation until a yes. The tiers' order (amendment 5): a lower
+  tier never undoes a higher one's answer; a local no Qwen cannot vouch for
+  (box outside `tier_no_box_range`) asks the cloud once a run (option a);
+  at arrival, once the cloud has spoken, the identity check is the cloud's
+  (`cloud_spoke()`, decided in `MissionRunner._guarded_confirm`). With the
+  call cap spent and a cloud no held, an arrival waits at most 20 s, then
+  the local tier (the user, 2026-10-26). Replays: C6 met (0 / 1
+  reversals), C5b met, C7 met local first (1 call) and FAILED cloud only
+  (10, bar 4), C5a FAILED on its own stub -- both kept as written by the
+  user. Criterion 8 (AWS spot, 21 houses) found met on all seven arms;
+  contacts not measured (needs a live run). Open items for the user are in
+  `docs/plans/ros-alignment/3.91-tier-fusion.md`.
 * **The tiered ladder as behavior trees (3.94), merged 2026-10-23.**
   `brain/tree.py` (Sequence, Fallback, Condition, Action, Decorator;
   py_trees semantics) builds the tiered policy's three decisions as trees:
