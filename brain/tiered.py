@@ -1553,8 +1553,9 @@ class TieredVision:
         arrival paid the cloud again). "ask": a yes about this run, or its
         probation -- the identity check is the cloud's, not the local VLM's.
         "wait": the cap is spent and a cloud-ranked no is held -- undecided
-        until it is released, or for `reject_hold_s` at most (so a call
-        starts that wait: call it only at an arrival). None: it has
+        until it is released, or for `reject_hold_s` at most, one wait per
+        held no, begun by the first call about it (call it only at an
+        arrival). None: it has
         not, the cap is spent with nothing of the cloud's held (the local tier
         is the best left), or `remember_no` is off (`dev`)."""
         if not self.remember_no:
