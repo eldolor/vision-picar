@@ -1,0 +1,68 @@
+{
+ "selection": {
+  "F-pool-W32": {
+   "R": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.0,
+    "median_metres_found": 17.165,
+    "mean_reward": 0.5942
+   },
+   "U": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.5,
+    "median_metres_found": 18.15,
+    "mean_reward": 0.5651
+   }
+  },
+  "F-pool-W64": {
+   "R": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.0,
+    "median_metres_found": 16.2,
+    "mean_reward": 0.5895
+   },
+   "U": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 18.15,
+    "mean_reward": 0.5677
+   }
+  },
+  "F-pool-W128": {
+   "R": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.0,
+    "median_metres_found": 16.2,
+    "mean_reward": 0.5959
+   },
+   "U": {
+    "n": 100,
+    "found": 98,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.0,
+    "median_metres_found": 17.549999999999997,
+    "mean_reward": 0.3063
+   }
+  }
+ },
+ "best_R": 0.5959,
+ "match": 0.02,
+ "w64_same_on_host": true,
+ "chosen": "F-pool-W32"
+}

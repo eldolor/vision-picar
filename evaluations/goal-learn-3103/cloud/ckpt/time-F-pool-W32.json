@@ -1,0 +1,21 @@
+{
+ "host": "ip-172-31-37-107",
+ "machine": "x86_64",
+ "F-lean": {
+  "poses": 120,
+  "p50_ms": 79.9,
+  "p90_ms": 91.4,
+  "max_ms": 95.9
+ },
+ "F-pool-W32": {
+  "poses": 120,
+  "p50_ms": 79.8,
+  "p90_ms": 90.5,
+  "max_ms": 92.4
+ },
+ "5_cost": {
+  "bar_ms": 100.5,
+  "met": true
+ },
+ "arm": "F-pool-W32"
+}

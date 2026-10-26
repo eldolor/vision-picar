@@ -1,0 +1,307 @@
+{
+ "arm": "F-pool-W32",
+ "widths": {
+  "selection": {
+   "F-pool-W32": {
+    "R": {
+     "n": 100,
+     "found": 100,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 4.0,
+     "median_metres_found": 17.165,
+     "mean_reward": 0.5942
+    },
+    "U": {
+     "n": 100,
+     "found": 100,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 4.5,
+     "median_metres_found": 18.15,
+     "mean_reward": 0.5651
+    }
+   },
+   "F-pool-W64": {
+    "R": {
+     "n": 100,
+     "found": 99,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 4.0,
+     "median_metres_found": 16.2,
+     "mean_reward": 0.5895
+    },
+    "U": {
+     "n": 100,
+     "found": 100,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 5.0,
+     "median_metres_found": 18.15,
+     "mean_reward": 0.5677
+    }
+   },
+   "F-pool-W128": {
+    "R": {
+     "n": 100,
+     "found": 99,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 4.0,
+     "median_metres_found": 16.2,
+     "mean_reward": 0.5959
+    },
+    "U": {
+     "n": 100,
+     "found": 98,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 4.0,
+     "median_metres_found": 17.549999999999997,
+     "mean_reward": 0.3063
+    }
+   }
+  },
+  "best_R": 0.5959,
+  "match": 0.02,
+  "w64_same_on_host": true,
+  "chosen": "F-pool-W32"
+ },
+ "best_it": 59,
+ "selection": {
+  "R": {
+   "n": 100,
+   "found": 100,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 17.165,
+   "mean_reward": 0.5942
+  },
+  "U": {
+   "n": 100,
+   "found": 100,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.5,
+   "median_metres_found": 18.15,
+   "mean_reward": 0.5651
+  }
+ },
+ "clone_agreement": 0.3924,
+ "R": {
+  "F-pool-W32": {
+   "n": 583,
+   "found": 569,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 13.8,
+   "mean_reward": 0.5551
+  },
+  "F-lean": {
+   "n": 583,
+   "found": 573,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 16.8,
+   "mean_reward": 0.5121
+  },
+  "F-large": {
+   "n": 583,
+   "found": 569,
+   "exceptions": 0,
+   "capped": 1,
+   "median_goals_found": 4.0,
+   "median_metres_found": 14.7,
+   "mean_reward": 0.5529
+  },
+  "F-rich": {
+   "n": 583,
+   "found": 567,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 14.1,
+   "mean_reward": 0.5629
+  },
+  "oracle": {
+   "n": 583,
+   "found": 574,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 2.0,
+   "median_metres_found": 8.4,
+   "mean_reward": 0.7829
+  },
+  "vs_F_lean": {
+   "diff": 0.0431,
+   "ci95": [
+    -0.0066,
+    0.0912
+   ]
+  },
+  "vs_F_large": {
+   "diff": 0.0022,
+   "ci95": [
+    -0.062,
+    0.0649
+   ]
+  },
+  "vs_F_rich": {
+   "diff": -0.0078,
+   "ci95": [
+    -0.0684,
+    0.052
+   ]
+  },
+  "fewer_goals_than_F_lean": 174,
+  "more_goals_than_F_lean": 144,
+  "finds_ok": true,
+  "trips_ok": true,
+  "unclean": 0,
+  "oracle_parts": {
+   "finds": 0.9846,
+   "goals": -0.0833,
+   "metres": -0.1184
+  },
+  "gap_to_oracle": {
+   "F-pool-W32": {
+    "finds": 0.0086,
+    "goals": 0.0615,
+    "metres": 0.1576,
+    "total": 0.2277
+   },
+   "F-lean": {
+    "finds": 0.0018,
+    "goals": 0.0793,
+    "metres": 0.1898,
+    "total": 0.2709
+   },
+   "F-large": {
+    "finds": 0.0086,
+    "goals": 0.0664,
+    "metres": 0.1549,
+    "total": 0.2299
+   },
+   "F-rich": {
+    "finds": 0.012,
+    "goals": 0.0607,
+    "metres": 0.1472,
+    "total": 0.2199
+   }
+  }
+ },
+ "U": {
+  "F-pool-W32": {
+   "n": 588,
+   "found": 580,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 18.6,
+   "mean_reward": 0.4203
+  },
+  "F-lean": {
+   "n": 588,
+   "found": 581,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 21.0,
+   "mean_reward": 0.3892
+  },
+  "F-large": {
+   "n": 588,
+   "found": 583,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 19.93,
+   "mean_reward": 0.4014
+  },
+  "F-rich": {
+   "n": 588,
+   "found": 585,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 18.9,
+   "mean_reward": 0.4485
+  },
+  "oracle": {
+   "n": 588,
+   "found": 583,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 3.0,
+   "median_metres_found": 10.5,
+   "mean_reward": 0.7812
+  },
+  "vs_F_lean": {
+   "diff": 0.0311,
+   "ci95": [
+    -0.04,
+    0.1001
+   ]
+  },
+  "vs_F_large": {
+   "diff": 0.0189,
+   "ci95": [
+    -0.0601,
+    0.098
+   ]
+  },
+  "vs_F_rich": {
+   "diff": -0.0282,
+   "ci95": [
+    -0.0853,
+    0.0278
+   ]
+  },
+  "fewer_goals_than_F_lean": 184,
+  "more_goals_than_F_lean": 166,
+  "finds_ok": true,
+  "trips_ok": true,
+  "unclean": 0,
+  "oracle_parts": {
+   "finds": 0.9915,
+   "goals": -0.0768,
+   "metres": -0.1334
+  },
+  "gap_to_oracle": {
+   "F-pool-W32": {
+    "finds": 0.0051,
+    "goals": 0.0988,
+    "metres": 0.257,
+    "total": 0.3609
+   },
+   "F-lean": {
+    "finds": 0.0034,
+    "goals": 0.1196,
+    "metres": 0.2691,
+    "total": 0.3921
+   },
+   "F-large": {
+    "finds": 0.0,
+    "goals": 0.1178,
+    "metres": 0.2622,
+    "total": 0.38
+   },
+   "F-rich": {
+    "finds": -0.0034,
+    "goals": 0.0905,
+    "metres": 0.2456,
+    "total": 0.3327
+   }
+  }
+ },
+ "criteria": {
+  "1_better_R": false,
+  "2_finds": true,
+  "3_trips": true,
+  "4_clean": true
+ }
+}
