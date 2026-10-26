@@ -83,6 +83,7 @@ from rclpy.time import Time
 from sensor_msgs.msg import JointState, LaserScan
 from slam_toolbox.srv import SerializePoseGraph
 from std_msgs.msg import String
+from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -109,6 +110,15 @@ BRAIN_HZ = 2.0
 # (3.76 H1-8): well inside world/ros_world.py's 2 s client timeout, or the
 # caller gives up first and reads a timeout instead of "nav2 is not up".
 NAV2_WAIT_S = 1.0
+# 3.105: goals are held until nav2's lifecycle manager says its nodes are
+# active. After a start, navigate_to_pose has a server ~10 s before its
+# navigator is active, and nav2 rejects a goal sent then (3.50.D4-b), which
+# explore counts as a failed goal; a 503 it waits on. Asked every
+# NAV2_ASK_S, one ask at a time; one unanswered in NAV2_ASK_TIMEOUT_S reads
+# inactive and is asked again.
+NAV2_MANAGER = "/lifecycle_manager_navigation/is_active"
+NAV2_ASK_S = 0.5
+NAV2_ASK_TIMEOUT_S = 2.0
 # A goal nav2 has not accepted or rejected in this long never will be (its
 # navigator died after wait_for_server): it ends `aborted` (3.76 H1-2). While
 # pending, the robot server refuses every other autonomous driver and a
@@ -248,6 +258,14 @@ class Bridge(Node):
         # last} (3.76 Q3). Re-sent by a timer until the result arrives.
         self.cancelling = {}
         self._nav_ready = True           # refreshed by _resend_cancels, outside the lock
+        # ---- 3.105: whether nav2's nodes are active; send_goal reads it ----
+        self.nav2_cli = self.create_client(Trigger, NAV2_MANAGER,
+                                           callback_group=ReentrantCallbackGroup())
+        self._nav2 = {"active": False, "why": "not asked yet", "answered_at": None}  # monotonic
+        self._nav2_inactive_since = time.monotonic()
+        self._nav2_ask = None            # the ask in flight, under self.lock
+        self._nav2_ask_since = 0.0       # monotonic
+        self.create_timer(NAV2_ASK_S, self._poll_nav2)
         self.goal = None               # {"x_m","y_m","yaw_rad","state","since"}
         self.plan = []
         self.create_subscription(Path, "/plan", self._on_plan, 10)
@@ -491,14 +509,18 @@ class Bridge(Node):
         if body.get("session") not in (None, self.session):
             return 409, {"error": "the SLAM session changed", "session": self.session}
         with self.lock:
-            state, why = self.slam_state, self.reload.get("error")
-        if state != "ready":
-            # 3.50.D3: nav2 is held while slam_toolbox starts or a reload is
-            # judged -- a bad match swaps the whole frame.
-            return 503, {"error": f"SLAM is not ready ({state})" + (f": {why}" if why else ""),
-                         "slam": state}
+            refusal = self._goal_refusal()
+        if refusal is not None:
+            return 503, refusal
         if not self.nav.wait_for_server(timeout_sec=NAV2_WAIT_S):
             return 503, {"error": "nav2 is not up (navigate_to_pose has no server)"}
+        with self.lock:
+            # 3.105 (review): read again after the wait (up to 1 s) and before
+            # the cancel, so a re-map or a nav2 reset meanwhile leaves the
+            # live goal alone.
+            refusal = self._goal_refusal()
+        if refusal is not None:
+            return 503, refusal
         self.cancel_goal()
         ps = PoseStamped()
         ps.header.frame_id = "map"
@@ -511,11 +533,12 @@ class Bridge(Node):
         goal = NavigateToPose.Goal()
         goal.pose = ps
         with self.lock:
-            if self.slam_state != "ready":
-                # 3.50.D4 (review): a re-map began after the check above; its
-                # rest wait must see every goal, so none is sent past it.
-                return 503, {"error": f"SLAM is not ready ({self.slam_state})",
-                             "slam": self.slam_state}
+            # 3.50.D4 (review): a re-map began after the check above; its
+            # rest wait must see every goal, so none is sent past it. And
+            # (3.105) none to a nav2 reset during the cancel.
+            refusal = self._goal_refusal()
+            if refusal is not None:
+                return 503, refusal
             self.plan = []
             # The superseded goal was sent its cancel above, and nav2's
             # navigator preempts it for this one anyway; its handle must not
@@ -529,6 +552,18 @@ class Bridge(Node):
         future = self.nav.send_goal_async(goal)
         future.add_done_callback(lambda f: self._on_goal_response(f, record))
         return 200, {"state": "pending"}
+
+    def _goal_refusal(self):
+        """Under self.lock: the 503 body if no goal may be sent now, else None."""
+        if self.slam_state != "ready":
+            # 3.50.D3: nav2 is held while slam_toolbox starts or a reload is
+            # judged -- a bad match swaps the whole frame.
+            why = self.reload.get("error")
+            return {"error": f"SLAM is not ready ({self.slam_state})" + (f": {why}" if why else ""),
+                    "slam": self.slam_state}
+        if not self._nav2["active"]:
+            return self._nav2_refusal()          # 3.105
+        return None
 
     def _on_goal_response(self, future, record):
         handle = future.result()
@@ -630,6 +665,68 @@ class Bridge(Node):
                 and (self.last_nav_twist_at is None
                      or now - self.last_nav_twist_at > CANCEL_RESULT_TIMEOUT_S)
                 and not self._nav_ready)
+
+    def _poll_nav2(self):
+        """3.105: asks nav2's lifecycle manager whether its nodes are active,
+        one ask at a time; rclpy is called outside bridge.lock."""
+        now = time.monotonic()
+        with self.lock:
+            stale = self._nav2_ask
+            if stale is not None:
+                if now - self._nav2_ask_since < NAV2_ASK_TIMEOUT_S:
+                    return
+                self._nav2_ask = None    # given up on: a late answer is ignored
+                # Humble's manager serves is_active in the group that runs its
+                # start-up, so a start reads as this, not as "not active".
+                self._set_nav2(False, f"no answer from {NAV2_MANAGER} in "
+                                      f"{NAV2_ASK_TIMEOUT_S:.0f} s (busy starting nav2, or hung)")
+        if stale is not None:
+            drop = getattr(self.nav2_cli, "remove_pending_request", None)
+            if drop is not None:         # (review) or rclpy keeps every given-up ask
+                drop(stale)
+        if not self.nav2_cli.service_is_ready():
+            with self.lock:
+                self._set_nav2(False, f"no lifecycle manager ({NAV2_MANAGER})")
+            return
+        future = self.nav2_cli.call_async(Trigger.Request())
+        with self.lock:
+            self._nav2_ask, self._nav2_ask_since = future, now
+        future.add_done_callback(self._on_nav2_answer)
+
+    def _on_nav2_answer(self, future):
+        try:
+            active = bool(future.result().success)
+            why = None if active else "nav2's nodes are not active"
+        except Exception as e:  # noqa: BLE001 -- a failed ask holds goals
+            active, why = False, f"{NAV2_MANAGER} failed: {e}"
+        with self.lock:
+            if future is not self._nav2_ask:
+                return                   # given up on, and asked again since
+            self._nav2_ask = None
+            self._set_nav2(active, why, answered=True)
+
+    def _set_nav2(self, active, why, answered=False):
+        """Under self.lock. Logs a change of state."""
+        if active != self._nav2["active"]:
+            self.get_logger().info("nav2 active: goals taken" if active
+                                   else f"nav2 not active, goals held: {why}")
+            self._nav2_inactive_since = None if active else time.monotonic()
+        self._nav2 = {"active": active, "why": why,
+                      "answered_at": time.monotonic() if answered else self._nav2["answered_at"]}
+
+    def _nav2_view(self):
+        """Under self.lock: /health's `nav2`, ages not clock times (review)."""
+        now = time.monotonic()
+        at, since = self._nav2["answered_at"], self._nav2_inactive_since
+        return {"active": self._nav2["active"], "why": self._nav2["why"],
+                "answer_age_s": None if at is None else round(now - at, 1),
+                "inactive_s": None if since is None else round(now - since, 1)}
+
+    def _nav2_refusal(self):
+        """Under self.lock: the 503 body while goals are held."""
+        nav2 = self._nav2_view()
+        return {"error": "nav2 is not active" + (f": {nav2['why']}" if nav2["why"] else ""),
+                "nav2": nav2}
 
     def _resend_cancels(self):
         """The bridge's own re-send of every cancel not yet answered by a
@@ -1624,6 +1721,8 @@ class Bridge(Node):
                          "scans_published": self.scan_count, "twists": dict(self.twists),
                          "pan_rad": self.pan_rad, "session": self.session,
                          "map_version": self.map_version,
+                         # 3.105: goals are held until nav2 answers active
+                         "nav2": self._nav2_view(),
                          "brain_url": self.brain_url,
                          "brain_polls": self.brain_polls,
                          "brain_age_s": None if not self.brain_at else time.time() - self.brain_at,

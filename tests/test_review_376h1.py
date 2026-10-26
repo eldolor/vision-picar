@@ -134,6 +134,8 @@ def bridge_mod(monkeypatch):
     mod("sensor_msgs.msg", JointState=_Msg, LaserScan=_Msg)
     mod("std_msgs")
     mod("std_msgs.msg", String=_Msg)
+    mod("std_srvs")
+    mod("std_srvs.srv", Trigger=types.SimpleNamespace(Request=_Msg))   # 3.105: nav2's is_active
     mod("tf2_ros", Buffer=_Msg, TransformListener=lambda *a, **kw: None)
     mod("visualization_msgs")
     mod("visualization_msgs.msg", Marker=_Msg, MarkerArray=_Msg)
@@ -213,6 +215,8 @@ def _bridge(bridge_mod):
     b = bridge_mod.Bridge()
     b.nav = _Nav()
     b.slam_state = "ready"             # 3.50.D3: slam_toolbox up, no reload being judged
+    with b.lock:
+        b._set_nav2(True, None)          # 3.105: nav2's nodes active
     return b
 
 
