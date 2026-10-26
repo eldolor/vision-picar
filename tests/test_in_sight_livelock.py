@@ -114,3 +114,6 @@ def test_a_tick_that_does_not_count_starts_the_count_again():
     _tick(agent)
     assert agent.retry.failures_near(*point) == 0
     assert "REVERSE" not in sent and "REVERSE" not in agent._pending
+    for _ in range(CLOSE_IN_REFUSED):              # ... and a full run after it still fires
+        _tick(agent)
+    assert agent.retry.failures_near(*point) == 1

@@ -251,7 +251,7 @@ class ExploreAgent(MissionAgent):
         # 3.106: ticks in a row, at one place, in the band with the target in
         # sight, nothing to close in with, and still not found.
         self._in_sight_unfound = 0
-        self._in_sight_at: Optional[tuple] = None     # where they were counted
+        self._in_sight_at: Optional[tuple] = None     # where the run started
         self._in_sight_tick = -1                      # the last tick counted
         self._refusal_noted = False
         self._scene: dict = {}         # 3.80.G: this step's scene (sight_from perception)
@@ -500,9 +500,11 @@ class ExploreAgent(MissionAgent):
                            for o in scene.get("important_objects") or ()):
                     here = (self._in_sight_at is not None and math.hypot(
                         tx - self._in_sight_at[0], ty - self._in_sight_at[1]) <= APPROACH_MOVED_M)
-                    run = here and self._in_sight_tick == self._ticks - 1
-                    self._in_sight_unfound = self._in_sight_unfound + 1 if run else 1
-                    self._in_sight_at, self._in_sight_tick = (tx, ty), self._ticks
+                    if here and self._in_sight_tick == self._ticks - 1:
+                        self._in_sight_unfound += 1
+                    else:                                 # anchored where the run starts
+                        self._in_sight_unfound, self._in_sight_at = 1, (tx, ty)
+                    self._in_sight_tick = self._ticks
                     if self._in_sight_unfound >= CLOSE_IN_REFUSED:
                         self._give_up_sighting(tx, ty, now)
                         return self._do_pending()
@@ -631,6 +633,7 @@ class ExploreAgent(MissionAgent):
         # was (3.76 K3: a target reached by a frontier goal began at the
         # last one's count). Not by the target's estimate, which can flip.
         self._close_in_refused = 0
+        self._reset_in_sight()             # 3.106: as close-in's (a goal tick is never counted)
         self.goals_sent += 1
         self.last_event = f"goal sent ({kind}) to ({x_m:.2f}, {y_m:.2f})"
         self._event("goal_sent", kind=kind, goal=[round(x_m, 2), round(y_m, 2)], **info)
@@ -769,8 +772,12 @@ class ExploreAgent(MissionAgent):
         self.retry.fail(tx, ty, now, known=self._known_at)
         self._last_seen = None
         self._approach = None
-        self._in_sight_unfound, self._in_sight_at, self._in_sight_tick = 0, None, -1
+        self._close_in_refused = 0
+        self._reset_in_sight()
         self._pending.insert(0, "REVERSE")
+
+    def _reset_in_sight(self) -> None:
+        self._in_sight_unfound, self._in_sight_at, self._in_sight_tick = 0, None, -1
 
     def _send_approach(self, tx: float, ty: float, now: float, scene: Optional[dict] = None):
         pose = self._pose()
