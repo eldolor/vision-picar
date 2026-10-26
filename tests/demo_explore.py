@@ -48,9 +48,8 @@ LOGDIR = os.environ.get("EXPLORE_LOGDIR", "/tmp")
 # PICAR_ROS_NETWORK=host: the container on the host's network, both URLs on
 # loopback and the bridge on BRIDGE -- plain Docker on Linux has no
 # host.docker.internal (service/slam/README.md, "On the car"). The bridge
-# then listens on every interface with no secret (this script strips it):
-# only where nothing can reach in, such as an EC2 instance with no inbound
-# rules (evaluations/goal-learn-396/live_cloud.sh), never on a shared LAN.
+# has no secret (this script strips it), so it listens on loopback only
+# (BRIDGE_HOST, 3.97); it listened on every interface before.
 # Off the container's own network, only ROS_DOMAIN_ID keeps two stacks'
 # nodes apart: set it per section (`plan_section.py env`). Unset, the Docker
 # Desktop wiring below.
@@ -131,17 +130,18 @@ def heavy_lock():
     _HEAVY = f
 
 
-def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None):
+def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None, drive="ros"):
     """A fresh robot server, brain and ROS container. `slam_yaml` mounts
     another slam_toolbox config over the image's (it is symlink-installed),
     and `nav_yaml` another nav2 config;
-    `odom_drift` is SIM_ODOM_DRIFT ("left,right")."""
+    `odom_drift` is SIM_ODOM_DRIFT ("left,right"); `drive` is ROBOT_DRIVE
+    (3.97: `direct` with the ROS world)."""
     heavy_lock()
     _kill_ports()
     run_dir = _new_run_dir()
     env = {k: v for k, v in os.environ.items()
            if k not in ("APP_SHARED_SECRET", "LOCAL_SECRET")}
-    env.update(SIM_MAP=house, SIM_MOVERS=movers, ROBOT_DRIVE="ros", WORLD_MODE="ros",
+    env.update(SIM_MAP=house, SIM_MOVERS=movers, ROBOT_DRIVE=drive, WORLD_MODE="ros",
                SIM_ODOM_DRIFT=odom_drift,
                ROS_BRIDGE_URL=f"http://127.0.0.1:{BRIDGE}",
                # The robot server at WARNING (its refusals, now time-stamped):
@@ -164,7 +164,9 @@ def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None):
     if nav_yaml:
         mount += ["-v", f"{os.path.abspath(nav_yaml)}:/ws/src/picar_bringup/config/nav2.yaml:ro"]
     if HOST_NETWORK:
-        net = ["--network", "host", "-e", f"BRIDGE_PORT={BRIDGE}",
+        # The bridge on loopback only: with no secret it must not listen
+        # on the host's LAN (3.97; its BRIDGE_HOST).
+        net = ["--network", "host", "-e", f"BRIDGE_PORT={BRIDGE}", "-e", "BRIDGE_HOST=127.0.0.1",
                "-e", f"ROBOT_URL=http://127.0.0.1:{ROBOT}",
                "-e", f"BRAIN_URL=http://127.0.0.1:{BRAIN}"]
     else:
