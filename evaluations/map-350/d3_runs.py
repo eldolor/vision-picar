@@ -88,6 +88,16 @@ def _network():
             "-e", f"BRAIN_URL=http://host.docker.internal:{de.BRAIN}"]
 
 
+def remap_contradiction():
+    """The contradiction trigger as the bridge will read it (bridge.py: on
+    only for exactly "1"). Any other value is refused here rather than
+    recorded as a setting the bridge never ran (review)."""
+    v = os.environ.get("PICAR_REMAP_CONTRADICTION", "0")
+    if v not in ("0", "1"):
+        raise SystemExit(f"PICAR_REMAP_CONTRADICTION={v!r}: use 0 or 1")
+    return v == "1"
+
+
 def container(maps, bridge):
     """Restart only the container; watch it come up at 10 Hz. Returns the
     watch: when the reload was judged, and whether anything leaked before."""
@@ -381,6 +391,7 @@ def lap_runs():
 
 
 def main(which):
+    remap_contradiction()
     os.makedirs(OUT, exist_ok=True)
     de.heavy_lock()
     de._kill_ports()
@@ -413,6 +424,7 @@ def main(which):
             name = f"{house}-e"
         else:
             res = lap_runs() if name == "lap" else house_runs(name)
+        res["remap_contradiction"] = remap_contradiction()
         with open(os.path.join(OUT, f"{name}.json"), "w") as f:
             json.dump(res, f, indent=1)
         print(name, json.dumps(res.get("verdicts") or res.get("D3-c") or res.get("D3-e")

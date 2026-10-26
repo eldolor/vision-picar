@@ -613,6 +613,7 @@ def main(argv):
     # The trigger under test ships off (the user, 2026-10-24): D4 measures
     # it on, unless the caller says otherwise, and each result records which.
     os.environ.setdefault("PICAR_REMAP_CONTRADICTION", "1")
+    d3.remap_contradiction()
     check_image()
     kinds = [a for a in argv if a in ("a", "b", "c", "d")] or ["a", "b", "c", "d"]
     houses = [a for a in argv if a in MOVERS] or list(MOVERS)
@@ -631,7 +632,7 @@ def main(argv):
             except Exception as e:  # noqa: BLE001 -- recorded, the next run goes on
                 res = {"house": house, "error": f"{type(e).__name__}: {e}"}
             res["image"] = d3.IMAGE
-            res["remap_contradiction"] = os.environ["PICAR_REMAP_CONTRADICTION"]
+            res["remap_contradiction"] = d3.remap_contradiction()
             with open(os.path.join(OUT, f"{name}.json"), "w") as f:
                 json.dump(res, f, indent=1, default=str)
             print(f"    {res.get('verdict') or res.get('error')}", flush=True)

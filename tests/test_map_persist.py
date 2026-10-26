@@ -294,6 +294,7 @@ def test_a_pointer_that_moved_is_a_save_even_if_the_dir_sync_fails(tmp_path, mon
 
 # ---- 3.50.D3: the reload, its check and the swap to a fresh map ----
 
+import importlib  # noqa: E402
 import math  # noqa: E402
 import time  # noqa: E402
 import types  # noqa: E402
@@ -301,17 +302,11 @@ import types  # noqa: E402
 from tests.test_review_376h1 import _Msg, bridge_mod  # noqa: E402,F401 -- the stubbed bridge
 
 
-@pytest.fixture
-def contradiction_default():
-    """Asked for by a test of the bridge as it ships: the trigger off."""
-
-
 @pytest.fixture(autouse=True)
 def _contradiction_on(request, monkeypatch):
     """3.50.D4: the contradiction trigger ships off (PICAR_REMAP_CONTRADICTION);
-    the tests of its behaviour run it on, except those asking for
-    `contradiction_default`."""
-    if "bridge_mod" in request.fixturenames and "contradiction_default" not in request.fixturenames:
+    the tests of its behaviour run it on."""
+    if "bridge_mod" in request.fixturenames:
         monkeypatch.setattr(request.getfixturevalue("bridge_mod"), "REMAP_CONTRADICTION", True)
 
 RES = 0.05
@@ -1050,14 +1045,14 @@ def test_the_watch_re_maps_on_entering_the_saved_map_s_unknown(bridge_mod, monke
 
 
 def test_the_contradiction_trigger_ships_off_and_entered_unknown_still_re_maps(
-        bridge_mod, contradiction_default, monkeypatch, tmp_path):
+        bridge_mod, monkeypatch, tmp_path):
     """3.50.D4 (the user, 2026-10-24): off unless PICAR_REMAP_CONTRADICTION=1.
     Off, no scan is filed or judged, and entering the saved unknown still
     asks for the re-map."""
-    # The shipped default, read from the code (not the shell's env, review).
-    src = open(bridge_mod.__file__).read()
-    assert 'REMAP_CONTRADICTION = os.environ.get("PICAR_REMAP_CONTRADICTION", "0") == "1"' in src
-    monkeypatch.setattr(bridge_mod, "REMAP_CONTRADICTION", False)
+    # The shipped default: the module imported with the variable unset (review).
+    monkeypatch.delenv("PICAR_REMAP_CONTRADICTION", raising=False)
+    importlib.reload(bridge_mod)
+    assert bridge_mod.REMAP_CONTRADICTION is False
     pose = (0.0, 0.0, 0.0)
     b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.5, 0.5, 0.0))
     b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
