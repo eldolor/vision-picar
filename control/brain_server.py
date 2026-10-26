@@ -400,7 +400,7 @@ def _tiered_vision_fn(target: str, cloud_vision_fn, config: dict,
         "local_band_low": config["tier_local_band_low"],
         # 3.94.D: the behavior tree's order and numbers (validated at load).
         "tree": config["tier_tree"],
-        # 3.91.C: a no about a candidate, remembered; 0 disagreement = never.
+        # 3.91.C: a no about a candidate, remembered (`tier_remember_no`).
         "remember_no": config["tier_remember_no"],
         "reject_hold_s": config["tier_reject_hold_s"],
         "reject_move_m": config["tier_reject_move_m"],

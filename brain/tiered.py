@@ -966,6 +966,9 @@ class TieredVision:
         self.reject_turn_deg = max(0.0, float(reject_turn_deg))
         self.no_box_range = (float(no_box_range[0]), float(no_box_range[1]))
         self._rejection: Optional[dict] = None
+        # The arrival's wait on a held cloud no with the cap spent: (the no,
+        # stamp, monotonic) when it began (review 2026-10-26).
+        self._cap_wait: Optional[tuple] = None
         # Review: `wait_inflight()` can apply an answer on the runner's
         # abandoned thread while a tick tracks the candidate.
         self._reject_lock = threading.RLock()
@@ -1552,7 +1555,7 @@ class TieredVision:
         arrival paid the cloud again). "ask": a yes about this run, or its
         probation -- the identity check is the cloud's, not the local VLM's.
         "wait": the cap is spent and a cloud-ranked no is held -- undecided
-        until it is released. None: it has not, the cap is spent with nothing
+        until it is released, for at most `reject_hold_s`. None: it has not, the cap is spent with nothing
         of the cloud's held (the local tier is the best left), or
         `remember_no` is off (`dev`)."""
         if not self.remember_no:
@@ -1572,14 +1575,30 @@ class TieredVision:
                 # The cap spent: the cloud cannot answer. A cloud-ranked no it
                 # holds still outranks the local VLM, so the arrival waits,
                 # undecided, until the no is released (round 8); refusing it
-                # would drop the place (round 7). Otherwise the local tier.
-                return "wait" if (r is not None and r["rank"] == "cloud") else None
+                # would drop the place (round 7). At most `reject_hold_s`
+                # (the user, 2026-10-26): with odometry only a move or turn
+                # releases it, and the wait holds the body still. Then, or
+                # with nothing of the cloud's held, the local tier.
+                if r is None or r["rank"] != "cloud":
+                    return None
+                return "wait" if self._cap_waited_s(r) < self.reject_hold_s else None
             if r is not None and r["rank"] == "cloud":
                 return "ask"
             if (self._cloud_yes_episode == self._episode
                     or (self._probation and self._probation_by == "cloud")):
                 return "ask"
             return None
+
+    def _cap_waited_s(self, r: dict) -> float:
+        """How long arrivals have waited on this held no, from the first
+        wait (not from the no: it may be old). Clocks as `_held_s`."""
+        w = self._cap_wait
+        if w is None or w[0] is not r:
+            w = self._cap_wait = (r, self._stamp(), time.monotonic())
+        now = self._stamp()
+        if now is not None and w[1] is not None:
+            return now - w[1]
+        return time.monotonic() - w[2]
 
     def _on_probation(self, perception: Perception) -> bool:
         """Amendment 3: a candidate in view whose no was released by loss or
@@ -2520,6 +2539,7 @@ class TieredVision:
         self._pending_error = None
         with self._reject_lock:
             self._rejection = None
+            self._cap_wait = None
             self._end_probation()
             self._masked = False
             self._escalate_episode = None

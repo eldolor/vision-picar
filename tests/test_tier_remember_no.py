@@ -975,3 +975,44 @@ def test_a_late_yes_under_a_higher_tiers_no_steers_nothing():
     tier._reject("cloud", None, 2)
     tier._apply_local(_local_answer(yes(frac=[0.6, 0.4, 0.8, 0.6]), episode=1))
     assert tier._local_held is None and tier._rejection is not None
+
+
+# --- review 2026-10-26 (both reviewers) -------------------------------------------
+
+def _capped_wait(stamp=None):
+    tier = TieredVision(Pipeline([D()]), Cloud(), local_sighting_fn=Local(no()), max_calls=1)
+    tier._lost, tier._episode = 0, 1
+    tier._frame_stamp = stamp
+    tier._reject("cloud", None, 1)
+    tier._episode = 2                       # a new run, the no held (odometry)
+    tier._perception_this_frame = D()
+    tier.stats.cloud_calls = 1
+    return tier
+
+
+def test_with_the_cap_spent_the_arrival_waits_at_most_the_hold_then_the_local_tier():
+    # The user, 2026-10-26: with odometry the held no is released only by a
+    # move or turn, and the arrival's wait holds the body still -- so the wait
+    # never ended. Now it lasts `reject_hold_s`, then the local tier answers.
+    tier = _capped_wait(stamp=100.0)
+    tier._frame_stamp = 105.0
+    assert tier.cloud_spoke() == "wait"     # the wait starts here, not at the no
+    tier._frame_stamp = 105.0 + tier.reject_hold_s - 0.1
+    assert tier.cloud_spoke() == "wait"
+    tier._frame_stamp = 105.0 + tier.reject_hold_s
+    assert tier.cloud_spoke() is None       # waited out: the local tier decides
+    assert tier._rejection is not None      # the no itself still masks
+
+
+def test_the_capped_wait_restarts_for_a_new_no_and_runs_on_the_monotonic_clock(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr("brain.tiered.time.monotonic", lambda: now[0])
+    tier = _capped_wait()
+    assert tier.cloud_spoke() == "wait"
+    now[0] += tier.reject_hold_s
+    assert tier.cloud_spoke() is None
+    tier._release("moved")
+    tier._episode = 3
+    tier._reject("cloud", None, 3)          # a new no: a new wait
+    tier._episode = 4
+    assert tier.cloud_spoke() == "wait"
