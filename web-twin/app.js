@@ -903,26 +903,57 @@
   // robot server does not pass the bridge's slam.state on, so the button is
   // offered on any SLAM map and the server's answer is what the person reads:
   // 409 is a refusal about now (not on a saved map, already re-mapping), 501
-  // or 404 a world with no saved map, and the button goes.
+  // or 404 a world with no saved map, and the button goes. A re-map can
+  // cancel a live goal (the brain's too), so it takes two taps: the first
+  // arms it for REMAP_ARM_MS.
+  var REMAP_ARM_MS = 4000;
+  var REMAP_TIMEOUT_MS = 20000;
+
   function updateRemapButton() {
     var row = document.querySelector(".remap-row");
     var btn = document.getElementById("btn-remap");
     if (!row || !btn) return;
     var offered = state.connected && isSlamMap(state.lastMap) && !state.remapUnsupported;
     row.style.display = offered ? "" : "none";
-    btn.disabled = !!state.remapBusy;
+    var armed = !state.remapBusy && Date.now() < (state.remapArmedUntil || 0);
+    btn.disabled = !offered || !!state.remapBusy;
+    btn.textContent = state.remapBusy ? "Asking…" : armed ? "Tap again to re-map" : "Re-map now";
+    btn.classList.toggle("armed", armed);
   }
 
   async function remapNow() {
     if (state.remapBusy) return;
+    if (Date.now() >= (state.remapArmedUntil || 0)) {
+      state.remapArmedUntil = Date.now() + REMAP_ARM_MS;
+      updateRemapButton();
+      setTimeout(updateRemapButton, REMAP_ARM_MS + 50);
+      return;
+    }
+    state.remapArmedUntil = 0;
     state.remapBusy = true;
+    var epoch = state.remapEpoch;
     updateRemapButton();
+    var timer;
     try {
       // A person's request, named as the map tap is.
-      await apiPost("/world/remap", {}, {"x-driver": DRIVER_DPAD});
-      showToast("Re-mapping from here: goals wait until the map is ready again", "ok");
+      await Promise.race([
+        apiPost("/world/remap", {}, {"x-driver": DRIVER_DPAD}),
+        new Promise(function (_, reject) {
+          timer = setTimeout(function () {
+            var err = new Error("no answer in " + REMAP_TIMEOUT_MS / 1000 + " s");
+            err.timedOut = true;
+            reject(err);
+          }, REMAP_TIMEOUT_MS);
+        }),
+      ]);
+      if (epoch !== state.remapEpoch) return;   // asked of another connection
+      showToast("Re-mapping from here: goals wait until the map is ready again, " +
+                "and a goal still driving may be cancelled", "ok");
     } catch (e) {
-      if (e.status === 404 || e.status === 501) {
+      if (epoch !== state.remapEpoch) return;
+      if (e.timedOut) {
+        showToast("Re-map: " + e.message + " -- it may have started; watch the map", "warn");
+      } else if (e.status === 404 || e.status === 501) {
         state.remapUnsupported = true;
         showToast("Not re-mapped: " + (e.message || "this robot keeps no saved map"), "err");
       } else if (e.status === 409) {
@@ -931,7 +962,8 @@
         showToast("Not re-mapped (" + (e.message || e) + ")", "err");
       }
     } finally {
-      state.remapBusy = false;
+      clearTimeout(timer);
+      if (epoch === state.remapEpoch) state.remapBusy = false;
       updateRemapButton();
     }
   }
@@ -1307,6 +1339,7 @@
       document.getElementById(id).disabled = !enabled;
     });
     updateHouseButton();
+    updateRemapButton();
   }
 
   // 3.72: "Random house" -- the robot server puts the sim robot in one of
@@ -1451,7 +1484,11 @@
     state.odometryUnsupported = false;
     state.worldErrorUnsupported = false;
     state.goalsUnsupported = false;
+    // 3.50.D4b: a re-map asked of the last connection answers for it alone.
     state.remapUnsupported = false;
+    state.remapBusy = false;
+    state.remapArmedUntil = 0;
+    state.remapEpoch = (state.remapEpoch || 0) + 1;
     state.lastWorldError = null;
     state.lastGoal = null;
     state.serverSecret = document.getElementById("cfg-server-secret").value.trim();

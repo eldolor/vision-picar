@@ -40,20 +40,33 @@ def _open(browser, twin_server, grid=_SLAM_MAP, pose=_SLAM_POSE):
     return page, errors
 
 
-def _answer(page, status, body, seen=None, delay_ms=0):
+def _answer(page, status, body, seen=None):
     def handler(route):
         if seen is not None:
             seen.append({"method": route.request.method,
                          "driver": route.request.headers.get("x-driver")})
-        if delay_ms:
-            page.wait_for_timeout(delay_ms)
         route.fulfill(status=status, content_type="application/json", body=json.dumps(body))
     page.route("**/world/remap", handler)
+
+
+def _hold(page):
+    """Requests to /world/remap held unanswered; the test fulfils them."""
+    held = []
+    page.route("**/world/remap", lambda route: held.append(route))
+    return held
+
+
+def _remap(page):
+    """The two taps a re-map takes: arm, then ask."""
+    page.click("#btn-remap")
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Tap again to re-map")
+    page.click("#btn-remap")
 
 
 def test_the_button_shows_on_a_slam_map_only(browser, twin_server):
     page, errors = _open(browser, twin_server)
     sync_api.expect(page.locator("#btn-remap")).to_be_visible(timeout=5000)
+    assert not errors, errors
     page.context.close()
     sim = dict(_SLAM_MAP, map_id="sim-grid")
     page, errors = _open(browser, twin_server, grid=sim, pose=dict(_SLAM_POSE, map_id="sim-grid"))
@@ -63,13 +76,29 @@ def test_the_button_shows_on_a_slam_map_only(browser, twin_server):
     page.context.close()
 
 
-def test_a_tap_asks_the_robot_server_as_a_person(browser, twin_server):
+def test_one_tap_only_arms_it(browser, twin_server):
+    """Review round 1: a re-map can cancel a live goal, the brain's too, so a
+    stray tap must send nothing."""
+    page, errors = _open(browser, twin_server)
+    seen = []
+    _answer(page, 200, {"remapping": True}, seen)
+    page.click("#btn-remap")
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Tap again to re-map")
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now", timeout=6000)
+    assert seen == [], seen
+    assert not errors, errors
+    page.context.close()
+
+
+def test_two_taps_ask_the_robot_server_as_a_person(browser, twin_server):
     page, errors = _open(browser, twin_server)
     seen = []
     _answer(page, 200, {"remapping": True, "trigger": "request", "map_id": "home", "version": 2},
             seen)
-    page.click("#btn-remap")
-    sync_api.expect(page.locator(".toast").last).to_contain_text("Re-mapping", timeout=3000)
+    _remap(page)
+    toast = page.locator(".toast").last
+    sync_api.expect(toast).to_contain_text("Re-mapping", timeout=3000)
+    sync_api.expect(toast).to_contain_text("may be cancelled")
     assert seen == [{"method": "POST", "driver": "twin-dpad"}], seen
     assert not errors, errors
     page.context.close()
@@ -79,7 +108,7 @@ def test_a_refusal_says_the_servers_reason(browser, twin_server):
     page, errors = _open(browser, twin_server)
     _answer(page, 409, {"detail": "re-map only from a reloaded map being localised on "
                                   "(slam ready, mode mapping)"})
-    page.click("#btn-remap")
+    _remap(page)
     toast = page.locator(".toast").last
     sync_api.expect(toast).to_contain_text("Not re-mapped", timeout=3000)
     sync_api.expect(toast).to_contain_text("mode mapping")
@@ -92,21 +121,60 @@ def test_a_refusal_says_the_servers_reason(browser, twin_server):
 def test_a_world_without_slam_takes_the_button_away(browser, twin_server):
     page, errors = _open(browser, twin_server)
     _answer(page, 501, {"detail": "this world keeps no saved map -- re-mapping needs SLAM"})
-    page.click("#btn-remap")
+    _remap(page)
     sync_api.expect(page.locator(".toast").last).to_contain_text("no saved map", timeout=3000)
     sync_api.expect(page.locator("#btn-remap")).to_be_hidden(timeout=3000)
     assert not errors, errors
     page.context.close()
 
 
-def test_a_double_tap_asks_once(browser, twin_server):
+def test_one_request_at_a_time(browser, twin_server):
     page, errors = _open(browser, twin_server)
-    seen = []
-    _answer(page, 200, {"remapping": True}, seen, delay_ms=600)
-    page.click("#btn-remap")
-    page.click("#btn-remap", force=True, timeout=1000, no_wait_after=True)
-    page.wait_for_timeout(1200)
-    assert len(seen) == 1, seen
+    held = _hold(page)
+    _remap(page)
+    btn = page.locator("#btn-remap")
+    sync_api.expect(btn).to_have_text("Asking\u2026")
+    sync_api.expect(btn).to_be_disabled()
+    page.wait_for_timeout(300)
+    assert len(held) == 1, held
+    held[0].fulfill(status=200, content_type="application/json",
+                    body=json.dumps({"remapping": True}))
+    sync_api.expect(btn).to_have_text("Re-map now", timeout=3000)
+    sync_api.expect(btn).to_be_enabled()
+    assert len(held) == 1
+    assert not errors, errors
+    page.context.close()
+
+
+def test_a_lost_connection_takes_the_button_away(browser, twin_server):
+    """Review round 1: the button was set only when the map was drawn, so a
+    failed reconnect left it live, pointed at a dead server."""
+    page, errors = _open(browser, twin_server)
+    sync_api.expect(page.locator("#btn-remap")).to_be_visible(timeout=5000)
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", "http://127.0.0.1:9")
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    sync_api.expect(page.locator("#btn-remap")).to_be_hidden(timeout=8000)
+    page.context.close()
+
+
+def test_a_late_answer_does_not_speak_for_the_next_connection(browser, twin_server):
+    """Review round 1: a 501 from the last connection, landing after a
+    reconnect, hid the button for the new one."""
+    page, errors = _open(browser, twin_server)
+    held = _hold(page)
+    _remap(page)
+    page.wait_for_timeout(300)
+    assert len(held) == 1
+    page.click("#btn-settings")
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now", timeout=8000)
+    held[0].fulfill(status=501, content_type="application/json",
+                    body=json.dumps({"detail": "this world keeps no saved map"}))
+    page.wait_for_timeout(500)
+    sync_api.expect(page.locator("#btn-remap")).to_be_visible()
     sync_api.expect(page.locator("#btn-remap")).to_be_enabled()
     assert not errors, errors
     page.context.close()
