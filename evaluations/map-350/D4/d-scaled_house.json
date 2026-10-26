@@ -1,0 +1,490 @@
+{
+ "house": "scaled_house",
+ "movers": "hallway_crossing",
+ "sessions": [
+  {
+   "reload": {
+    "map_id": "map-2ecbd3a6",
+    "version": 1,
+    "took_s": 1.71,
+    "agreement": 0.675,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": true,
+    "reason": "matched",
+    "result": "matched"
+   },
+   "watch": {
+    "scans": 864,
+    "lost": 800,
+    "moving": 5138,
+    "no_tf": 0,
+    "overflow": 0
+   },
+   "mission": {
+    "outcome": "exhausted",
+    "seconds": 276,
+    "target_at": [],
+    "status_file": "explore_status_explore-purple_unicorn-1792871911.json",
+    "steps": 12,
+    "explore": {
+     "goals_sent": 11,
+     "goals_failed": 1,
+     "last_event": "no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)",
+     "camera_seen_m2": 22.7,
+     "choice_ms": {
+      "n": 43,
+      "p50_ms": 11.0,
+      "p90_ms": 17.4,
+      "max_ms": 23.0
+     },
+     "asks": false,
+     "ask": null,
+     "choices": 0
+    },
+    "stuck_episodes": 0,
+    "travel_m": 31.6,
+    "min_gap_cm": 13.5,
+    "contact_samples": 0,
+    "inside_samples": 0,
+    "samples": 546,
+    "last_log": [
+     "step 11: STOP (ok) -- no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped) -- living room, facing ?, free space clear, sees nothing of note",
+     "inventory: 5 reported, 1 candidates from 491 frames -- bed, person, red backpack, refrigerator, sofa",
+     "mission ended (exhausted): no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)"
+    ]
+   },
+   "tour": [
+    {
+     "state": "succeeded",
+     "seconds": 29.6
+    },
+    {
+     "state": "succeeded",
+     "seconds": 17.0
+    },
+    {
+     "state": "succeeded",
+     "seconds": 14.9
+    },
+    {
+     "state": "active",
+     "seconds": 120.1
+    },
+    {
+     "state": "succeeded",
+     "seconds": 37.8
+    },
+    {
+     "state": "succeeded",
+     "seconds": 25.6
+    },
+    {
+     "state": "succeeded",
+     "seconds": 17.1
+    },
+    {
+     "state": "succeeded",
+     "seconds": 28.0
+    },
+    {
+     "state": "active",
+     "seconds": 34.4
+    }
+   ],
+   "seconds": 600,
+   "sampler": {
+    "contacts": 0,
+    "min_gap_cm": 4.7,
+    "jumps": [],
+    "error_samples": 595,
+    "max_error_m": 0.026,
+    "remaps": [],
+    "states": [
+     [
+      [
+       "ready",
+       "localisation"
+      ],
+      1792871911.08
+     ]
+    ]
+   },
+   "watched_s": 600.2,
+   "triggers": []
+  },
+  {
+   "reload": {
+    "map_id": "map-2ecbd3a6",
+    "version": 1,
+    "took_s": 1.81,
+    "agreement": 0.675,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": true,
+    "reason": "matched",
+    "result": "matched"
+   },
+   "watch": {
+    "scans": 1269,
+    "lost": 1175,
+    "moving": 4723,
+    "no_tf": 0,
+    "overflow": 0
+   },
+   "mission": {
+    "outcome": "exhausted",
+    "seconds": 264,
+    "target_at": [],
+    "status_file": "explore_status_explore-purple_unicorn-1792872521.json",
+    "steps": 12,
+    "explore": {
+     "goals_sent": 11,
+     "goals_failed": 1,
+     "last_event": "no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)",
+     "camera_seen_m2": 22.7,
+     "choice_ms": {
+      "n": 88,
+      "p50_ms": 15.7,
+      "p90_ms": 18.5,
+      "max_ms": 28.4
+     },
+     "asks": false,
+     "ask": null,
+     "choices": 0
+    },
+    "stuck_episodes": 0,
+    "travel_m": 26.3,
+    "min_gap_cm": 13.6,
+    "contact_samples": 0,
+    "inside_samples": 0,
+    "samples": 522,
+    "last_log": [
+     "step 11: STOP (ok) -- no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped) -- living room, facing ?, free space clear, sees nothing of note",
+     "inventory: 5 reported, 1 candidates from 483 frames -- bed, person, red backpack, refrigerator, sofa",
+     "mission ended (exhausted): no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)"
+    ]
+   },
+   "tour": [
+    {
+     "state": "succeeded",
+     "seconds": 32.3
+    },
+    {
+     "state": "succeeded",
+     "seconds": 17.1
+    },
+    {
+     "state": "succeeded",
+     "seconds": 26.2
+    },
+    {
+     "state": "active",
+     "seconds": 120.2
+    },
+    {
+     "state": "succeeded",
+     "seconds": 37.8
+    },
+    {
+     "state": "succeeded",
+     "seconds": 25.6
+    },
+    {
+     "state": "succeeded",
+     "seconds": 17.0
+    },
+    {
+     "state": "succeeded",
+     "seconds": 13.7
+    },
+    {
+     "state": "active",
+     "seconds": 46.6
+    }
+   ],
+   "seconds": 600,
+   "sampler": {
+    "contacts": 0,
+    "min_gap_cm": 8.0,
+    "jumps": [],
+    "error_samples": 594,
+    "max_error_m": 0.025,
+    "remaps": [
+     {
+      "trigger": "contradiction",
+      "at": 1792873120.5178897,
+      "map_id": "map-2ecbd3a6",
+      "version": 1,
+      "detail": {
+       "trigger": "contradiction",
+       "cells": 32,
+       "centre_m": [
+        0.085,
+        1.037
+       ],
+       "agreement": 0.601
+      },
+      "result": "waiting"
+     }
+    ],
+    "states": [
+     [
+      [
+       "ready",
+       "localisation"
+      ],
+      1792872521.37
+     ],
+     [
+      [
+       "remapping",
+       "localisation"
+      ],
+      1792873121.19
+     ]
+    ]
+   },
+   "watched_s": 599.8,
+   "triggers": [
+    "contradiction"
+   ]
+  },
+  {
+   "reload": {
+    "map_id": "map-2ecbd3a6",
+    "version": 1,
+    "took_s": 1.81,
+    "agreement": 0.675,
+    "dock_error_m": 0.0,
+    "dock_error_deg": 0.0,
+    "ok": true,
+    "reason": "matched",
+    "result": "matched"
+   },
+   "watch": null,
+   "mission": {
+    "outcome": "exhausted",
+    "seconds": 271,
+    "target_at": [],
+    "status_file": "explore_status_explore-purple_unicorn-1792873131.json",
+    "steps": 12,
+    "explore": {
+     "goals_sent": 11,
+     "goals_failed": 1,
+     "last_event": "no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)",
+     "camera_seen_m2": 22.61,
+     "choice_ms": {
+      "n": 34,
+      "p50_ms": 9.1,
+      "p90_ms": 16.3,
+      "max_ms": 24.7
+     },
+     "asks": false,
+     "ask": null,
+     "choices": 0
+    },
+    "stuck_episodes": 0,
+    "travel_m": 31.2,
+    "min_gap_cm": 13.1,
+    "contact_samples": 0,
+    "inside_samples": 0,
+    "samples": 537,
+    "last_log": [
+     "step 11: STOP (ok) -- no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped) -- living room, facing ?, free space some, sees nothing of note",
+     "inventory: 5 reported, 2 candidates from 484 frames -- bed, person, red backpack, refrigerator, sofa",
+     "mission ended (exhausted): no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)"
+    ]
+   },
+   "tour": [
+    {
+     "state": "succeeded",
+     "seconds": 32.0
+    },
+    {
+     "state": "succeeded",
+     "seconds": 17.1
+    },
+    {
+     "state": "succeeded",
+     "seconds": 14.9
+    },
+    {
+     "state": "canceled",
+     "seconds": 52.1
+    },
+    {
+     "state": "succeeded",
+     "seconds": 36.9
+    },
+    {
+     "state": "succeeded",
+     "seconds": 25.6
+    },
+    {
+     "state": "succeeded",
+     "seconds": 17.0
+    },
+    {
+     "state": "succeeded",
+     "seconds": 13.4
+    },
+    {
+     "state": "active",
+     "seconds": 118.0
+    }
+   ],
+   "seconds": 600,
+   "sampler": {
+    "contacts": 0,
+    "min_gap_cm": 8.4,
+    "jumps": [],
+    "error_samples": 590,
+    "max_error_m": 0.024,
+    "remaps": [
+     {
+      "trigger": "contradiction",
+      "at": 1792873514.6649091,
+      "map_id": "map-2ecbd3a6",
+      "version": 1,
+      "detail": {
+       "trigger": "contradiction",
+       "cells": 32,
+       "centre_m": [
+        0.083,
+        1.037
+       ],
+       "agreement": 0.603
+      },
+      "result": "waiting"
+     },
+     {
+      "trigger": "contradiction",
+      "at": 1792873514.6649091,
+      "map_id": "map-2ecbd3a6",
+      "version": 1,
+      "detail": {
+       "trigger": "contradiction",
+       "cells": 32,
+       "centre_m": [
+        0.083,
+        1.037
+       ],
+       "agreement": 0.603
+      },
+      "waited_s": 5.06,
+      "cancelled_goal": true,
+      "at_rest": true,
+      "from_pose": [
+       -0.8178,
+       -0.6971,
+       -2.0644
+      ],
+      "result": "mapping",
+      "mapping_at": 1792873520.1378083,
+      "took_s": 0.41
+     }
+    ],
+    "states": [
+     [
+      [
+       "ready",
+       "localisation"
+      ],
+      1792873131.49
+     ],
+     [
+      [
+       "remapping",
+       "localisation"
+      ],
+      1792873515.14
+     ],
+     [
+      [
+       "ready",
+       "mapping"
+      ],
+      1792873520.19
+     ]
+    ]
+   },
+   "watched_s": 383.7,
+   "triggers": [
+    "contradiction"
+   ]
+  }
+ ],
+ "map_run": {
+  "mission": {
+   "outcome": "exhausted",
+   "seconds": 293,
+   "target_at": [],
+   "status_file": "explore_status_explore-purple_unicorn-1792871607.json",
+   "steps": 17,
+   "explore": {
+    "goals_sent": 16,
+    "goals_failed": 1,
+    "last_event": "no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)",
+    "camera_seen_m2": 23.13,
+    "choice_ms": {
+     "n": 49,
+     "p50_ms": 9.2,
+     "p90_ms": 15.8,
+     "max_ms": 19.1
+    },
+    "asks": false,
+    "ask": null,
+    "choices": 0
+   },
+   "stuck_episodes": 0,
+   "travel_m": 29.7,
+   "min_gap_cm": 3.5,
+   "contact_samples": 0,
+   "inside_samples": 0,
+   "samples": 581,
+   "last_log": [
+    "step 16: STOP (ok) -- no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped) -- kitchen, facing ?, free space some, sees refrigerator",
+    "inventory: 4 reported, 0 candidates from 548 frames -- bed, red backpack, refrigerator, sofa",
+    "mission ended (exhausted): no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  "saved": {
+   "map_id": "map-2ecbd3a6",
+   "saving": false,
+   "store": true,
+   "saved": 1,
+   "failed": 0,
+   "skipped": 0,
+   "last_version": 1,
+   "last_at": 1792871900.0906198,
+   "last_error": null
+  },
+  "sampler": {
+   "contacts": 0,
+   "min_gap_cm": 3.5,
+   "jumps": [],
+   "error_samples": 291,
+   "max_error_m": 0.033,
+   "remaps": [],
+   "states": [
+    [
+     [
+      "ready",
+      "mapping"
+     ],
+     1792871607.05
+    ]
+   ]
+  }
+ },
+ "criteria": {
+  "no_contradiction": false,
+  "contacts_0": true,
+  "no_failed_mission": true
+ },
+ "verdict": {
+  "D4-d": "FAILED"
+ },
+ "image": "vision-picar-ros:plan-3.50"
+}

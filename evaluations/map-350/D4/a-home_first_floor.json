@@ -1,0 +1,343 @@
+{
+ "house": "home_first_floor",
+ "room": "den",
+ "door": [
+  [
+   10,
+   16
+  ],
+  [
+   11,
+   16
+  ]
+ ],
+ "moves": [
+  [
+   [
+    14,
+    16
+   ],
+   [
+    10,
+    16
+   ]
+  ],
+  [
+   [
+    14,
+    15
+   ],
+   [
+    11,
+    16
+   ]
+  ]
+ ],
+ "map_run": {
+  "mission": {
+   "outcome": "running",
+   "seconds": 900,
+   "target_at": [],
+   "status_file": "explore_status_explore-purple_unicorn-1792868671.json",
+   "steps": 43,
+   "explore": {
+    "goals_sent": 43,
+    "goals_failed": 5,
+    "last_event": "goal sent (frontier) to (4.46, 1.02)",
+    "camera_seen_m2": 102.44,
+    "choice_ms": {
+     "n": 118,
+     "p50_ms": 32.4,
+     "p90_ms": 41.1,
+     "max_ms": 49.1
+    },
+    "asks": false,
+    "ask": null,
+    "choices": 0
+   },
+   "stuck_episodes": 0,
+   "travel_m": 94.9,
+   "min_gap_cm": 8.3,
+   "contact_samples": 0,
+   "inside_samples": 0,
+   "samples": 1765,
+   "last_log": [
+    "waiting -- nav2 active: frontier -- family room, facing ?, free space some, sees nothing of note",
+    "waiting -- nav2 active: frontier -- family room, facing ?, free space some, sees sectional sofa",
+    "waiting -- nav2 active: frontier -- family room, facing ?, free space none, sees sectional sofa"
+   ]
+  },
+  "saved": {
+   "map_id": "map-fde209bd",
+   "saving": false,
+   "store": true,
+   "saved": 1,
+   "failed": 0,
+   "skipped": 0,
+   "last_version": 1,
+   "last_at": 1792869571.9337182,
+   "last_error": null
+  },
+  "sampler": {
+   "contacts": 0,
+   "min_gap_cm": 8.3,
+   "jumps": [],
+   "error_samples": 888,
+   "max_error_m": 0.16,
+   "remaps": [],
+   "states": [
+    [
+     [
+      "ready",
+      "mapping"
+     ],
+     1792868671.57
+    ]
+   ]
+  }
+ },
+ "room_known_free_run1": 0.0526,
+ "session2": {
+  "reload": {
+   "map_id": "map-fde209bd",
+   "version": 1,
+   "took_s": 1.72,
+   "agreement": 1.0,
+   "dock_error_m": 0.0,
+   "dock_error_deg": 0.0,
+   "ok": true,
+   "reason": "matched",
+   "result": "matched"
+  },
+  "watch": {
+   "leaked_pose": 0,
+   "leaked_map": 0,
+   "goal_during_check": 503,
+   "states": [
+    [
+     "starting",
+     1.11
+    ],
+    [
+     "checking",
+     1.21
+    ],
+    [
+     "ready",
+     2.89
+    ]
+   ],
+   "ready_at": 1792869583.544092
+  }
+ },
+ "to_view": {
+  "state": "succeeded",
+  "seconds": 32.6
+ },
+ "goal_in": {
+  "state": "active",
+  "seconds": 180.1
+ },
+ "goals_room": [
+  {
+   "state": "aborted",
+   "seconds": 0.3
+  },
+  {
+   "state": "active",
+   "seconds": 120.2
+  }
+ ],
+ "room_known_free_live": 0.5684,
+ "saved": {
+  "map_id": "map-fde209bd",
+  "saving": false,
+  "store": true,
+  "saved": 1,
+  "failed": 0,
+  "skipped": 0,
+  "last_version": 2,
+  "last_at": 1792869925.8947062,
+  "last_error": null
+ },
+ "sampler": {
+  "contacts": 0,
+  "min_gap_cm": 9.6,
+  "jumps": [],
+  "error_samples": 338,
+  "max_error_m": 0.025,
+  "remaps": [
+   {
+    "trigger": "contradiction",
+    "at": 1792869622.688583,
+    "map_id": "map-fde209bd",
+    "version": 1,
+    "detail": {
+     "trigger": "contradiction",
+     "cells": 13,
+     "centre_m": [
+      6.177,
+      1.99
+     ],
+     "agreement": 1.0
+    },
+    "waited_s": 0.0,
+    "cancelled_goal": false,
+    "at_rest": true,
+    "from_pose": [
+     5.6028,
+     1.7734,
+     0.3005
+    ],
+    "result": "mapping",
+    "mapping_at": 1792869623.3069732,
+    "took_s": 0.62
+   }
+  ],
+  "states": [
+   [
+    [
+     "ready",
+     "localisation"
+    ],
+    1792869583.84
+   ],
+   [
+    [
+     "ready",
+     "mapping"
+    ],
+    1792869623.4
+   ]
+  ]
+ },
+ "watch_errors": 0,
+ "first_remap": {
+  "trigger": "contradiction",
+  "at": 1792869622.688583,
+  "map_id": "map-fde209bd",
+  "version": 1,
+  "detail": {
+   "trigger": "contradiction",
+   "cells": 13,
+   "centre_m": [
+    6.177,
+    1.99
+   ],
+   "agreement": 1.0
+  },
+  "waited_s": 0.0,
+  "cancelled_goal": false,
+  "at_rest": true,
+  "from_pose": [
+   5.6028,
+   1.7734,
+   0.3005
+  ],
+  "result": "mapping",
+  "mapping_at": 1792869623.3069732,
+  "took_s": 0.62
+ },
+ "entry_from": null,
+ "mapping_at_from": "bridge",
+ "saved_first_known_cells": 48462,
+ "entered_unknown_at": null,
+ "mapping_at": 1792869623.3069732,
+ "remap_after_entry_s": null,
+ "already_mapping_at_entry": false,
+ "session3": {
+  "reload": {
+   "map_id": "map-fde209bd",
+   "version": 2,
+   "took_s": 1.82,
+   "agreement": 1.0,
+   "dock_error_m": 0.0,
+   "dock_error_deg": 0.0,
+   "ok": true,
+   "reason": "matched",
+   "result": "matched"
+  },
+  "watch": {
+   "leaked_pose": 0,
+   "leaked_map": 0,
+   "goal_during_check": 503,
+   "states": [
+    [
+     "checking",
+     1.12
+    ],
+    [
+     "ready",
+     3.0
+    ]
+   ],
+   "ready_at": 1792869935.9809263
+  }
+ },
+ "room_known_free_saved": 0.5684,
+ "other_walls_true": false,
+ "walls_by_room": {
+  "breakfast": [
+   296,
+   1.0
+  ],
+  "dining room": [
+   267,
+   1.0
+  ],
+  "family room": [
+   615,
+   1.0
+  ],
+  "foyer": [
+   257,
+   1.0
+  ],
+  "garage": [
+   457,
+   0.867
+  ],
+  "garage hall": [
+   30,
+   1.0
+  ],
+  "half bath": [
+   112,
+   1.0
+  ],
+  "hall": [
+   252,
+   1.0
+  ],
+  "kitchen": [
+   374,
+   0.893
+  ],
+  "laundry": [
+   69,
+   0.71
+  ],
+  "living room": [
+   476,
+   1.0
+  ],
+  "pantry": [
+   40,
+   1.0
+  ]
+ },
+ "criteria": {
+  "remapped": true,
+  "remap_within_10s": false,
+  "room_90_live": false,
+  "room_90_saved": false,
+  "other_walls_100": false,
+  "no_jumps": true,
+  "new_version": true,
+  "contacts_0": true
+ },
+ "verdict": {
+  "D4-a": "FAILED"
+ },
+ "image": "vision-picar-ros:plan-3.50"
+}

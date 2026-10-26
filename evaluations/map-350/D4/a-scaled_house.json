@@ -1,0 +1,321 @@
+{
+ "house": "scaled_house",
+ "room": "study",
+ "door": [
+  [
+   16,
+   9
+  ],
+  [
+   16,
+   10
+  ],
+  [
+   16,
+   11
+  ]
+ ],
+ "moves": [
+  [
+   [
+    23,
+    5
+   ],
+   [
+    16,
+    9
+   ]
+  ],
+  [
+   [
+    24,
+    2
+   ],
+   [
+    16,
+    10
+   ]
+  ],
+  [
+   [
+    2,
+    10
+   ],
+   [
+    16,
+    11
+   ]
+  ]
+ ],
+ "map_run": {
+  "mission": {
+   "outcome": "exhausted",
+   "seconds": 251,
+   "target_at": [],
+   "status_file": "explore_status_explore-purple_unicorn-1792868292.json",
+   "steps": 12,
+   "explore": {
+    "goals_sent": 11,
+    "goals_failed": 2,
+    "last_event": "no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)",
+    "camera_seen_m2": 20.06,
+    "choice_ms": {
+     "n": 34,
+     "p50_ms": 9.5,
+     "p90_ms": 15.4,
+     "max_ms": 19.8
+    },
+    "asks": false,
+    "ask": null,
+    "choices": 0
+   },
+   "stuck_episodes": 0,
+   "travel_m": 25.6,
+   "min_gap_cm": 20.7,
+   "contact_samples": 0,
+   "inside_samples": 0,
+   "samples": 497,
+   "last_log": [
+    "step 11: STOP (ok) -- no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped) -- kitchen, facing ?, free space some, sees nothing of note",
+    "inventory: 3 reported, 1 candidates from 449 frames -- sofa, bed, red backpack",
+    "mission ended (exhausted): no reachable frontier left (1 on the map: 1 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  "saved": {
+   "map_id": "map-c19a1bad",
+   "saving": false,
+   "store": true,
+   "saved": 1,
+   "failed": 0,
+   "skipped": 0,
+   "last_version": 1,
+   "last_at": 1792868543.4655051,
+   "last_error": null
+  },
+  "sampler": {
+   "contacts": 0,
+   "min_gap_cm": 20.7,
+   "jumps": [],
+   "error_samples": 249,
+   "max_error_m": 0.033,
+   "remaps": [],
+   "states": [
+    [
+     [
+      "ready",
+      "mapping"
+     ],
+     1792868292.76
+    ]
+   ]
+  }
+ },
+ "room_known_free_run1": 0.0,
+ "session2": {
+  "reload": {
+   "map_id": "map-c19a1bad",
+   "version": 1,
+   "took_s": 1.81,
+   "agreement": 0.661,
+   "dock_error_m": 0.0,
+   "dock_error_deg": 0.07,
+   "ok": true,
+   "reason": "matched",
+   "result": "matched"
+  },
+  "watch": {
+   "leaked_pose": 0,
+   "leaked_map": 0,
+   "goal_during_check": 503,
+   "states": [
+    [
+     "checking",
+     1.11
+    ],
+    [
+     "ready",
+     2.98
+    ]
+   ],
+   "ready_at": 1792868554.477042
+  }
+ },
+ "to_view": {
+  "state": "succeeded",
+  "seconds": 19.2
+ },
+ "goal_in": {
+  "state": "aborted",
+  "seconds": 18.2
+ },
+ "goals_room": [
+  {
+   "state": "aborted",
+   "seconds": 27.6
+  },
+  {
+   "state": "aborted",
+   "seconds": 18.5
+  }
+ ],
+ "room_known_free_live": 0.9722,
+ "saved": {
+  "map_id": "map-c19a1bad",
+  "saving": false,
+  "store": true,
+  "saved": 1,
+  "failed": 0,
+  "skipped": 0,
+  "last_version": 2,
+  "last_at": 1792868647.7201042,
+  "last_error": null
+ },
+ "sampler": {
+  "contacts": 0,
+  "min_gap_cm": 27.0,
+  "jumps": [],
+  "error_samples": 93,
+  "max_error_m": 0.02,
+  "remaps": [
+   {
+    "trigger": "contradiction",
+    "at": 1792868580.1728003,
+    "map_id": "map-c19a1bad",
+    "version": 1,
+    "detail": {
+     "trigger": "contradiction",
+     "cells": 22,
+     "centre_m": [
+      2.876,
+      -1.879
+     ],
+     "agreement": 0.759
+    },
+    "waited_s": 0.0,
+    "cancelled_goal": false,
+    "at_rest": true,
+    "from_pose": [
+     2.3566,
+     -1.7206,
+     -1.0969
+    ],
+    "result": "mapping",
+    "mapping_at": 1792868580.582319,
+    "took_s": 0.41
+   }
+  ],
+  "states": [
+   [
+    [
+     "ready",
+     "localisation"
+    ],
+    1792868554.75
+   ],
+   [
+    [
+     "ready",
+     "mapping"
+    ],
+    1792868580.99
+   ]
+  ]
+ },
+ "watch_errors": 0,
+ "first_remap": {
+  "trigger": "contradiction",
+  "at": 1792868580.1728003,
+  "map_id": "map-c19a1bad",
+  "version": 1,
+  "detail": {
+   "trigger": "contradiction",
+   "cells": 22,
+   "centre_m": [
+    2.876,
+    -1.879
+   ],
+   "agreement": 0.759
+  },
+  "waited_s": 0.0,
+  "cancelled_goal": false,
+  "at_rest": true,
+  "from_pose": [
+   2.3566,
+   -1.7206,
+   -1.0969
+  ],
+  "result": "mapping",
+  "mapping_at": 1792868580.582319,
+  "took_s": 0.41
+ },
+ "entry_from": null,
+ "mapping_at_from": "bridge",
+ "saved_first_known_cells": 8702,
+ "entered_unknown_at": null,
+ "mapping_at": 1792868580.582319,
+ "remap_after_entry_s": null,
+ "already_mapping_at_entry": false,
+ "session3": {
+  "reload": {
+   "map_id": "map-c19a1bad",
+   "version": 2,
+   "took_s": 1.71,
+   "agreement": 0.661,
+   "dock_error_m": 0.0,
+   "dock_error_deg": 0.07,
+   "ok": true,
+   "reason": "matched",
+   "result": "matched"
+  },
+  "watch": {
+   "leaked_pose": 0,
+   "leaked_map": 0,
+   "goal_during_check": 503,
+   "states": [
+    [
+     "checking",
+     1.11
+    ],
+    [
+     "ready",
+     2.78
+    ]
+   ],
+   "ready_at": 1792868657.7714753
+  }
+ },
+ "room_known_free_saved": 0.9722,
+ "other_walls_true": false,
+ "walls_by_room": {
+  "bedroom": [
+   71,
+   1.0
+  ],
+  "hallway": [
+   58,
+   0.931
+  ],
+  "kitchen": [
+   77,
+   1.0
+  ],
+  "living room": [
+   119,
+   1.0
+  ]
+ },
+ "criteria": {
+  "remapped": true,
+  "remap_within_10s": false,
+  "room_90_live": true,
+  "room_90_saved": true,
+  "other_walls_100": false,
+  "no_jumps": true,
+  "new_version": true,
+  "contacts_0": true
+ },
+ "verdict": {
+  "D4-a": "FAILED"
+ },
+ "image": "vision-picar-ros:plan-3.50"
+}

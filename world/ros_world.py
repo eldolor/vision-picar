@@ -466,6 +466,18 @@ class RosWorld(WorldInterface):
         r.raise_for_status()
         return {"accepted": True, **r.json()}
 
+    def remap(self, by: str = "") -> dict:
+        """3.50.D4: a person's "re-map now". The bridge maps the reloaded
+        map again from where the robot is; it refuses (409) unless it is
+        localising on a saved map, and that refusal is an answer, not an
+        error. Anything else raises, as cancel_goal."""
+        r = self._http.post("/slam/remap", json={"by": by})
+        if r.status_code == 409:
+            body = _body(r) or {}
+            return {"remapping": False, "reason": body.get("error") or "refused by the bridge",
+                    "slam": body.get("slam"), "mode": body.get("mode")}
+        return _json_object(r)
+
     def cancel_goal(self) -> dict:
         # Raises on an error status (a 401, a 5xx) rather than returning its
         # body as an answer: the stop's goal-ending loop retries on a raise,

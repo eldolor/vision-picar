@@ -80,6 +80,7 @@ Actions: `FORWARD`, `REVERSE`, `LEFT`, `RIGHT`, `STOP`, `LOOK_LEFT`,
 | `GET /world/error` | `{"usable", "source", "position_error_m", "heading_error_deg", "odom_position_error_m", "odom_heading_error_deg", "truth"}` |
 | `POST /world/goal` | `{"x_m", "y_m"}` -> the world's `set_goal()`, or `{"accepted": false, "executed": false, "reason": "preempted", ...}`. Arbitrated as driver `ros`  A non-finite coordinate is a 422 (3.76 M1). |
 | `GET` / `DELETE /world/goal` | `get_goal()` / `cancel_goal()` |
+| `POST /world/remap` | 3.50.D4: a person's "re-map now" (`RosWorld.remap()` -> the bridge's `POST /slam/remap`, its `x-driver` passed as `by`). Not arbitrated: nothing moves. The bridge's reply when it starts; **409** with the bridge's reason unless it is localising on a reloaded map; **501** on a world without SLAM; **503** `ros_unavailable` as `GET /world/goal`. |
 | `DELETE /world/keepout` | 3.76 K5.3: empties the server's `SpotBook` and, when it held a live spot, sends the bridge an empty set. `{"cleared": n, "sent": bool, "detail"?}`; `{"cleared": 0, "sent": false}` with nothing marked or on a world with no keepout. The brain calls it at every mission end, after its own goal |
 
 Goal routes answer **501** on a world without `set_goal` (anything but

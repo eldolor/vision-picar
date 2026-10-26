@@ -734,8 +734,18 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   is `ready`. Verdict in ~1.7 s; 3 reloads per house within 0.9 cm / 0.4 deg
   after a drive; off the dock 10/10 fell back. `PICAR_MAP_RELOAD=0` maps from
   empty. The robot must start on the dock. One `home_first_floor` session
-  saved 50.7 MB (criterion 6's ten-session bar is 50). Next: D4 re-map
-  trigger, D5 sightings; D6 (S3) asks first. Maps are a home's floor plan:
+  saved 50.7 MB (criterion 6's ten-session bar is 50). **D4 (merged
+  2026-10-26): re-maps** on a reloaded map restart slam_toolbox as the
+  async node on the saved graph from the current pose, saved as the next
+  version, when the robot enters the saved map's unknown or a person asks
+  (`POST /world/remap`; goals held while it re-maps, a live goal cancelled
+  after 5 s). The scan-contradiction trigger is built but **off** (the
+  user, 2026-10-24; `PICAR_REMAP_CONTRADICTION=1`): live it found every
+  moved object but fired on a fixed wall. D4-c, D4-e met; D4-a (nav2 does
+  not enter the just-re-mapped room), D4-b (harness) and D4-d FAILED.
+  Open: the bridge reports `ready` after a reload before nav2 is active,
+  so the brain's first goal is rejected. Next: D4b (the twin's control),
+  D5 sightings; D6 (S3) asks first. Maps are a home's floor plan:
   never commit or upload one unasked.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the

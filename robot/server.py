@@ -1537,6 +1537,27 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     def world_goal_cancel():
         return _bridge_call(_goals().cancel_goal)
 
+    @app.post(prefix + "/world/remap", dependencies=[Depends(require_secret)])
+    def world_remap(x_driver: str = Header(default="")):
+        """3.50.D4 (the user, 2026-10-23): a person's "re-map now". A
+        reloaded map that is being localised on is mapped again from the
+        robot's pose, and the mission-end save keeps the result as its next
+        version. Not arbitrated: the bridge holds goals while it re-maps and,
+        with a goal still live or the robot moving after REMAP_DEFER_MAX_S,
+        cancels that goal (a stop, never a move), whoever sent it; if the
+        robot then does not come to rest, the re-map is called off
+        ("deferred") and the goal stays cancelled. 409 when the bridge
+        is not localising on a saved map; a world without SLAM cannot."""
+        if not hasattr(world_model, "remap"):
+            raise HTTPException(status_code=501, detail=(
+                "this world keeps no saved map -- re-mapping needs SLAM "
+                "(WORLD_MODE=ros, PLAN-ros-alignment.md 3.50)"))
+        reply = _bridge_call(lambda: world_model.remap(by=x_driver or "unnamed"))
+        if not reply.get("remapping"):
+            raise HTTPException(status_code=409, detail=reply.get("reason") or "refused")
+        logger.warning(f"re-map asked by {x_driver or 'unnamed'}")
+        return reply
+
     @app.delete(prefix + "/world/keepout", dependencies=[Depends(require_secret)])
     def world_keepout_clear():
         """3.76 K5.3 (the user, 2026-10-21): a mission's keepout marks end

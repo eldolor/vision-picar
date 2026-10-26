@@ -74,6 +74,40 @@ def servers(house):
 _logs = [0]
 
 
+def _network():
+    """Docker Desktop (the Mac) reaches the host's 127.0.0.1 servers as
+    host.docker.internal; Linux does not (the servers bind 127.0.0.1), so
+    there the container shares the host's network, as on the Jetson
+    (tools/jetson/README.md), with the bridge on this section's own port."""
+    if sys.platform.startswith("linux"):
+        return ["--network", "host", "-e", f"BRIDGE_PORT={de.BRIDGE}", "-e", "BRIDGE_HOST=127.0.0.1",
+                "-e", f"ROBOT_URL=http://127.0.0.1:{de.ROBOT}",
+                "-e", f"BRAIN_URL=http://127.0.0.1:{de.BRAIN}"]
+    return ["-p", f"127.0.0.1:{de.BRIDGE}:8090",
+            "-e", f"ROBOT_URL=http://host.docker.internal:{de.ROBOT}",
+            "-e", f"BRAIN_URL=http://host.docker.internal:{de.BRAIN}"]
+
+
+def remap_contradiction():
+    """The contradiction trigger as the bridge will read it (bridge.py: on
+    only for exactly "1"). Any other value is refused here rather than
+    recorded as a setting the bridge never ran (review)."""
+    v = os.environ.get("PICAR_REMAP_CONTRADICTION", "0")
+    if v not in ("0", "1"):
+        raise SystemExit(f"PICAR_REMAP_CONTRADICTION={v!r}: use 0 or 1")
+    return v == "1"
+
+
+def bridge_remap_contradiction():
+    """What the running bridge reports (`/health` slam.remap_contradiction):
+    the setting a result was measured under, or None with no bridge up."""
+    try:
+        return httpx.get(f"http://127.0.0.1:{de.BRIDGE}/health",
+                         timeout=10).json()["slam"].get("remap_contradiction")
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return None
+
+
 def container(maps, bridge):
     """Restart only the container; watch it come up at 10 Hz. Returns the
     watch: when the reload was judged, and whether anything leaked before."""
@@ -83,9 +117,11 @@ def container(maps, bridge):
                        stdout=open(f"{de.RUN_DIR}/ros-{_logs[0]}.log", "w"), stderr=subprocess.STDOUT)
     subprocess.run(["docker", "rm", "-f", de.CONTAINER], capture_output=True)
     subprocess.run(["docker", "run", "-d", "--name", de.CONTAINER, "-v", f"{maps}:/maps",
-                    "-p", f"127.0.0.1:{de.BRIDGE}:8090", "-e", f"ROS_DOMAIN_ID={de.ROS_DOMAIN}",
-                    "-e", f"ROBOT_URL=http://host.docker.internal:{de.ROBOT}",
-                    "-e", f"BRAIN_URL=http://host.docker.internal:{de.BRAIN}",
+                    *_network(), "-e", f"ROS_DOMAIN_ID={de.ROS_DOMAIN}",
+                    # 3.50.D4: the contradiction trigger ships off; a run
+                    # that measures it sets this (d4_runs.py does).
+                    *([] if os.environ.get("PICAR_REMAP_CONTRADICTION") is None else
+                      ["-e", f"PICAR_REMAP_CONTRADICTION={os.environ['PICAR_REMAP_CONTRADICTION']}"]),
                     IMAGE, "ros2", "launch", "picar_bringup", "picar.launch.py"],
                    capture_output=True, check=True)
     w = {"leaked_pose": 0, "leaked_map": 0, "goal_during_check": None, "states": []}
@@ -365,6 +401,7 @@ def lap_runs():
 
 
 def main(which):
+    remap_contradiction()
     os.makedirs(OUT, exist_ok=True)
     de.heavy_lock()
     de._kill_ports()
@@ -397,6 +434,7 @@ def main(which):
             name = f"{house}-e"
         else:
             res = lap_runs() if name == "lap" else house_runs(name)
+        res["remap_contradiction"] = bridge_remap_contradiction()
         with open(os.path.join(OUT, f"{name}.json"), "w") as f:
             json.dump(res, f, indent=1)
         print(name, json.dumps(res.get("verdicts") or res.get("D3-c") or res.get("D3-e")

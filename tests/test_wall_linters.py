@@ -70,7 +70,9 @@ MAX_DUPLICATES = 12
 # 2026-09-27: thirteen method+path pairs (R4-R6). A fourteenth is a decision.
 # 14 since 3.68: POST /nav/keepout, the one way the robot server's refusals
 # reach nav2's planner (a wedge it cannot otherwise hear of).
-MAX_BRIDGE_ROUTES = 14
+# 15 since 3.50.D4: POST /slam/remap, a person's "re-map now" -- the one
+# trigger the bridge cannot see for itself (the user's choice, 2026-10-23).
+MAX_BRIDGE_ROUTES = 15
 
 
 # ---------- reading both sides ----------

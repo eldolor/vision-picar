@@ -294,11 +294,20 @@ def test_a_pointer_that_moved_is_a_save_even_if_the_dir_sync_fails(tmp_path, mon
 
 # ---- 3.50.D3: the reload, its check and the swap to a fresh map ----
 
+import importlib  # noqa: E402
 import math  # noqa: E402
 import time  # noqa: E402
 import types  # noqa: E402
 
 from tests.test_review_376h1 import _Msg, bridge_mod  # noqa: E402,F401 -- the stubbed bridge
+
+
+@pytest.fixture(autouse=True)
+def _contradiction_on(request, monkeypatch):
+    """3.50.D4: the contradiction trigger ships off (PICAR_REMAP_CONTRADICTION);
+    the tests of its behaviour run it on."""
+    if "bridge_mod" in request.fixturenames:
+        monkeypatch.setattr(request.getfixturevalue("bridge_mod"), "REMAP_CONTRADICTION", True)
 
 RES = 0.05
 
@@ -626,3 +635,1109 @@ def test_a_rejected_reload_survives_a_failed_fresh_spawn(bridge_mod, monkeypatch
     b.start_slam()
     r = b.health()[1]["slam"]["reload"]
     assert r["result"] == "failed" and r["before"] == "fell_back" and "agree" in r["reason"]
+
+
+# ---- 3.50.D4: the re-map triggers (picar_bridge/remap.py) ----
+
+from picar_bridge import remap  # noqa: E402
+
+ROOM = (-1 + RES / 2, 4 - RES / 2, -1 + RES / 2, 2 - RES / 2)    # wall centre lines
+
+
+def _ray_box(x, y, c, s, box):
+    """Distance along (c, s) from (x, y) to an axis-aligned box, or None."""
+    x0, x1, y0, y1 = box
+    tmin, tmax = -math.inf, math.inf
+    for o, dv, lo, hi in ((x, c, x0, x1), (y, s, y0, y1)):
+        if abs(dv) < 1e-12:
+            if not lo <= o <= hi:
+                return None
+            continue
+        t0, t1 = (lo - o) / dv, (hi - o) / dv
+        tmin, tmax = max(tmin, min(t0, t1)), min(tmax, max(t0, t1))
+    return tmin if tmax >= tmin > 0 else None
+
+
+def _scan(x, y, yaw, boxes=(), n=360):
+    """_room_scan with solid boxes (x0, x1, y0, y1) in the room."""
+    base = _room_scan(x, y, yaw, n)
+    ranges = []
+    for i, r in enumerate(base["ranges_m"]):
+        a = yaw - math.pi + i * 2 * math.pi / n
+        for b in boxes:
+            t = _ray_box(x, y, math.cos(a), math.sin(a), b)
+            if t is not None:
+                r = min(r, t)
+        ranges.append(r)
+    return {**base, "ranges_m": ranges}
+
+
+def _grid_with(boxes=(), unknown=()):
+    g = _room_grid()
+    data = list(g["data"])
+    for (x0, x1, y0, y1), v in [(b, 100) for b in boxes] + [(b, -1) for b in unknown]:
+        for r in range(g["height"]):
+            for c in range(g["width"]):
+                cx, cy = -1 + (c + 0.5) * RES, -1 + (r + 0.5) * RES
+                if x0 <= cx <= x1 and y0 <= cy <= y1:
+                    data[r * g["width"] + c] = v
+    return {**g, "data": data}
+
+
+def _run(saved_grid, scans_at, seconds=12.0, hz=10.0):
+    """Feed scans; the first trigger record (or None) and the tracker."""
+    tr = remap.Contradictions(remap.SavedMap(saved_grid))
+    for k in range(int(seconds * hz)):
+        t = k / hz
+        scan, pose = scans_at(t)
+        fired = tr.add(scan, pose, t, still=True)
+        if fired:
+            return fired, tr, t
+    return None, tr, None
+
+
+BOX = (1.0, 1.6, 0.6, 1.0)          # a 60 x 40 cm object in the room
+
+
+def test_an_unchanged_room_never_fires():
+    pose = (0.5, 0.4, 0.2)
+    fired, tr, _ = _run(_room_grid(), lambda t: (_scan(*pose), pose), seconds=20)
+    assert fired is None and tr.lost == 0 and tr.scans == 200
+    assert remap.judge_scan(remap.SavedMap(_room_grid()), _scan(*pose), pose)["contra"].size <= 2
+
+
+def test_something_new_fires_after_it_persists():
+    pose = (0.0, 0.0, 0.0)
+    fired, _, t = _run(_room_grid(), lambda t: (_scan(*pose, boxes=[BOX]), pose))
+    assert fired is not None and fired["trigger"] == "contradiction"
+    assert fired["cells"] >= remap.MIN_GROUP
+    # Not before MIN_LOOKS scans could have looked.
+    assert t >= (remap.MIN_LOOKS - 1) / 10.0
+    cx, cy = fired["centre_m"]
+    assert 0.9 <= cx <= 1.7 and 0.5 <= cy <= 1.1
+
+
+def test_something_gone_fires():
+    """The saved map has the object; the room no longer does."""
+    pose = (0.0, 0.0, 0.0)
+    fired, _, _ = _run(_grid_with(boxes=[BOX]), lambda t: (_scan(*pose), pose))
+    assert fired is not None and fired["trigger"] == "contradiction"
+
+
+def test_a_walker_passing_does_not_fire():
+    """SIM_MOVERS: a 30 cm thing hopping 30 cm a second across the room."""
+    pose = (0.0, 0.0, 0.0)
+
+    def at(t):
+        x = 0.6 + 0.3 * (int(t) % 10)
+        return _scan(*pose, boxes=[(x, x + 0.3, 1.1, 1.4)]), pose
+    fired, _, _ = _run(_room_grid(), at, seconds=30)
+    assert fired is None
+
+
+def test_a_slipped_frame_is_lost_and_never_fires():
+    """D4-g: scans laid a metre and 30 deg off are a lost robot, not a house
+    that changed."""
+    real, believed = (1.5, 0.4, math.radians(30)), (0.5, 0.4, 0.0)
+    fired, tr, _ = _run(_room_grid(), lambda t: (_scan(*real), believed), seconds=15)
+    assert fired is None and tr.lost == tr.scans > 0
+
+
+def test_a_small_pose_error_beside_a_wall_does_not_fire():
+    """Grazing beams along a wall, with the localised pose 2 cm and 1 deg out."""
+    real = (3.6, 1.75, 0.0)
+    believed = (3.62, 1.77, math.radians(1))
+    fired, tr, _ = _run(_room_grid(), lambda t: (_scan(*real), believed), seconds=20)
+    assert fired is None and tr.lost == 0
+
+
+def test_returns_into_unknown_are_not_new():
+    """An unmapped part of the saved map is trigger 1's, not trigger 2's."""
+    pose = (0.0, 0.0, 0.0)
+    unknown = (2.5, 4.0, -1.0, 2.0)
+    fired, _, _ = _run(_grid_with(unknown=[unknown]),
+                       lambda t: (_scan(*pose, boxes=[(3.0, 3.4, 0.0, 0.6)]), pose))
+    assert fired is None
+
+
+def test_something_narrower_than_an_object_never_fires():
+    """Amendment 4: a 15 cm leg seen 15-30 cm off its saved cells (a pose
+    offset beside furniture, or a leg moved) is a sliver, not an object's
+    face: under MIN_RUN_M it contradicts nothing. Without the run rule it
+    fired (D4-d's leg)."""
+    pose = (0.3, 0.3, 0.0)
+    saved = (1.2, 1.35, 0.6, 0.75)
+    assert remap.MIN_RUN_M > 0.15
+    for off in (0.15, 0.2, 0.3):
+        real = (saved[0], saved[1], saved[2] + off, saved[3] + off)
+        fired, _, _ = _run(_grid_with(boxes=[saved]),
+                           lambda t: (_scan(*pose, boxes=[real]), pose), seconds=20)
+        assert fired is None, off
+
+
+def test_gone_is_judged_by_the_saved_surfaces_range_not_the_return():
+    """Amendment 4: an object removed from 1.3 m away, whose beams now return
+    at walls beyond MAX_RANGE_M (a re-opened doorway's room behind it), is
+    gone; judging gone by the return's range dropped every such beam."""
+    pose = (-0.9, -0.9, 0.0)
+    box = (0.4, 1.0, 0.0, 0.4)
+    j = remap.judge_scan(remap.SavedMap(_grid_with(boxes=[box])), _scan(*pose), pose)
+    assert j["gone"] > 0
+    fired, _, _ = _run(_grid_with(boxes=[box]), lambda t: (_scan(*pose), pose), seconds=20)
+    assert fired is not None and fired["trigger"] == "contradiction"
+
+
+def test_run_widths_join_short_gaps_and_wrap_a_full_turn():
+    import numpy as np
+    m = np.array([1, 1, 0, 1, 0, 0, 1, 0, 1], dtype=bool)
+    w = np.ones(m.size)
+    assert remap.run_widths(m, w, 1, full_turn=False).tolist() == [3, 3, 0, 3, 0, 0, 2, 0, 2]
+    # Round the end on a full turn: 6, 8, 0, 1 and 3 are one run (one quiet
+    # beam at most between them); only 4-5 separate anything.
+    assert remap.run_widths(m, w, 1, full_turn=True).tolist() == [5, 5, 0, 5, 0, 0, 5, 0, 5]
+    m2 = np.array([1, 0, 0, 1, 1, 0, 0, 1], dtype=bool)
+    assert remap.run_widths(m2, w[:8], 1, full_turn=True).tolist() == [2, 0, 0, 2, 2, 0, 0, 2]
+    assert remap.run_widths(np.ones(4, dtype=bool), w[:4], 1, True).tolist() == [4] * 4
+    assert remap.run_widths(np.zeros(4, dtype=bool), w[:4], 1, True).tolist() == [0] * 4
+
+
+def test_entered_unknown_is_the_saved_maps_unknown_or_off_its_edge():
+    saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
+    assert not remap.entered_unknown(saved, 0.5, 0.5)
+    assert remap.entered_unknown(saved, 3.0, 0.5)
+    assert remap.entered_unknown(saved, 10.0, 0.5)
+
+
+# ---- 3.50.D4: the bridge's re-map ----
+
+from tests.test_review_376h1 import _Future  # noqa: E402
+
+
+class _LiveSlam(_FakeSlam):
+    def alive(self):
+        return self.mode is not None
+
+
+class _Serialise:
+    """slam_toolbox's serialize_map: writes the graph files, answers 0."""
+
+    def wait_for_service(self, timeout_sec):
+        return True
+
+    def call_async(self, req):
+        _fake_serialise(req.filename)
+        f = _Future()
+        f.complete(types.SimpleNamespace(result=0))
+        return f
+
+
+def _matched(bridge_mod, monkeypatch, tmp_path, here=(1.0, 0.5, 0.3)):
+    """A bridge localising on a matched reload of the room, at `here`."""
+    b, fake, store = _reload_bridge(bridge_mod, monkeypatch, tmp_path,
+                                    relocalise.judge([0.9] * 5, (0.0, 0.0, 0.0)))
+    live = _LiveSlam()
+    monkeypatch.setattr(bridge_mod.slam_process, "SlamProcess", lambda *a, **kw: live)
+    verdict = relocalise.judge([0.9] * 5, (0.0, 0.0, 0.0))
+
+    def check(deadline, dock=None):
+        # The localisation node's /map arrives while the reload is judged.
+        b.last_map = {**_room_grid(), "session": b.session, "version": 1}
+        return verdict
+    monkeypatch.setattr(b, "check_reload", check)
+    monkeypatch.setattr(b, "_fresh_pose",
+                        lambda: {"x_m": here[0], "y_m": here[1], "yaw_rad": here[2], "age_s": 0.0})
+    monkeypatch.setattr(b, "_pose_now", lambda mo=None: tuple(here))
+    monkeypatch.setattr(b, "_map_to_odom", lambda: (0.0, 0.0, 0.0))
+    b._rest_since = time.monotonic() - 1.0              # standing still
+    b.last_odom = {"at": time.time() + 3600}            # and odometry that stays fresh
+    b.start_slam()
+    assert b.slam_state == "ready" and live.mode == "localisation"
+    return b, live, store
+
+
+def _settle(b, seconds=10.0):
+    end = time.monotonic() + seconds
+    while b.slam_state == "remapping" and time.monotonic() < end:
+        time.sleep(0.01)
+
+
+def test_a_matched_reload_freezes_its_map_for_the_watch(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    assert b._remap_saved is not None and b._remap_saved.w == _room_grid()["width"]
+    b.last_map = {**_room_grid(), "data": [0] * len(_room_grid()["data"])}    # /map fills in
+    assert b._remap_saved.state.max() == remap.OCC                           # the frozen copy does not
+    assert b.health()[1]["slam"]["watch"] == {"scans": 0, "lost": 0, "moving": 0,
+                                              "no_tf": 0, "overflow": 0}
+
+
+def test_a_person_s_request_re_maps_from_the_current_pose(bridge_mod, monkeypatch, tmp_path):
+    """D4-e: the mapping node on the version localised on, from where the
+    robot is; the same map_id, and the next save is its next version."""
+    b, live, store = _matched(bridge_mod, monkeypatch, tmp_path)
+    code, body = b.remap("request", "twin")
+    assert code == 200 and body["remapping"] is True and body["trigger"] == "request"
+    _settle(b)
+    assert b.health()[1]["slam"]["remap"]["from_pose"] == [1.0, 0.5, 0.3]
+    assert live.calls[-1] == ("mapping", store.current().prefix, (1.0, 0.5, 0.3))
+    assert b.slam_state == "ready" and live.mode == "mapping"
+    assert b.map_id == "map-0a1b2c3d"
+    r = b.health()[1]["slam"]["remap"]
+    assert r["result"] == "mapping" and r["version"] == 1 and r["detail"] == "twin"
+    assert b._remap_tracker is None                     # the watch is done
+    b.serialize_cli = _Serialise()
+    monkeypatch.setattr(bridge_mod, "SerializePoseGraph", types.SimpleNamespace(
+        Request=types.SimpleNamespace, Response=types.SimpleNamespace(RESULT_SUCCESS=0)))
+    b._save_map("mission_end")
+    assert b.map_saves["saved"] == 1 and store.versions("map-0a1b2c3d") == [1, 2]
+    assert store.current().meta["start_truth"] == {"x_m": 1.0, "y_m": 2.0, "heading_deg": 90.0}
+
+
+def test_a_re_map_is_refused_unless_localising_and_ready(bridge_mod, monkeypatch, tmp_path):
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b.slam_state = "checking"
+    assert b.remap("request")[0] == 409
+    b.slam_state = "ready"
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    code, body = b.remap("request")                     # already mapping
+    assert code == 409 and body["mode"] == "mapping"
+    fresh, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path / "f", None)
+    monkeypatch.setattr(bridge_mod, "MAP_RELOAD", False)
+    fresh.slam_state = "ready"
+    assert fresh.remap("request")[0] == 409             # a fresh map has nothing to re-map
+
+
+def test_goals_are_held_while_re_mapping(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b.nav = types.SimpleNamespace(futures=[])
+    b.slam_state = "remapping"
+    code, body = b.send_goal({"x_m": 1.0, "y_m": 0.0})
+    assert code == 503 and body["slam"] == "remapping" and b.nav.futures == []
+
+
+def test_a_mapping_node_that_dies_localises_again(bridge_mod, monkeypatch, tmp_path):
+    """Both reviewers: a failed re-map leaves the robot localising on the
+    same version, from where it is, not with no SLAM."""
+    monkeypatch.setitem(bridge_mod._test_ok, "value", True)   # the waits run
+    b, live, store = _matched(bridge_mod, monkeypatch, tmp_path)
+    monkeypatch.setattr(b, "_fresh_pose", lambda: None if live.mode == "mapping" else
+                        {"x_m": 1.0, "y_m": 0.5, "yaw_rad": 0.3, "age_s": 0.0})
+    monkeypatch.setattr(live, "alive", lambda: live.mode != "mapping")
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    h = b.health()[1]
+    assert h["ok"] is True and h["slam"]["state"] == "ready" and h["slam"]["mode"] == "localisation"
+    assert live.calls[-1] == ("localisation", store.current().prefix, (1.0, 0.5, 0.3))
+    assert h["slam"]["remap"]["result"] == "failed_localising" and "exited" in h["slam"]["remap"]["error"]
+    assert b._remap_tracker is not None and b._remap_tracker.scans == 0     # the watch starts over
+
+
+def test_a_re_map_that_cannot_localise_again_is_failed(bridge_mod, monkeypatch, tmp_path):
+    monkeypatch.setitem(bridge_mod._test_ok, "value", True)   # the waits run
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    monkeypatch.setattr(b, "_fresh_pose", lambda: None if live.calls[-1][0] != "localisation"
+                        or len(live.calls) > 1 else
+                        {"x_m": 0.0, "y_m": 0.0, "yaw_rad": 0.0, "age_s": 0.0})
+    monkeypatch.setattr(live, "alive", lambda: False)
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    h = b.health()[1]
+    assert h["ok"] is False and h["slam"]["state"] == "failed"
+    assert h["slam"]["remap"]["result"] == "failed" and "relocalise_error" in h["slam"]["remap"]
+
+
+def test_the_swap_waits_for_rest_and_no_live_goal(bridge_mod, monkeypatch, tmp_path):
+    """Amendment 2: goals held at once; the swap only once the robot is still
+    and no goal runs -- a live one is cancelled after REMAP_DEFER_MAX_S."""
+    monkeypatch.setattr(bridge_mod, "REMAP_DEFER_MAX_S", 0.3)
+    monkeypatch.setattr(bridge_mod, "REMAP_REST_WAIT_S", 0.3)
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b.goal = {"state": "active", "x_m": 1.0, "y_m": 0.0}
+    cancels = []
+    def cancel(why="cancelled"):        # nav2 ends it, as its result would
+        cancels.append(why)
+        b.goal = {**b.goal, "state": "cancelled"}
+        return True
+    monkeypatch.setattr(b, "cancel_goal", cancel)
+    assert b.remap("contradiction", {"cells": 12}, b._remap_tracker)[0] == 200
+    time.sleep(0.15)
+    assert live.mode == "localisation" and b.slam_state == "remapping"      # not yet
+    assert b.send_goal({"x_m": 2.0, "y_m": 0.0})[0] == 503                 # but goals held
+    _settle(b)
+    assert cancels == ["re-map"] and live.mode == "mapping"
+    r = b.health()[1]["slam"]["remap"]
+    assert r["cancelled_goal"] is True and r["waited_s"] >= 0.3 and r["from_pose"] == [1.0, 0.5, 0.3]
+
+
+def test_at_rest_with_no_goal_the_swap_is_at_once(bridge_mod, monkeypatch, tmp_path):
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    t0 = time.monotonic()
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    assert live.mode == "mapping" and time.monotonic() - t0 < 1.0
+    assert b.health()[1]["slam"]["remap"]["cancelled_goal"] is False
+
+
+def test_odometry_sets_rest(bridge_mod):
+    from tests.test_review_376h1 import _bridge
+    b = _bridge(bridge_mod)
+
+    def odom(v, w):
+        return _Msg(header=_Msg(stamp=_Msg(sec=int(time.time()), nanosec=0)),
+                    pose=_Msg(pose=_Msg(position=_Msg(x=0.0, y=0.0),
+                                        orientation=_Msg(x=0.0, y=0.0, z=0.0, w=1.0))),
+                    twist=_Msg(twist=_Msg(linear=_Msg(x=v), angular=_Msg(z=w))))
+    b._on_odom(odom(0.2, 0.0))
+    assert b._rest_since is None
+    b._on_odom(odom(0.0, 0.001))
+    first = b._rest_since
+    b._on_odom(odom(0.0, 0.0))
+    assert first is not None and b._rest_since == first
+    b._on_odom(odom(0.0, 0.5))
+    assert b._rest_since is None
+
+
+def test_the_frozen_map_is_the_localisation_node_s_first(bridge_mod):
+    """Review: the verdict's scans fill unknown cells near the dock; the
+    map frozen for trigger 1 is the first one the node published."""
+    from tests.test_review_376h1 import _bridge
+    b = _bridge(bridge_mod)
+    b.slam_state, b.slam_started_at = "checking", time.time() - 5
+
+    def grid(v):
+        return _Msg(header=_Msg(stamp=_Msg(sec=int(time.time()), nanosec=0)),
+                    info=_Msg(resolution=0.05, width=1, height=1,
+                              origin=_Msg(position=_Msg(x=0.0, y=0.0),
+                                          orientation=_Msg(x=0.0, y=0.0, z=0.0, w=1.0))),
+                    data=[v])
+    b._on_map(grid(-1))
+    b._on_map(grid(0))
+    assert b._reload_map["data"] == [-1] and b.last_map["data"] == [0]
+
+
+def test_a_body_that_is_not_an_object_is_refused():
+    with open(os.path.join(ROOT, "service/slam/src/picar_bridge/picar_bridge/bridge.py")) as f:
+        src = f.read()
+    i = src.index('path == "/slam/remap"')
+    assert "isinstance(body, dict)" in src[i:i + 300]
+
+
+def test_partial_scans_do_not_wrap_their_ends():
+    """Review: the incidence of a partial scan's end beams has one neighbour."""
+    grid = _room_grid()
+    full = _scan(0.5, 0.4, 0.0)
+    half = {**full, "ranges_m": full["ranges_m"][:180]}
+    j = remap.judge_scan(remap.SavedMap(grid), half, (0.5, 0.4, 0.0))
+    assert j["agreement"] > 0.9 and j["contra"].size <= 2
+
+
+def test_the_watch_re_maps_on_entering_the_saved_map_s_unknown(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.5, 0.5, 0.0))
+    b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
+    asked = []
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (200, {}))
+    b.remap_step()
+    assert asked == []
+    monkeypatch.setattr(b, "_fresh_pose",
+                        lambda: {"x_m": 3.0, "y_m": 0.5, "yaw_rad": 0.0, "age_s": 0.0})
+    b.remap_step()
+    assert asked == ["entered_unknown"]
+
+
+def test_the_contradiction_trigger_ships_off_and_entered_unknown_still_re_maps(
+        bridge_mod, monkeypatch, tmp_path):
+    """3.50.D4 (the user, 2026-10-24): off unless PICAR_REMAP_CONTRADICTION=1.
+    Off, no scan is filed or judged, and entering the saved unknown still
+    asks for the re-map."""
+    # The shipped default and the parse, by importing the module (review):
+    # unset is off, and only exactly "1" is on.
+    for value, on in (("true", False), ("0", False), ("1", True), (None, False)):
+        if value is None:
+            monkeypatch.delenv("PICAR_REMAP_CONTRADICTION", raising=False)
+        else:
+            monkeypatch.setenv("PICAR_REMAP_CONTRADICTION", value)
+        importlib.reload(bridge_mod)
+        assert bridge_mod.REMAP_CONTRADICTION is on, value
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.5, 0.5, 0.0))
+    b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    asked = []
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (200, {}))
+    _queue(b, [1000.0, 1000.1, 1000.2])
+    assert not b._remap_pending
+    b.remap_step()
+    assert b._remap_tracker.scans == 0 and asked == []
+    assert b.health()[1]["slam"]["remap_contradiction"] is False
+    monkeypatch.setattr(b, "_fresh_pose",
+                        lambda: {"x_m": 3.0, "y_m": 0.5, "yaw_rad": 0.0, "age_s": 0.0})
+    b.remap_step()
+    assert asked == ["entered_unknown"]
+
+
+def test_the_watch_re_maps_when_the_scans_contradict(bridge_mod, monkeypatch, tmp_path):
+    """Each scan laid at the laser's pose at its own capture stamp."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    asked, stamps = [], []
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append((trigger, detail)) or (200, {}))
+
+    def laser(at=None):
+        stamps.append(at.nanoseconds)
+        return pose
+    monkeypatch.setattr(b, "_laser_in_map", laser)
+    _rest_clock_still(b)
+    for k in range(120):
+        _file(b, {**_scan(*pose, boxes=[BOX]), "stamp_ns": k * 10**8, "at": time.time()})
+        b.remap_step()
+        if asked:
+            break
+    assert asked and asked[0][0] == "contradiction" and asked[0][1]["cells"] >= remap.MIN_GROUP
+    assert stamps[:3] == [0, 10**8, 2 * 10**8]
+    n = b._remap_tracker.scans
+    b.remap_step()
+    assert b._remap_tracker.scans == n                  # the same scan is not judged twice
+
+
+def _rest_clock_still(b):
+    """Odometry still since long before any scan, and well past each one."""
+    b._rest_clock.start, b._rest_clock.last_still, b._rest_clock.last = -1e9, 1e18, 1e18
+
+
+def test_the_watch_judges_only_scans_taken_at_rest(bridge_mod, monkeypatch, tmp_path):
+    """Amendment 4: a scan is judged only if odometry was still from
+    REMAP_REST_S before its revolution to past its end; moving, or still
+    for too short a time before it, it is counted `moving`. On the scan's
+    own stamp, never the wall clock (the review: no timing in the test)."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    asked = []
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (200, {}))
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    rc = b._rest_clock
+    for k in range(150):
+        cap = 1000.0 + k * 0.1
+        # Moving, or still for 0.45 s before the revolution.
+        rc.done.clear()
+        rc.start = None if k % 2 else cap - 0.1 - 0.45
+        rc.last_still = rc.last = cap + 0.2
+        _file(b, {**_scan(*pose, boxes=[BOX]), "stamp_ns": int(cap * 1e9), "at": time.time()})
+        b.remap_step()
+    assert asked == []
+    assert b._remap_tracker.moving == 150 and b._remap_tracker.scans == 0
+
+
+def test_the_watch_waits_for_odometry_past_the_scan():
+    """Odometry not yet past the scan's revolution: undecided (None)."""
+    rc = remap.RestClock(0.01, 0.02, 0.5, 0.1, 0.5)
+    for k in range(20):
+        rc.on_odom(100.0 + k * 0.05, 0.0, 0.0)           # still from 100.0 to 100.95
+    assert rc.still_for(100.9) is None                   # the revolution may end at 101.0
+    assert rc.still_for(100.88) is None
+    assert rc.still_for(100.6) is True                    # 100.5 - 100.0 >= 0.5
+    assert rc.still_for(100.55) is False
+    rc.on_odom(101.0, 0.2, 0.0)                           # moving
+    # Review round 2: the answer for a scan never depends on when it is
+    # asked -- 100.6's revolution was still before the robot moved.
+    assert rc.still_for(100.6) is True
+    assert rc.still_for(100.9) is False                   # its revolution may reach 101.0
+    rc.on_odom(101.05, 0.0, 0.0)
+    assert rc.still_for(100.95) is False                  # restarted at 101.05
+
+
+def test_an_odometry_gap_restarts_the_rest_clock():
+    """The robot may have moved while odometry was silent."""
+    rc = remap.RestClock(0.01, 0.02, 0.5, 0.1, 0.5)
+    for k in range(20):
+        rc.on_odom(100.0 + k * 0.05, 0.0, 0.0)
+    rc.on_odom(102.0, 0.0, 0.0)                           # 1.05 s of silence
+    rc.on_odom(102.3, 0.0, 0.0)
+    assert rc.start == 102.0 and list(rc.done) == [(100.0, 100.95)]
+    assert rc.still_for(101.5) is False                   # inside the gap: unseen
+    assert rc.still_for(102.1) is False                   # not 0.5 s after the restart
+
+
+def test_a_scan_whose_tf_is_late_is_retried_then_dropped(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)
+    _file(b, {**_scan(0.0, 0.0, 0.0), "stamp_ns": 5, "at": time.time()})
+    b.remap_step()
+    assert len(b._remap_pending) == 1                   # queued: try again
+    b.remap_step()
+    assert len(b._remap_pending) == 1                   # still waiting, not filed twice
+    b._remap_pending[0]["at"] -= 1.0
+    b.remap_step()
+    assert len(b._remap_pending) == 0                   # too old: given up
+    assert b._remap_tracker.scans == 0 and b._remap_tracker.moving == 0
+
+
+def test_scans_wait_in_order_for_odometry_to_pass_them(bridge_mod, monkeypatch, tmp_path):
+    """Review round 2: the 10 Hz poll replaces last_scan before odometry has
+    passed it, so each new scan queues and is judged once odometry passes
+    its revolution -- none is dropped for being replaced."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    rc = b._rest_clock
+    rc.on_odom(999.0, 0.0, 0.0)
+    for k in range(5):                                   # five scans, odometry behind them
+        _file(b, {**_scan(*pose), "stamp_ns": int((1000.0 + 0.1 * k) * 1e9), "at": time.time()})
+        b.remap_step()
+    assert len(b._remap_pending) == 5 and b._remap_tracker.scans == 0
+    for k in range(40):                                  # odometry catches up, still throughout
+        rc.on_odom(999.05 + 0.05 * k, 0.0, 0.0)
+    b.remap_step()
+    assert len(b._remap_pending) == 0 and b._remap_tracker.scans == 5
+
+
+def test_a_scan_odometry_never_passes_counts_moving(bridge_mod, monkeypatch, tmp_path):
+    """Odometry stalled: the scan is not known to be at rest, and /health's
+    watch shows it (review round 2), as the replay counts it."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _file(b, {**_scan(*pose), "stamp_ns": int(1000.0 * 1e9), "at": time.time() - 1.0})
+    b.remap_step()
+    assert b.health()[1]["slam"]["watch"]["moving"] == 1
+
+
+def test_no_watch_without_a_matched_reload(bridge_mod, monkeypatch, tmp_path):
+    b, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path, None)
+    monkeypatch.setattr(bridge_mod, "MAP_RELOAD", False)
+    b.start_slam()
+    assert b._remap_saved is None and b.health()[1]["slam"]["watch"] is None
+    b.remap_step()
+    assert not b._remap_pending                         # nothing queued, nothing judged
+
+
+def test_the_detector_has_a_hold_time():
+    """Amendment 1: a contradiction must last HOLD_S, not only MIN_LOOKS scans."""
+    pose = (0.0, 0.0, 0.0)
+    fired, _, t = _run(_room_grid(), lambda t: (_scan(*pose, boxes=[BOX]), pose))
+    assert fired is not None and t >= remap.HOLD_S
+
+
+# ---- 3.50.D4: a person's request, through the robot server ----
+
+import httpx  # noqa: E402
+
+
+def _ros_world(handler):
+    from world.ros_world import RosWorld
+    return RosWorld("http://bridge", client=httpx.Client(base_url="http://bridge",
+                                                         transport=httpx.MockTransport(handler)))
+
+
+def test_the_world_asks_the_bridge_and_reads_its_refusal_as_an_answer():
+    seen = []
+
+    def handler(request):
+        seen.append((request.method, request.url.path, json.loads(request.content)))
+        if len(seen) == 1:
+            return httpx.Response(200, json={"remapping": True, "trigger": "request"})
+        return httpx.Response(409, json={"error": "re-map only from a reloaded map",
+                                         "slam": "ready", "mode": "mapping"})
+    w = _ros_world(handler)
+    assert w.remap(by="twin-dpad") == {"remapping": True, "trigger": "request"}
+    assert seen[0] == ("POST", "/slam/remap", {"by": "twin-dpad"})
+    no = w.remap()
+    assert no["remapping"] is False and no["mode"] == "mapping" and "reloaded" in no["reason"]
+
+
+def test_a_bridge_error_is_not_read_as_a_refusal():
+    w = _ros_world(lambda request: httpx.Response(401, json={"error": "secret"}))
+    with pytest.raises(httpx.HTTPStatusError):
+        w.remap()
+
+
+def _server_with(monkeypatch, world):
+    import robot.server as server
+    from fastapi.testclient import TestClient
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    monkeypatch.setattr(server, "get_world", lambda *a, **kw: world)
+    return TestClient(server.create_app())
+
+
+class _RemapWorld:
+    def __init__(self, reply=None, error=None):
+        self.reply, self.error, self.calls = reply, error, []
+
+    def remap(self, by=""):
+        self.calls.append(by)
+        if self.error:
+            raise self.error
+        return self.reply
+
+    def __getattr__(self, name):          # the rest of a world, unused here
+        raise AttributeError(name)
+
+
+def test_the_robot_server_route(monkeypatch):
+    w = _RemapWorld({"remapping": True, "trigger": "request"})
+    client = _server_with(monkeypatch, w)
+    r = client.post("/world/remap", headers={"x-driver": "twin-dpad"})
+    assert r.status_code == 200 and r.json()["remapping"] is True and w.calls == ["twin-dpad"]
+    w.reply = {"remapping": False, "reason": "not localising"}
+    r = client.post("/world/remap")
+    assert r.status_code == 409 and "not localising" in r.json()["detail"] and w.calls[-1] == "unnamed"
+    w.error = httpx.ConnectError("down")
+    assert client.post("/world/remap").status_code == 503
+
+
+def test_a_world_without_slam_cannot_re_map(monkeypatch):
+    import robot.server as server
+    from fastapi.testclient import TestClient
+    monkeypatch.delenv("APP_SHARED_SECRET", raising=False)
+    r = TestClient(server.create_app()).post("/world/remap")       # the plain simulator
+    assert r.status_code == 501
+
+
+def test_a_trigger_that_cannot_start_a_re_map_backs_off(bridge_mod, monkeypatch, tmp_path):
+    """Thermos (low): a refused start must not be retried on every look."""
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(3.0, 0.5, 0.0))
+    b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
+    asked = []
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (503, {}))
+    for _ in range(5):
+        b.remap_step()
+    assert asked == ["entered_unknown"]
+    b._remap_retry_at -= bridge_mod.REMAP_RETRY_S
+    b.remap_step()
+    assert len(asked) == 2
+
+
+def test_a_mission_end_during_the_swap_saves_once_it_is_mapping(bridge_mod, monkeypatch, tmp_path):
+    """Thermos (low): the re-map session's cells are not lost to a skip."""
+    b, live, store = _matched(bridge_mod, monkeypatch, tmp_path)
+    b.serialize_cli = _Serialise()
+    monkeypatch.setattr(bridge_mod, "SerializePoseGraph", types.SimpleNamespace(
+        Request=types.SimpleNamespace, Response=types.SimpleNamespace(RESULT_SUCCESS=0)))
+    gate = __import__("threading").Event()
+    real_start = live.start
+
+    def slow_start(*a, **kw):
+        gate.wait(2.0)
+        return real_start(*a, **kw)
+    monkeypatch.setattr(live, "start", slow_start)
+    assert b.remap("request")[0] == 200
+    b._save_map("mission_end")                          # during the swap
+    assert store.versions("map-0a1b2c3d") == [1]
+    gate.set()
+    _settle(b)
+    end = time.monotonic() + 2.0
+    while store.versions("map-0a1b2c3d") == [1] and time.monotonic() < end:
+        time.sleep(0.01)
+    assert store.versions("map-0a1b2c3d") == [1, 2]
+
+
+# ---- 3.50.D4 review round 2 ----
+
+def test_lost_is_judged_as_relocalise_judges_a_reload():
+    """Review: the same share on the same scans, so a reload that matched is
+    not read as lost by a stricter measure."""
+    g = _room_grid()
+    pad = 20                                   # 1 m of free cells round the room:
+    w, h = g["width"] + 2 * pad, g["height"] + 2 * pad   # every return lands on the grid
+    data = [0] * (w * h)
+    for r in range(g["height"]):
+        data[(r + pad) * w + pad:(r + pad) * w + pad + g["width"]] = g["data"][r * g["width"]:(r + 1) * g["width"]]
+    grid = {**g, "width": w, "height": h, "data": data,
+            "origin_x_m": g["origin_x_m"] - pad * RES, "origin_y_m": g["origin_y_m"] - pad * RES}
+    saved = remap.SavedMap(grid)
+    for real, believed in (((0.5, 0.4, 0.2), (0.5, 0.4, 0.2)),
+                           ((0.5, 0.4, 0.2), (0.57, 0.46, 0.23))):
+        scan = _scan(*real)
+        a = remap.judge_scan(saved, scan, believed)["agreement"]
+        b = relocalise.scan_agreement(scan, believed, grid)
+        assert a == pytest.approx(b, abs=1e-9), (real, believed)
+    # Slipped, some returns land off even the padded grid (unknown to the
+    # watch, a miss to relocalise): the shares differ a little, the verdict not.
+    scan = _scan(1.5, 0.4, math.radians(30))
+    a = remap.judge_scan(saved, scan, (0.5, 0.4, 0.0))["agreement"]
+    b = relocalise.scan_agreement(scan, (0.5, 0.4, 0.0), grid)
+    assert a < remap.LOST_BELOW and b < relocalise.AGREE_MIN
+
+
+def test_a_goal_registered_after_a_re_map_began_is_refused(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    from tests.test_review_376h1 import _Nav
+    b.nav = _Nav()
+
+    def wait(timeout_sec):              # the re-map begins while nav2 is awaited
+        b.slam_state = "remapping"
+        return True
+    b.nav.wait_for_server = wait
+    code, body = b.send_goal({"x_m": 1.0, "y_m": 0.0})
+    assert code == 503 and body["slam"] == "remapping" and b.nav.futures == []
+
+
+def test_a_robot_that_never_rests_calls_the_swap_off(bridge_mod, monkeypatch, tmp_path):
+    monkeypatch.setattr(bridge_mod, "REMAP_DEFER_MAX_S", 0.2)
+    monkeypatch.setattr(bridge_mod, "REMAP_REST_WAIT_S", 0.2)
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b._rest_since = None                                   # a person driving
+    monkeypatch.setattr(b, "cancel_goal", lambda why="cancelled": False)
+    assert b.remap("contradiction", {"cells": 12}, b._remap_tracker)[0] == 200
+    _settle(b)
+    assert live.mode == "localisation" and b.slam_state == "ready"
+    assert b.health()[1]["slam"]["remap"]["result"] == "deferred"
+    assert b._remap_retry_at > time.monotonic()
+
+
+def test_rest_needs_fresh_odometry_and_no_goal_still_cancelling(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b.last_odom = {"at": time.time()}
+    now = time.monotonic()
+    assert b._at_rest(now)
+    b.last_odom = {"at": time.time() - 2.0}                # ros2_control hung
+    assert not b._at_rest(now)
+    b.last_odom = {"at": time.time()}
+    other = {"state": "cancelled"}
+    b.goal = {"state": "cancelled"}
+    b.cancelling = {1: {"record": other, "handle": None, "since": 0, "last": 0}}
+    assert not b._at_rest(now)                             # superseded, still driving
+
+
+def test_a_failed_re_map_latches_the_automatic_triggers(bridge_mod, monkeypatch, tmp_path):
+    """Both reviewers: a graph the mapping node cannot load must not loop."""
+    monkeypatch.setitem(bridge_mod._test_ok, "value", True)
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(3.0, 0.5, 0.0))
+    b.last_odom = {"at": time.time()}
+    monkeypatch.setattr(b, "_fresh_pose", lambda: None if live.mode == "mapping" else
+                        {"x_m": 3.0, "y_m": 0.5, "yaw_rad": 0.0, "age_s": 0.0})
+    monkeypatch.setattr(live, "alive", lambda: live.mode != "mapping")
+    b._remap_saved = remap.SavedMap(_grid_with(unknown=[(2.5, 4.0, -1.0, 2.0)]))
+    b.remap_step()
+    _settle(b)
+    assert b.health()[1]["slam"]["remap"]["result"] == "failed_localising"
+    starts = len(live.calls)
+    for _ in range(5):
+        b.remap_step()                                  # still in unknown
+    assert len(live.calls) == starts and b.slam_state == "ready"
+    assert b.remap("request")[0] == 200                     # a person may still ask
+
+
+def test_a_save_lost_to_a_failed_re_map_is_counted(bridge_mod, monkeypatch, tmp_path):
+    monkeypatch.setitem(bridge_mod._test_ok, "value", True)
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b.last_odom = {"at": time.time()}
+    monkeypatch.setattr(b, "_fresh_pose", lambda: None)
+    monkeypatch.setattr(live, "alive", lambda: False)
+    monkeypatch.setattr(b, "_await_rest", lambda: (b._save_map("mission_end"), {"at_rest": True})[1])
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    assert b.slam_state == "failed" and b.map_saves["skipped"] == 1 and b._save_after_remap is None
+
+
+# ---- 3.50.D4 review round 3 ----
+
+def test_a_deferral_backs_off_longer_and_is_counted(bridge_mod, monkeypatch, tmp_path):
+    monkeypatch.setattr(bridge_mod, "REMAP_DEFER_MAX_S", 0.1)
+    monkeypatch.setattr(bridge_mod, "REMAP_REST_WAIT_S", 0.1)
+    b, live, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b._rest_since = None
+    monkeypatch.setattr(b, "cancel_goal", lambda why="cancelled": False)
+    assert b.remap("contradiction", {"cells": 12}, b._remap_tracker)[0] == 200
+    _settle(b)
+    h = b.health()[1]["slam"]
+    assert h["remap"]["result"] == "deferred" and h["remap_deferrals"] == 1
+    assert b._remap_retry_at - time.monotonic() > bridge_mod.REMAP_RETRY_S + 1
+
+
+def test_rest_reached_in_the_wait_is_rest(bridge_mod, monkeypatch, tmp_path):
+    """Review: the check that ended the wait decides, not a later one."""
+    monkeypatch.setattr(bridge_mod, "REMAP_DEFER_MAX_S", 0.05)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    calls = iter([False] * 3 + [True] + [False] * 100)
+    monkeypatch.setattr(b, "_at_rest", lambda now: next(calls))
+    monkeypatch.setattr(b, "cancel_goal", lambda why="cancelled": True)
+    assert b._await_rest()["at_rest"] is True
+
+
+def test_the_latch_shows_on_health(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    assert b.health()[1]["slam"]["remap_latched"] is False
+    b._remap_latched = True
+    assert b.health()[1]["slam"]["remap_latched"] is True
+
+
+def test_the_fall_back_starts_from_the_localisation_node_s_frame(bridge_mod, monkeypatch, tmp_path):
+    """Review: not from a map -> odom the failed mapping node published."""
+    monkeypatch.setitem(bridge_mod._test_ok, "value", True)
+    b, live, store = _matched(bridge_mod, monkeypatch, tmp_path)
+    frames = iter([(1.0, 2.0, 0.0), (9.0, 9.0, 0.0)])          # localisation's, then mapping's
+    monkeypatch.setattr(b, "_map_to_odom", lambda: next(frames))
+    seen = []
+    monkeypatch.setattr(b, "_pose_now", lambda mo=None: seen.append(mo) or (mo[0], mo[1], 0.0))
+    monkeypatch.setattr(b, "_fresh_pose", lambda: None if live.mode == "mapping" else
+                        {"x_m": 1.0, "y_m": 2.0, "yaw_rad": 0.0, "age_s": 0.0})
+    monkeypatch.setattr(live, "alive", lambda: live.mode != "mapping")
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    assert live.calls[-1] == ("localisation", store.current().prefix, (1.0, 2.0, 0.0))
+    assert all(mo == (1.0, 2.0, 0.0) for mo in seen)
+
+
+def test_a_fall_back_frees_the_reload_map(bridge_mod, monkeypatch, tmp_path):
+    b, fake, _ = _reload_bridge(bridge_mod, monkeypatch, tmp_path,
+                                relocalise.judge([0.2] * 5, (0.0, 0.0, 0.0)))
+    b._reload_map = {"data": [0]}
+    b.start_slam()
+    assert b._reload_map is None
+
+
+# ---- 3.50.D4 review round 5 ----
+
+def test_the_re_map_record_says_when_mapping_began(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    t0 = time.time()
+    assert b.remap("request")[0] == 200
+    _settle(b)
+    r = b.health()[1]["slam"]["remap"]
+    assert r["result"] == "mapping" and t0 <= r["mapping_at"] <= time.time()
+
+
+def test_the_bridge_can_bind_loopback_only():
+    """Review: under host networking a laptop run must not be on the LAN."""
+    with open(os.path.join(ROOT, "service/slam/src/picar_bridge/picar_bridge/bridge.py")) as f:
+        src = f.read()
+    assert 'os.environ.get("BRIDGE_HOST", "0.0.0.0")' in src
+    assert "ThreadingHTTPServer((host, port)" in src
+
+
+def test_a_latched_bridge_refuses_a_trigger_but_not_a_person(bridge_mod, monkeypatch, tmp_path):
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    b._remap_latched = True
+    for trigger in ("entered_unknown", "contradiction"):
+        code, body = b.remap(trigger, {}, b._remap_tracker)
+        assert code == 409 and "after a failed one" in body["error"] and "stale" not in body
+    assert b.remap("request")[0] == 200
+    _settle(b)
+
+
+def test_the_replay_uses_the_bridges_rest_constants(bridge_mod):
+    """evaluations/map-350/d4_replay.py chose amendment 4's numbers on the
+    bridge's rest rule: its copies of the constants must be the bridge's."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(__file__), "..", "evaluations", "map-350", "d4_replay.py")
+    spec = importlib.util.spec_from_file_location("d4_replay", path)
+    rp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rp)
+    assert (rp.REST_LIN, rp.REST_ANG, rp.REST_S, rp.SCAN_HZ, rp.ODOM_MAX_AGE_S,
+            rp.SCAN_MAX_AGE_S, rp.WATCH_S) == (
+        bridge_mod.REST_LINEAR_M_S, bridge_mod.REST_ANGULAR_RAD_S, bridge_mod.REMAP_REST_S,
+        bridge_mod.SCAN_HZ, bridge_mod.REST_ODOM_MAX_AGE_S, bridge_mod.REMAP_SCAN_MAX_AGE_S,
+        bridge_mod.REMAP_WATCH_S)
+
+
+def _file(b, scan):
+    """As the poll does: the scan published, and filed for the watch."""
+    with b.lock:
+        b.last_scan = scan
+        b._queue_scan(scan)
+
+
+def _queue(b, stamps_s, pose=(0.0, 0.0, 0.0), age_s=0.0):
+    for t in stamps_s:
+        _file(b, {**_scan(*pose), "stamp_ns": int(t * 1e9), "at": time.time() - age_s})
+
+
+def test_every_scan_the_poll_files_is_judged_once(bridge_mod, monkeypatch, tmp_path):
+    """Review rounds 3-6: scans filed between two looks are all judged,
+    each once."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    _queue(b, [1000.0, 1000.1, 1000.2])
+    b.remap_step()
+    b.remap_step()                                       # a second look judges nothing new
+    assert b._remap_tracker.scans == 3 and not b._remap_pending
+
+
+def test_the_queue_empties_when_the_watch_stops_or_its_tracker_changes(bridge_mod, monkeypatch,
+                                                                       tmp_path):
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)    # nothing judged yet
+    _queue(b, [1000.0, 1000.1])
+    b._remap_retry_at = time.monotonic() + 60                        # a back-off
+    b.remap_step()
+    assert not b._remap_pending
+    b._remap_retry_at = 0.0
+    _queue(b, [1000.2, 1000.3])
+    old = b._remap_tracker
+    with b.lock:
+        b._set_tracker(remap.Contradictions(b._remap_saved))         # a re-map's fall-back
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    b.remap_step()
+    assert b._remap_tracker is not old and b._remap_tracker.scans == 0 and not b._remap_pending
+
+
+def test_scans_the_watch_could_not_judge_are_counted(bridge_mod, monkeypatch, tmp_path):
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)
+    _queue(b, [1000.0 + 0.1 * k for k in range(bridge_mod.REMAP_PENDING_MAX + 3)], age_s=1.0)
+    b.remap_step()
+    w = b.health()[1]["slam"]["watch"]
+    assert w["overflow"] == 3 and w["no_tf"] == bridge_mod.REMAP_PENDING_MAX and w["scans"] == 0
+
+
+def test_a_stamp_jumping_back_starts_the_rest_clock_over():
+    """Review round 3: ignoring every message older than the newest would
+    blind the clock for good after a controller restarts on another clock."""
+    rc = remap.RestClock(0.01, 0.02, 0.5, 0.1, 0.5)
+    for k in range(20):
+        rc.on_odom(100.0 + k * 0.05, 0.0, 0.0)
+    rc.on_odom(100.9, 0.0, 0.0)                           # a repeat inside the gap: ignored
+    assert rc.last == 100.95
+    for k in range(20):
+        rc.on_odom(50.0 + k * 0.05, 0.0, 0.0)             # back 51 s
+    assert rc.start == 50.0 and rc.still_for(50.6) is True and not rc.done
+
+
+def test_a_clock_stepping_back_does_not_blind_the_watch(bridge_mod, monkeypatch, tmp_path):
+    """Review rounds 4-6: no stamp is compared; every scan the poll files counts."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    _queue(b, [1000.0, 970.0, 970.0, 970.1])             # 30 s back, two scans on one stamp
+    b.remap_step()
+    assert b._remap_tracker.scans == 4
+
+
+def test_a_new_tracker_starts_its_own_counts(bridge_mod, monkeypatch, tmp_path):
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: None)
+    _queue(b, [1000.0, 1000.1], age_s=1.0)
+    b.remap_step()
+    assert b.health()[1]["slam"]["watch"]["no_tf"] == 2
+    with b.lock:
+        b._set_tracker(remap.Contradictions(b._remap_saved))
+    w = b.health()[1]["slam"]["watch"]
+    assert (w["scans"], w["no_tf"], w["overflow"]) == (0, 0, 0)
+
+
+def test_a_new_tracker_never_takes_the_scan_in_hand(bridge_mod, monkeypatch, tmp_path):
+    """Review rounds 5-6: the scan held when the tracker changes was filed
+    for the old one; the new tracker starts with the next the poll files."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    _file(b, {**_scan(*pose), "stamp_ns": int(1000.0 * 1e9), "at": time.time()})
+    with b.lock:
+        b._set_tracker(remap.Contradictions(b._remap_saved))
+    b.remap_step()
+    assert b._remap_tracker.scans == 0
+    _file(b, {**_scan(*pose), "stamp_ns": int(1000.1 * 1e9), "at": time.time()})
+    b.remap_step()
+    assert b._remap_tracker.scans == 1
+
+
+def test_a_fire_from_a_replaced_tracker_is_not_acted_on(bridge_mod, monkeypatch, tmp_path):
+    """Review round 6: a tracker replaced while it judged (outside the lock)
+    asks no re-map and leaves the new tracker's queue alone."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    asked = []
+    monkeypatch.setattr(b, "remap", lambda trigger, detail=None, tracker=None: asked.append(trigger) or (200, {}))
+    monkeypatch.setattr(b, "_laser_in_map", lambda at=None: pose)
+    _rest_clock_still(b)
+    old = b._remap_tracker
+
+    def add(scan, laser, now, *, still):
+        with b.lock:
+            b._set_tracker(remap.Contradictions(b._remap_saved))
+            b._queue_scan({**_scan(*pose), "stamp_ns": int(2000 * 1e9), "at": time.time()})
+        return {"trigger": "contradiction", "cells": 99}
+    monkeypatch.setattr(old, "add", add)
+    _queue(b, [1000.0])
+    b.remap_step()
+    assert asked == [] and len(b._remap_pending) == 1 and b._remap_tracker is not old
+
+
+def test_the_poll_files_nothing_while_the_watch_is_stopped(bridge_mod, monkeypatch, tmp_path):
+    """Review rounds 6-7: a scan published during a back-off is never the watch's."""
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
+    b._remap_retry_at = time.monotonic() + 60
+    _queue(b, [1000.0, 1000.1])
+    assert not b._remap_pending
+    b._remap_retry_at = 0.0
+    _queue(b, [1000.2])
+    assert len(b._remap_pending) == 1
+
+
+def test_remap_refuses_a_trigger_from_a_stale_watch(bridge_mod, monkeypatch, tmp_path):
+    """Review round 7: an automatic trigger judged by a tracker since
+    replaced, or arriving during a back-off, is refused; a person is not."""
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
+    started = []
+    monkeypatch.setattr(b, "_remap_run", lambda *a: started.append(a))
+    stale = remap.Contradictions(b._remap_saved)
+    assert b.remap("contradiction", {}, stale)[0] == 409
+    b._remap_retry_at = time.monotonic() + 60
+    assert b.remap("entered_unknown", {}, b._remap_tracker)[0] == 409
+    assert started == [] and b.slam_state == "ready"
+    assert b.remap("request", "twin-dpad")[0] == 200
+
+
+def test_the_poll_itself_files_each_scan(bridge_mod, monkeypatch, tmp_path):
+    """Review round 7: through _poll_scan, not the tests' _file."""
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=(0.0, 0.0, 0.0))
+    n = 360
+    monkeypatch.setattr(b, "_robot_get", lambda path: {
+        "usable": True, "ranges_m": [1.0] * n, "angle_increment_deg": 1.0,
+        "angle_min_deg": -180.0, "range_min_m": 0.05, "range_max_m": 12.0,
+        "stamp_unix": time.time()})
+    monkeypatch.setattr(b.tf_buffer, "lookup_transform", lambda *a, **k: _Msg(
+        header=_Msg(stamp=_Msg(sec=int(time.time()), nanosec=0))), raising=False)
+    b._poll_scan()
+    b._poll_scan()
+    assert len(b._remap_pending) == 2 and b._remap_pending[-1] is b.last_scan
+
+
+def test_a_stale_refusal_starts_no_back_off(bridge_mod, monkeypatch, tmp_path):
+    """Review round 8: a trigger refused for a replaced tracker or a running
+    back-off must not set, or lengthen, the current watch's back-off; and an
+    automatic trigger that names no tracker is refused."""
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path)
+    code, body = b.remap("contradiction", {}, None)
+    assert code == 409 and body["stale"]
+    b._ask_remap("contradiction", {}, remap.Contradictions(b._remap_saved))
+    assert b._remap_retry_at <= time.monotonic()
+    end = time.monotonic() + 0.5
+    b._remap_retry_at = end
+    b._ask_remap("entered_unknown", {}, b._remap_tracker)
+    assert b._remap_retry_at == end
+    assert b.health()[1]["slam"]["remap_stale_refused"] == 2
+    # A refusal that is not stale still backs off (here: latched).
+    b._remap_retry_at, b._remap_latched = 0.0, True
+    b._ask_remap("contradiction", {}, b._remap_tracker)
+    assert b._remap_retry_at > time.monotonic()
+
+
+def test_a_tracker_replaced_mid_look_keeps_the_new_trackers_scans(bridge_mod, monkeypatch,
+                                                                  tmp_path):
+    """Review round 9: the loop's stop check must not empty a queue the
+    poll has already filled for the new tracker."""
+    pose = (0.0, 0.0, 0.0)
+    b, _, _ = _matched(bridge_mod, monkeypatch, tmp_path, here=pose)
+    _rest_clock_still(b)
+
+    def laser(at=None):
+        with b.lock:
+            if not getattr(b, "_swapped", False):
+                b._swapped = True
+                b._set_tracker(remap.Contradictions(b._remap_saved))
+        _queue(b, [2000.0])
+        return pose
+    monkeypatch.setattr(b, "_laser_in_map", laser)
+    _queue(b, [1000.0])
+    b.remap_step()
+    assert len(b._remap_pending) == 1 and b._remap_pending[0]["stamp_ns"] == int(2000.0 * 1e9)

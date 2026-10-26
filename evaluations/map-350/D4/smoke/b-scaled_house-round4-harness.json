@@ -1,0 +1,266 @@
+{
+ "house": "scaled_house",
+ "door": [
+  16,
+  4
+ ],
+ "object": [
+  [
+   23,
+   5
+  ],
+  "red backpack"
+ ],
+ "sides": [
+  [
+   14,
+   4
+  ],
+  [
+   18,
+   4
+  ]
+ ],
+ "map_run": {
+  "mission": {
+   "outcome": "running",
+   "seconds": 420,
+   "target_at": [],
+   "status_file": "explore_status_explore-purple_unicorn-1792812241.json",
+   "steps": 16,
+   "explore": {
+    "goals_sent": 16,
+    "goals_failed": 8,
+    "last_event": "goal sent (frontier) to (3.00, 3.54)",
+    "camera_seen_m2": 21.94,
+    "choice_ms": {
+     "n": 41,
+     "p50_ms": 13.1,
+     "p90_ms": 19.9,
+     "max_ms": 71.9
+    },
+    "asks": false,
+    "ask": null,
+    "choices": 0
+   },
+   "stuck_episodes": 0,
+   "travel_m": 22.8,
+   "min_gap_cm": 2.4,
+   "contact_samples": 0,
+   "inside_samples": 0,
+   "samples": 823,
+   "last_log": [
+    "waiting -- nav2 active: frontier -- unknown, facing ?, free space clear, sees nothing of note",
+    "waiting -- nav2 active: frontier -- bedroom, facing ?, free space clear, sees nothing of note",
+    "waiting -- nav2 active: frontier -- bedroom, facing ?, free space some, sees nothing of note"
+   ]
+  },
+  "saved": {
+   "map_id": "map-761ff696",
+   "saving": false,
+   "store": true,
+   "saved": 1,
+   "failed": 0,
+   "skipped": 0,
+   "last_version": 1,
+   "last_at": 1792812661.7034292,
+   "last_error": null
+  },
+  "sampler": {
+   "contacts": 0,
+   "min_gap_cm": 3.0,
+   "jumps": [],
+   "error_samples": 413,
+   "max_error_m": 0.023,
+   "remaps": [],
+   "states": [
+    [
+     [
+      "ready",
+      "mapping"
+     ],
+     1792812241.35
+    ]
+   ]
+  }
+ },
+ "session2": {
+  "reload": {
+   "map_id": "map-761ff696",
+   "version": 1,
+   "took_s": 1.8,
+   "agreement": 0.964,
+   "dock_error_m": 0.0,
+   "dock_error_deg": 0.0,
+   "ok": true,
+   "reason": "matched",
+   "result": "matched"
+  },
+  "watch": {
+   "leaked_pose": 0,
+   "leaked_map": 0,
+   "goal_during_check": 503,
+   "states": [
+    [
+     "starting",
+     3.03
+    ],
+    [
+     "checking",
+     3.14
+    ],
+    [
+     "ready",
+     4.9
+    ]
+   ],
+   "ready_at": 1792812673.8811753
+  }
+ },
+ "to_view": {
+  "state": "succeeded",
+  "seconds": 12.9
+ },
+ "remap_before_passes": {
+  "trigger": "contradiction",
+  "at": 1792812684.1475925,
+  "map_id": "map-761ff696",
+  "version": 1,
+  "detail": {
+   "trigger": "contradiction",
+   "cells": 12,
+   "centre_m": [
+    3.023,
+    -0.118
+   ],
+   "agreement": 0.832
+  },
+  "waited_s": 3.53,
+  "cancelled_goal": false,
+  "at_rest": true,
+  "from_pose": [
+   2.3075,
+   -0.0112,
+   0.091
+  ],
+  "result": "mapping",
+  "took_s": 0.52
+ },
+ "passes": [
+  {
+   "goal": {
+    "state": "aborted",
+    "seconds": 48.1
+   },
+   "door_free": 1.0
+  },
+  {
+   "goal": {
+    "state": "succeeded",
+    "seconds": 39.5
+   },
+   "door_free": 1.0
+  },
+  {
+   "goal": {
+    "state": "succeeded",
+    "seconds": 11.6
+   },
+   "door_free": 1.0
+  }
+ ],
+ "saved": {
+  "map_id": "map-761ff696",
+  "saving": false,
+  "store": true,
+  "saved": 1,
+  "failed": 0,
+  "skipped": 0,
+  "last_version": 2,
+  "last_at": 1792812818.2520099,
+  "last_error": null
+ },
+ "sampler": {
+  "contacts": 0,
+  "min_gap_cm": 7.1,
+  "jumps": [],
+  "error_samples": 138,
+  "max_error_m": 0.025,
+  "remaps": [
+   {
+    "trigger": "contradiction",
+    "at": 1792812684.1475925,
+    "map_id": "map-761ff696",
+    "version": 1,
+    "detail": {
+     "trigger": "contradiction",
+     "cells": 12,
+     "centre_m": [
+      3.023,
+      -0.118
+     ],
+     "agreement": 0.832
+    },
+    "result": "waiting"
+   },
+   {
+    "trigger": "contradiction",
+    "at": 1792812684.1475925,
+    "map_id": "map-761ff696",
+    "version": 1,
+    "detail": {
+     "trigger": "contradiction",
+     "cells": 12,
+     "centre_m": [
+      3.023,
+      -0.118
+     ],
+     "agreement": 0.832
+    },
+    "waited_s": 3.53,
+    "cancelled_goal": false,
+    "at_rest": true,
+    "from_pose": [
+     2.3075,
+     -0.0112,
+     0.091
+    ],
+    "result": "mapping",
+    "took_s": 0.52
+   }
+  ],
+  "states": [
+   [
+    [
+     "ready",
+     "localisation"
+    ],
+    1792812673.9
+   ],
+   [
+    [
+     "remapping",
+     "localisation"
+    ],
+    1792812684.16
+   ],
+   [
+    [
+     "ready",
+     "mapping"
+    ],
+    1792812688.23
+   ]
+  ]
+ },
+ "criteria": {
+  "remap_by_contradiction": true,
+  "door_free_within_3": true,
+  "goals_3_of_3": false,
+  "contacts_0": true
+ },
+ "verdict": {
+  "D4-b": "FAILED"
+ },
+ "image": "vision-picar-ros:plan-3.50"
+}
