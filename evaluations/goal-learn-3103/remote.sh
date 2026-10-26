@@ -31,6 +31,11 @@ fi
 # The dead-man switch, armed only for a run that actually starts.
 sudo shutdown -h "+$((MAX_HOURS * 60))" "3.103 dead-man switch" \
   || { echo "could not arm the dead-man switch -- not starting" >&2; exit 1; }
+# A setup failure from here on (download, apt, pip, the resume sync) would
+# leave the instance idle until the dead-man switch: power off at once
+# unless the run was started.
+started=0
+trap '[ $started = 1 ] || sudo shutdown -h now "3.103: setup failed"' EXIT
 sudo mkdir -p "$DIR" && sudo chown -R ubuntu:ubuntu "$DIR"
 cd "$DIR"
 aws s3 cp --only-show-errors "$S3/code.tar.gz" code.tar.gz
@@ -95,14 +100,22 @@ WORKERS=\$((N - 2)) ../venv/bin/python $DIR/oracle.py >> ../logs/oracle.log 2>&1
   || { echo "oracle stage FAILED (exit \$?)" >> ../logs/oracle.log; exit 1; }
 W=\$(( (N - 4) / 2 )); [ "\$W" -ge 1 ] || W=1
 for w in 32 128; do
+  # clone resumes from clone.pt itself, and re-checks the oracle sets and counts.
   ( export POOL_WIDTH=\$w WORKERS=\$W
-    [ -f \$R/F-pool-W\$w/clone.pt ] || \$P clone \$R
-    \$P ppo \$R ) >> ../logs/F-pool-W\$w.log 2>&1 &
+    \$P clone \$R && \$P ppo \$R ) >> ../logs/F-pool-W\$w.log 2>&1 &
 done
 wait
-# Alone from here: the choice, the one test, the score, then the timing.
-( export WORKERS=\$((N - 2))
-  \$P choose \$R && \$P test \$R && \$P score \$R && \$P time \$R ) >> ../logs/final.log 2>&1 \\
+# Alone from here: W64 re-run on this host, the choice, the one test, the
+# score, then the timing. Each runs once: a resume never re-chooses, re-scores
+# or re-times over a result already made. CKPT_S3 is dropped: save_atomic
+# would key ROOT-level files under ckpt/out/; watch.sh's sync puts them at
+# ckpt/ (and pauses while the timing runs).
+( unset CKPT_S3; export WORKERS=\$((N - 2))
+  \$P reselect \$R \\
+  && { [ -f \$R/chosen-pool.json ] || \$P choose \$R; } \\
+  && \$P test \$R \\
+  && { ls \$R/test/score-F-pool-W*.json >/dev/null 2>&1 || \$P score \$R; } \\
+  && { ls \$R/time-F-pool-W*.json >/dev/null 2>&1 || \$P time \$R; } ) >> ../logs/final.log 2>&1 \\
   || echo "final stages FAILED (exit \$?)" >> ../logs/final.log
 echo "drive.sh finished \$(date)" >> ../logs/final.log
 EOF
@@ -113,6 +126,8 @@ export PATH="\$PATH:/snap/bin"
 idle=0
 stuck=0
 while sleep 60; do
+  # Criterion 5 is timed with nothing else running: no syncs meanwhile.
+  pgrep -f "pool_run.py time" >/dev/null && { idle=0; continue; }
   aws s3 sync --only-show-errors $DIR/logs $S3/logs
   # Results too, every minute: an upload save_atomic missed is retried here.
   aws s3 sync --only-show-errors --exclude "*.tmp" $DIR/out $S3/ckpt
@@ -133,6 +148,7 @@ while sleep 60; do
 done
 EOF
 nohup setsid bash "$DIR/drive.sh" >/dev/null 2>&1 < /dev/null &
+started=1
 pgrep -f "$DIR/watch.sh" >/dev/null || nohup setsid bash "$DIR/watch.sh" >/dev/null 2>&1 < /dev/null &
 sleep 15
 pgrep -af "drive.sh|watch.sh|pool_run.py|oracle.py" | head -8

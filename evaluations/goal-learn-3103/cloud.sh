@@ -65,8 +65,9 @@ run_remote() {
 case "${1:-}" in
   # A new launch makes any earlier pull stale, so `down` must see a new one.
   start)  # A fresh run must not resume an earlier run's checkpoints.
-          if aws --region "$REGION" s3 ls "$S3/ckpt/" >/dev/null 2>&1; then
-            echo "$S3/ckpt/ holds an earlier run -- pull + down first (or resume it)" >&2; exit 1
+          if aws --region "$REGION" s3 ls "$S3/ckpt/" >/dev/null 2>&1 \
+             || aws --region "$REGION" s3 ls "$S3/logs/" >/dev/null 2>&1; then
+            echo "$S3 holds an earlier run -- pull + down first (or resume it)" >&2; exit 1
           fi
           ami; push_code; rm -f "$HERE/cloud/.pulled"; bash "$EC2" up; run_remote ;;
   resume) ami; rm -f "$HERE/cloud/.pulled"; bash "$EC2" up; run_remote ;;
@@ -79,8 +80,10 @@ case "${1:-}" in
             aws --region "$REGION" s3 ls "$S3/ckpt/$f" >/dev/null 2>&1 || exit 1
           done
           # The chosen width's score and timing (named after whichever won).
-          aws --region "$REGION" s3 ls "$S3/ckpt/test/" | grep -q "score-F-pool-W" || exit 1
-          aws --region "$REGION" s3 ls "$S3/ckpt/" | grep -q "time-F-pool-W" || exit 1 ;;
+          # grep reads the whole listing (no -q): under pipefail an early exit
+          # could SIGPIPE aws and read as "not done".
+          aws --region "$REGION" s3 ls "$S3/ckpt/test/" | grep "score-F-pool-W" >/dev/null || exit 1
+          aws --region "$REGION" s3 ls "$S3/ckpt/" | grep "time-F-pool-W" >/dev/null || exit 1 ;;
   pull)   mkdir -p "$HERE/cloud"
           # Checked BEFORE the download, so nothing can land in S3 unseen
           # between the copy and the mark.

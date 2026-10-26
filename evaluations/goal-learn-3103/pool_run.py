@@ -6,6 +6,7 @@ B's `run.py` stages are unchanged.
 
     POOL_WIDTH=W python evaluations/goal-learn-3103/pool_run.py clone ROOT  # oracle clone -> ROOT/F-pool-WW/clone.pt
     POOL_WIDTH=W python evaluations/goal-learn-3103/pool_run.py ppo ROOT    # PPO from the clone, 3.101's budget -> best.json
+    python evaluations/goal-learn-3103/pool_run.py reselect ROOT  # W64's best re-run on this host's selection houses
     python evaluations/goal-learn-3103/pool_run.py choose ROOT  # amendment 2's rule over the widths -> ROOT/chosen-pool.json
     python evaluations/goal-learn-3103/pool_run.py test ROOT    # the chosen width on the 588 test houses, R and U
     python evaluations/goal-learn-3103/pool_run.py score ROOT   # C's criteria 1-4 against B's F-lean rows; the oracle gap
@@ -152,6 +153,8 @@ def cmd_clone(root: str) -> None:
     got = {k: st[k] for k in B_CHOICES}
     print(f"oracle choices {got}: " + ("the same as B's" if got == B_CHOICES
                                        else f"MISMATCH, B's were {B_CHOICES}"), flush=True)
+    if got != B_CHOICES and not T.SMOKE:
+        raise SystemExit("not training on oracle sets that differ from B's (amendment 1)")
 
 
 def cmd_ppo(root: str) -> None:
@@ -166,6 +169,22 @@ def cmd_ppo(root: str) -> None:
         T.stage_ppo(ARM, out, clone, ex)
 
 
+def cmd_reselect(root: str) -> None:
+    """Width 64 was trained in the cloud container, 32 and 128 on the
+    instance: re-run W64's best on the selection houses here, so `choose`
+    can show the two hosts give the same numbers (the missions are
+    deterministic for fixed weights) before comparing across them."""
+    out = os.path.join(root, "F-pool-W64", "reselect.json")
+    if os.path.exists(out):
+        return
+    use_pool()
+    params = json.load(open(os.path.join(root, "F-pool-W64", "best.json")))["params"]
+    with ProcessPoolExecutor(T.WORKERS) as ex:
+        sel = T.run_selection("F", params, ex)
+    T.save_atomic(out, lambda p: json.dump(sel, open(p, "w"), indent=1))
+    print("F-pool-W64 re-selected here:", {m: sel[m]["mean_reward"] for m in sel}, flush=True)
+
+
 def cmd_choose(root: str) -> None:
     """Amendment 2: the smallest width whose best mode-R selection reward is
     within MATCH of the best width's."""
@@ -174,9 +193,20 @@ def cmd_choose(root: str) -> None:
     r = {w: sel[w]["R"]["mean_reward"] for w in WIDTHS}
     top = max(r.values())
     chosen = min(w for w in WIDTHS if r[w] >= top - MATCH)
+    rp = os.path.join(root, "F-pool-W64", "reselect.json")
+    same = None
+    if os.path.exists(rp):
+        again = json.load(open(rp))
+        same = all(abs(again[m]["mean_reward"] - sel[64][m]["mean_reward"]) < 1e-3 for m in ("R", "U"))
+        print("F-pool-W64 on this host vs the container:",
+              {m: (again[m]["mean_reward"], sel[64][m]["mean_reward"]) for m in ("R", "U")},
+              "the same" if same else "DIFFERENT -- the widths' selection rewards are not like for like",
+              flush=True)
+        if not same:
+            raise SystemExit("not choosing (amendment 2): W64 does not reproduce on this host")
     T.save_atomic(os.path.join(root, "chosen-pool.json"),
                   lambda p: json.dump({"selection": {f"F-pool-W{w}": sel[w] for w in WIDTHS},
-                                       "best_R": top, "match": MATCH,
+                                       "best_R": top, "match": MATCH, "w64_same_on_host": same,
                                        "chosen": f"F-pool-W{chosen}"}, open(p, "w"), indent=1))
     print("selection R", r, "-> test", f"F-pool-W{chosen}", flush=True)
 
@@ -279,5 +309,5 @@ def cmd_time(root: str) -> None:
 if __name__ == "__main__":
     multiprocessing.set_start_method("fork", force=True)
     cmd, root = sys.argv[1:]
-    {"clone": cmd_clone, "ppo": cmd_ppo, "choose": cmd_choose, "test": cmd_test, "score": cmd_score,
+    {"clone": cmd_clone, "ppo": cmd_ppo, "reselect": cmd_reselect, "choose": cmd_choose, "test": cmd_test, "score": cmd_score,
      "time": cmd_time}[cmd](root)

@@ -23,7 +23,9 @@ import numpy as np
 # Amendment 2: the width (embedding and attention alike) is swept, 32 / 64 / 128,
 # always 4 heads; POOL_WIDTH picks it for training (score_np reads it off P).
 N_FEAT, HEADS = 18, 4
-WIDTH = int(os.environ.get("POOL_WIDTH", "64"))
+WIDTH = int(os.environ.get("POOL_WIDTH") or "64")
+if WIDTH not in (32, 64, 128):
+    raise SystemExit(f"POOL_WIDTH={WIDTH}: amendment 2's widths are 32, 64 and 128")
 HD = WIDTH // HEADS
 PAD_CELLS = 1 << 20          # B x L x L per padded group in training (x4 heads x 4 bytes: 16 MB)
 
