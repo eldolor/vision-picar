@@ -54,8 +54,7 @@ from typing import Callable, Optional, Tuple
 
 from brain.agent import ObjectSearchAgent, _takes_local_ok
 from brain.arrival import SOURCE_LOCAL
-from brain.explore import (OWN_GOAL_TOLERANCE_M,  # one tolerance for both (3.76)
-                           ExploreAgent, is_own_goal_refusal)
+from brain.explore import OWN_GOAL_TOLERANCE_M, ExploreAgent  # one tolerance for both (3.76)
 from brain.choice_log import BY_PERSON, GoalAsk
 from brain.intervention_log import (VIA_BRAIN_STOP, VIA_LOOP_CANCELLED, VIA_PREEMPTED,
                                     VIA_ROBOT_STOP)
@@ -308,6 +307,9 @@ class _GatedNavigator:
     def __init__(self, navigator, is_running: Callable[[], bool]):
         self._nav, self._is_running = navigator, is_running
         self._own: Optional[Tuple[float, float]] = None
+        # 3.104: a goal was sent (accepted, or its answer lost: a lost answer
+        # may leave it driving, still the mission's own -- explore's `_send`).
+        self._sent = False
         # The client is closed by whichever finishes last: `end()`, or a
         # goal still on its way when the mission ended -- which must still
         # be able to cancel itself.
@@ -321,6 +323,7 @@ class _GatedNavigator:
             if not self._is_running() or self._ending:
                 return {"accepted": False, "reason": "mission_ended"}
             self._in_flight += 1
+            self._sent = True
         try:
             reply = self._nav.set_goal(x_m, y_m) or {}
             if reply.get("accepted"):
@@ -352,8 +355,9 @@ class _GatedNavigator:
 
     @property
     def sent_goal(self) -> bool:
-        """3.104: this mission had a goal accepted (`_own` is never cleared)."""
-        return self._own is not None
+        """3.104: this mission sent a goal (never cleared): one of its own may
+        still hold the robot."""
+        return self._sent
 
     def cancel_own(self) -> None:
         own = self._own
@@ -1264,12 +1268,14 @@ class MissionRunner:
             call_with_timeout(self._gated.look_center, timeout_s=PERSON_PROBE_S)
         except (SafetyViolation, MissionHalted):
             pass
+        except StoppedByPerson:
+            raise                               # the latch, whatever its wording
         except Preempted as e:
             # The server's goal refusal names no owner: one this mission
-            # sent may still hold the robot (pending, active, or `ros`'s
-            # lapsing authority after it), so it is read as the mission's own.
+            # sent may still hold the robot, so it is read as the mission's
+            # own (`ros`'s lapsing authority after it is an autonomous holder).
             own = self._navigator is not None and self._navigator.sent_goal
-            if own and (is_own_goal_refusal(e) or str(e).startswith(GOAL_IN_PROGRESS)):
+            if own and str(e).startswith(GOAL_IN_PROGRESS):
                 return
             holder = _PREEMPTED_BY.match(str(e))
             if holder and driver_priority(holder.group(1)) != DRIVER_MANUAL:

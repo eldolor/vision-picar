@@ -152,3 +152,22 @@ def test_a_goal_in_progress_the_mission_never_sent_is_a_persons_tap(kind):
     status, _, _ = _mission(REFUSALS[kind])
     assert status["outcome"] == CANCELLED, (kind, status["log_tail"][-3:])
     assert status["cancelled_by"] == "dpad", status
+
+
+def test_a_goal_sent_whose_reply_was_lost_counts_as_sent():
+    """Review of 3866233 (Thermos): `sent_goal` was set only on an accepted
+    reply, but a send whose answer is lost leaves that goal driving and it
+    is the mission's own (brain/explore.py `_send`): its refusal at the end
+    read as a person's tap and lost the find."""
+    import httpx
+    from control.mission_runner import _GatedNavigator
+
+    class LostReply:
+        def set_goal(self, x_m, y_m):
+            raise httpx.ReadTimeout("no reply in 10 s")
+
+    nav = _GatedNavigator(LostReply(), lambda: True)
+    assert nav.sent_goal is False
+    with pytest.raises(httpx.ReadTimeout):
+        nav.set_goal(1.0, 2.0)
+    assert nav.sent_goal is True
