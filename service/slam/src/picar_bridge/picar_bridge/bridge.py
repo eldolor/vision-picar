@@ -119,9 +119,6 @@ NAV2_WAIT_S = 1.0
 NAV2_MANAGER = "/lifecycle_manager_navigation/is_active"
 NAV2_ASK_S = 0.5
 NAV2_ASK_TIMEOUT_S = 2.0
-# Inactive this long (the start included), /health `ok` is false: the hold
-# is a wait the brain never ends, so a nav2 that never comes up must show.
-NAV2_STUCK_S = 120.0
 # A goal nav2 has not accepted or rejected in this long never will be (its
 # navigator died after wait_for_server): it ends `aborted` (3.76 H1-2). While
 # pending, the robot server refuses every other autonomous driver and a
@@ -266,10 +263,6 @@ class Bridge(Node):
                                            callback_group=ReentrantCallbackGroup())
         self._nav2 = {"active": False, "why": "not asked yet", "answered_at": None}  # monotonic
         self._nav2_inactive_since = time.monotonic()
-        # Seconds inactive while SLAM was ready, added by _poll_nav2 (review:
-        # a slow reload is SLAM's time, not nav2's); 0 once active.
-        self._nav2_stuck_s = 0.0
-        self._nav2_polled_at = None
         self._nav2_ask = None            # the ask in flight, under self.lock
         self._nav2_ask_since = 0.0       # monotonic
         self.create_timer(NAV2_ASK_S, self._poll_nav2)
@@ -678,9 +671,6 @@ class Bridge(Node):
         one ask at a time; rclpy is called outside bridge.lock."""
         now = time.monotonic()
         with self.lock:
-            last, self._nav2_polled_at = self._nav2_polled_at, now
-            if last is not None and not self._nav2["active"] and self.slam_state == "ready":
-                self._nav2_stuck_s += now - last
             stale = self._nav2_ask
             if stale is not None:
                 if now - self._nav2_ask_since < NAV2_ASK_TIMEOUT_S:
@@ -721,7 +711,6 @@ class Bridge(Node):
             self.get_logger().info("nav2 active: goals taken" if active
                                    else f"nav2 not active, goals held: {why}")
             self._nav2_inactive_since = None if active else time.monotonic()
-            self._nav2_stuck_s = 0.0
         self._nav2 = {"active": active, "why": why,
                       "answered_at": time.monotonic() if answered else self._nav2["answered_at"]}
 
@@ -732,10 +721,6 @@ class Bridge(Node):
         return {"active": self._nav2["active"], "why": self._nav2["why"],
                 "answer_age_s": None if at is None else round(now - at, 1),
                 "inactive_s": None if since is None else round(now - since, 1)}
-
-    def _nav2_stuck(self):
-        """Under self.lock: inactive over NAV2_STUCK_S of SLAM's ready time."""
-        return not self._nav2["active"] and self._nav2_stuck_s > NAV2_STUCK_S
 
     def _nav2_refusal(self):
         """Under self.lock: the 503 body while goals are held."""
@@ -1730,9 +1715,7 @@ class Bridge(Node):
     def health(self):
         with self.lock:
             # 3.50.D3: no slam_toolbox (the start failed) is not ok.
-            # 3.105: nor is a nav2 inactive past NAV2_STUCK_S.
-            return 200, {"ok": self.slam_state != "failed" and not self._nav2_stuck(),
-                         "robot_url": self.robot_url,
+            return 200, {"ok": self.slam_state != "failed", "robot_url": self.robot_url,
                          "odom_age_s": None if not self.last_odom else time.time() - self.last_odom["at"],
                          "scan_age_s": None if not self.last_scan else time.time() - self.last_scan["at"],
                          "scans_published": self.scan_count, "twists": dict(self.twists),

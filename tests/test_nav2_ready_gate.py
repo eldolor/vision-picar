@@ -168,22 +168,17 @@ def test_health_says_how_long_ago_it_was_answered(bridge_mod):
     assert 0 <= nav2["answer_age_s"] < 5 and nav2["inactive_s"] is None
 
 
-def test_a_nav2_that_never_activates_turns_health_not_ok(bridge_mod):
-    """Review: the hold is a wait the brain never ends; past NAV2_STUCK_S
-    of inactivity /health says so (ok false), as a failed SLAM start does."""
+def test_health_counts_how_long_nav2_has_been_inactive(bridge_mod):
+    """A nav2 that never comes up holds explore until its time limit; /health
+    shows for how long (nothing acts on it: review, round 4)."""
     m = _Manager()
     b = _bridge(bridge_mod, m)
-    b._poll_nav2()
-    m.answer(False)
+    b._nav2_inactive_since -= 130
+    assert b.health()[1]["nav2"]["inactive_s"] >= 130
     assert b.health()[1]["ok"] is True
-    b._nav2_inactive_since -= bridge_mod.NAV2_STUCK_S + 1
-    b._nav2_polled_at -= bridge_mod.NAV2_STUCK_S + 1          # as if polled since
-    b._poll_nav2()
-    body = b.health()[1]
-    assert body["ok"] is False and body["nav2"]["inactive_s"] > bridge_mod.NAV2_STUCK_S
     b._poll_nav2()
     m.answer(True)
-    assert b.health()[1]["ok"] is True
+    assert b.health()[1]["nav2"]["inactive_s"] is None
 
 
 def test_a_nav2_reset_during_the_wait_leaves_the_live_goal_alone(bridge_mod):
@@ -209,20 +204,27 @@ def test_a_nav2_reset_during_the_wait_leaves_the_live_goal_alone(bridge_mod):
     assert len(b.nav.futures) == 1 and handle.cancels == 0, "the live goal is left alone"
 
 
-def test_the_stuck_count_runs_only_while_slam_is_ready(bridge_mod):
-    """Review: a slow reload must not spend nav2's NAV2_STUCK_S, even once
-    SLAM is ready after it."""
-    m = _Manager(up=False)
-    b = _bridge(bridge_mod, m)
-    b.slam_state = "checking"
-    b._poll_nav2()
-    b._nav2_polled_at -= bridge_mod.NAV2_STUCK_S + 1
-    b._poll_nav2()                                # SLAM's time: not counted
-    b.slam_state = "ready"
-    assert b.health()[1]["ok"] is True
-    b._nav2_polled_at -= bridge_mod.NAV2_STUCK_S + 1
-    b._poll_nav2()                                # nav2's
-    assert b.health()[1]["ok"] is False
+def test_a_change_during_the_cancel_sends_nothing(bridge_mod):
+    """The last read, under the lock before the send (3.50.D4's guarantee
+    for a re-map, and 3.105's for nav2): a change during cancel_goal()
+    sends no goal."""
+    for change in ("remap", "nav2"):
+        m = _Manager()
+        b = _bridge(bridge_mod, m)
+        b._poll_nav2()
+        m.answer(True)
+        cancel = b.cancel_goal
+
+        def change_meanwhile(*a, **kw):
+            if change == "remap":
+                b.slam_state = "remapping"
+            else:
+                b._poll_nav2()
+                m.answer(False)
+            return cancel(*a, **kw)
+        b.cancel_goal = change_meanwhile
+        code, _ = b.send_goal({"x_m": 2.0, "y_m": 0.0})
+        assert code == 503 and b.nav.futures == [], change
 
 
 def test_a_re_map_during_the_wait_leaves_the_live_goal_alone(bridge_mod):
