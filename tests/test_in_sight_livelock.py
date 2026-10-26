@@ -100,3 +100,17 @@ def test_a_detector_that_flickers_does_not_livelock():
     agent._sighting = flicker
     outs = [_tick(agent) for _ in range(4 * CLOSE_IN_REFUSED)]
     assert any(o[0] == "GOAL" for o in outs) or agent.retry.failures_near(*point), outs
+
+
+def test_a_tick_that_does_not_count_starts_the_count_again():
+    """/code-review on cc1ccfa: the count carried over ticks that did not
+    count (a queued look, a missed frame), so one stalled tick after them
+    gave the sighting up. Only ticks in a row count."""
+    agent, point, sent = _stuck()
+    _tick(agent)
+    _tick(agent)
+    agent._pending = ["LOOK_CENTER"]              # a queued look runs this tick
+    _tick(agent)
+    _tick(agent)
+    assert agent.retry.failures_near(*point) == 0
+    assert "REVERSE" not in sent and "REVERSE" not in agent._pending

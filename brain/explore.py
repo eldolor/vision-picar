@@ -248,10 +248,11 @@ class ExploreAgent(MissionAgent):
         self._local_track_fn = local_track_fn   # the tier's `set_local_track`
         self.close_ins = 0             # 3.80.G: last-approach verbs executed
         self._close_in_refused = 0
-        # 3.106: ticks in a row in the band, the target in sight, nothing to
-        # close in with, and still not found.
+        # 3.106: ticks in a row, at one place, in the band with the target in
+        # sight, nothing to close in with, and still not found.
         self._in_sight_unfound = 0
         self._in_sight_at: Optional[tuple] = None     # where they were counted
+        self._in_sight_tick = -1                      # the last tick counted
         self._refusal_noted = False
         self._scene: dict = {}         # 3.80.G: this step's scene (sight_from perception)
         self.navigator = navigator
@@ -491,18 +492,18 @@ class ExploreAgent(MissionAgent):
                 # table leg). Faced first (below), then at CLOSE_IN_REFUSED
                 # such ticks a failure and a back-off, as close-in does: a
                 # WAIT passes no simulated time, so nothing else ended it.
-                # Not on the tick found is recorded (after this, from this
-                # scene: `MissionMemory.record_observation`), and counted at
-                # one place only; a frame that misses it does not restart it.
-                if any(self.memory.names_target(o) for o in scene.get("important_objects") or ()):
-                    self._in_sight_unfound, self._in_sight_at = 0, None
-                else:
-                    if self._in_sight_at is None or math.hypot(
-                            tx - self._in_sight_at[0], ty - self._in_sight_at[1]) > APPROACH_MOVED_M:
-                        self._in_sight_unfound, self._in_sight_at = 0, (tx, ty)
-                    self._in_sight_unfound += 1
+                # Ticks in a row at one place: any tick between (a queued
+                # look, a missed frame, a goal, close-in acting) starts it
+                # again. Not on the tick found is recorded (after this, from
+                # this scene: `MissionMemory.record_observation`).
+                if not any(self.memory.names_target(o)
+                           for o in scene.get("important_objects") or ()):
+                    here = (self._in_sight_at is not None and math.hypot(
+                        tx - self._in_sight_at[0], ty - self._in_sight_at[1]) <= APPROACH_MOVED_M)
+                    run = here and self._in_sight_tick == self._ticks - 1
+                    self._in_sight_unfound = self._in_sight_unfound + 1 if run else 1
+                    self._in_sight_at, self._in_sight_tick = (tx, ty), self._ticks
                     if self._in_sight_unfound >= CLOSE_IN_REFUSED:
-                        self._in_sight_unfound, self._in_sight_at = 0, None
                         self._give_up_sighting(tx, ty, now)
                         return self._do_pending()
 
@@ -630,7 +631,6 @@ class ExploreAgent(MissionAgent):
         # was (3.76 K3: a target reached by a frontier goal began at the
         # last one's count). Not by the target's estimate, which can flip.
         self._close_in_refused = 0
-        self._in_sight_unfound, self._in_sight_at = 0, None    # 3.106, the same
         self.goals_sent += 1
         self.last_event = f"goal sent ({kind}) to ({x_m:.2f}, {y_m:.2f})"
         self._event("goal_sent", kind=kind, goal=[round(x_m, 2), round(y_m, 2)], **info)
@@ -769,6 +769,7 @@ class ExploreAgent(MissionAgent):
         self.retry.fail(tx, ty, now, known=self._known_at)
         self._last_seen = None
         self._approach = None
+        self._in_sight_unfound, self._in_sight_at, self._in_sight_tick = 0, None, -1
         self._pending.insert(0, "REVERSE")
 
     def _send_approach(self, tx: float, ty: float, now: float, scene: Optional[dict] = None):
