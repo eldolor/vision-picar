@@ -256,6 +256,7 @@
   "c4_no_rejected": true,
   "c4_all_succeeded": true,
   "c4_hold_under_60s": true,
+  "c4_on_saved_map": true,
   "rejected_starts": 0,
   "c5": true
  }

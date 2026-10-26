@@ -177,6 +177,7 @@
   "c4_no_rejected": false,
   "c4_all_succeeded": false,
   "c4_hold_under_60s": true,
+  "c4_on_saved_map": true,
   "rejected_starts": 1
  }
 }
