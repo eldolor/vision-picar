@@ -52,7 +52,7 @@ from concurrent.futures import CancelledError
 import time
 from typing import Callable, Optional, Tuple
 
-from brain.agent import ObjectSearchAgent, _arrival_route, _takes_local_ok
+from brain.agent import ObjectSearchAgent, _held_no_route, _takes_local_ok
 from brain.arrival import SOURCE_LOCAL
 from brain.explore import OWN_GOAL_TOLERANCE_M, ExploreAgent  # one tolerance for both (3.76)
 from brain.choice_log import BY_PERSON, GoalAsk
@@ -1575,7 +1575,15 @@ class MissionRunner:
         # it. Decided here, where the policy itself is in hand (the agent's
         # vision_fn is this runner's wrapper): a no the cloud holds refuses
         # the arrival free; otherwise the cloud alone is asked (3.80.O's path).
-        verdict = _arrival_route(self.vision_fn, frame)
+        judged, verdict = _held_no_route(self.vision_fn, frame)
+        if judged is not None:
+            # 3.91.D2: the sim's geometry over a held cloud no, free. A Stop
+            # that landed first leaves it undecided, as every return below.
+            with self._lock:
+                running = self._running
+            return judged if running else {
+                "confirmed": False, "undecided": True, "cloud_called": False,
+                "reason": "the mission ended during the identity check"}
         if verdict == "no":
             return {"confirmed": False, "cloud_called": False, "tier": "cloud",
                     "reason": "the cloud said this candidate is not the target; "

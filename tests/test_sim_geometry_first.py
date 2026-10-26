@@ -1,7 +1,6 @@
 """3.91.D2: in the simulator a held cloud no neither refuses an arrival free
-nor holds it waiting: the arrival goes the cloud-only way, where the sim's
-geometry judges it, free (3.98's check ran only after the held no). Real
-frames are untouched."""
+nor holds it waiting: the sim's geometry judges it, free (3.98's check ran
+only after the held no). Real frames are untouched."""
 
 from brain.agent import MissionAgent
 from brain.memory import MissionMemory
@@ -82,7 +81,7 @@ def test_d2_a_real_frame_keeps_the_free_refusal(monkeypatch):
     _held_no(tier)
     real = {"image_base64": "x", "image_width": 640, "pan_deg": 0.0,
             "metadata": {"source": "teleop"}}
-    assert tier.arrival_route(real) == "no"
+    assert tier.sim_over_held_no(real) is None and tier.cloud_spoke() == "no"
     v = _runner(tier)._guarded_confirm(real)
     assert v["tier"] == "cloud" and v["confirmed"] is False and confirm.calls == 0
 
@@ -93,5 +92,26 @@ def test_d2_outside_a_runner_the_agent_routes_the_same_way(monkeypatch):
     agent = MissionAgent(_robot(), MissionMemory(mission="m", target_object=TARGET),
                          vision_fn=tier)
     out = agent._confirm_identity({"state": "arrived", "source": "perception"},
+                                  sim_frame([det(TARGET, 0.0, 0.3)]))
+    assert out["identity"]["tier"] == "sim" and out["identity"]["confirmed"] is True
+
+
+def test_d2_a_stop_first_leaves_the_geometry_verdict_undecided(monkeypatch):
+    tier = _tier(Cloud(), NoArrivalCall(), monkeypatch)
+    _held_no(tier)
+    runner = _runner(tier)
+    runner.stop()
+    v = runner._guarded_confirm(sim_frame([det(TARGET, 0.0, 0.3)]))
+    assert v.get("undecided") is True and v["confirmed"] is False
+
+
+def test_d2_a_confirmer_without_local_ok_still_gets_the_geometry(monkeypatch):
+    # Review: routed as "ask", such a confirmer was never called (CHECKING
+    # for good) where the held no had refused.
+    tier = _tier(Cloud(), NoArrivalCall(), monkeypatch)
+    _held_no(tier)
+    agent = MissionAgent(_robot(), MissionMemory(mission="m", target_object=TARGET),
+                         vision_fn=tier, arrival_confirm_fn=lambda frame: {"confirmed": False})
+    out = agent._confirm_identity({"state": "arrived", "source": "local"},
                                   sim_frame([det(TARGET, 0.0, 0.3)]))
     assert out["identity"]["tier"] == "sim" and out["identity"]["confirmed"] is True

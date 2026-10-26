@@ -1551,20 +1551,17 @@ class TieredVision:
         return perception.status == DETECTED and (
             self._rejection is not None or self._probation)
 
-    def arrival_route(self, frame: dict) -> Optional[str]:
-        """How an arrival on `frame` is decided: `cloud_spoke()`'s answer,
-        except in the simulator (3.91.D2): on a frame its geometry can judge,
-        a held cloud no neither refuses the arrival free nor holds it waiting
-        -- "ask", so it takes the cloud-only path with every guard, where
-        `confirm_cloud` asks the geometry first and never pays. A wrong no
-        never overrules the sim's ground truth. The capped wait's clock is
-        not started for an arrival the geometry decides."""
-        if self.sim_identity_fn is not None and self.sim_identity_fn(frame) is not None:
-            said = self.cloud_spoke(start_wait=False)
-            return "ask" if said in ("no", "wait") else said
-        return self.cloud_spoke()
+    def sim_over_held_no(self, frame: dict) -> Optional[dict]:
+        """3.91.D2: in the simulator, the geometry's verdict on an arrival a
+        held cloud no would decide (refuse free, or hold waiting at a spent
+        cap) -- so a wrong no never overrules the sim's ground truth. None
+        when no such no is held or the geometry cannot judge `frame`. Free;
+        the capped wait's clock is not started for it."""
+        if self.sim_identity_fn is None or self._cloud_said(start_wait=False) not in ("no", "wait"):
+            return None
+        return self.sim_verdict(frame)
 
-    def cloud_spoke(self, start_wait: bool = True) -> Optional[str]:
+    def cloud_spoke(self) -> Optional[str]:
         """The tiers' order at arrival (the user, 2026-10-24): has the cloud
         answered about the candidate in view? "no": it holds a no about it --
         the arrival is refused without a call (round 5: each flicker of the
@@ -1573,9 +1570,14 @@ class TieredVision:
         "wait": the cap is spent and a cloud-ranked no is held -- undecided
         until it is released, or for `reject_hold_s` at most, one wait per
         held no, begun by the first call about it (call it only at an
-        arrival). None: it has
-        not, the cap is spent with nothing of the cloud's held (the local tier
-        is the best left), or `remember_no` is off (`dev`)."""
+        arrival). None: it has not, the cap is spent with nothing of the
+        cloud's held (the local tier is the best left), or `remember_no` is
+        off (`dev`)."""
+        return self._cloud_said()
+
+    def _cloud_said(self, start_wait: bool = True) -> Optional[str]:
+        """`cloud_spoke()`. `start_wait` False (`sim_over_held_no` only): a
+        held no's "wait" without starting its clock."""
         if not self.remember_no:
             return None
         with self._reject_lock:

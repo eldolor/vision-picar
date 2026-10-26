@@ -83,14 +83,17 @@ ARRIVAL_GONE_FRAMES = 3
 ARRIVAL_VERDICTS_KEPT = 50
 
 
-def _arrival_route(policy, frame: dict) -> Optional[str]:
-    """3.91.C/D2: how the policy says an arrival on `frame` is decided --
-    its `arrival_route(frame)`, else its `cloud_spoke()`, else None."""
-    route = getattr(policy, "arrival_route", None)
-    if route is not None:
-        return route(frame)
+def _held_no_route(policy, frame: dict) -> tuple:
+    """3.91.C/D2: (a verdict, what the cloud said) for an arrival on `frame`.
+    In the simulator the geometry judges, free, an arrival a held cloud no
+    would decide (`sim_over_held_no`); else the verdict is None and the
+    policy's `cloud_spoke()` (or None) routes it."""
+    sim = getattr(policy, "sim_over_held_no", None)
+    judged = sim(frame) if sim is not None else None
+    if judged is not None:
+        return judged, None
     spoke = getattr(policy, "cloud_spoke", None)
-    return spoke() if spoke is not None else None
+    return None, (spoke() if spoke is not None else None)
 
 
 def _takes_local_ok(fn) -> bool:
@@ -397,7 +400,10 @@ class MissionAgent(ConstrainedAgent):
         # 3.91.C, the tiers' order: once the cloud has spoken about this
         # candidate, MissionRunner._guarded_confirm routes the identity check
         # (the agent's vision_fn there is the runner's wrapper, round 5).
-        said = _arrival_route(self.vision_fn, frame)
+        judged, said = _held_no_route(self.vision_fn, frame)
+        if judged is not None:
+            confirm = lambda frame, local_ok=True: judged  # noqa: E731
+            local_ok = True
         if said == "ask":
             local_ok = False
         if said == "wait":
