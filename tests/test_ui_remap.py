@@ -218,29 +218,29 @@ def test_a_reconnect_to_the_same_server_keeps_its_answer(browser, twin_server):
 
 
 def test_away_and_back_does_not_put_two_requests_out(browser, twin_server, private_twin_server):
-    """Review round 3: a request was known only by its URL, so after A, B and
-    back to A the first request's end freed the button while the second was
-    still out, and showed the first one's answer."""
+    """Review rounds 3-4: a request was known only by its URL, and a released
+    one was left open, so after A, B and back to A two requests were out to A,
+    the first freeing the button and showing its answer. Now a reconnect to
+    another server aborts the request it releases."""
     page, errors = _open(browser, twin_server)
     held = _hold(page)
+    failed = []
+    page.on("requestfailed", lambda r: failed.append(r.url) if "/world/remap" in r.url else None)
     _remap(page)
     page.wait_for_timeout(300)
     _reconnect(page, private_twin_server)
     sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now", timeout=8000)
+    page.wait_for_timeout(300)
+    assert len(failed) == 1, f"the released request was left open: {failed}"
     _reconnect(page, twin_server)
     sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now", timeout=8000)
     _remap(page)
     page.wait_for_timeout(300)
-    assert len(held) == 2, held
-    held[0].fulfill(status=409, content_type="application/json",
-                    body=json.dumps({"detail": "first request's answer"}))
-    page.wait_for_timeout(500)
     btn = page.locator("#btn-remap")
     sync_api.expect(btn).to_have_text("Asking\u2026")
-    sync_api.expect(btn).to_be_disabled()
-    assert "first request" not in (page.locator("#toast-stack").text_content() or "")
-    held[1].fulfill(status=200, content_type="application/json",
-                    body=json.dumps({"remapping": True}))
+    held[-1].fulfill(status=200, content_type="application/json",
+                     body=json.dumps({"remapping": True}))
+    sync_api.expect(page.locator(".toast").last).to_contain_text("Re-mapping", timeout=3000)
     sync_api.expect(btn).to_have_text("Re-map now", timeout=3000)
     assert not errors, errors
     page.context.close()

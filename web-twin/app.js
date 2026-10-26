@@ -908,9 +908,9 @@
   // cancel a live goal (the brain's too), so it takes two taps: the first
   // arms it for REMAP_ARM_MS, and a second sooner than REMAP_MIN_GAP_MS (a
   // double-tap, a bounce) does not count. One request at a time
-  // (`state.remapAsk`, numbered): the button reads "Asking..." until it
-  // settles; past REMAP_SLOW_MS a warning says it may have started, and past
-  // REMAP_GIVE_UP_MS the request is aborted and the button freed.
+  // (`state.remapAsk`, compared by identity): the button reads "Asking..."
+  // until it settles; past REMAP_SLOW_MS a warning says it may have started,
+  // and past REMAP_GIVE_UP_MS the request is aborted and the button freed.
   var REMAP_ARM_MS = 4000;
   var REMAP_MIN_GAP_MS = 400;
   var REMAP_SLOW_MS = 20000;
@@ -944,11 +944,11 @@
     // This request is current only while state.remapAsk is this one: a
     // reconnect to another URL releases it (connect()), and its answer is
     // then dropped; a reconnect to the same URL keeps it.
-    var ask = {id: (state.remapAskSeq = (state.remapAskSeq || 0) + 1), url: state.serverUrl};
+    var ctl = new AbortController();
+    var ask = {url: state.serverUrl, ctl: ctl};
     var mine = function () { return state.remapAsk === ask; };
     state.remapAsk = ask;
     updateRemapButton();
-    var ctl = new AbortController();
     var slow = setTimeout(function () {
       if (mine()) showToast("Re-map: no answer in " + REMAP_SLOW_MS / 1000 + " s -- it may have " +
                             "started; watch the map", "warn");
@@ -962,7 +962,9 @@
                 "and a goal still driving may be cancelled", "ok");
     } catch (e) {
       if (!mine()) return;
-      if (ctl.signal.aborted) {
+      // Aborted with no answer read: an answer whose body was being read when
+      // the timer fired still carries its status and goes to its own branch.
+      if (ctl.signal.aborted && !e.status) {
         showToast("Re-map: no answer in " + REMAP_GIVE_UP_MS / 1000 + " s, stopped waiting -- " +
                   "it may have started; check the map before asking again", "warn");
       } else if (e.status === 404 || e.status === 501) {
@@ -1501,7 +1503,10 @@
     // asked of this same server is still the one out.
     state.remapUnsupported = false;
     state.remapArmedUntil = 0;
-    if (state.remapAsk && state.remapAsk.url !== url) state.remapAsk = null;
+    if (state.remapAsk && state.remapAsk.url !== url) {
+      state.remapAsk.ctl.abort();       // not left open on the old server
+      state.remapAsk = null;
+    }
     state.lastWorldError = null;
     state.lastGoal = null;
     state.serverSecret = document.getElementById("cfg-server-secret").value.trim();
