@@ -24,8 +24,18 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+# The board's venv has the pip package `rich` (its httpx's command line
+# imports it), which shadows 3.101's rich.py that lean.py imports: import
+# httpx first, set the package aside while 3.101's module loads, put it back.
+try:
+    import httpx  # noqa: F401
+except ImportError:
+    pass
+_pip_rich = {k: sys.modules.pop(k) for k in list(sys.modules) if k == "rich" or k.startswith("rich.")}
 import pool as POOL                                           # noqa: E402
 import run as B                                               # noqa: E402  (3.96's path set up)
+sys.modules.pop("rich", None)
+sys.modules.update(_pip_rich)
 
 sys.path.insert(0, os.path.join(B.ROOT_REPO, "evaluations", "goal-learn-396"))
 import time_choice as T396                                    # noqa: E402
