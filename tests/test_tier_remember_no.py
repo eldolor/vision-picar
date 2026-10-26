@@ -1016,3 +1016,15 @@ def test_the_capped_wait_restarts_for_a_new_no_and_runs_on_the_monotonic_clock(m
     tier._reject("cloud", None, 3)          # a new no: a new wait
     tier._episode = 4
     assert tier.cloud_spoke() == "wait"
+
+
+def test_the_capped_wait_ends_even_if_the_frame_stamps_go_back(monkeypatch):
+    # Review: a stream restarting its stamps (a replay looping, a new phone
+    # stream) made the elapsed wait negative -- the endless wait again.
+    now = [1000.0]
+    monkeypatch.setattr("brain.tiered.time.monotonic", lambda: now[0])
+    tier = _capped_wait(stamp=500.0)
+    assert tier.cloud_spoke() == "wait"
+    tier._frame_stamp = 3.0                 # the stamps start over
+    now[0] += tier.reject_hold_s
+    assert tier.cloud_spoke() is None
