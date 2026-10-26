@@ -83,6 +83,16 @@ ARRIVAL_GONE_FRAMES = 3
 ARRIVAL_VERDICTS_KEPT = 50
 
 
+def _arrival_route(policy, frame: dict) -> Optional[str]:
+    """3.91.C/D2: how the policy says an arrival on `frame` is decided --
+    its `arrival_route(frame)`, else its `cloud_spoke()`, else None."""
+    route = getattr(policy, "arrival_route", None)
+    if route is not None:
+        return route(frame)
+    spoke = getattr(policy, "cloud_spoke", None)
+    return spoke() if spoke is not None else None
+
+
 def _takes_local_ok(fn) -> bool:
     """3.80.O: can `fn` be called with `local_ok=False`?"""
     try:
@@ -387,16 +397,7 @@ class MissionAgent(ConstrainedAgent):
         # 3.91.C, the tiers' order: once the cloud has spoken about this
         # candidate, MissionRunner._guarded_confirm routes the identity check
         # (the agent's vision_fn there is the runner's wrapper, round 5).
-        spoke = getattr(self.vision_fn, "cloud_spoke", None)
-        said = spoke() if spoke is not None else None
-        if said in ("no", "wait"):
-            # 3.91.D2: in the simulator the geometry judges it first, free --
-            # a wrong held no never overrules the sim's ground truth.
-            sim = getattr(self.vision_fn, "sim_verdict", None)
-            judged = sim(frame) if sim is not None else None
-            if judged is not None:
-                said = None
-                confirm = lambda frame, local_ok=True: judged  # noqa: E731
+        said = _arrival_route(self.vision_fn, frame)
         if said == "ask":
             local_ok = False
         if said == "wait":
@@ -460,7 +461,6 @@ class MissionAgent(ConstrainedAgent):
             # next arrival frame asks again (the cloud, after max_unable).
             return {**readout, "state": CHECKING,
                     "reason": f"arrived, identity being checked: {verdict.get('reason')}"}
-
         self._identity_refused = True
         self._refusal = verdict
         if point is not None:

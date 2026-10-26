@@ -1551,7 +1551,20 @@ class TieredVision:
         return perception.status == DETECTED and (
             self._rejection is not None or self._probation)
 
-    def cloud_spoke(self) -> Optional[str]:
+    def arrival_route(self, frame: dict) -> Optional[str]:
+        """How an arrival on `frame` is decided: `cloud_spoke()`'s answer,
+        except in the simulator (3.91.D2): on a frame its geometry can judge,
+        a held cloud no neither refuses the arrival free nor holds it waiting
+        -- "ask", so it takes the cloud-only path with every guard, where
+        `confirm_cloud` asks the geometry first and never pays. A wrong no
+        never overrules the sim's ground truth. The capped wait's clock is
+        not started for an arrival the geometry decides."""
+        if self.sim_identity_fn is not None and self.sim_identity_fn(frame) is not None:
+            said = self.cloud_spoke(start_wait=False)
+            return "ask" if said in ("no", "wait") else said
+        return self.cloud_spoke()
+
+    def cloud_spoke(self, start_wait: bool = True) -> Optional[str]:
         """The tiers' order at arrival (the user, 2026-10-24): has the cloud
         answered about the candidate in view? "no": it holds a no about it --
         the arrival is refused without a call (round 5: each flicker of the
@@ -1591,6 +1604,8 @@ class TieredVision:
                 # time, and stamps that start over, jump or stall made it
                 # endless or end at once (review). A new no is a new wait.
                 now = time.monotonic()
+                if not start_wait and "wait_mono" not in r:
+                    return "wait"
                 waited = now - r.setdefault("wait_mono", now)
                 return "wait" if waited < self.reject_hold_s else None
             if r is not None and r["rank"] == "cloud":
@@ -2301,8 +2316,7 @@ class TieredVision:
     def sim_verdict(self, frame: dict) -> Optional[dict]:
         """3.98 (the user, 2026-10-24): a sim arrival is the sim's to judge --
         no call and no cap. None when this is no sim frame the geometry can
-        judge. 3.91.D2: asked also before a held cloud no refuses (or waits
-        on) an arrival, so a wrong no never overrules the sim's ground truth."""
+        judge. `confirm_cloud` asks it first."""
         if self.sim_identity_fn is None:
             return None
         verdict = self.sim_identity_fn(frame)
