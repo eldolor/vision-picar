@@ -817,14 +817,18 @@ is saved at the mission's end as that map's next version). The robot server
 does not pass the bridge's `slam.state` on, so the page cannot tell in
 advance that a re-map would be taken: the button is offered on any SLAM map
 while connected. A re-map can cancel a live goal (the brain's too), so it takes
-two taps: the first turns it into "Tap again to re-map" for 4 s. The toast says
+two taps: the first turns it into "Tap again to re-map" for 4 s (a double-tap
+counts as one). The toast says
 what the server answered -- "Re-mapping from here: goals wait until the map is
 ready again, and a goal still driving may be cancelled", or "Not re-mapped:" with the
 bridge's reason for a 409 (not localising on a saved map, already
 re-mapping), the button kept. A world without SLAM (501) takes the button
 away for that connection. One request at a time: the button reads "Asking..."
-while one is out, and after 20 s without an answer it says the re-map may have
-started. An answer to a request made before a reconnect is ignored. Phone screenshot: `docs/evaluations/twin-3.50-D4b-remap.png`.
+until the server answers; after 20 s without an answer a warning says the re-map
+may have started, and the answer is still shown when it comes. After a
+reconnect to another server the old request's answer is ignored. Phone
+screenshots: `docs/evaluations/twin-3.50-D4b-remap.png` and
+`twin-3.50-D4b-remap-armed.png`.
 
 R2's `/wheels`, `/scan` and `/world/truth` are served but not drawn; they
 exist for the ROS nodes (R4) and for `/world/error` (R5).

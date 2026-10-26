@@ -22,7 +22,7 @@ pytest.importorskip("playwright")
 from playwright import sync_api  # noqa: E402
 
 from tests.test_ui import (PHONE, _SLAM_ERROR, _SLAM_MAP, _SLAM_POSE,  # noqa: F401,E402
-                           _stub_world, browser, open_twin, twin_server)
+                           _stub_world, browser, open_twin, private_twin_server, twin_server)
 
 
 def _open(browser, twin_server, grid=_SLAM_MAP, pose=_SLAM_POSE):
@@ -57,10 +57,18 @@ def _hold(page):
 
 
 def _remap(page):
-    """The two taps a re-map takes: arm, then ask."""
+    """The two taps a re-map takes: arm, then (past the double-tap gap) ask."""
     page.click("#btn-remap")
     sync_api.expect(page.locator("#btn-remap")).to_have_text("Tap again to re-map")
+    page.wait_for_timeout(500)
     page.click("#btn-remap")
+
+
+def _reconnect(page, url):
+    page.click("#btn-settings")
+    page.fill("#cfg-server-url", url)
+    page.click("#btn-connect")
+    page.click('.tab-btn[data-tab="sim"]')
 
 
 def test_the_button_shows_on_a_slam_map_only(browser, twin_server):
@@ -84,8 +92,22 @@ def test_one_tap_only_arms_it(browser, twin_server):
     _answer(page, 200, {"remapping": True}, seen)
     page.click("#btn-remap")
     sync_api.expect(page.locator("#btn-remap")).to_have_text("Tap again to re-map")
-    sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now", timeout=6000)
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now", timeout=8000)
     assert seen == [], seen
+    assert not errors, errors
+    page.context.close()
+
+
+def test_a_double_tap_only_arms_it(browser, twin_server):
+    """Review round 2: two taps a few ms apart (a double-tap, a bounce) passed
+    the arm and sent the re-map."""
+    page, errors = _open(browser, twin_server)
+    seen = []
+    _answer(page, 200, {"remapping": True}, seen)
+    page.dblclick("#btn-remap")
+    page.wait_for_timeout(500)
+    assert seen == [], seen
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Tap again to re-map")
     assert not errors, errors
     page.context.close()
 
@@ -151,31 +173,46 @@ def test_a_lost_connection_takes_the_button_away(browser, twin_server):
     failed reconnect left it live, pointed at a dead server."""
     page, errors = _open(browser, twin_server)
     sync_api.expect(page.locator("#btn-remap")).to_be_visible(timeout=5000)
-    page.click("#btn-settings")
-    page.fill("#cfg-server-url", "http://127.0.0.1:9")
-    page.click("#btn-connect")
-    page.click('.tab-btn[data-tab="sim"]')
+    _reconnect(page, "http://127.0.0.1:9")
     sync_api.expect(page.locator("#btn-remap")).to_be_hidden(timeout=8000)
+    assert not errors, errors
     page.context.close()
 
 
-def test_a_late_answer_does_not_speak_for_the_next_connection(browser, twin_server):
-    """Review round 1: a 501 from the last connection, landing after a
-    reconnect, hid the button for the new one."""
+def test_an_answer_from_another_server_is_dropped(browser, twin_server, private_twin_server):
+    """Review round 1: a 501 from the last server, landing after a reconnect
+    to another, hid the button for the new one."""
     page, errors = _open(browser, twin_server)
     held = _hold(page)
     _remap(page)
     page.wait_for_timeout(300)
     assert len(held) == 1
-    page.click("#btn-settings")
-    page.click("#btn-connect")
-    page.click('.tab-btn[data-tab="sim"]')
+    _reconnect(page, private_twin_server)
     sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now", timeout=8000)
     held[0].fulfill(status=501, content_type="application/json",
                     body=json.dumps({"detail": "this world keeps no saved map"}))
     page.wait_for_timeout(500)
     sync_api.expect(page.locator("#btn-remap")).to_be_visible()
     sync_api.expect(page.locator("#btn-remap")).to_be_enabled()
+    assert not errors, errors
+    page.context.close()
+
+
+def test_a_reconnect_to_the_same_server_keeps_its_answer(browser, twin_server):
+    """Review round 2: a reconnect to the same server dropped the answer of a
+    re-map that server took, and let a second one be asked meanwhile."""
+    page, errors = _open(browser, twin_server)
+    held = _hold(page)
+    _remap(page)
+    page.wait_for_timeout(300)
+    _reconnect(page, twin_server)
+    page.wait_for_timeout(1000)
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Asking\u2026")
+    held[0].fulfill(status=200, content_type="application/json",
+                    body=json.dumps({"remapping": True}))
+    sync_api.expect(page.locator(".toast").last).to_contain_text("Re-mapping", timeout=3000)
+    sync_api.expect(page.locator("#btn-remap")).to_have_text("Re-map now")
+    assert len(held) == 1
     assert not errors, errors
     page.context.close()
 
@@ -195,5 +232,9 @@ def test_the_phone_screenshot_of_the_control(browser, twin_server):
         page.locator("#btn-remap").scroll_into_view_if_needed()
         sync_api.expect(page.locator(".toast")).to_have_count(0, timeout=6000)
         page.screenshot(path=os.path.join(out, "3.50-D4b-remap-390.png"))
+        page.click("#btn-remap")
+        sync_api.expect(page.locator("#btn-remap")).to_have_text("Tap again to re-map")
+        assert page.evaluate("document.documentElement.scrollWidth") <= PHONE["width"]
+        page.screenshot(path=os.path.join(out, "3.50-D4b-remap-armed-390.png"))
     assert not errors, errors
     page.context.close()
