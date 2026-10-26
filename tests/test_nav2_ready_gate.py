@@ -173,9 +173,12 @@ def test_health_counts_how_long_nav2_has_been_inactive(bridge_mod):
     shows for how long (nothing acts on it: review, round 4)."""
     m = _Manager()
     b = _bridge(bridge_mod, m)
-    b._nav2_inactive_since -= 130
-    assert b.health()[1]["nav2"]["inactive_s"] >= 130
-    assert b.health()[1]["ok"] is True
+    for _ in range(3):                           # answered inactive, and long ago
+        b._poll_nav2()
+        m.answer(False)
+    b._nav2_inactive_since -= 3600
+    assert b.health()[1]["nav2"]["inactive_s"] >= 3600
+    assert b.health()[1]["ok"] is True, "ok is SLAM's; nav2 is shown, not judged"
     b._poll_nav2()
     m.answer(True)
     assert b.health()[1]["nav2"]["inactive_s"] is None
