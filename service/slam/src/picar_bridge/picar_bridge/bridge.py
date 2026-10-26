@@ -119,6 +119,9 @@ NAV2_WAIT_S = 1.0
 NAV2_MANAGER = "/lifecycle_manager_navigation/is_active"
 NAV2_ASK_S = 0.5
 NAV2_ASK_TIMEOUT_S = 2.0
+# Inactive this long (the start included), /health `ok` is false: the hold
+# is a wait the brain never ends, so a nav2 that never comes up must show.
+NAV2_STUCK_S = 120.0
 # A goal nav2 has not accepted or rejected in this long never will be (its
 # navigator died after wait_for_server): it ends `aborted` (3.76 H1-2). While
 # pending, the robot server refuses every other autonomous driver and a
@@ -261,7 +264,8 @@ class Bridge(Node):
         # ---- 3.105: whether nav2's nodes are active; send_goal reads it ----
         self.nav2_cli = self.create_client(Trigger, NAV2_MANAGER,
                                            callback_group=ReentrantCallbackGroup())
-        self._nav2 = {"active": False, "why": "not asked yet", "answered_at": None}
+        self._nav2 = {"active": False, "why": "not asked yet", "answered_at": None}  # monotonic
+        self._nav2_inactive_since = time.monotonic()
         self._nav2_ask = None            # the ask in flight, under self.lock
         self._nav2_ask_since = 0.0       # monotonic
         self.create_timer(NAV2_ASK_S, self._poll_nav2)
@@ -517,8 +521,7 @@ class Bridge(Node):
                          "slam": state}
         if not nav2["active"]:
             # 3.105: before anything is sent or cancelled, as above.
-            return 503, {"error": "nav2 is not active" + (f": {nav2['why']}" if nav2["why"] else ""),
-                         "nav2": nav2}
+            return 503, self._nav2_refusal()
         if not self.nav.wait_for_server(timeout_sec=NAV2_WAIT_S):
             return 503, {"error": "nav2 is not up (navigate_to_pose has no server)"}
         self.cancel_goal()
@@ -538,6 +541,8 @@ class Bridge(Node):
                 # rest wait must see every goal, so none is sent past it.
                 return 503, {"error": f"SLAM is not ready ({self.slam_state})",
                              "slam": self.slam_state}
+            if not self._nav2["active"]:
+                return 503, self._nav2_refusal()     # 3.105 (review): reset meanwhile
             self.plan = []
             # The superseded goal was sent its cancel above, and nav2's
             # navigator preempts it for this one anyway; its handle must not
@@ -658,11 +663,19 @@ class Bridge(Node):
         one ask at a time; rclpy is called outside bridge.lock."""
         now = time.monotonic()
         with self.lock:
-            if self._nav2_ask is not None:
+            stale = self._nav2_ask
+            if stale is not None:
                 if now - self._nav2_ask_since < NAV2_ASK_TIMEOUT_S:
                     return
                 self._nav2_ask = None    # given up on: a late answer is ignored
-                self._set_nav2(False, f"no answer from {NAV2_MANAGER} in {NAV2_ASK_TIMEOUT_S:.0f} s")
+                # Humble's manager serves is_active in the group that runs its
+                # start-up, so a start reads as this, not as "not active".
+                self._set_nav2(False, f"no answer from {NAV2_MANAGER} in "
+                                      f"{NAV2_ASK_TIMEOUT_S:.0f} s (busy starting nav2, or hung)")
+        if stale is not None:
+            drop = getattr(self.nav2_cli, "remove_pending_request", None)
+            if drop is not None:         # (review) or rclpy keeps every given-up ask
+                drop(stale)
         if not self.nav2_cli.service_is_ready():
             with self.lock:
                 self._set_nav2(False, f"no lifecycle manager ({NAV2_MANAGER})")
@@ -689,8 +702,27 @@ class Bridge(Node):
         if active != self._nav2["active"]:
             self.get_logger().info("nav2 active: goals taken" if active
                                    else f"nav2 not active, goals held: {why}")
+            self._nav2_inactive_since = None if active else time.monotonic()
         self._nav2 = {"active": active, "why": why,
-                      "answered_at": time.time() if answered else self._nav2["answered_at"]}
+                      "answered_at": time.monotonic() if answered else self._nav2["answered_at"]}
+
+    def _nav2_view(self):
+        """Under self.lock: /health's `nav2`, ages not clock times (review)."""
+        now = time.monotonic()
+        at, since = self._nav2["answered_at"], self._nav2_inactive_since
+        return {"active": self._nav2["active"], "why": self._nav2["why"],
+                "answer_age_s": None if at is None else round(now - at, 1),
+                "inactive_s": None if since is None else round(now - since, 1)}
+
+    def _nav2_stuck(self):
+        since = self._nav2_inactive_since
+        return since is not None and time.monotonic() - since > NAV2_STUCK_S
+
+    def _nav2_refusal(self):
+        """Under self.lock or not: the 503 body while goals are held."""
+        nav2 = self._nav2_view()
+        return {"error": "nav2 is not active" + (f": {nav2['why']}" if nav2["why"] else ""),
+                "nav2": nav2}
 
     def _resend_cancels(self):
         """The bridge's own re-send of every cancel not yet answered by a
@@ -1679,14 +1711,16 @@ class Bridge(Node):
     def health(self):
         with self.lock:
             # 3.50.D3: no slam_toolbox (the start failed) is not ok.
-            return 200, {"ok": self.slam_state != "failed", "robot_url": self.robot_url,
+            # 3.105: nor is a nav2 inactive past NAV2_STUCK_S.
+            return 200, {"ok": self.slam_state != "failed" and not self._nav2_stuck(),
+                         "robot_url": self.robot_url,
                          "odom_age_s": None if not self.last_odom else time.time() - self.last_odom["at"],
                          "scan_age_s": None if not self.last_scan else time.time() - self.last_scan["at"],
                          "scans_published": self.scan_count, "twists": dict(self.twists),
                          "pan_rad": self.pan_rad, "session": self.session,
                          "map_version": self.map_version,
                          # 3.105: goals are held until nav2 answers active
-                         "nav2": dict(self._nav2),
+                         "nav2": self._nav2_view(),
                          "brain_url": self.brain_url,
                          "brain_polls": self.brain_polls,
                          "brain_age_s": None if not self.brain_at else time.time() - self.brain_at,

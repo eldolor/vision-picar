@@ -6,7 +6,7 @@ before nav2's nodes are active (~13 s): `navigate_to_pose` has a server, so
 a goal was answered 200 `pending` and then rejected by nav2 -- which
 explore counts as a failed goal. A 503 is a fault explore waits on.
 """
-import time
+import pathlib
 import types
 
 from tests.test_review_376h1 import _Future, _Handle, _Nav, bridge_mod  # noqa: F401
@@ -155,12 +155,69 @@ def test_the_hold_cancels_nothing(bridge_mod):
     assert b.goal_state()[1]["goal"]["state"] == "active"
 
 
-def test_health_says_when_it_last_asked(bridge_mod):
+def test_health_says_how_long_ago_it_was_answered(bridge_mod):
     m = _Manager()
     b = _bridge(bridge_mod, m)
-    assert b.health()[1]["nav2"] == {"active": False, "why": "not asked yet", "answered_at": None}
+    nav2 = b.health()[1]["nav2"]
+    assert nav2["active"] is False and nav2["why"] == "not asked yet"
+    assert nav2["answer_age_s"] is None
     b._poll_nav2()
     m.answer(True)
     nav2 = b.health()[1]["nav2"]
     assert nav2["active"] is True and nav2["why"] is None
-    assert abs(nav2["answered_at"] - time.time()) < 5
+    assert 0 <= nav2["answer_age_s"] < 5 and nav2["inactive_s"] is None
+
+
+def test_a_nav2_that_never_activates_turns_health_not_ok(bridge_mod):
+    """Review: the hold is a wait the brain never ends; past NAV2_STUCK_S
+    of inactivity /health says so (ok false), as a failed SLAM start does."""
+    m = _Manager()
+    b = _bridge(bridge_mod, m)
+    b._poll_nav2()
+    m.answer(False)
+    assert b.health()[1]["ok"] is True
+    b._nav2_inactive_since -= bridge_mod.NAV2_STUCK_S + 1
+    body = b.health()[1]
+    assert body["ok"] is False and body["nav2"]["inactive_s"] > bridge_mod.NAV2_STUCK_S
+    b._poll_nav2()
+    m.answer(True)
+    assert b.health()[1]["ok"] is True
+
+
+def test_nav2_going_inactive_during_the_send_is_seen_under_the_lock(bridge_mod):
+    """Review: the first read is before wait_for_server (up to 1 s); the
+    send re-reads it under the lock, as it does slam.state."""
+    m = _Manager()
+    b = _bridge(bridge_mod, m)
+    b._poll_nav2()
+    m.answer(True)
+    wait = b.nav.wait_for_server
+
+    def reset_meanwhile(timeout_sec):
+        b._poll_nav2()
+        m.answer(False)
+        return wait(timeout_sec)
+    b.nav.wait_for_server = reset_meanwhile
+    _refused(b)
+
+
+def test_a_given_up_ask_leaves_rclpys_pending_requests(bridge_mod):
+    m = _Manager()
+    removed = []
+    m.remove_pending_request = removed.append
+    b = _bridge(bridge_mod, m)
+    b._poll_nav2()
+    stale = m.calls[-1]
+    b._nav2_ask_since -= bridge_mod.NAV2_ASK_TIMEOUT_S + 0.1
+    b._poll_nav2()
+    assert removed == [stale]
+    assert "starting nav2, or hung" in b.health()[1]["nav2"]["why"]
+
+
+def test_the_manager_asked_is_the_one_the_launch_file_starts(bridge_mod):
+    """Review: a rename in picar.launch.py would hold every goal for good."""
+    launch = (pathlib.Path(__file__).resolve().parents[1] / "service" / "slam" / "src"
+              / "picar_bringup" / "launch" / "picar.launch.py").read_text()
+    name = bridge_mod.NAV2_MANAGER.strip("/").split("/")[0]
+    assert f'name="{name}"' in launch
+    assert bridge_mod.NAV2_MANAGER == f"/{name}/is_active"
