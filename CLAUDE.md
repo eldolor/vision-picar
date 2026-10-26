@@ -270,8 +270,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     `arrival_verdicts`. `evaluations/tiered-380/E/board/`.
   * H, done 2026-10-24: with 3.87 merged, G3's configuration has 0 late
     wheel ticks (E's `A1-noload`: 0 of 12,367, max 85 ms; G3 before: 1,196).
-  * Open: a person's D-pad Stop during a local-led arrival's cloud confirm
-    can still end `found` (the brain cannot read 3.84's latch).
+  * A person's Stop during an arrival's confirmation now ends it
+    `cancelled`, not `found` (3.104, below).
     `vision-picar-ros:latest` rebuilt from `dev` 778846d on 2026-10-18.
 * **Calibrating the tiers (3.92), merged 2026-10-22; nothing changed in
   the code.** VE and YOLOE + CLIP on all 2,261 labelled frames (free):
@@ -971,7 +971,19 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   control.intervention_report` prints interventions per hour, overall and
   per policy. Live: `dpad`, `stop`, `null` on three missions. Whether to
   learn from them waits on the Rover's data. Known limits in the section
-  (a Stop during the arrival's cloud confirm can still end `found`).
+  (since 3.104 a Stop during the arrival's confirmation is heard).
+* **A person's Stop during the arrival's confirmation is heard (3.104),
+  merged 2026-10-26** (the user's pick from the open list): before
+  finishing `found`/`room_reached` the runner sends 3.88's `LOOK_CENTER`
+  probe once (through the halt gate, 2 s), so 3.84's latch or a person's
+  hold refused there ends the mission `cancelled` (`stop`/`dpad`, with
+  3.99's intervention line). A veto, an autonomous holder, no answer, or a
+  goal refusal when the mission had a goal accepted (or lost its answer)
+  keep `found`; a goal in progress when it never had one is a person's tap
+  (`dpad`). In process only; four review rounds. Known limits in the
+  section: the refusal names no goal owner (a position check is the deeper
+  fix), a D-pad press under the mission's own goal reads as the goal, and
+  a read-only latch route would remove the camera move.
 * **Decisions still open:** `PLAN-ros-alignment.md` section 6's gyro
   heading, floor band and speed by clearance all wait on the car's numbers
   (their triggers are written). Decided 2026-10-24: fix 7 (3.98), 3.50.D4's re-map trigger
