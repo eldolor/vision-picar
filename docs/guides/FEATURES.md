@@ -810,6 +810,20 @@ under anything but the plain simulator: a real robot, a phone, a replay,
 `drive: ros`. Run as a service on the Jetson, the starting house is still
 `SIM_MAP`'s (unset: `starter_house`).
 
+**Re-map now** (3.50.D4b). Under a SLAM map, a "Re-map now" button: a
+person's request (`twin-dpad`) to `POST /world/remap`, which asks the bridge
+to map the reloaded map again from where the robot is (3.50.D4; the result
+is saved at the mission's end as that map's next version). The robot server
+does not pass the bridge's `slam.state` on, so the page cannot tell in
+advance that a re-map would be taken: the button is offered on any SLAM map,
+and the toast says what the server answered -- "Re-mapping from here: goals
+wait until the map is ready again" (goals are refused while it re-maps, and
+a live goal may be cancelled for the swap), or "Not re-mapped:" with the
+bridge's reason for a 409 (not localising on a saved map, already
+re-mapping), the button kept. A world without SLAM (501) takes the button
+away for that connection. One request at a time: the button is off while one
+is out. Phone screenshot: `docs/evaluations/twin-3.50-D4b-remap.png`.
+
 R2's `/wheels`, `/scan` and `/world/truth` are served but not drawn; they
 exist for the ROS nodes (R4) and for `/world/error` (R5).
 

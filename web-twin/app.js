@@ -898,9 +898,48 @@
   // sort of thing that reads as a boolean at a glance.
   var CELL_UNKNOWN = -1, CELL_FREE = 0, CELL_OCCUPIED = 1;
 
+  // 3.50.D4b: "Re-map now" -- a person asks the bridge to map the reloaded
+  // map again from where the robot is (3.50.D4's POST /world/remap). The
+  // robot server does not pass the bridge's slam.state on, so the button is
+  // offered on any SLAM map and the server's answer is what the person reads:
+  // 409 is a refusal about now (not on a saved map, already re-mapping), 501
+  // or 404 a world with no saved map, and the button goes.
+  function updateRemapButton() {
+    var row = document.querySelector(".remap-row");
+    var btn = document.getElementById("btn-remap");
+    if (!row || !btn) return;
+    var offered = state.connected && isSlamMap(state.lastMap) && !state.remapUnsupported;
+    row.style.display = offered ? "" : "none";
+    btn.disabled = !!state.remapBusy;
+  }
+
+  async function remapNow() {
+    if (state.remapBusy) return;
+    state.remapBusy = true;
+    updateRemapButton();
+    try {
+      // A person's request, named as the map tap is.
+      await apiPost("/world/remap", {}, {"x-driver": DRIVER_DPAD});
+      showToast("Re-mapping from here: goals wait until the map is ready again", "ok");
+    } catch (e) {
+      if (e.status === 404 || e.status === 501) {
+        state.remapUnsupported = true;
+        showToast("Not re-mapped: " + (e.message || "this robot keeps no saved map"), "err");
+      } else if (e.status === 409) {
+        showToast("Not re-mapped: " + (e.message || "refused"), "warn");
+      } else {
+        showToast("Not re-mapped (" + (e.message || e) + ")", "err");
+      }
+    } finally {
+      state.remapBusy = false;
+      updateRemapButton();
+    }
+  }
+
   function renderMap() {
     var canvas = document.getElementById("world-map");
     var readout = document.getElementById("map-readout");
+    updateRemapButton();
     if (!canvas || !readout) return;
 
     var ctx = canvas.getContext("2d");
@@ -1412,6 +1451,7 @@
     state.odometryUnsupported = false;
     state.worldErrorUnsupported = false;
     state.goalsUnsupported = false;
+    state.remapUnsupported = false;
     state.lastWorldError = null;
     state.lastGoal = null;
     state.serverSecret = document.getElementById("cfg-server-secret").value.trim();
@@ -1685,6 +1725,7 @@
   document.getElementById("btn-look-right").onclick = function () { manualAction("LOOK_RIGHT"); };
   document.getElementById("btn-look-center").onclick = function () { manualAction("LOOK_CENTER"); };
   document.getElementById("btn-random-house").onclick = randomHouse;
+  document.getElementById("btn-remap").onclick = remapNow;
   document.querySelectorAll(".turn-step-btn").forEach(function (btn) {
     btn.onclick = function () { setTurnStep(Number(btn.dataset.turnDeg)); };
   });
