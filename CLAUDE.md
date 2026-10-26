@@ -826,6 +826,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   2 goals, 8.4 m): F-rich's gap is 0.012 finds and 0.208 goals + metres,
   so the chooser has room and **3.103** (lean facts and a shape sweep,
   then pool attention; criteria written) may start on the user's word.
+  **3.103.B (2026-10-26, the user's go; records only):** F-lean, F-large's
+  17 facts plus `lidar_gain` (cast on the 0.30 m grid), in four shapes:
+  the oracle copy is flat across them (36.8-37.8% for 659 to 3,347
+  numbers), and the best (one layer of 64) is level with F-large on the
+  test houses (-0.041, paired interval [-0.102, +0.021]; criterion 1
+  FAILED), with the most finds of any learned arm (573) and F-large's
+  choice time (102 ms p90 here). The network's shape is not the lever.
+  C (attention over the pool) waits on the user's word.
 * **Fast goal choice (3.77), merged 2026-10-13.** `brain/frontier.py`'s
   grid work in numpy with **exactly** the old answers (0 differences
   against the frozen `tests/frontier_reference.py`; do not "simplify" its
