@@ -228,10 +228,12 @@ def section_of_branch(root: str) -> str:
 
 def resources(num: str) -> dict:
     """Everything a live stack can collide on, derived from the section
-    number so no two of 3.1-3.99 share any of it (ports 9000 + 10 x minor).
-    Past 3.99 it wraps onto the section 100 older."""
+    number. Ports are 9000 + 10 x minor for every section (3.107: they
+    wrapped at 100 before; 3.2376 is the last below the ephemeral range).
+    The ROS domain must stay within 1-101, so past 3.99 it wraps onto the
+    section 100 older, and `env` names an active section that shares it."""
     minor = int(num.split(".")[1].rstrip("abcdefghijklmnopqrstuvwxyz"))
-    base = 9000 + 10 * (minor % 100)
+    base = 9000 + 10 * minor
     return {
         "PICAR_ROBOT_PORT": base, "PICAR_BRAIN_PORT": base + 1,
         "PICAR_BODY_PORT": base + 2, "PICAR_SENSOR_PORT": base + 3,
@@ -252,9 +254,23 @@ def resources(num: str) -> dict:
     }
 
 
-def env_text(num: str) -> str:
+def active_sections(root: str) -> list:
+    """The sections with a worktree on this machine (`git worktree list`)."""
+    out = git("worktree", "list", "--porcelain", check=False, cwd=root)
+    return [m.group(1) for line in out.splitlines()
+            if line.startswith("branch ") and (m := BRANCH_RE.search(line))]
+
+
+def env_text(num: str, others=None) -> str:
     r = resources(num)
     lines = [f"# section {num}: paste into your shell, or `eval $(python tools/plan_section.py env)`"]
+    if others is None:
+        others = active_sections(top())
+    for o in sorted(set(others) - {num}):
+        if resources(o)["ROS_DOMAIN_ID"] == r["ROS_DOMAIN_ID"]:
+            # 3.107: a comment, so `eval` still works.
+            lines.append(f"# WARNING: section {o} has a worktree here and shares ROS domain "
+                         f"{r['ROS_DOMAIN_ID']}: do not run both sections' stacks at once")
     lines += [f"export {k}={v}" for k, v in r.items()]
     lines.append(f"# build this branch's ROS image (never :latest): "
                  f"docker build -t {r['ROS_IMAGE']} service/slam && mkdir -p {r['EXPLORE_LOGDIR']}")

@@ -63,9 +63,12 @@ Continuing an existing section: work in its worktree
    text was stale the moment another merged.
 4. **Your own runtime resources.** `tools/plan_section.py env` derives from
    the section number:
-   * ports 9000 + 10 x N (robot, brain, body, sensors, bridge);
+   * ports 9000 + 10 x N (robot, brain, body, sensors, bridge; 3.106 ->
+     10060), never shared;
    * `ROS_DOMAIN_ID` N (3.44 -> 44; 73 and 74, older stacks' fixed domains,
-     map to 100 and 101);
+     map to 100 and 101). Domains must stay within 1-101, so past 3.99 N
+     wraps (3.106 shares 3.6's 6), and `env` prints a WARNING comment when
+     another section with a worktree here shares yours (3.107);
    * container `picar-ros-3N`;
    * image `vision-picar-ros:plan-3.N`;
    * logs in `/tmp/vision-picar-3.N`.

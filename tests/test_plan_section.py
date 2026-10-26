@@ -277,3 +277,30 @@ def test_moving_a_risky_file_away_still_asks_for_thermos(tmp_path, monkeypatch):
     g("commit", "-qm", "rename")
     ps.cmd_reviewed([f"{base}..HEAD"])
     assert [w for w in ps.review_warnings(base, g("rev-parse", "HEAD"), str(repo)) if "Thermos" in w]
+
+
+def test_ports_past_3_99_do_not_wrap():
+    """3.107: 3.104 got 3.4's ports and 3.106 3.6's (minor % 100). Ports need
+    not wrap: unique for any section, below the ephemeral range, and 3.1-3.99
+    unchanged."""
+    seen = {}
+    for minor in range(1, 2001):
+        r = ps.resources(f"3.{minor}")
+        for k in ("PICAR_ROBOT_PORT", "PICAR_BRAIN_PORT", "PICAR_BRIDGE_PORT"):
+            assert (k, r[k]) not in seen, f"3.{minor} and {seen[(k, r[k])]} share {k}"
+            seen[(k, r[k])] = f"3.{minor}"
+        assert r["PICAR_BRIDGE_PORT"] < 32768
+        if minor < 100:
+            assert r["PICAR_ROBOT_PORT"] == 9000 + 10 * minor
+        assert 1 <= r["ROS_DOMAIN_ID"] <= 101 and r["ROS_DOMAIN_ID"] not in (73, 74)
+
+
+def test_env_names_an_active_section_on_the_same_ros_domain():
+    """3.107: domains must stay in 1-101, so past 3.99 two sections share one;
+    `env` says so, as a comment `eval` ignores, when the other is active."""
+    text = ps.env_text("3.106", others=["3.6", "3.50", "3.106"])
+    warn = [l for l in text.splitlines() if "ROS domain" in l and "3.6" in l]
+    assert warn and warn[0].startswith("#"), text
+    assert "3.50" not in "".join(warn)
+    assert all(l.startswith(("export ", "#")) for l in text.splitlines())
+    assert not [l for l in ps.env_text("3.50", others=["3.6"]).splitlines() if "share" in l]
