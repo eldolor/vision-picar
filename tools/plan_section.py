@@ -234,6 +234,9 @@ def resources(num: str) -> dict:
     section 100 older, and `env` names an active section that shares it."""
     minor = int(num.split(".")[1].rstrip("abcdefghijklmnopqrstuvwxyz"))
     base = 9000 + 10 * minor
+    if base + 5 >= 32768:
+        raise SystemExit(f"section {num}: its ports would reach Linux's ephemeral range "
+                         f"(32768+); extend tools/plan_section.py resources()")
     return {
         "PICAR_ROBOT_PORT": base, "PICAR_BRAIN_PORT": base + 1,
         "PICAR_BODY_PORT": base + 2, "PICAR_SENSOR_PORT": base + 3,
@@ -255,18 +258,30 @@ def resources(num: str) -> dict:
 
 
 def active_sections(root: str) -> list:
-    """The sections with a worktree on this machine (`git worktree list`)."""
+    """The sections with a worktree on this machine (`git worktree list`),
+    leaving out one git marks prunable (its folder is gone)."""
     out = git("worktree", "list", "--porcelain", check=False, cwd=root)
-    return [m.group(1) for line in out.splitlines()
-            if line.startswith("branch ") and (m := BRANCH_RE.search(line))]
+    found = []
+    for block in out.split("\n\n"):
+        lines = block.splitlines()
+        if any(l.startswith("prunable") for l in lines):
+            continue
+        for line in lines:
+            m = BRANCH_RE.search(line) if line.startswith("branch ") else None
+            if m:
+                found.append(m.group(1))
+    return found
 
 
 def env_text(num: str, others=None) -> str:
     r = resources(num)
-    lines = [f"# section {num}: paste into your shell, or `eval $(python tools/plan_section.py env)`"]
+    lines = [f'# section {num}: paste into your shell, or `eval "$(python tools/plan_section.py env)"`']
     if others is None:
-        others = active_sections(top())
-    for o in sorted(set(others) - {num}):
+        try:
+            others = active_sections(top())
+        except SystemExit:              # outside a checkout: `env 3.N` needs no git
+            others = []
+    for o in sorted(set(others) - {num}, key=lambda n: resources(n)["PICAR_ROBOT_PORT"]):
         if resources(o)["ROS_DOMAIN_ID"] == r["ROS_DOMAIN_ID"]:
             # 3.107: a comment, so `eval` still works.
             lines.append(f"# WARNING: section {o} has a worktree here and shares ROS domain "

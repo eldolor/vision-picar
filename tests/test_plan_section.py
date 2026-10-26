@@ -3,6 +3,7 @@
 
 import os
 import sys
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
 import plan_section as ps  # noqa: E402
@@ -304,3 +305,32 @@ def test_env_names_an_active_section_on_the_same_ros_domain():
     assert "3.50" not in "".join(warn)
     assert all(l.startswith(("export ", "#")) for l in text.splitlines())
     assert not [l for l in ps.env_text("3.50", others=["3.6"]).splitlines() if "share" in l]
+
+
+def test_env_for_a_named_section_still_works_outside_a_checkout(monkeypatch):
+    """Thermos on a74d873: `env 3.106` needed no git before 3.107's check of
+    active sections; outside a repo it now raised. No warnings then."""
+    def no_repo(*a, **k):
+        raise SystemExit("fatal: not a git repository")
+    monkeypatch.setattr(ps, "top", no_repo)
+    text = ps.env_text("3.106")
+    assert "export PICAR_ROBOT_PORT=10060" in text and "WARNING" not in text
+
+
+def test_env_header_shows_the_quoted_eval():
+    """/code-review on a74d873: unquoted, `eval $(... env)` joins the lines
+    into one comment and exports nothing."""
+    assert 'eval "$(python tools/plan_section.py env)"' in ps.env_text("3.44", others=[])
+
+
+def test_a_section_whose_ports_would_reach_the_ephemeral_range_is_refused():
+    ps.resources("3.2376")
+    with pytest.raises(SystemExit):
+        ps.resources("3.2377")
+
+
+def test_active_sections_skips_prunable_worktrees(monkeypatch):
+    porcelain = ("worktree /a\nHEAD 1\nbranch refs/heads/plan/3.6-old\nprunable gitdir file points to non-existent location\n\n"
+                 "worktree /b\nHEAD 2\nbranch refs/heads/plan/3.50-live\n")
+    monkeypatch.setattr(ps, "git", lambda *a, **k: porcelain)
+    assert ps.active_sections("/x") == ["3.50"]
