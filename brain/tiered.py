@@ -967,7 +967,7 @@ class TieredVision:
         self.no_box_range = (float(no_box_range[0]), float(no_box_range[1]))
         self._rejection: Optional[dict] = None
         # The arrival's wait on a held cloud no with the cap spent: the no,
-        # and `_held_s`'s clocks when the wait began (review 2026-10-26).
+        # and the monotonic time the wait began (review 2026-10-26).
         self._cap_wait: Optional[dict] = None
         # Review: `wait_inflight()` can apply an answer on the runner's
         # abandoned thread while a tick tracks the candidate.
@@ -1349,8 +1349,10 @@ class TieredVision:
         clock -- never one against the other (review: wall seconds against
         monotonic ones)."""
         now = self._stamp()
-        if now is not None and r["at_stamp"] is not None:
+        if now is not None and r["at_stamp"] is not None and now >= r["at_stamp"]:
             return now - r["at_stamp"]
+        # Stamps behind the no's (a stream that started over): on them the
+        # release would wait for the old time to come round again (review).
         return time.monotonic() - r["at_mono"]
 
     def _band_crop(self, perception: Perception) -> bool:
@@ -1592,17 +1594,13 @@ class TieredVision:
 
     def _cap_waited_s(self, r: dict) -> float:
         """How long arrivals have waited on this held no, from the first
-        wait (not from the no: it may be old). Clocks as `_held_s`."""
+        wait (not from the no: it may be old). On the monotonic clock only:
+        a wait while the body stands is real time, and stamps that start
+        over, jump or stall made it endless or end at once (review)."""
         w = self._cap_wait
         if w is None or w["no"] is not r:
-            w = self._cap_wait = {"no": r, "at_stamp": self._stamp(),
-                                  "at_mono": time.monotonic()}
-        waited = self._held_s(w)
-        if waited < 0:
-            # The stamps started over (a replay looping, a new stream): on
-            # them the wait would never end (review).
-            waited = time.monotonic() - w["at_mono"]
-        return waited
+            w = self._cap_wait = {"no": r, "at_mono": time.monotonic()}
+        return time.monotonic() - w["at_mono"]
 
     def _on_probation(self, perception: Perception) -> bool:
         """Amendment 3: a candidate in view whose no was released by loss or

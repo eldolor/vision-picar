@@ -363,8 +363,8 @@ no is held.
   where the no landed (not the asked frame's: an approach during an async
   call would release it at once); without, when a new episode begins (`lost`) or after
   `reject_hold_s` (20 s: `_held_s`, on the frames' `captured_at` when the
-  no and this frame are both stamped, else the monotonic clock, never one
-  against the other: `timeout`); and by a yes of the no's rank or higher
+  no and this frame are both stamped and this frame's is not the earlier,
+  else the monotonic clock, never one against the other: `timeout`); and by a yes of the no's rank or higher
   (`_on_yes(by, episode)`: a local yes lifts a local no, only a cloud claim
   lifts the cloud's; an outranked local yes steers nothing, its box
   included, even when perception saw nothing -- nothing then says the box is
@@ -828,7 +828,7 @@ alert colour.
 | `tests/test_arrival_confirmation.py` (9) | Handoff 2026-10-02 1a, scaled house, cloud faked: the right object ends `found` after one `arrival_confirmation` call; a cloud that disagrees refuses the arrival (ends `blocked`, at most 2 confirmation calls); a false-positive run (absent, absent, detected...) cannot end `found` and the same run with an agreeing cloud does; the call is counted; at the call cap it refuses without calling. Spec review 3: under `async_cloud` the confirmation never overlaps a trigger call (peak concurrency 1 with a 0.2 s cloud); a `found` mission's `status.tier.stats` counts it; the paid step is logged `[cloud: arrival_confirmation]`; a refused mission's final `status.arrival` keeps `identity` and its end line does not say "obstructed" |
 | `tests/test_refused_turn_loop.py` (3) | Handoff 5a, starter house: a refused turn is never chosen again from the same spot (was 130 times); with the world the active-search demo finds the backpack in 61 steps (the reference trace); with no world the boxed-in fallback runs instead of a refused LEFT alternating with STOP |
 | `tests/test_tier_tree.py` | 3.94: the tree module's statuses; on 10,000 seeded random states the tree's "what to do this frame" gives exactly the frozen code's scene and state (`tests/tiered_reference.py`), every rung exercised; "when to ask" (3.94.B) the same trigger and state on 10,000 random frame sequences, every trigger fired; "who to ask" (3.94.C) the same scene, state, stats and model calls through the whole `__call__` on 2,500 random runs of 1-10 frames (sync and async, local failures, cloud failures, the cap, calls in flight, a Stop mid-frame); `tier_tree` (3.94.D): the shipped yaml is today's values, sixteen bad trees refused at load (the arrival's band, the scan outside the bounds, a fractional turn, a required rung left out among them), explore's band and bounds kept, the band cap pinned to the arrival's, and order, numbers and `local_yes_at` each take effect; p90 under 1 ms a frame; `describe()` reads settings live; a ladder that chooses nothing raises |
-| `tests/test_tier_remember_no.py` (83) | 3.91.C: a local no stops the steer and the questions about the candidate (off: 9 FORWARDs, staleness re-asks); released on a phone by 3 lost frames (not 2) or 20 s, with odometry by 0.5 m or 30 deg (not by time or loss), and by a yes; probation after a loss or time release until a yes, none after a move, ended by a spent cap; the box range (inclusive, unknown counts); the disagreement question once per candidate, the cloud's answer remembered, off without a local tier or with the bar off; a cloud no remembered sync and async; the taupe loop's shape (<= 1 reversal, <= 4 calls; off >= 5); the settings passed by the brain and bad ones refused; the review's fixes
+| `tests/test_tier_remember_no.py` (86) | 3.91.C: a local no stops the steer and the questions about the candidate (off: 9 FORWARDs, staleness re-asks); released on a phone by 3 lost frames (not 2) or 20 s, with odometry by 0.5 m or 30 deg (not by time or loss), and by a yes; probation after a loss or time release until a yes, none after a move, ended by a spent cap; the box range (inclusive, unknown counts); the disagreement question once per candidate, the cloud's answer remembered, off without a local tier or with the bar off; a cloud no remembered sync and async; the taupe loop's shape (<= 1 reversal, <= 4 calls; off >= 5); the settings passed by the brain and bad ones refused; the review's fixes
 (a yes arms nothing, a countable no settles a disagreement, a reset forgets it,
 no hold timed across two clocks, a late no about an ended run, band frames
 neither lost nor steered at, no disagreement with `remember_no` off, a far
@@ -860,9 +860,9 @@ only its own run, every scene says whether its candidate is refused, explore
 neither sights nor closes in on one, the arrival is the cloud's once it
 spoke -- `tests/test_local_arrival.py` -- and a new release frees the
 question); review 2026-10-26 (with the cap spent an arrival waits on a held
-cloud no at most `reject_hold_s` from its first wait, on the frames' stamps or
-the monotonic clock (also when the stamps start over), then the local tier; a
-new no restarts it).
+cloud no at most `reject_hold_s` from its first wait, on the monotonic clock
+whatever the stamps do, then the local tier; a new no restarts it; a no held
+on stamps that start over is timed on the monotonic clock).
 `tests/test_tier_tree.py` compares the trees with C off |
 | `tests/test_tiered.py` (92) | triggers and hysteresis, call cap, staleness floor, async dispatch and epoch drop, an async failure reaching B3.2, landed verdicts shown once, local bearing beats a stale cloud goal, spin guard never overrides a sighting, timing on the worker |
 | `tests/test_review_376k3.py` (5) | 3.76 K3: a failing cloud (not fatal, explore) hands a frame's question back to the local tier; no frame question goes out beside an arrival identity call still running, and it is asked once that ends (a candidate's edge too); close-in's refusals before an accepted goal do not count after it, and an estimate that flips still trips the bound |

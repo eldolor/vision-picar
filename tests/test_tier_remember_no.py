@@ -990,18 +990,49 @@ def _capped_wait(stamp=None):
     return tier
 
 
-def test_with_the_cap_spent_the_arrival_waits_at_most_the_hold_then_the_local_tier():
+def test_with_the_cap_spent_the_arrival_waits_at_most_the_hold_then_the_local_tier(monkeypatch):
     # The user, 2026-10-26: with odometry the held no is released only by a
     # move or turn, and the arrival's wait holds the body still -- so the wait
     # never ended. Now it lasts `reject_hold_s`, then the local tier answers.
+    now = [1000.0]
+    monkeypatch.setattr("brain.tiered.time.monotonic", lambda: now[0])
     tier = _capped_wait(stamp=100.0)
-    tier._frame_stamp = 105.0
+    now[0] += 5.0
     assert tier.cloud_spoke() == "wait"     # the wait starts here, not at the no
-    tier._frame_stamp = 105.0 + tier.reject_hold_s - 0.1
+    now[0] += tier.reject_hold_s - 0.1
     assert tier.cloud_spoke() == "wait"
-    tier._frame_stamp = 105.0 + tier.reject_hold_s
+    now[0] += 0.1
     assert tier.cloud_spoke() is None       # waited out: the local tier decides
     assert tier._rejection is not None      # the no itself still masks
+
+
+@pytest.mark.parametrize("stamps", [(500.0, 3.0, 501.0), (3.0, 1.7e9, 1.7e9), (5.0, 5.0, 5.0)])
+def test_the_capped_wait_is_timed_on_the_monotonic_clock_whatever_the_stamps(monkeypatch, stamps):
+    # Review: stamps starting over (then passing the old ones), jumping
+    # forward or stalling made the wait endless, end at once, or come back.
+    now = [1000.0]
+    monkeypatch.setattr("brain.tiered.time.monotonic", lambda: now[0])
+    tier = _capped_wait(stamp=stamps[0])
+    assert tier.cloud_spoke() == "wait"
+    tier._frame_stamp = stamps[1]
+    assert tier.cloud_spoke() == "wait"
+    now[0] += tier.reject_hold_s
+    assert tier.cloud_spoke() is None
+    tier._frame_stamp = stamps[2]
+    assert tier.cloud_spoke() is None
+
+
+def test_a_no_held_on_stamps_that_start_over_is_timed_on_the_monotonic_clock(monkeypatch):
+    # Review: a phone stream restarting its stamps under a held no made its
+    # held time negative, so the 20 s release never came.
+    now = [1000.0]
+    monkeypatch.setattr("brain.tiered.time.monotonic", lambda: now[0])
+    tier = TieredVision(Pipeline([D()]), Cloud())
+    tier._frame_stamp = 500.0
+    r = {"at_stamp": 500.0, "at_mono": now[0]}
+    tier._frame_stamp = 3.0
+    now[0] += 25.0
+    assert tier._held_s(r) == 25.0
 
 
 def test_the_capped_wait_restarts_for_a_new_no_and_runs_on_the_monotonic_clock(monkeypatch):
@@ -1016,15 +1047,3 @@ def test_the_capped_wait_restarts_for_a_new_no_and_runs_on_the_monotonic_clock(m
     tier._reject("cloud", None, 3)          # a new no: a new wait
     tier._episode = 4
     assert tier.cloud_spoke() == "wait"
-
-
-def test_the_capped_wait_ends_even_if_the_frame_stamps_go_back(monkeypatch):
-    # Review: a stream restarting its stamps (a replay looping, a new phone
-    # stream) made the elapsed wait negative -- the endless wait again.
-    now = [1000.0]
-    monkeypatch.setattr("brain.tiered.time.monotonic", lambda: now[0])
-    tier = _capped_wait(stamp=500.0)
-    assert tier.cloud_spoke() == "wait"
-    tier._frame_stamp = 3.0                 # the stamps start over
-    now[0] += tier.reject_hold_s
-    assert tier.cloud_spoke() is None
