@@ -444,6 +444,7 @@ def _reload_bridge(bridge_mod, monkeypatch, tmp_path, verdict):
     store = MapStore(str(tmp_path))
     _save(store, "map-0a1b2c3d", start_truth={"x_m": 1.0, "y_m": 2.0, "heading_deg": 90.0})
     b = bridge_mod.Bridge()
+    b._nav2 = {"active": True, "why": None, "answered_at": None}   # 3.105: nav2's nodes active
     b.map_store = store
     b.last_map = {"session": b.session, "version": 1, "data": [0]}
     b.start_truth = {"x_m": 3.0, "y_m": 3.0, "heading_deg": 0.0}     # this session's own
