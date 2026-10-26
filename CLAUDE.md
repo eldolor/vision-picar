@@ -743,13 +743,22 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   user, 2026-10-24; `PICAR_REMAP_CONTRADICTION=1`): live it found every
   moved object but fired on a fixed wall. D4-c, D4-e met; D4-a (nav2 does
   not enter the just-re-mapped room), D4-b (harness) and D4-d FAILED.
-  Open: the bridge reports `ready` after a reload before nav2 is active,
-  so the brain's first goal is rejected. **D4b (merged and the twin deployed
+  The bridge's `ready` before nav2 was active is fixed by 3.105 (below).
+  **D4b (merged and the twin deployed
   2026-10-26):** the Sim tab's "Re-map now" under a SLAM map -- two taps, a
   person's `POST /world/remap`, the server's answer toasted (the page cannot
   see `slam.state`); five review rounds. Next: D5 sightings; D6 (S3) asks
   first. Maps are a home's floor plan:
   never commit or upload one unasked.
+* **Goals wait for nav2 (3.105), merged 2026-10-26.** The bridge asks
+  nav2's lifecycle manager (`/lifecycle_manager_navigation/is_active`)
+  every 0.5 s and answers `POST /goal` 503 (retryable: explore waits)
+  until it says active, read again before the cancel and the send; before
+  it, a goal sent after a reload's `ready` but before nav2 was up was
+  rejected and explore failed that place (3.50.D4-b). `/health` `nav2`.
+  Live: 0 of 5 starts rejected (`dev` 1 of 5), an explore mission `found`.
+  Open: the twin shows the hold as ROS DOWN (`ros_unavailable`); a nav2
+  that never comes up holds explore to its time limit.
 * **Older review bugs (3.64), merged 2026-10-09, deployed 2026-10-10.** Ten bugs
   from the reviewer comparison still live on `dev`, fixed red-first: the
   twin's guidance loop after Stop, a hidden page and an outage (A2, A4,

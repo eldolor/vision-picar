@@ -1,0 +1,182 @@
+{
+ "image": "vision-picar-ros:plan-3.105-devref",
+ "house": "scaled_house",
+ "starts": [
+  {
+   "reload": "matched",
+   "states": [
+    [
+     "checking",
+     2.22
+    ],
+    [
+     "ready",
+     4.03
+    ]
+   ],
+   "refusals": [],
+   "first_post_after_ready_s": 0.0,
+   "accepted_after_ready_s": 0.02,
+   "state": "succeeded",
+   "goal_s": 19.3,
+   "nav2_at_end": null
+  },
+  {
+   "reload": "matched",
+   "states": [
+    [
+     "starting",
+     1.71
+    ],
+    [
+     "checking",
+     1.82
+    ],
+    [
+     "ready",
+     3.49
+    ]
+   ],
+   "refusals": [],
+   "first_post_after_ready_s": 0.0,
+   "accepted_after_ready_s": 0.01,
+   "state": "succeeded",
+   "goal_s": 19.2,
+   "nav2_at_end": null
+  },
+  {
+   "reload": "matched",
+   "states": [
+    [
+     "checking",
+     1.81
+    ],
+    [
+     "ready",
+     3.58
+    ]
+   ],
+   "refusals": [],
+   "first_post_after_ready_s": 0.0,
+   "accepted_after_ready_s": 0.01,
+   "state": "rejected",
+   "goal_s": 0.0,
+   "nav2_at_end": null
+  },
+  {
+   "reload": "matched",
+   "states": [
+    [
+     "starting",
+     1.61
+    ],
+    [
+     "checking",
+     1.71
+    ],
+    [
+     "ready",
+     3.38
+    ]
+   ],
+   "refusals": [],
+   "first_post_after_ready_s": 0.0,
+   "accepted_after_ready_s": 0.02,
+   "state": "succeeded",
+   "goal_s": 19.4,
+   "nav2_at_end": null
+  },
+  {
+   "reload": "matched",
+   "states": [
+    [
+     "checking",
+     1.61
+    ],
+    [
+     "ready",
+     3.38
+    ]
+   ],
+   "refusals": [],
+   "first_post_after_ready_s": 0.0,
+   "accepted_after_ready_s": 0.01,
+   "state": "succeeded",
+   "goal_s": 19.3,
+   "nav2_at_end": null
+  }
+ ],
+ "map_run": {
+  "mission": {
+   "outcome": "exhausted",
+   "seconds": 274,
+   "target_at": [],
+   "status_file": "explore_status_explore-purple_unicorn-1793025005.json",
+   "steps": 18,
+   "explore": {
+    "goals_sent": 17,
+    "goals_failed": 0,
+    "last_event": "no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)",
+    "camera_seen_m2": 23.06,
+    "choice_ms": {
+     "n": 52,
+     "p50_ms": 10.5,
+     "p90_ms": 19.2,
+     "max_ms": 46.5
+    },
+    "asks": false,
+    "ask": null,
+    "choices": 0
+   },
+   "stuck_episodes": 0,
+   "travel_m": 31.0,
+   "min_gap_cm": 9.4,
+   "contact_samples": 0,
+   "inside_samples": 0,
+   "samples": 541,
+   "last_log": [
+    "step 17: STOP (ok) -- no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped) -- kitchen, facing ?, free space some, sees refrigerator",
+    "inventory: 4 reported, 0 candidates from 507 frames -- bed, red backpack, refrigerator, sofa",
+    "mission ended (exhausted): no reachable frontier left (4 on the map: 4 reached twice, 0 set aside or dropped)"
+   ]
+  },
+  "saved": {
+   "map_id": "map-23cb7070",
+   "saving": false,
+   "store": true,
+   "saved": 1,
+   "failed": 0,
+   "skipped": 0,
+   "last_version": 1,
+   "last_at": 1793025278.7535505,
+   "last_error": null
+  },
+  "sampler": {
+   "contacts": 0,
+   "min_gap_cm": 9.4,
+   "jumps": [],
+   "error_samples": 271,
+   "max_error_m": 0.036,
+   "remaps": [],
+   "states": [
+    [
+     [
+      "ready",
+      "mapping"
+     ],
+     1793025005.18
+    ]
+   ]
+  }
+ },
+ "goal": [
+  4.35,
+  3.15
+ ],
+ "criteria": {
+  "c4_no_rejected": false,
+  "c4_all_succeeded": false,
+  "c4_hold_under_60s": true,
+  "rejected_starts": 1
+ }
+}
