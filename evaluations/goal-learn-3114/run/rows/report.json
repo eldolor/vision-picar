@@ -1,0 +1,322 @@
+{
+ "clones": {
+  "F-W32-hard-s3961": {
+   "arm": "F-W32-hard-s3961",
+   "loss": "hard",
+   "seed": 3961,
+   "n_train": 37064,
+   "n_held": 609,
+   "held_exact": 0.3924,
+   "held_near_1m": 0.619,
+   "held_out_agreement": 0.3924
+  },
+  "F-W32-hard-s3962": {
+   "arm": "F-W32-hard-s3962",
+   "loss": "hard",
+   "seed": 3962,
+   "n_train": 37064,
+   "n_held": 609,
+   "held_exact": 0.3957,
+   "held_near_1m": 0.6108,
+   "held_out_agreement": 0.3957
+  },
+  "F-W32-hard-s3963": {
+   "arm": "F-W32-hard-s3963",
+   "loss": "hard",
+   "seed": 3963,
+   "n_train": 37064,
+   "n_held": 609,
+   "held_exact": 0.4122,
+   "held_near_1m": 0.6305,
+   "held_out_agreement": 0.4122
+  },
+  "F-W32-soft-s3961": {
+   "arm": "F-W32-soft-s3961",
+   "loss": "soft",
+   "seed": 3961,
+   "n_train": 37064,
+   "n_held": 609,
+   "held_exact": 0.3908,
+   "held_near_1m": 0.6388,
+   "held_out_agreement": 0.3908
+  },
+  "F-W32-soft-s3962": {
+   "arm": "F-W32-soft-s3962",
+   "loss": "soft",
+   "seed": 3962,
+   "n_train": 37064,
+   "n_held": 609,
+   "held_exact": 0.3941,
+   "held_near_1m": 0.6453,
+   "held_out_agreement": 0.3941
+  },
+  "F-W32-soft-s3963": {
+   "arm": "F-W32-soft-s3963",
+   "loss": "soft",
+   "seed": 3963,
+   "n_train": 37064,
+   "n_held": 609,
+   "held_exact": 0.3908,
+   "held_near_1m": 0.6322,
+   "held_out_agreement": 0.3908
+  },
+  "F-W32-set-s3961": {
+   "arm": "F-W32-set-s3961",
+   "loss": "set",
+   "seed": 3961,
+   "n_train": 37064,
+   "n_held": 609,
+   "held_exact": 0.3957,
+   "held_near_1m": 0.6338,
+   "held_out_agreement": 0.3957
+  },
+  "F-W32-set-s3962": {
+   "arm": "F-W32-set-s3962",
+   "loss": "set",
+   "seed": 3962,
+   "n_train": 37064,
+   "n_held": 609,
+   "held_exact": 0.3793,
+   "held_near_1m": 0.6174,
+   "held_out_agreement": 0.3793
+  },
+  "F-W32-set-s3963": {
+   "arm": "F-W32-set-s3963",
+   "loss": "set",
+   "seed": 3963,
+   "n_train": 37064,
+   "n_held": 609,
+   "held_exact": 0.3892,
+   "held_near_1m": 0.6174,
+   "held_out_agreement": 0.3892
+  }
+ },
+ "criteria": {
+  "1_label_learned": false
+ },
+ "selection": {
+  "F-W32-hard-s3961": {
+   "R": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 19.8,
+    "mean_reward": 0.2697
+   },
+   "U": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.5,
+    "median_metres_found": 23.25,
+    "mean_reward": 0.112
+   }
+  },
+  "F-W32-hard-s3962": {
+   "R": {
+    "n": 100,
+    "found": 98,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 19.2,
+    "mean_reward": 0.1951
+   },
+   "U": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7.0,
+    "median_metres_found": 21.450000000000003,
+    "mean_reward": 0.114
+   }
+  },
+  "F-W32-hard-s3963": {
+   "R": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 19.2,
+    "mean_reward": 0.1726
+   },
+   "U": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7.0,
+    "median_metres_found": 24.3,
+    "mean_reward": 0.1145
+   }
+  },
+  "F-W32-soft-s3961": {
+   "R": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 19.2,
+    "mean_reward": 0.2291
+   },
+   "U": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 8.0,
+    "median_metres_found": 24.3,
+    "mean_reward": -0.0257
+   }
+  },
+  "F-W32-soft-s3962": {
+   "R": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.0,
+    "median_metres_found": 16.5,
+    "mean_reward": 0.1906
+   },
+   "U": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 19.2,
+    "mean_reward": 0.0488
+   }
+  },
+  "F-W32-soft-s3963": {
+   "R": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 16.5,
+    "mean_reward": 0.2013
+   },
+   "U": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7.0,
+    "median_metres_found": 21.9,
+    "mean_reward": -0.0602
+   }
+  },
+  "F-W32-set-s3961": {
+   "R": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 17.7,
+    "mean_reward": 0.2485
+   },
+   "U": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 20.7,
+    "mean_reward": 0.1376
+   }
+  },
+  "F-W32-set-s3962": {
+   "R": {
+    "n": 100,
+    "found": 98,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 19.5,
+    "mean_reward": 0.2054
+   },
+   "U": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 21.0,
+    "mean_reward": -0.0707
+   }
+  },
+  "F-W32-set-s3963": {
+   "R": {
+    "n": 100,
+    "found": 96,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 20.4,
+    "mean_reward": 0.1359
+   },
+   "U": {
+    "n": 100,
+    "found": 98,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 21.9,
+    "mean_reward": 0.0137
+   }
+  }
+ },
+ "choice": {
+  "mean_selection_R": {
+   "hard": 0.2125,
+   "soft": 0.207,
+   "set": 0.1966
+  },
+  "chosen_loss": "hard",
+  "chosen_clone": "F-W32-hard-s3961",
+  "hard_clone": "F-W32-hard-s3961"
+ },
+ "held_near_mean": {
+  "hard": 0.6201,
+  "soft": 0.6388,
+  "set": 0.6229
+ },
+ "diag": {
+  "F-pool-W32 (3.111)": {
+   "R": {
+    "n": 196,
+    "found": 195,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 17.4,
+    "mean_reward": 0.6041,
+    "choices": 1120,
+    "near_1m": 0.3411,
+    "mean_regret_m": 4.263
+   },
+   "U": {
+    "n": 200,
+    "found": 194,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 22.8,
+    "mean_reward": 0.3555,
+    "choices": 1739,
+    "near_1m": 0.2875,
+    "mean_regret_m": 6.736
+   }
+  }
+ }
+}

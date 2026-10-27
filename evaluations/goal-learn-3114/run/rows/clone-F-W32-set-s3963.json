@@ -1,0 +1,10 @@
+{
+ "arm": "F-W32-set-s3963",
+ "loss": "set",
+ "seed": 3963,
+ "n_train": 37064,
+ "n_held": 609,
+ "held_exact": 0.3892,
+ "held_near_1m": 0.6174,
+ "held_out_agreement": 0.3892
+}

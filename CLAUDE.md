@@ -925,6 +925,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   fact adds +4.4 points (bar 10). Choosers agree with the oracle on 16-20%
   of their own choices vs 42-45% on its. PPO's workers grew ~40 MB an
   iteration each (fixed by 3.113).
+  **3.114 (2026-10-27, records only):** W32's clone with the near ties
+  labelled as ties (a soft target, or any near-best pick counted right),
+  three seeds each: near agreement 62.0% (hard) -> 63.9% (soft), bar +5
+  points: FAILED; hard also drove best on the selection houses (R 0.213 vs
+  0.207 / 0.197), so no PPO run. Not labels: DAgger on the learner's
+  states or richer facts is next.
 * **Harness missions collect their cycles (3.113), merged 2026-10-27.**
   `evaluations/goal-learn-396/train.py` `mission()` runs `gc.collect()` in
   a `finally` (a mission's runner, agent and house are reference cycles);
