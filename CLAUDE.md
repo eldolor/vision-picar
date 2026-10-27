@@ -921,8 +921,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   do not memorise (gap <= 3.3 points); **78% of held-out choices are
   near ties** (another candidate within 1 m); a ground-truth `target_room`
   fact adds +4.4 points (bar 10). Choosers agree with the oracle on 16-20%
-  of their own choices vs 42-45% on its. PPO's workers grow ~40 MB an
-  iteration each: 10 workers fill this desktop by iteration ~95.
+  of their own choices vs 42-45% on its. PPO's workers grew ~40 MB an
+  iteration each (fixed by 3.113).
+* **Harness missions collect their cycles (3.113), merged 2026-10-27.**
+  `evaluations/goal-learn-396/train.py` `mission()` runs `gc.collect()` in
+  a `finally` (a mission's runner, agent and house are reference cycles);
+  a pool worker `gc.freeze()`s once per new house file. A PPO worker:
+  +1 MB over 300 missions, was +220. Do not move the collection back into
+  `_job`: `c.py`, `wired.py` and later harnesses call `mission()` directly.
 * **Explore's in-sight livelock bounded (3.106), merged 2026-10-26**
   (3.96 criterion 5's house `train:1395`, the user's pick): in the band, the
   target in sight, nothing to close in with (the `explore` policy's frame
