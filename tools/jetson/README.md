@@ -191,7 +191,7 @@ systemd units start the stack at boot and restart it when it stops.
 |---|---|---|
 | `picar-stack` | `service/tunnel/run.sh` (robot :8000, brain :8001, proxy :8080), sim mode | `~/.vision-picar-tunnel.log` |
 | `picar-ngrok` | `ngrok start picar` -> the public URL | `~/.vision-picar-ngrok.log` |
-| `picar-local-vlm` | `service/local_vlm` (3.80.B): Qwen2.5-VL-3B (3.78's VE) under TensorRT Edge-LLM on 127.0.0.1:8005; **installed, not enabled at boot** | `~/.vision-picar-local-vlm.log` |
+| `picar-local-vlm` | `service/local_vlm` (3.80.B): Qwen2.5-VL-3B (3.78's VE) under TensorRT Edge-LLM on 127.0.0.1:8005; **enabled at boot since 3.108**; `picar-stack` sets `LOCAL_VLM_URL` so the brain asks it | `~/.vision-picar-local-vlm.log` |
 
 `picar-local-vlm` holds about 4 GB while it runs and is the first process
 the kernel kills (`OOMScoreAdjust=1000`; `picar-stack` is -900). It reads
@@ -240,14 +240,13 @@ Jetson's starts, or one of them fails with ERR_NGROK_334.
 git push jetson origin/dev:refs/heads/dev                     # on the Mac
 ssh picar-jetson 'cd ~/vision-picar-service && git checkout -q --detach dev \
   && .venv/bin/pip install -q -r requirements.txt && bash tools/jetson/install_services.sh \
-  && sudo systemctl restart picar-stack \
-  && { ! systemctl is-active -q picar-local-vlm || sudo systemctl restart picar-local-vlm; }'
+  && sudo systemctl restart picar-local-vlm picar-stack'
 curl -s https://<domain>/brain/health    # git_revision is the new commit
 ```
 
 `install_services.sh` again so a changed unit file is applied (3.76 P1: the
-restart alone kept the old units), and the local VLM restarted only if it
-was running -- it is installed but not enabled.
+restart alone kept the old units). Since 3.108 the local VLM is enabled at
+boot and restarted with the stack.
 
 `run.sh` exits when any one of its servers does (3.71), so systemd restarts
 the whole set after a crash.

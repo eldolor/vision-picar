@@ -5,8 +5,8 @@
 #
 #   picar-stack   service/tunnel/run.sh -- robot server, brain, proxy (:8080)
 #   picar-ngrok   `ngrok start picar`, the public URL the deployed twin uses
-#   picar-local-vlm   service/local_vlm (3.80.B) -- installed, NOT enabled:
-#                 `sudo systemctl start picar-local-vlm` when it is wanted.
+#   picar-local-vlm   service/local_vlm (3.80.B): enabled at boot since 3.108
+#                 (the user, 2026-10-26); picar-stack points the brain at it.
 #                 Needs ~/.vision-picar-local-vlm.env (README.md section 5).
 #
 # Run ON the Jetson, from the service worktree:
@@ -20,6 +20,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 [ -f "$HOME/.vision-picar-local-secrets" ] || { echo "missing ~/.vision-picar-local-secrets"; exit 1; }
+[ -f "$HOME/.vision-picar-local-vlm.env" ] || { echo "missing ~/.vision-picar-local-vlm.env"; exit 1; }
 command -v ngrok >/dev/null || { echo "ngrok is not installed"; exit 1; }
 ngrok config check >/dev/null
 
@@ -27,11 +28,11 @@ for unit in picar-stack picar-ngrok picar-local-vlm; do
   sudo install -m 644 "$HERE/systemd/$unit.service" "/etc/systemd/system/$unit.service"
 done
 sudo systemctl daemon-reload
-sudo systemctl enable picar-stack.service picar-ngrok.service
-sudo systemctl restart picar-stack.service picar-ngrok.service
+sudo systemctl enable picar-local-vlm.service picar-stack.service picar-ngrok.service
+sudo systemctl restart picar-local-vlm.service picar-stack.service picar-ngrok.service
 for _ in $(seq 1 60); do
   curl -sf -m 3 http://127.0.0.1:8080/brain/health >/dev/null && break
   sleep 1
 done
-systemctl is-active picar-stack.service picar-ngrok.service
+systemctl is-active picar-local-vlm.service picar-stack.service picar-ngrok.service
 curl -s -m 5 http://127.0.0.1:8080/brain/health | head -c 160; echo
