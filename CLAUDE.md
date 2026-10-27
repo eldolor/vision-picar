@@ -755,9 +755,11 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   not enter the just-re-mapped room), D4-b (harness) and D4-d FAILED.
   The bridge's `ready` before nav2 was active is fixed by 3.105 (below).
   **D4b (merged and the twin deployed
-  2026-10-26):** the Sim tab's "Re-map now" under a SLAM map -- two taps, a
-  person's `POST /world/remap`, the server's answer toasted (the page cannot
-  see `slam.state`); five review rounds. Next: D5 sightings; D6 (S3) asks
+  2026-10-26; open until it re-maps on the Rover, the user 2026-10-27):** the
+  Sim tab's "Re-map now" under a SLAM map -- two taps, a person's
+  `POST /world/remap`, the server's answer toasted (the page cannot see
+  `slam.state`); five review rounds. The Jetson's stack runs teleop (no
+  map), so nothing shows it before the Rover. Next: D5 sightings; D6 (S3) asks
   first. Maps are a home's floor plan:
   never commit or upload one unasked.
 * **Goals wait for nav2 (3.105), merged 2026-10-26.** The bridge asks
