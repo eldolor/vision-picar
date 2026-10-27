@@ -73,7 +73,8 @@ def use_data(upto: int) -> None:
 
     def load_choices(shards, kind):
         got = tie.load_choices(shards, kind)
-        return got if any(HELD in p for p in shards) else got + extra
+        held = any(os.path.basename(os.path.dirname(os.path.abspath(p))) == HELD for p in shards)
+        return got if held else got + extra
     T.load_choices = load_choices
 
 
@@ -125,7 +126,7 @@ def select(k: int, ex) -> dict:
 
 def kept(log: dict) -> int:
     """The round with the best mode-R selection reward; a tie keeps the earlier."""
-    return max(sorted(int(k) for k in log), key=lambda k: log[str(k)]["selection"]["R"]["mean_reward"])
+    return max(sorted(int(k) for k in log), key=lambda k: T._reward(log[str(k)]["selection"]))   # None: the worst
 
 
 def cmd_rounds() -> None:
@@ -160,7 +161,9 @@ def cmd_check() -> None:
             continue
         for p, q in zip(a["choices"], b["choices"]):
             n += 1
-            if q["X"].shape[1] != len(LEAN.LEAN_COLS) or not np.allclose(p["X"][:, LEAN.LEAN_COLS], q["X"]):
+            if (q["X"].shape != (len(p["X"]), len(LEAN.LEAN_COLS)) or p["oracle"] != q["oracle"]
+                    or not np.array_equal(p["costs"], q["costs"])
+                    or not np.allclose(p["X"][:, LEAN.LEAN_COLS], q["X"])):
                 bad.append((a["index"], a["mode"], "facts"))
     out = {"missions": len(jobs), "choices": n, "differences": len(bad), "first": bad[:5]}
     print(json.dumps(out), flush=True)
@@ -174,6 +177,8 @@ def cmd_diag() -> None:
     k = kept(log)
     todo = [(f"kept-r{k}", ("greedy_log", "F", C._jsonable(_params(k))))]
     if os.path.exists(os.path.join(RUN, "ppo", "best.json")):
+        if json.load(open(os.path.join(RUN, "ppo", "from.json"))) != k:
+            raise SystemExit(f"run/ppo did not start from the kept round {k}")
         todo.append(("ppo", ("greedy_log", "F", json.load(open(os.path.join(RUN, "ppo", "best.json")))["params"])))
     hs = C.diag_houses()
     with ProcessPoolExecutor(T.WORKERS) as ex:
@@ -235,15 +240,19 @@ def cmd_report() -> dict:
         rep["2_kept_minus_clone_U"] = boot(kc["U"], w32c["U"])
         crit["2_clone_drives_better"] = rep["2_kept_minus_clone_R"]["ci95"][0] > 0
         rep["kept_minus_W32_best_R"] = boot(kc["R"], w32["R"])
+        rep["kept_minus_W32_best_U"] = boot(kc["U"], w32["U"])
     if k == 0:
         crit["3_survives_ppo"] = False         # not run: DAgger did not help on the selection houses
-    elif "ppo" in diag:
+    elif "ppo" not in diag:
+        crit["3_survives_ppo"] = None          # not yet: PPO or its diagnostic drives still to run
+    else:
         rep["3_ppo_minus_W32_R"] = boot(diag["ppo"]["R"], w32["R"])
         rep["3_ppo_minus_W32_U"] = boot(diag["ppo"]["U"], w32["U"])
         crit["3_survives_ppo"] = (rep["3_ppo_minus_W32_R"]["ci95"][0] > 0
                                   and rep["3_ppo_minus_W32_U"]["ci95"][0] > -0.05)
         b = json.load(open(os.path.join(RUN, "ppo", "best.json")))
-        rep["ppo"] = {"best_it": b["best_it"], "best_selection": b["best_selection"],
+        rep["ppo"] = {"from_round": json.load(open(os.path.join(RUN, "ppo", "from.json"))),
+                      "best_it": b["best_it"], "best_selection": b["best_selection"],
                       "selection_R": [(s["it"], s["R"]["mean_reward"]) for s in b["log"]["selection"]]}
     T.save_atomic(os.path.join(ROWS, "report.json"), lambda p: json.dump(rep, open(p, "w"), indent=1))
     print(json.dumps({x: v for x, v in rep.items() if x != "rounds"}, indent=1))
