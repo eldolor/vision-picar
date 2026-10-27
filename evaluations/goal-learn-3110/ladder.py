@@ -36,7 +36,7 @@ B_CHOICES = {"n_train": 37064, "n_held": 609}
 
 
 def cols(k: int) -> list:
-    from rich import RICH_FEATURES
+    from lean import RICH_FEATURES    # 3.101's, as lean.py imported it
     assert sorted(ORDER) == sorted(RICH_FEATURES), "ORDER must be 3.101's 25 new facts"
     return list(range(17)) + [17 + RICH_FEATURES.index(f) for f in ORDER[:k]]
 
@@ -46,8 +46,18 @@ def arm(k: int, seed: int) -> str:
 
 
 def one(k: int, seed: int, root: str) -> None:
+    # A pip `rich` already imported (httpx's command line) shadows 3.101's
+    # rich.py that lean.py imports: set it aside while 3.101's loads.
+    try:
+        import httpx  # noqa: F401
+    except ImportError:
+        pass
+    pip_rich = {k: sys.modules.pop(k) for k in list(sys.modules) if k == "rich" or k.startswith("rich.")}
+    import run as B                   # 3.103.B's first: lean's path edits put 3.101's run.py ahead
     import lean
-    import run as B                   # 3.103.B's: 3.96's trainer, path set up
+    sys.modules.pop("rich", None)
+    sys.modules.update(pip_rich)
+    assert hasattr(B, "_load_choices"), B.__file__
     T = B.T
     c = cols(k)
     lean.N_FEAT = len(c)              # read by make_torch_net's Net at construction
