@@ -68,16 +68,22 @@ teardown() {
   pids="$(for p in 8000 8001 8002 8003 8004 8080; do lsof -nP -tiTCP:$p -sTCP:LISTEN; done)"
   [ -n "$pids" ] && kill -9 $pids 2>/dev/null
   sudo systemctl isolate graphical.target
-  # The production VLM as found (round 1: installed, not enabled -- stopped
-  # here, nothing started it again, and identity fell to the cloud).
+  # The production VLM as found (round 1: stopped here, nothing started it
+  # again, and identity fell to the cloud). Unmasked after the isolate, so the
+  # isolate does not start it (3.108: it is enabled).
+  sudo systemctl unmask --runtime picar-local-vlm >/dev/null 2>&1
   case "$VLM_WAS" in active|activating) sudo systemctl start picar-local-vlm;; esac
   echo "== torn down; desktop: $(systemctl is-active gdm)" | tee -a "$OUT/run.log"
 }
 PERC=; MEM=; WHL=; NAV=
-# Read before the isolate, which itself stops a unit that is not enabled.
+# Read before the isolate, which stops a unit that is not enabled and
+# (3.108) would start one that is.
 VLM_WAS=$(systemctl is-active picar-local-vlm 2>/dev/null)
 trap teardown EXIT
 
+# 3.108: the VLM is enabled at boot, so an isolate would start it: mask it
+# for the run (runtime only, undone at teardown or a reboot).
+sudo systemctl stop picar-local-vlm 2>/dev/null; sudo systemctl mask --runtime picar-local-vlm >/dev/null 2>&1
 sudo systemctl isolate multi-user.target; sleep 5
 # The production VLM too (3.76 P1): once enabled, multi-user starts it, and
 # the run would carry a second 4 GB model.

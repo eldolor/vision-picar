@@ -104,13 +104,16 @@ teardown() {
     kill -9 "$VLMP" 2>/dev/null
   fi
   sudo systemctl isolate graphical.target
-  # The production VLM as found (round 1: installed, not enabled -- stopped
-  # here, nothing started it again, and identity fell to the cloud).
+  # The production VLM as found (round 1: stopped here, nothing started it
+  # again, and identity fell to the cloud). Unmasked after the isolate, so the
+  # isolate does not start it (3.108: it is enabled).
+  sudo systemctl unmask --runtime picar-local-vlm >/dev/null 2>&1
   case "$VLM_WAS" in active|activating) sudo systemctl start picar-local-vlm;; esac
   echo "== torn down; desktop: $(systemctl is-active gdm)" | tee -a "$OUT/run.log"
 }
 PERC=; MEM=; WHL=; NAV=; VLMP=; CLD=; DRL=
-# Read before the isolate, which itself stops a unit that is not enabled.
+# Read before the isolate, which stops a unit that is not enabled and
+# (3.108) would start one that is.
 VLM_WAS=$(systemctl is-active picar-local-vlm 2>/dev/null)
 trap teardown EXIT
 
@@ -118,6 +121,9 @@ case "${DRILL:-}" in
   ""|kill:[0-9]*|oom:[0-9]*) ;;
   *) echo "STOP: DRILL must be kill:<s> or oom:<s>, got '$DRILL'"; exit 2;;
 esac
+# 3.108: the VLM is enabled at boot, so an isolate would start it: mask it
+# for the run (runtime only, undone at teardown or a reboot).
+sudo systemctl stop picar-local-vlm 2>/dev/null; sudo systemctl mask --runtime picar-local-vlm >/dev/null 2>&1
 sudo systemctl isolate multi-user.target; sleep 5
 sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3
 { echo "== desktop: $(systemctl is-active gdm); twin units: $(systemctl is-active picar-stack) $(systemctl is-active picar-ngrok); runtime $RUNTIME"

@@ -184,8 +184,8 @@ processing frames. It passes when all three hold:
 
 ## 5. The robot server, brain and tunnel as services (3.71)
 
-Since 2026-10-11 the Jetson, not the laptop, serves the deployed twin: two
-systemd units start the stack at boot and restart it when it stops.
+Since 2026-10-11 the Jetson, not the laptop, serves the deployed twin: systemd
+units start the stack at boot and restart it when it stops.
 
 | Unit | Runs | Log |
 |---|---|---|
@@ -240,13 +240,14 @@ Jetson's starts, or one of them fails with ERR_NGROK_334.
 git push jetson origin/dev:refs/heads/dev                     # on the Mac
 ssh picar-jetson 'cd ~/vision-picar-service && git checkout -q --detach dev \
   && .venv/bin/pip install -q -r requirements.txt && bash tools/jetson/install_services.sh \
-  && sudo systemctl restart picar-local-vlm picar-stack'
+  && sudo systemctl restart picar-stack'
 curl -s https://<domain>/brain/health    # git_revision is the new commit
 ```
 
 `install_services.sh` again so a changed unit file is applied (3.76 P1: the
-restart alone kept the old units). Since 3.108 the local VLM is enabled at
-boot and restarted with the stack.
+restart alone kept the old units). Since 3.108 the installer also enables
+and restarts the local VLM, so the update does not restart it again (every
+start counts against its limit of 4 in 15 min).
 
 `run.sh` exits when any one of its servers does (3.71), so systemd restarts
 the whole set after a crash.

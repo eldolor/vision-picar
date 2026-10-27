@@ -46,11 +46,15 @@ teardown() {
   sudo rm -f "$UNIT" "$ENVF"; sudo systemctl daemon-reload
   sudo systemctl isolate graphical.target; sleep 5
   sudo systemctl start picar-stack picar-ngrok
+  sudo systemctl unmask --runtime picar-local-vlm >/dev/null 2>&1
   case "$PROD_WAS" in active|activating) sudo systemctl start picar-local-vlm;; esac
   log "torn down; desktop $(systemctl is-active gdm); twin units $(systemctl is-active picar-stack) $(systemctl is-active picar-ngrok)"
 }
 trap teardown EXIT
 
+# 3.108: the VLM is enabled at boot, so an isolate would start it: mask it
+# for the run (runtime only, undone at teardown or a reboot).
+sudo systemctl stop picar-local-vlm 2>/dev/null; sudo systemctl mask --runtime picar-local-vlm >/dev/null 2>&1
 sudo systemctl isolate multi-user.target; sleep 5
 sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3
 # :8005 must be free, or the ready checks below would pass on another VLM.

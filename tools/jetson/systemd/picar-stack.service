@@ -1,14 +1,14 @@
 [Unit]
 Description=vision-picar robot server, brain and proxy (service/tunnel/run.sh)
-After=network-online.target picar-local-vlm.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 User=picar
 WorkingDirectory=/home/picar/vision-picar-service
 # 3.108 (the user, 2026-10-26): the local VLM on by default on the board.
-# After= orders the start only: a VLM that is down or killed leaves the
-# stack up, and identity goes to the cloud tier.
+# The stack does not wait for it: a VLM that is loading, down or killed
+# leaves the stack up, and the brain sends those questions to the cloud tier.
 Environment=LOCAL_VLM_URL=http://127.0.0.1:8005
 ExecStart=/bin/bash service/tunnel/run.sh
 Restart=on-failure
