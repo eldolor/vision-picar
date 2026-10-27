@@ -47,7 +47,7 @@ def test_every_call_a_mission_makes_gives_the_old_answers(house, monkeypatch):
         got = real(m, pose, goal, **kw)
         want = ref.features(m, pose, goal, **{k: v for k, v in kw.items() if k != "ctx"})
         calls[0] += 1
-        if got != want:
+        if got != want or [type(v) for v in got] != [type(v) for v in want]:
             bad.append((calls[0], goal, want, got))
         return got
     monkeypatch.setattr(E, "goal_features", check)

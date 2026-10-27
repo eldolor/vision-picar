@@ -25,6 +25,7 @@ the target is in a room of that type), trained by clone then PPO
 the brain stays light.
 """
 
+import functools
 import json
 import math
 import re
@@ -58,6 +59,7 @@ FEATURES = (
 NEAR_M = 1.0
 
 
+@functools.lru_cache(maxsize=8)
 def _disc(r: int):
     """The (dx, dy) offsets of a disc of radius r cells, as two int arrays."""
     d = np.arange(-r, r + 1)
@@ -71,18 +73,23 @@ def goal_context(m: dict, seen_cells: set = frozenset()) -> dict:
     the grid's unknown, free and free-but-unseen cells as boolean arrays,
     and the 1 m disc's offsets. 3.103 timed the per-candidate loop at
     185 ms p90 a choice on the Jetson; this makes each candidate a few array
-    lookups. The map and the seen set must not change while it is used."""
+    lookups. The map and the seen set must not change while it is used;
+    `features()` refuses a context built from other objects. (np.asarray,
+    not frontier's int8 `_grid`: any cell value compares as the loop's did.)"""
     res, w, h = m["resolution_m"], m["width"], m["height"]
     cells = np.asarray(m["cells"]).reshape(h, w)
     free = cells == CELL_FREE
     unseen = free.copy()
     if seen_cells:
-        xy = np.asarray(list(seen_cells), dtype=np.int64).reshape(-1, 2)
+        xy = np.asarray(list(seen_cells), dtype=np.int64)
+        if xy.ndim != 2 or xy.shape[1] != 2:
+            raise ValueError("seen_cells must hold (x, y) cell pairs")
         on = (xy[:, 0] >= 0) & (xy[:, 0] < w) & (xy[:, 1] >= 0) & (xy[:, 1] < h)
         unseen[xy[on, 1], xy[on, 0]] = False
     dx, dy = _disc(int(math.ceil(NEAR_M / res)))
     return {"w": w, "h": h, "unknown": cells == CELL_UNKNOWN, "free": free,
-            "unseen": unseen, "dx": dx, "dy": dy}
+            "unseen": unseen, "dx": dx, "dy": dy,
+            "cells_of": m["cells"], "seen_of": seen_cells}
 
 
 def features(m: dict, pose: dict, goal: tuple, *, kind: str, path_m: float,
@@ -100,6 +107,8 @@ def features(m: dict, pose: dict, goal: tuple, *, kind: str, path_m: float,
     turn = 0.0 if heading is None else abs((bearing - heading + 180.0) % 360.0 - 180.0)
     if ctx is None:
         ctx = goal_context(m, seen_cells)
+    elif ctx["cells_of"] is not m["cells"] or (seen_cells and ctx["seen_of"] is not seen_cells):
+        raise ValueError("ctx was built from another map or seen set")
     cx, cy = _cell_of(m, goal[0], goal[1])
     xs, ys = cx + ctx["dx"], cy + ctx["dy"]
     on = (xs >= 0) & (xs < ctx["w"]) & (ys >= 0) & (ys < ctx["h"])

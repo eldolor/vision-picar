@@ -49,7 +49,24 @@ def test_the_edges_give_the_old_answers():
             for kind in ("frontier", "view"):
                 want = ref.features(m, pose, g, kind=kind, path_m=2.0, size_m=1.0,
                                     area_m2=0.5, seen_cells=s)
-                assert features(m, pose, g, kind=kind, path_m=2.0, size_m=1.0,
-                                area_m2=0.5, seen_cells=s, ctx=ctx) == want
-                assert features(m, pose, g, kind=kind, path_m=2.0, size_m=1.0,
-                                area_m2=0.5, seen_cells=s) == want
+                for got in (features(m, pose, g, kind=kind, path_m=2.0, size_m=1.0,
+                                     area_m2=0.5, seen_cells=s, ctx=ctx),
+                            features(m, pose, g, kind=kind, path_m=2.0, size_m=1.0,
+                                     area_m2=0.5, seen_cells=s)):
+                    assert got == want
+                    assert [type(v) for v in got] == [type(v) for v in want]
+
+
+def test_a_context_from_another_map_or_seen_set_is_refused():
+    import pytest
+    m = _small_map()
+    pose = {"x_m": 0.0, "y_m": 1.0, "heading_deg": 0.0}
+    seen = {(1, 1)}
+    ctx = goal_context(m, seen)
+    other = {**m, "cells": list(m["cells"])}
+    with pytest.raises(ValueError):
+        features(other, pose, (0.0, 1.0), kind="frontier", path_m=1.0, seen_cells=seen, ctx=ctx)
+    with pytest.raises(ValueError):
+        features(m, pose, (0.0, 1.0), kind="frontier", path_m=1.0, seen_cells={(2, 2)}, ctx=ctx)
+    with pytest.raises(ValueError):
+        goal_context(m, {(1, 2, 3)})
