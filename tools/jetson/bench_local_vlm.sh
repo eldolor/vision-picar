@@ -17,6 +17,7 @@
 set -uo pipefail
 # 3.93: not under another session's hold on the board
 source "$(dirname "${BASH_SOURCE[0]}")/board_lock_check.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/vlm_hold.sh"   # 3.108: the VLM is enabled at boot
 OUT="${1:?out dir}"; mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"   # absolute: systemd needs it
 HERE="$(pwd)"
 ENGINES="${ENGINES:-$HOME/bench-378/ws91/q25VE/engines}"
@@ -29,7 +30,6 @@ export APP_SHARED_SECRET="$LOCAL_SECRET"
 SVC=picar-local-vlm-bench
 ENVF=$HOME/.vision-picar-local-vlm-bench.env
 UNIT=/etc/systemd/system/$SVC.service
-PROD_WAS=$(systemctl is-active picar-local-vlm 2>/dev/null)
 memkb() { awk '/MemAvailable/{print $2}' /proc/meminfo; }
 log() { echo "== $*" | tee -a "$OUT/run.log"; }
 health() { curl -s -m 2 localhost:8005/health; }
@@ -46,15 +46,12 @@ teardown() {
   sudo rm -f "$UNIT" "$ENVF"; sudo systemctl daemon-reload
   sudo systemctl isolate graphical.target; sleep 5
   sudo systemctl start picar-stack picar-ngrok
-  sudo systemctl unmask --runtime picar-local-vlm >/dev/null 2>&1
-  case "$PROD_WAS" in active|activating) sudo systemctl start picar-local-vlm;; esac
+  vlm_restore                          # after the isolate (3.108)
   log "torn down; desktop $(systemctl is-active gdm); twin units $(systemctl is-active picar-stack) $(systemctl is-active picar-ngrok)"
 }
 trap teardown EXIT
+vlm_hold                               # before the isolate, which would start it (3.108)
 
-# 3.108: the VLM is enabled at boot, so an isolate would start it: mask it
-# for the run (runtime only, undone at teardown or a reboot).
-sudo systemctl stop picar-local-vlm 2>/dev/null; sudo systemctl mask --runtime picar-local-vlm >/dev/null 2>&1
 sudo systemctl isolate multi-user.target; sleep 5
 sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3
 # :8005 must be free, or the ready checks below would pass on another VLM.

@@ -239,14 +239,13 @@ Jetson's starts, or one of them fails with ERR_NGROK_334.
 ```bash
 git push jetson origin/dev:refs/heads/dev                     # on the Mac
 ssh picar-jetson 'cd ~/vision-picar-service && git checkout -q --detach dev \
-  && .venv/bin/pip install -q -r requirements.txt && bash tools/jetson/install_services.sh \
-  && sudo systemctl restart picar-stack'
+  && .venv/bin/pip install -q -r requirements.txt && bash tools/jetson/install_services.sh'
 curl -s https://<domain>/brain/health    # git_revision is the new commit
 ```
 
 `install_services.sh` again so a changed unit file is applied (3.76 P1: the
-restart alone kept the old units). Since 3.108 the installer also enables
-and restarts the local VLM, so the update does not restart it again (every
+restart alone kept the old units); it restarts the stack, the tunnel and,
+since 3.108, the local VLM, so the update restarts nothing again (each VLM
 start counts against its limit of 4 in 15 min).
 
 `run.sh` exits when any one of its servers does (3.71), so systemd restarts

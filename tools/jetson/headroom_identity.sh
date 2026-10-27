@@ -32,6 +32,7 @@
 set -uo pipefail
 # 3.93: not under another session's hold on the board
 source "$(dirname "${BASH_SOURCE[0]}")/board_lock_check.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/vlm_hold.sh"   # 3.108: the VLM is enabled at boot
 OUT="${1:?out dir}"; mkdir -p "$OUT"
 IMAGE="${IMAGE:-vision-picar-ros:plan-3.58}"
 NAME="${NAME:-picar-ros-358}"
@@ -69,21 +70,15 @@ teardown() {
   [ -n "$pids" ] && kill -9 $pids 2>/dev/null
   sudo systemctl isolate graphical.target
   # The production VLM as found (round 1: stopped here, nothing started it
-  # again, and identity fell to the cloud). Unmasked after the isolate, so the
-  # isolate does not start it (3.108: it is enabled).
-  sudo systemctl unmask --runtime picar-local-vlm >/dev/null 2>&1
-  case "$VLM_WAS" in active|activating) sudo systemctl start picar-local-vlm;; esac
+  # again, and identity fell to the cloud); after the isolate (3.108).
+  vlm_restore | tee -a "$OUT/run.log"
   echo "== torn down; desktop: $(systemctl is-active gdm)" | tee -a "$OUT/run.log"
 }
 PERC=; MEM=; WHL=; NAV=
-# Read before the isolate, which stops a unit that is not enabled and
-# (3.108) would start one that is.
-VLM_WAS=$(systemctl is-active picar-local-vlm 2>/dev/null)
+# Before the isolate, which would start the VLM now that it is enabled (3.108).
+vlm_hold                     # not in a pipeline: it sets VLM_WAS and VLM_ENABLED here
 trap teardown EXIT
 
-# 3.108: the VLM is enabled at boot, so an isolate would start it: mask it
-# for the run (runtime only, undone at teardown or a reboot).
-sudo systemctl stop picar-local-vlm 2>/dev/null; sudo systemctl mask --runtime picar-local-vlm >/dev/null 2>&1
 sudo systemctl isolate multi-user.target; sleep 5
 # The production VLM too (3.76 P1): once enabled, multi-user starts it, and
 # the run would carry a second 4 GB model.

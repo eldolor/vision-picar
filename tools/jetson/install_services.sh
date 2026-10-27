@@ -31,12 +31,15 @@ sudo systemctl enable picar-stack.service picar-ngrok.service
 sudo systemctl restart picar-stack.service picar-ngrok.service
 # The local VLM (3.108): enabled and restarted on its own, so a VLM problem
 # never fails the stack's install; without its env file it is left alone.
+# Its start limit (4 in 15 min) is left as it is: a VLM it has stopped stays
+# stopped until `sudo systemctl reset-failed picar-local-vlm` by hand.
 if [ -f "$HOME/.vision-picar-local-vlm.env" ]; then
-  sudo systemctl enable picar-local-vlm.service
-  sudo systemctl reset-failed picar-local-vlm.service 2>/dev/null || true
+  sudo systemctl enable picar-local-vlm.service || echo "WARNING: picar-local-vlm not enabled"
   sudo systemctl restart picar-local-vlm.service || echo "WARNING: picar-local-vlm did not restart"
 else
-  echo "WARNING: no ~/.vision-picar-local-vlm.env -- picar-local-vlm not enabled (README section 5)"
+  sudo systemctl disable --now picar-local-vlm.service 2>/dev/null || true
+  echo "WARNING: no ~/.vision-picar-local-vlm.env -- picar-local-vlm disabled (README section 5);" \
+       "the brain's local questions go to the cloud"
 fi
 for _ in $(seq 1 60); do
   curl -sf -m 3 http://127.0.0.1:8080/brain/health >/dev/null && break
