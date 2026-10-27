@@ -278,7 +278,9 @@ def test_a_nested_hold_leaves_the_outer_benchs_flag(tmp_path):
     cleared the shared flag at its exit."""
     live = subprocess.Popen(["sleep", "30"])
     try:
-        r, state, flag, calls = _hold(tmp_path, "inactive", "vlm_hold; vlm_restore", flag=str(live.pid))
+        stat = Path(f"/proc/{live.pid}/stat").read_text()
+        stamp = f"{live.pid} {stat.rsplit(')', 1)[1].split()[19]}"
+        r, state, flag, calls = _hold(tmp_path, "inactive", "vlm_hold; vlm_restore", flag=stamp)
     finally:
         live.kill()
     assert r.returncode == 0 and flag and calls == [] and "the bench that called" in r.stdout
@@ -287,9 +289,21 @@ def test_a_nested_hold_leaves_the_outer_benchs_flag(tmp_path):
 def test_a_stale_hold_is_taken_over_and_cleared(tmp_path):
     """Round 5: a flag left by a killed bench read as a caller's, so the
     next bench never cleared it and the VLM stayed off until a reboot."""
-    r, state, flag, calls = _hold(tmp_path, "active", "vlm_hold; vlm_restore", flag="999999999")
+    # Stopped by the stale flag, enabled: put back running at the end.
+    r, state, flag, calls = _hold(tmp_path, "inactive", "vlm_hold; vlm_restore", flag="999999999 1")
     assert r.returncode == 0 and "stale" in r.stdout
     assert not flag and state == "active" and calls == ["reset", "start"]
+
+
+def test_a_reused_pid_does_not_read_as_the_owner(tmp_path):
+    """Round 6: a live process that only shares the dead owner's pid kept a
+    stale flag for good. The flag carries the owner's start time too."""
+    live = subprocess.Popen(["sleep", "30"])
+    try:
+        r, state, flag, calls = _hold(tmp_path, "inactive", "vlm_hold; vlm_restore", flag=f"{live.pid} 1")
+    finally:
+        live.kill()
+    assert "stale" in r.stdout and not flag
 
 
 def test_a_hold_that_cannot_set_its_flag_stops_nothing(tmp_path):
@@ -329,7 +343,7 @@ def test_the_installer_checks_the_lock_and_starts_the_vlm_after_the_stack():
     assert 'source "$HERE/board_lock_check.sh"' in code
     assert code.index("brain/health >/dev/null && break") < code.index("restart picar-local-vlm")
     assert "reset-failed" not in code
-    assert "rm -f /run/picar-vlm-hold" in code
+    assert 'sudo rm -f "$VLM_HOLD_FLAG"' in code and "vlm_owner_alive" in code
 
 
 def test_a_refused_hold_exits_without_the_teardown():

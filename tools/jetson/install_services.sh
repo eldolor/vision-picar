@@ -41,17 +41,21 @@ done
 # install; without its env file it is disabled.
 # Its start limit (4 in 15 min) is left as it is: a VLM it has stopped stays
 # stopped until `sudo systemctl reset-failed picar-local-vlm` by hand.
-# A hold flag left by a bench that died (board_lock_check above: no bench
-# holds the board now) would skip the start without a word.
-if [ -e /run/picar-vlm-hold ]; then
-  hold_pid=$(cat /run/picar-vlm-hold 2>/dev/null || true)
-  if [ -n "$hold_pid" ] && kill -0 "$hold_pid" 2>/dev/null; then
-    echo "WARNING: a bench (pid $hold_pid) holds the VLM off -- not restarting it"
+# A hold flag ("<pid> <start time>") whose bench is gone would skip the start
+# without a word; one whose bench is alive is left, and the VLM with it.
+source "$HERE/vlm_hold.sh"
+VLM_HELD_BY_BENCH=
+if [ -e "$VLM_HOLD_FLAG" ]; then
+  if vlm_owner_alive; then
+    VLM_HELD_BY_BENCH=1
+    echo "WARNING: a bench ($(cat "$VLM_HOLD_FLAG")) holds the VLM off -- leaving it"
   else
-    echo "WARNING: clearing a stale /run/picar-vlm-hold"; sudo rm -f /run/picar-vlm-hold
+    echo "WARNING: clearing a stale $VLM_HOLD_FLAG"; sudo rm -f "$VLM_HOLD_FLAG"
   fi
 fi
-if [ -f "$HOME/.vision-picar-local-vlm.env" ]; then
+if [ -n "$VLM_HELD_BY_BENCH" ]; then
+  :
+elif [ -f "$HOME/.vision-picar-local-vlm.env" ]; then
   sudo systemctl enable picar-local-vlm.service || echo "WARNING: picar-local-vlm not enabled"
   sudo systemctl restart picar-local-vlm.service || echo "WARNING: picar-local-vlm did not restart"
 else
