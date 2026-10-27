@@ -1,0 +1,14 @@
+{
+ "window_s": 389,
+ "mem_available_min_mb": 832,
+ "mem_samples": 387,
+ "oom_events": 0,
+ "wheel_moving_ticks": 6842,
+ "wheel_late_ticks": 0,
+ "wheel_max_dt_since_start_s": 0.0774,
+ "perception_frames": 1551,
+ "perception_p90_ms": 185,
+ "nav": "goals 19/19 succeeded",
+ "max_temp_c": 64.437,
+ "throttle_lines": 0
+}

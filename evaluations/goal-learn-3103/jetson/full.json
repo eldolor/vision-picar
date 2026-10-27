@@ -1,0 +1,61 @@
+{
+ "label": "full",
+ "host": "picar-jetson",
+ "machine": "aarch64",
+ "start_unix": 1793058942,
+ "end_unix": 1793059090,
+ "loadavg": [
+  5.30810546875,
+  3.36962890625,
+  1.6318359375
+ ],
+ "poses": 120,
+ "candidates_median": 85.0,
+ "whole_choice": {
+  "F-large": {
+   "choices": 120,
+   "p50_ms": 294.95,
+   "p90_ms": 325.88,
+   "max_ms": 434.77
+  },
+  "F-lean": {
+   "choices": 120,
+   "p50_ms": 308.06,
+   "p90_ms": 340.1,
+   "max_ms": 408.61
+  },
+  "F-pool-W32": {
+   "choices": 120,
+   "p50_ms": 308.58,
+   "p90_ms": 341.18,
+   "max_ms": 491.44
+  }
+ },
+ "F-pool-W32_parts": {
+  "map_work": {
+   "p50_ms": 71.92,
+   "p90_ms": 95.54,
+   "max_ms": 155.98
+  },
+  "ten_facts": {
+   "p50_ms": 176.26,
+   "p90_ms": 187.43,
+   "max_ms": 234.87
+  },
+  "room_facts": {
+   "p50_ms": 41.23,
+   "p90_ms": 43.09,
+   "max_ms": 51.04
+  },
+  "lidar_gain": {
+   "p50_ms": 13.05,
+   "p90_ms": 13.34,
+   "max_ms": 16.62
+  },
+  "network": {
+   "p50_ms": 1.2,
+   "p90_ms": 1.78,
+   "max_ms": 2.56
+  }
+ }
+}

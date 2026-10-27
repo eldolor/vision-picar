@@ -894,7 +894,11 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   F-rich, the least driving of any learned arm (median 13.8 m), choice
   time F-lean's (90.5 ms p90). Every chooser since 3.96 lands at
   0.55-0.56, ~0.22 under the oracle, whatever its facts, shape or pool
-  attention: the facts are the limit. Section closed.
+  attention: the facts are the limit. Section closed. On the Jetson at
+  15 W with the full stack (nav2, YOLOE + CLIP, Qwen VE) every arm's whole
+  choice is 326-341 ms p90 (bar 100; quiet 316-331, F-large reproducing
+  3.96's 313): over half is the ten 3.65 facts' Python loop (185 ms), the
+  network 1-2 ms at any width; numpy for `features()` is the first fix.
 * **Explore's in-sight livelock bounded (3.106), merged 2026-10-26**
   (3.96 criterion 5's house `train:1395`, the user's pick): in the band, the
   target in sight, nothing to close in with (the `explore` policy's frame
