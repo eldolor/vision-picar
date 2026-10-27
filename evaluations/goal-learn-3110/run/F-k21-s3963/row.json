@@ -1,0 +1,11 @@
+{
+ "k": 21,
+ "facts": 38,
+ "seed": 3963,
+ "added": "room_degree",
+ "held_out_agreement": 0.4516,
+ "net_inputs": 38,
+ "n_train": 37064,
+ "n_held": 609,
+ "counts_as_B": true
+}

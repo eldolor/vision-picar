@@ -1,0 +1,11 @@
+{
+ "k": 1,
+ "facts": 18,
+ "seed": 3961,
+ "added": "lidar_gain",
+ "held_out_agreement": 0.3744,
+ "net_inputs": 18,
+ "n_train": 37064,
+ "n_held": 609,
+ "counts_as_B": true
+}

@@ -1,0 +1,245 @@
+{
+ "curve": [
+  {
+   "k": 0,
+   "facts": 17,
+   "added": null,
+   "mean": 33.66,
+   "min": 32.68,
+   "max": 34.65,
+   "seeds": 3
+  },
+  {
+   "k": 1,
+   "facts": 18,
+   "added": "lidar_gain",
+   "mean": 37.44,
+   "min": 37.11,
+   "max": 37.77,
+   "seeds": 3
+  },
+  {
+   "k": 2,
+   "facts": 19,
+   "added": "since_new_ground",
+   "mean": 39.46,
+   "min": 38.92,
+   "max": 39.9,
+   "seeds": 3
+  },
+  {
+   "k": 3,
+   "facts": 20,
+   "added": "pool_size",
+   "mean": 39.79,
+   "min": 39.24,
+   "max": 40.23,
+   "seeds": 3
+  },
+  {
+   "k": 4,
+   "facts": 21,
+   "added": "time_used",
+   "mean": 40.89,
+   "min": 40.07,
+   "max": 41.87,
+   "seeds": 3
+  },
+  {
+   "k": 5,
+   "facts": 22,
+   "added": "gain_rank",
+   "mean": 39.85,
+   "min": 39.08,
+   "max": 40.89,
+   "seeds": 3
+  },
+  {
+   "k": 6,
+   "facts": 23,
+   "added": "path_rank",
+   "mean": 39.57,
+   "min": 39.24,
+   "max": 39.9,
+   "seeds": 3
+  },
+  {
+   "k": 7,
+   "facts": 24,
+   "added": "trail_near",
+   "mean": 42.09,
+   "min": 41.54,
+   "max": 42.53,
+   "seeds": 3
+  },
+  {
+   "k": 8,
+   "facts": 25,
+   "added": "room_seen",
+   "mean": 42.37,
+   "min": 42.04,
+   "max": 42.86,
+   "seeds": 3
+  },
+  {
+   "k": 9,
+   "facts": 26,
+   "added": "path_gap",
+   "mean": 42.14,
+   "min": 41.87,
+   "max": 42.36,
+   "seeds": 3
+  },
+  {
+   "k": 10,
+   "facts": 27,
+   "added": "unknown_4m",
+   "mean": 42.69,
+   "min": 42.36,
+   "max": 43.02,
+   "seeds": 3
+  },
+  {
+   "k": 11,
+   "facts": 28,
+   "added": "cluster_2m",
+   "mean": 42.37,
+   "min": 42.04,
+   "max": 42.86,
+   "seeds": 3
+  },
+  {
+   "k": 12,
+   "facts": 29,
+   "added": "trail_min",
+   "mean": 42.31,
+   "min": 41.38,
+   "max": 43.51,
+   "seeds": 3
+  },
+  {
+   "k": 13,
+   "facts": 30,
+   "added": "unknown_2m",
+   "mean": 42.47,
+   "min": 42.2,
+   "max": 42.69,
+   "seeds": 3
+  },
+  {
+   "k": 14,
+   "facts": 31,
+   "added": "cam_gain",
+   "mean": 42.64,
+   "min": 41.71,
+   "max": 43.51,
+   "seeds": 3
+  },
+  {
+   "k": 15,
+   "facts": 32,
+   "added": "known_share",
+   "mean": 42.97,
+   "min": 42.53,
+   "max": 43.68,
+   "seeds": 3
+  },
+  {
+   "k": 16,
+   "facts": 33,
+   "added": "room_hops",
+   "mean": 43.02,
+   "min": 42.04,
+   "max": 44.17,
+   "seeds": 3
+  },
+  {
+   "k": 17,
+   "facts": 34,
+   "added": "wall_clear",
+   "mean": 44.55,
+   "min": 43.68,
+   "max": 45.32,
+   "seeds": 3
+  },
+  {
+   "k": 18,
+   "facts": 35,
+   "added": "since_growth",
+   "mean": 44.83,
+   "min": 44.33,
+   "max": 45.65,
+   "seeds": 3
+  },
+  {
+   "k": 19,
+   "facts": 36,
+   "added": "rule_pick",
+   "mean": 43.9,
+   "min": 43.02,
+   "max": 44.83,
+   "seeds": 3
+  },
+  {
+   "k": 20,
+   "facts": 37,
+   "added": "detour",
+   "mean": 44.12,
+   "min": 43.19,
+   "max": 44.83,
+   "seeds": 3
+  },
+  {
+   "k": 21,
+   "facts": 38,
+   "added": "room_degree",
+   "mean": 44.5,
+   "min": 43.68,
+   "max": 45.16,
+   "seeds": 3
+  },
+  {
+   "k": 22,
+   "facts": 39,
+   "added": "nearest_other",
+   "mean": 44.01,
+   "min": 43.19,
+   "max": 45.48,
+   "seeds": 3
+  },
+  {
+   "k": 23,
+   "facts": 40,
+   "added": "room_dead_end",
+   "mean": 44.45,
+   "min": 44.01,
+   "max": 45.16,
+   "seeds": 3
+  },
+  {
+   "k": 24,
+   "facts": 41,
+   "added": "dominated",
+   "mean": 43.46,
+   "min": 42.53,
+   "max": 44.83,
+   "seeds": 3
+  },
+  {
+   "k": 25,
+   "facts": 42,
+   "added": "gain_per_m",
+   "mean": 43.9,
+   "min": 42.36,
+   "max": 45.32,
+   "seeds": 3
+  }
+ ],
+ "steps": [
+  1
+ ],
+ "knee_k": 17,
+ "best_mean": 44.83,
+ "all_counts_as_B": true,
+ "clones": 78
+}

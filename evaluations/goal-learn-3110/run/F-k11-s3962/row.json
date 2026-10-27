@@ -1,0 +1,11 @@
+{
+ "k": 11,
+ "facts": 28,
+ "seed": 3962,
+ "added": "cluster_2m",
+ "held_out_agreement": 0.4286,
+ "net_inputs": 28,
+ "n_train": 37064,
+ "n_held": 609,
+ "counts_as_B": true
+}

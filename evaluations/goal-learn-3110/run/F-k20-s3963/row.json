@@ -1,0 +1,11 @@
+{
+ "k": 20,
+ "facts": 37,
+ "seed": 3963,
+ "added": "detour",
+ "held_out_agreement": 0.4433,
+ "net_inputs": 37,
+ "n_train": 37064,
+ "n_held": 609,
+ "counts_as_B": true
+}

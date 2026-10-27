@@ -1,0 +1,8 @@
+clone epoch 4: held-out loss 1.6506
+clone epoch 9: held-out loss 1.6376
+clone epoch 14: held-out loss 1.6226
+clone epoch 19: held-out loss 1.6081
+clone epoch 24: held-out loss 1.6164
+clone epoch 29: held-out loss 1.6015
+clone: 37064 choices, held-out agreement 0.4319
+{"k": 20, "facts": 37, "seed": 3962, "added": "detour", "held_out_agreement": 0.4319, "net_inputs": 37, "n_train": 37064, "n_held": 609, "counts_as_B": true}

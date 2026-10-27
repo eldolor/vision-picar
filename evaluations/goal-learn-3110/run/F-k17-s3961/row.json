@@ -1,0 +1,11 @@
+{
+ "k": 17,
+ "facts": 34,
+ "seed": 3961,
+ "added": "wall_clear",
+ "held_out_agreement": 0.4368,
+ "net_inputs": 34,
+ "n_train": 37064,
+ "n_held": 609,
+ "counts_as_B": true
+}

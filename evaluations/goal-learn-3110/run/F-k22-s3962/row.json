@@ -1,0 +1,11 @@
+{
+ "k": 22,
+ "facts": 39,
+ "seed": 3962,
+ "added": "nearest_other",
+ "held_out_agreement": 0.4319,
+ "net_inputs": 39,
+ "n_train": 37064,
+ "n_held": 609,
+ "counts_as_B": true
+}
