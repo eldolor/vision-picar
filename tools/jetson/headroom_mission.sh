@@ -61,7 +61,7 @@
 set -uo pipefail
 # 3.93: not under another session's hold on the board
 source "$(dirname "${BASH_SOURCE[0]}")/board_lock_check.sh"
-source "$(dirname "${BASH_SOURCE[0]}")/vlm_hold.sh"   # 3.108: the VLM is enabled at boot
+source "$(dirname "${BASH_SOURCE[0]}")/vlm_hold.sh" || { echo "STOP: no vlm_hold.sh"; exit 2; }   # 3.108: the VLM is enabled at boot
 OUT="${1:?out dir}"; mkdir -p "$OUT"
 IMAGE="${IMAGE:-vision-picar-ros:plan-3.58}"
 NAME="${NAME:-picar-ros-358}"

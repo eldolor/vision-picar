@@ -17,7 +17,7 @@
 set -uo pipefail
 # 3.93: not under another session's hold on the board
 source "$(dirname "${BASH_SOURCE[0]}")/board_lock_check.sh"
-source "$(dirname "${BASH_SOURCE[0]}")/vlm_hold.sh"   # 3.108: the VLM is enabled at boot
+source "$(dirname "${BASH_SOURCE[0]}")/vlm_hold.sh" || { echo "STOP: no vlm_hold.sh"; exit 2; }   # 3.108: the VLM is enabled at boot
 OUT="${1:?out dir}"; mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"   # absolute: systemd needs it
 HERE="$(pwd)"
 ENGINES="${ENGINES:-$HOME/bench-378/ws91/q25VE/engines}"
@@ -64,6 +64,7 @@ sed -e "s#/home/picar/vision-picar-service/.venv/bin/python#$HERE/.venv/bin/pyth
     -e "s#^WorkingDirectory=.*#WorkingDirectory=$HERE#" \
     -e "s#append:/home/picar/.vision-picar-local-vlm.log#append:$OUT/service.log#g" \
     -e "s#^EnvironmentFile=.*#EnvironmentFile=$ENVF#" \
+    -e '/^ConditionPathExists=!\/run\/picar-vlm-hold/d' \
     tools/jetson/systemd/picar-local-vlm.service | sudo tee "$UNIT" >/dev/null
 sudo systemctl daemon-reload
 

@@ -14,7 +14,7 @@ export APP_SHARED_SECRET="$LOCAL_SECRET"
 H=(-H "x-app-secret: $LOCAL_SECRET")
 # 3.108: the local VLM is enabled at boot; held off for the run (its 4 GB is
 # not the namer's baseline) and put back as found at exit.
-source tools/jetson/vlm_hold.sh
+source tools/jetson/vlm_hold.sh || { echo "STOP: no vlm_hold.sh"; exit 2; }
 trap vlm_restore EXIT
 vlm_hold "$L/vlm_hold.log"
 sudo systemctl isolate multi-user.target; sleep 5

@@ -24,13 +24,13 @@ stop() {
   [ -n "$WANT_FL" ] && pkill -f "$MINE" 2>/dev/null
   [ -n "$VEP" ] && kill $VEP 2>/dev/null && for _ in $(seq 40); do kill -0 $VEP 2>/dev/null || break; sleep 0.5; done
 }
+# 3.108: the production VLM is enabled at boot; held off for every run (its
+# 4 GB is not any arm's "before") and put back as found at exit.
+source "$(dirname "${BASH_SOURCE[0]}")/../../../../tools/jetson/vlm_hold.sh" || { echo "STOP: no vlm_hold.sh"; exit 2; }
+trap vlm_restore EXIT
+vlm_hold "$OUT/$TAG.vlm_hold.log"
 if [ -n "$WANT_VE" ]; then
   ss -ltnH "sport = :8007" | grep -q . && { echo "STOP: :8007 is already in use"; exit 2; }
-  # 3.108: the production unit is enabled at boot; held off for the run and
-  # put back as found at exit (it was a refusal while it was not enabled).
-  source "$(dirname "${BASH_SOURCE[0]}")/../../../../tools/jetson/vlm_hold.sh"
-  trap vlm_restore EXIT
-  vlm_hold "$OUT/$TAG.vlm_hold.log"
 fi
 [ -n "$WANT_FL" ] && { pkill -f "$MINE" 2>/dev/null; sleep 3; }
 ( while :; do echo "$(date +%s) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)"; sleep 1; done ) > $OUT/$TAG.mem &

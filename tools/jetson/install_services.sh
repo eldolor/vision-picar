@@ -41,6 +41,9 @@ done
 # install; without its env file it is disabled.
 # Its start limit (4 in 15 min) is left as it is: a VLM it has stopped stays
 # stopped until `sudo systemctl reset-failed picar-local-vlm` by hand.
+# A hold flag left by a bench that died (board_lock_check above: no bench
+# holds the board now) would skip the start without a word.
+[ -e /run/picar-vlm-hold ] && { echo "WARNING: clearing a stale /run/picar-vlm-hold"; sudo rm -f /run/picar-vlm-hold; }
 if [ -f "$HOME/.vision-picar-local-vlm.env" ]; then
   sudo systemctl enable picar-local-vlm.service || echo "WARNING: picar-local-vlm not enabled"
   sudo systemctl restart picar-local-vlm.service || echo "WARNING: picar-local-vlm did not restart"
