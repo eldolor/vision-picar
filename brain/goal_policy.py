@@ -58,31 +58,57 @@ FEATURES = (
 NEAR_M = 1.0
 
 
+def _disc(r: int):
+    """The (dx, dy) offsets of a disc of radius r cells, as two int arrays."""
+    d = np.arange(-r, r + 1)
+    dy, dx = np.meshgrid(d, d, indexing="ij")
+    keep = dx * dx + dy * dy <= r * r
+    return dx[keep], dy[keep]
+
+
+def goal_context(m: dict, seen_cells: set = frozenset()) -> dict:
+    """What `features()` reads from the map, built once per choice (3.109):
+    the grid's unknown, free and free-but-unseen cells as boolean arrays,
+    and the 1 m disc's offsets. 3.103 timed the per-candidate loop at
+    185 ms p90 a choice on the Jetson; this makes each candidate a few array
+    lookups. The map and the seen set must not change while it is used."""
+    res, w, h = m["resolution_m"], m["width"], m["height"]
+    cells = np.asarray(m["cells"]).reshape(h, w)
+    free = cells == CELL_FREE
+    unseen = free.copy()
+    if seen_cells:
+        xy = np.asarray(list(seen_cells), dtype=np.int64).reshape(-1, 2)
+        on = (xy[:, 0] >= 0) & (xy[:, 0] < w) & (xy[:, 1] >= 0) & (xy[:, 1] < h)
+        unseen[xy[on, 1], xy[on, 0]] = False
+    dx, dy = _disc(int(math.ceil(NEAR_M / res)))
+    return {"w": w, "h": h, "unknown": cells == CELL_UNKNOWN, "free": free,
+            "unseen": unseen, "dx": dx, "dy": dy}
+
+
 def features(m: dict, pose: dict, goal: tuple, *, kind: str, path_m: float,
              size_m: float = 0.0, area_m2: float = 0.0, seen_cells: set = frozenset(),
-             failures: int = 0, reached: int = 0, goals_sent: int = 0) -> list:
-    """One candidate's feature vector, in `FEATURES` order."""
+             failures: int = 0, reached: int = 0, goals_sent: int = 0,
+             ctx: Optional[dict] = None) -> list:
+    """One candidate's feature vector, in `FEATURES` order. `ctx`: this
+    choice's `goal_context(m, seen_cells)`, shared by its candidates (built
+    here when not given). The same answers as the loop it replaced
+    (`tests/goal_features_reference.py`), to the bit."""
     # The bearing as explore's FACE turn computes it (`brain/explore.py`):
     # the simulator's heading 0 points to -y_m, 90 to +x_m.
     bearing = math.degrees(math.atan2(goal[0] - pose["x_m"], -(goal[1] - pose["y_m"])))
     heading = pose.get("heading_deg")
     turn = 0.0 if heading is None else abs((bearing - heading + 180.0) % 360.0 - 180.0)
-    res, w, h = m["resolution_m"], m["width"], m["height"]
+    if ctx is None:
+        ctx = goal_context(m, seen_cells)
     cx, cy = _cell_of(m, goal[0], goal[1])
-    r = int(math.ceil(NEAR_M / res))
-    total = unknown = free = unseen = 0
-    for y in range(max(0, cy - r), min(h, cy + r + 1)):
-        for x in range(max(0, cx - r), min(w, cx + r + 1)):
-            if (x - cx) ** 2 + (y - cy) ** 2 > r * r:
-                continue
-            total += 1
-            v = m["cells"][y * w + x]
-            if v == CELL_UNKNOWN:
-                unknown += 1
-            elif v == CELL_FREE:
-                free += 1
-                if (x, y) not in seen_cells:
-                    unseen += 1
+    xs, ys = cx + ctx["dx"], cy + ctx["dy"]
+    on = (xs >= 0) & (xs < ctx["w"]) & (ys >= 0) & (ys < ctx["h"])
+    xs, ys = xs[on], ys[on]
+    # Python ints, so the divisions below give the loop's floats exactly.
+    total = int(xs.size)
+    unknown = int(ctx["unknown"][ys, xs].sum())
+    free = int(ctx["free"][ys, xs].sum())
+    unseen = int(ctx["unseen"][ys, xs].sum())
     is_view = 1.0 if kind == "view" else 0.0
     return [
         path_m / 10.0,

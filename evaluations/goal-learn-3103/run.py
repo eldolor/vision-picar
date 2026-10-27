@@ -36,7 +36,7 @@ import c as C396                                              # noqa: E402
 import train as T                                             # noqa: E402
 from lean import LEAN_COLS, SHAPES, lean_features, make_torch_net, score_np, size  # noqa: E402
 from brain import frontier as fr                              # noqa: E402
-from brain.goal_policy import features                        # noqa: E402
+from brain.goal_policy import features, goal_context          # noqa: E402
 from features import room_features                            # noqa: E402
 from tests import frontier_compare as fc                      # noqa: E402
 
@@ -181,10 +181,11 @@ def lean_choice(m, x, y, heading, trail, P, score=score_np) -> int:
     r = fr.reach(m, x, y, clearance_m=fc.LEAVE)
     fs = fr.find_frontiers(m, x, y, clearance_m=fc.LEAVE, reach_map=r)
     gs = fr.find_view_gaps(m, x, y, set(), clearance_m=fc.LEAVE, reach_map=r)
-    feats = [features(m, pose, f.goal, kind="frontier", path_m=f.distance_m, size_m=f.size_m)
-             for f in fs]
-    feats += [features(m, pose, g.goal, kind="view", path_m=g.distance_m, area_m2=g.area_m2)
-              for g in gs]
+    ctx = goal_context(m)                # 3.109: once per choice, as explore does
+    feats = [features(m, pose, f.goal, kind="frontier", path_m=f.distance_m, size_m=f.size_m,
+                      ctx=ctx) for f in fs]
+    feats += [features(m, pose, g.goal, kind="view", path_m=g.distance_m, area_m2=g.area_m2,
+                       ctx=ctx) for g in gs]
     pool = [("frontier", f, i) for i, f in enumerate(fs)] + [("view", g, None) for g in gs]
     if not pool:
         return 0

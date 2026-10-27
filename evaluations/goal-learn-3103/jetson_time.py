@@ -43,6 +43,7 @@ from model import to_np                                       # noqa: E402
 from brain.room_labels import segment                         # noqa: E402
 
 fc, fr, features, room_features = B.fc, B.fr, B.features, B.room_features
+goal_context = B.goal_context
 
 
 def _load(path):
@@ -71,10 +72,11 @@ def parts(m, x, y, heading, trail, P) -> dict:
     fs = fr.find_frontiers(m, x, y, clearance_m=fc.LEAVE, reach_map=r)
     gs = fr.find_view_gaps(m, x, y, set(), clearance_m=fc.LEAVE, reach_map=r)
     ms["map_work"], t = (time.perf_counter() - t) * 1000, time.perf_counter()
-    feats = [features(m, pose, f.goal, kind="frontier", path_m=f.distance_m, size_m=f.size_m)
-             for f in fs]
-    feats += [features(m, pose, g.goal, kind="view", path_m=g.distance_m, area_m2=g.area_m2)
-              for g in gs]
+    ctx = goal_context(m)                # 3.109: once per choice, as explore does
+    feats = [features(m, pose, f.goal, kind="frontier", path_m=f.distance_m, size_m=f.size_m,
+                      ctx=ctx) for f in fs]
+    feats += [features(m, pose, g.goal, kind="view", path_m=g.distance_m, area_m2=g.area_m2,
+                       ctx=ctx) for g in gs]
     ms["ten_facts"], t = (time.perf_counter() - t) * 1000, time.perf_counter()
     pool = [("frontier", f, i) for i, f in enumerate(fs)] + [("view", g, None) for g in gs]
     if not pool:

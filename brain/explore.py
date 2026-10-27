@@ -55,6 +55,7 @@ from brain.choice_log import BY_RULE_TIMEOUT, GoalAsk
 from brain.goal_policy import FEATURES as GOAL_FEATURES
 from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
+from brain.goal_policy import goal_context
 from brain.goal_policy import ROOM_FEATURES, ROOM_RES_M, RoomGoalPolicy, room_type
 from brain.memory import MissionMemory
 from robot.interface import VERB_MAX_TAG, ZONE_UNUSABLE, Preempted, RobotInterface
@@ -1009,6 +1010,7 @@ class ExploreAgent(MissionAgent):
         first (3.88 A's default)."""
         r = self.retry.radius_m
         seen_cells = {self._to_cell(m, c) for c in self.seen}
+        ctx = goal_context(m, seen_cells)   # 3.109: once per choice, not per candidate
         pool, feats = [], []
         for rank, f in enumerate(frontiers):
             reached = sum(math.hypot(f.goal[0] - rx, f.goal[1] - ry) < r
@@ -1023,7 +1025,7 @@ class ExploreAgent(MissionAgent):
             feats.append(goal_features(m, pose, f.goal, kind="frontier", path_m=f.distance_m,
                                        size_m=f.size_m, seen_cells=seen_cells,
                                        failures=self.retry.failures_near(*f.goal),
-                                       reached=reached, goals_sent=self.goals_sent))
+                                       reached=reached, goals_sent=self.goals_sent, ctx=ctx))
         for g in find_view_gaps(m, pose["x_m"], pose["y_m"], seen_cells, clearance_m=leave,
                                 reach_map=rch):
             if not self._view_allowed(g) or not self.retry.available(g.goal[0], g.goal[1],
@@ -1033,7 +1035,7 @@ class ExploreAgent(MissionAgent):
             feats.append(goal_features(m, pose, g.goal, kind="view", path_m=g.distance_m,
                                        area_m2=g.area_m2, seen_cells=seen_cells,
                                        failures=self.retry.failures_near(*g.goal),
-                                       goals_sent=self.goals_sent))
+                                       goals_sent=self.goals_sent, ctx=ctx))
         if getattr(self.goal_policy, "rooms", False):
             goals = [c.goal for _, c, _ in pool]
             feats = self.goal_policy.extend(m, pose, goals, feats, trail=self._trail,

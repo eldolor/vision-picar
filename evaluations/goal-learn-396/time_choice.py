@@ -29,7 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(HERE, "..", "..")))
 sys.path.insert(0, HERE)
 from brain import frontier as fr                              # noqa: E402
-from brain.goal_policy import features                        # noqa: E402
+from brain.goal_policy import features, goal_context          # noqa: E402
 from brain.room_labels import segment                         # noqa: E402
 from features import coarse, room_features                    # noqa: E402
 from model import score_np, to_np                             # noqa: E402
@@ -59,10 +59,11 @@ def choice(m, x, y, heading, P, trail):
     r = fr.reach(m, x, y, clearance_m=fc.LEAVE)
     fs = fr.find_frontiers(m, x, y, clearance_m=fc.LEAVE, reach_map=r)
     gs = fr.find_view_gaps(m, x, y, set(), clearance_m=fc.LEAVE, reach_map=r)
-    feats = [features(m, pose, f.goal, kind="frontier", path_m=f.distance_m, size_m=f.size_m)
-             for f in fs]
-    feats += [features(m, pose, g.goal, kind="view", path_m=g.distance_m, area_m2=g.area_m2)
-              for g in gs]
+    ctx = goal_context(m)                # 3.109: once per choice, as explore does
+    feats = [features(m, pose, f.goal, kind="frontier", path_m=f.distance_m, size_m=f.size_m,
+                      ctx=ctx) for f in fs]
+    feats += [features(m, pose, g.goal, kind="view", path_m=g.distance_m, area_m2=g.area_m2,
+                       ctx=ctx) for g in gs]
     goals = [f.goal for f in fs] + [g.goal for g in gs]
     if not goals:
         return 0, 0.0
