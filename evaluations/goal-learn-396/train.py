@@ -31,6 +31,7 @@ Budgets are the same for every arm, fixed here before the first run.
 import gc
 import json
 import math
+import multiprocessing
 import os
 import pickle
 import random
@@ -57,6 +58,7 @@ from brain.frontier import _cell_of                            # noqa: E402
 from brain.goal_policy import FEATURES, LinearGoalPolicy, NetGoalPolicy  # noqa: E402
 from control.mission_runner import MissionRunner              # noqa: E402
 from sim.maps import build_world                              # noqa: E402
+from sim.maps import procthor                                  # noqa: E402
 from sim.maps.procthor import usable                          # noqa: E402
 from sim.mock_robot import MockRobot                          # noqa: E402
 from sim.mock_world import MockWorld                          # noqa: E402
@@ -113,7 +115,34 @@ def dropped_rooms(grid, index: int, share: float) -> frozenset:
     return frozenset(rng.sample(names, k))
 
 
-def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float = 0.0) -> dict:
+_frozen_files = 0
+
+
+def _collect() -> None:
+    """A mission's runner, agent and house are reference cycles (bound
+    methods and closures of each other), freed only by the cycle collector,
+    which in a long-lived pool worker fell behind: PPO's workers grew
+    ~0.5 MB a mission (3.113). So collect after every mission. A full
+    collection re-scans the house files (~1M objects, never garbage, ~230 ms),
+    so a pool worker freezes once each time a new file has loaded; the
+    main process (tests, single runs) never freezes."""
+    global _frozen_files
+    gc.collect()
+    loaded = len(procthor._houses)
+    if loaded != _frozen_files and multiprocessing.parent_process() is not None:
+        gc.freeze()
+        _frozen_files = loaded
+
+
+def mission(*args, **kwargs) -> dict:
+    """One mission (`_mission`), its cycles collected before the next."""
+    try:
+        return _mission(*args, **kwargs)
+    finally:
+        _collect()
+
+
+def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float = 0.0) -> dict:
     """spec: "rule" | "net365" (3.65's shipped network, its own ten
     features) | "wired" (`explore_goal_policy: rooms` as the brain runs it,
     3.96.C) | "oracle" | ("sample"|"greedy"|"greedy_log", kind, params);
@@ -213,16 +242,7 @@ def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float 
 
 
 def _job(args):
-    row = mission(*args)
-    # A mission's runner, agent and house are reference cycles, freed only by
-    # the cycle collector, which in a long-lived worker fell behind: PPO's
-    # workers grew ~0.5 MB a mission (3.113). Collect here; freezing what
-    # survives (the house files, ~1M objects, never garbage) keeps the next
-    # collection to one mission's objects. Frozen objects still go when
-    # their count drops; only a later cycle among them would stay.
-    gc.collect()
-    gc.freeze()
-    return row
+    return mission(*args)
 
 
 # ---------- persistence ----------
