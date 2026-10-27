@@ -28,6 +28,7 @@ Stages, each skipped when its output exists in OUT_DIR:
 Budgets are the same for every arm, fixed here before the first run.
 `CKPT_S3=s3://...` copies each checkpoint there too.
 """
+import gc
 import json
 import math
 import os
@@ -212,7 +213,16 @@ def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float 
 
 
 def _job(args):
-    return mission(*args)
+    row = mission(*args)
+    # A mission's runner, agent and house are reference cycles, freed only by
+    # the cycle collector, which in a long-lived worker fell behind: PPO's
+    # workers grew ~0.5 MB a mission (3.113). Collect here; freezing what
+    # survives (the house files, ~1M objects, never garbage) keeps the next
+    # collection to one mission's objects. Frozen objects still go when
+    # their count drops; only a later cycle among them would stay.
+    gc.collect()
+    gc.freeze()
+    return row
 
 
 # ---------- persistence ----------

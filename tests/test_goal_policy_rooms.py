@@ -189,3 +189,33 @@ def test_the_test_runs_numbers_are_pinned():
     assert got["F-large-R"] == (569, 4.0) and got["rule-R"] == (570, 7.0)
     assert got["F-large-U"] == (583, 5.0) and got["rule-U"] == (582, 9.0)
     assert got["F-large-drop-R"] == (572, 5.0)
+
+
+
+def test_a_pool_job_frees_its_house_before_the_next(monkeypatch):
+    """3.113: a mission's runner, agent and house are reference cycles; a
+    PPO worker that left them to the automatic collector grew ~0.5 MB a
+    mission. `_job` collects (and freezes what survives) before returning."""
+    import gc
+    import weakref
+    T = _train()
+    best = json.load(open(os.path.join(HERE, "..", "evaluations", "goal-learn-396",
+                                       "cloud", "ckpt", "F-large", "best.json")))
+    built = []
+    real = T.build_world
+
+    def keep_a_weak_ref(name):
+        world = real(name)
+        built.append(weakref.ref(world))
+        return world
+
+    monkeypatch.setattr(T, "build_world", keep_a_weak_ref)
+    gc.collect()
+    gc.disable()
+    try:
+        row = T._job(("val", T.usable("val")[0], "R", ("greedy", best["kind"], best["params"])))
+        assert row["reward"] is not None
+        assert built and built[0]() is None
+    finally:
+        gc.unfreeze()
+        gc.enable()
