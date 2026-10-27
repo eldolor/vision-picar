@@ -116,6 +116,6 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.108](3.108-local-vlm-default.md) | The local VLM on by default on the board |
 | [3.109](3.109-numpy-goal-facts.md) | Explore's goal facts in numpy, the same answers |
 | [3.110](3.110-facts-ladder.md) | Goal facts 17 to 42: is there a step? |
-| [3.112](3.112-person-taps-on-rover.md) | A person's goal taps on the Rover teach the learned chooser |
 | [3.111](3.111-copy-gap-checks.md) | Why copying the oracle better does not search better: three desktop checks |
+| [3.112](3.112-person-taps-on-rover.md) | A person's goal taps on the Rover teach the learned chooser |
 <!-- /sections -->
