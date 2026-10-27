@@ -183,13 +183,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   frame still in perception (30 s), and `pipeline_for` collects first: the
   new-target low is 508 MB (floor 500), set by the text child. Records:
   `evaluations/memory-381/`; `headroom_identity.sh SWITCH=release`.
-* **Tiered identity (3.80), A-C merged 2026-10-14; the local tier is OFF by
-  default.** The user's strict order: perception, then local Qwen, then the
+* **Tiered identity (3.80), A-C merged 2026-10-14; the local tier is ON by
+  default on the board since 3.108 (off elsewhere).** The user's strict order: perception, then local Qwen, then the
   cloud only after `tier_local_max_unable` (2) unable answers or when the
   local VLM is absent; thresholds approved (no_below 0.1, yes at 0.5,
   timeout 3.0 s). B: `service/local_vlm` on `127.0.0.1:8005`, systemd unit
   `picar-local-vlm` (`OOMScoreAdjust=1000`) installed by
-  `install_services.sh` but **not enabled**; stop it before Jetson benches.
+  `install_services.sh`, **enabled at boot since 3.108** (the user,
+  2026-10-26), and `picar-stack` sets `LOCAL_VLM_URL`. Benches hold it off
+  with `tools/jetson/vlm_hold.sh` (a `/run/picar-vlm-hold` flag the unit's
+  `ConditionPathExists` honours, cleared at boot) and put it back as found.
   Board: 299/299 answers as 3.78, HTTP p90 1.17 s, 4.07 GB. C: the arrival
   question asks it first (`brain/local_vlm.py`, `TieredVision.confirm_local`,
   arrival state `checking`); on with `tier_local_vlm_url` / `LOCAL_VLM_URL`.
@@ -258,7 +261,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     minimum 823 MB, 0 OOM. `tier_local_cold_search_after: 1` (the user's
     option a) paces only questions the local tier takes; any question handed
     to the cloud waits `tier_cold_search_after` (6).
-  * The local tier stays off unless `tier_local_vlm_url` is set.
+  * The local tier stays off unless `tier_local_vlm_url` is set: on the
+    board `picar-stack` sets it (3.108); the laptop, suite and cloud leave
+    it empty. A VLM that is down still reads as configured, so its
+    questions go to the cloud (paid).
   * **E (criteria 1-6, merged 2026-10-24):** 1 met offline on the 299
     (97.2% / 94.6%, VE never in the band, 0 cloud calls); on the Jetson, 3
     met (arrival to verdict p90 1.91 s, bar 2.0, five arrivals; the wait for
