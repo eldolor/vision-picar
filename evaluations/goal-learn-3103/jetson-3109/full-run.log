@@ -1,0 +1,12 @@
+== desktop: inactive; twin units: inactive inactive; runtime trt
+== run L 20:21:32 rev faa06d6c image vision-picar-ros:latest NV Power Mode: 15W
+== MemAvailable before anything: 5924 MB
+OK: robot and brain both running faa06d6c (log: /home/picar/.vision-picar-tunnel.log)
+WARNING: ngrok is not running -- the deployed twin cannot reach this machine. Start it with: ngrok start picar
+== stack up 20:21:46
+== mapped 20:24:31; MemAvailable with the stack: 5459 MB
+== window start 20:26:03; wheel (moving late max_dt): 2829 0 0.0618
+== window end 20:32:48 bench exit 0; wheel: 9684 0 0.0801
+== summary: {"window_s": 390, "mem_available_min_mb": 832, "mem_samples": 387, "oom_events": 0, "wheel_moving_ticks": 6855, "wheel_late_ticks": 0, "wheel_max_dt_since_start_s": 0.0801, "perception_frames": 1554, "perception_p90_ms": 185, "nav": "goals 19/19 succeeded", "max_temp_c": 63.687, "throttle_lines": 0}
+vlm_restore 20:32:53: active (was active)
+== torn down; desktop: active

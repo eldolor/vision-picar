@@ -1,0 +1,73 @@
+{
+ "label": "quiet",
+ "host": "picar-jetson",
+ "machine": "aarch64",
+ "start_unix": 1793063981,
+ "end_unix": 1793064081,
+ "loadavg": [
+  1.703125,
+  0.53955078125,
+  0.18896484375
+ ],
+ "poses": 120,
+ "candidates_median": 85.0,
+ "whole_choice": {
+  "F-large": {
+   "choices": 120,
+   "p50_ms": 120.19,
+   "p90_ms": 142.26,
+   "max_ms": 146.72
+  },
+  "F-lean": {
+   "choices": 120,
+   "p50_ms": 132.61,
+   "p90_ms": 154.83,
+   "max_ms": 158.49
+  },
+  "F-pool-W32": {
+   "choices": 120,
+   "p50_ms": 133.56,
+   "p90_ms": 155.41,
+   "max_ms": 159.2
+  },
+  "F-pool-W64": {
+   "choices": 120,
+   "p50_ms": 133.88,
+   "p90_ms": 156.4,
+   "max_ms": 173.59
+  },
+  "F-pool-W128": {
+   "choices": 120,
+   "p50_ms": 134.3,
+   "p90_ms": 156.62,
+   "max_ms": 184.62
+  }
+ },
+ "F-pool-W32_parts": {
+  "map_work": {
+   "p50_ms": 65.5,
+   "p90_ms": 87.18,
+   "max_ms": 129.86
+  },
+  "ten_facts": {
+   "p50_ms": 13.76,
+   "p90_ms": 14.34,
+   "max_ms": 14.45
+  },
+  "room_facts": {
+   "p50_ms": 39.58,
+   "p90_ms": 40.62,
+   "max_ms": 40.96
+  },
+  "lidar_gain": {
+   "p50_ms": 12.47,
+   "p90_ms": 12.57,
+   "max_ms": 12.62
+  },
+  "network": {
+   "p50_ms": 1.07,
+   "p90_ms": 1.56,
+   "max_ms": 1.69
+  }
+ }
+}
