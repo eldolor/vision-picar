@@ -114,4 +114,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.106](3.106-in-sight-livelock.md) | Explore in the approach band, the target in sight but never found: bounded, not a livelock (house 1395) |
 | [3.107](3.107-section-lanes.md) | Sections past 3.99 get their own ports; a shared ROS domain with an active section is warned about |
 | [3.108](3.108-local-vlm-default.md) | The local VLM on by default on the board |
+| [3.109](3.109-numpy-goal-facts.md) | Explore's goal facts in numpy, the same answers |
 <!-- /sections -->
