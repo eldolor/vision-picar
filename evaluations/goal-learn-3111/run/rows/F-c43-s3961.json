@@ -1,0 +1,8 @@
+{
+ "cols": 43,
+ "seed": 3961,
+ "held_out_agreement": 0.486,
+ "n_train": 37064,
+ "n_held": 609,
+ "net_inputs": 43
+}
