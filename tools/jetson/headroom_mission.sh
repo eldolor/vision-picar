@@ -111,14 +111,17 @@ teardown() {
   echo "== torn down; desktop: $(systemctl is-active gdm)" | tee -a "$OUT/run.log"
 }
 PERC=; MEM=; WHL=; NAV=; VLMP=; CLD=; DRL=
-# Before the isolate, which would start the VLM now that it is enabled (3.108).
-vlm_hold                     # not in a pipeline: it sets VLM_WAS and VLM_ENABLED here
-trap teardown EXIT
-
+# Checked before the trap and the hold (3.108 review): a typo must not stop
+# and reload the production VLM.
 case "${DRILL:-}" in
   ""|kill:[0-9]*|oom:[0-9]*) ;;
   *) echo "STOP: DRILL must be kill:<s> or oom:<s>, got '$DRILL'"; exit 2;;
 esac
+trap teardown EXIT
+# After the trap, before the isolate, which would start the enabled VLM (3.108).
+# Not in a pipeline: it sets VLM_WAS and VLM_HELD here.
+vlm_hold "$OUT/vlm_hold.log"
+
 sudo systemctl isolate multi-user.target; sleep 5
 sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3
 { echo "== desktop: $(systemctl is-active gdm); twin units: $(systemctl is-active picar-stack) $(systemctl is-active picar-ngrok); runtime $RUNTIME"

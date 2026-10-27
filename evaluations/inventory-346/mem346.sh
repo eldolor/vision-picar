@@ -12,6 +12,11 @@ source .venv/bin/activate
 set -a; source ~/.vision-picar-local-secrets; set +a
 export APP_SHARED_SECRET="$LOCAL_SECRET"
 H=(-H "x-app-secret: $LOCAL_SECRET")
+# 3.108: the local VLM is enabled at boot; held off for the run (its 4 GB is
+# not the namer's baseline) and put back as found at exit.
+source tools/jetson/vlm_hold.sh
+trap vlm_restore EXIT
+vlm_hold "$L/vlm_hold.log"
 sudo systemctl isolate multi-user.target; sleep 5
 echo "== $TAG $(date +%T) rev $(git rev-parse --short HEAD) $(sudo nvpmodel -q | head -1) desktop $(systemctl is-active gdm)"
 docker rm -f picar-ros >/dev/null 2>&1

@@ -20,13 +20,17 @@ OUT=~/out-380U; V=~/vp-380R; E=$V/evaluations/tiered-380; PY=$V/.venv/bin/python
 mkdir -p $OUT ~/out-380R ~/out-380S
 W=(); for w in $WALKS; do W+=(--walk "$w"); done
 MINE='native_server\.py -m [a-z0-9-]*:.* --port 8006'
-systemctl is-active -q picar-local-vlm && { echo "STOP: picar-local-vlm is running"; exit 2; }
+# 3.108: the production unit is enabled at boot; held off for the run and
+# put back as found at exit (it was a refusal while it was not enabled).
+source "$(dirname "${BASH_SOURCE[0]}")/../../../../tools/jetson/vlm_hold.sh"
+trap vlm_restore EXIT
+vlm_hold "$OUT/$N.vlm_hold.log"
 if pgrep -x llama-server >/dev/null || pgrep -f "$MINE" >/dev/null; then
   echo "STOP: a bench server is running"; exit 2
 fi
 ( while :; do echo "$(date +%s) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)"; sleep 1; done ) > $OUT/$N.mem &
 SAMP=$!
-trap 'kill $SAMP 2>/dev/null' EXIT
+trap 'kill $SAMP 2>/dev/null; vlm_restore' EXIT
 sleep 3
 mark() { echo "$(date +%s) $1" >> $OUT/$N.marks; }
 log() { echo "$(date +%T) $N $*" | tee -a $OUT/done.log; }

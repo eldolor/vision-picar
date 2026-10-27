@@ -26,7 +26,11 @@ stop() {
 }
 if [ -n "$WANT_VE" ]; then
   ss -ltnH "sport = :8007" | grep -q . && { echo "STOP: :8007 is already in use"; exit 2; }
-  systemctl is-active -q picar-local-vlm && { echo "STOP: picar-local-vlm is running"; exit 2; }
+  # 3.108: the production unit is enabled at boot; held off for the run and
+  # put back as found at exit (it was a refusal while it was not enabled).
+  source "$(dirname "${BASH_SOURCE[0]}")/../../../../tools/jetson/vlm_hold.sh"
+  trap vlm_restore EXIT
+  vlm_hold "$OUT/$TAG.vlm_hold.log"
 fi
 [ -n "$WANT_FL" ] && { pkill -f "$MINE" 2>/dev/null; sleep 3; }
 ( while :; do echo "$(date +%s) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)"; sleep 1; done ) > $OUT/$TAG.mem &

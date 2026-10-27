@@ -44,7 +44,11 @@ def test_the_local_vlm_bench_leaves_the_production_unit_alone():
 def test_the_local_vlm_bench_stops_and_restores_the_production_service():
     code = _code("bench_local_vlm.sh")
     assert re.search(r"systemctl stop [^\n]*picar-local-vlm\b(?!-)", code)
-    assert 'case "$PROD_WAS" in active|activating) sudo systemctl start picar-local-vlm' in code
+    # 3.108: held off for the run (it is enabled at boot), put back as found.
+    teardown = code[code.index("teardown() {"):code.index("trap teardown EXIT")]
+    assert teardown.index("isolate graphical.target") < teardown.index("vlm_restore")
+    assert (code.index("trap teardown EXIT") < code.index('vlm_hold "$OUT')
+            < code.index("systemctl isolate multi-user.target"))
     assert '"sport = :8005"' in code                         # refuses another VLM
 
 
@@ -141,12 +145,16 @@ def test_the_headroom_runs_put_a_running_vlm_back():
     to the cloud after every bench."""
     for name in ("headroom_identity.sh", "headroom_mission.sh"):
         code = _code(name)
-        read = code.index("VLM_WAS=$(systemctl is-active picar-local-vlm")
-        # Before the trap too (round 2): read after it, an early exit's
-        # teardown would stop on an unbound VLM_WAS under `set -u`.
-        assert read < code.index("trap teardown EXIT") < code.index(
-            "systemctl isolate multi-user.target"), name
-        assert 'case "$VLM_WAS" in active|activating) sudo systemctl start picar-local-vlm' in code
+        # 3.108: the VLM is enabled at boot, so it is held off (vlm_hold.sh)
+        # after the trap and before the isolate, which would start it, and
+        # put back as found after the teardown's isolate. vlm_hold.sh sets
+        # VLM_WAS when sourced, so an early exit's teardown under `set -u`
+        # finds it bound (round 2's reason for reading it first).
+        assert 'source "$(dirname "${BASH_SOURCE[0]}")/vlm_hold.sh"' in code, name
+        assert (code.index("trap teardown EXIT") < code.index('vlm_hold "$OUT')
+                < code.index("systemctl isolate multi-user.target")), name
+        teardown = code[code.index("teardown() {"):code.index("trap teardown EXIT")]
+        assert teardown.index("isolate graphical.target") < teardown.index("vlm_restore"), name
 
 
 def test_a_missing_ss_refuses_rather_than_passes():
@@ -197,4 +205,70 @@ def test_the_mission_run_waits_for_its_own_vlm_before_restoring_the_production_o
     VLM and started the production unit at once, over a :8005 still held."""
     code = _code("headroom_mission.sh")
     teardown = code[code.index("teardown() {"):code.index("trap teardown EXIT")]
-    assert teardown.index('kill -0 "$VLMP"') < teardown.index("systemctl start picar-local-vlm")
+    assert teardown.index('kill -0 "$VLMP"') < teardown.index("vlm_restore")
+
+
+# ---------- 3.108: the VLM enabled at boot, held off by benches ----------
+import subprocess  # noqa: E402
+
+_STUB = """
+systemctl() { case "$1" in is-active) cat "$D/state";; stop) echo inactive > "$D/state";;
+              start) echo active > "$D/state"; echo start >> "$D/calls";; esac; }
+sudo() { case "$1" in touch) : > "$D/flag";; rm) rm -f "$D/flag";; *) "$@";; esac; }
+source "$HELPER"; VLM_HOLD_FLAG="$D/flag"
+"""
+
+
+def _hold(tmp_path, state, body):
+    (tmp_path / "state").write_text(state + "\n")
+    r = subprocess.run(["bash", "-c", _STUB + body],
+                       env={"D": str(tmp_path), "HELPER": str(JETSON / "vlm_hold.sh"),
+                            "PATH": "/usr/bin:/bin"},
+                       capture_output=True, text=True)
+    calls = (tmp_path / "calls").read_text().split() if (tmp_path / "calls").exists() else []
+    return r, (tmp_path / "state").read_text().strip(), (tmp_path / "flag").exists(), calls
+
+
+def test_the_unit_skips_its_start_while_a_bench_holds_it():
+    unit = _text("systemd/picar-local-vlm.service")
+    assert "ConditionPathExists=!/run/picar-vlm-hold" in unit
+    assert "VLM_HOLD_FLAG=/run/picar-vlm-hold" in _text("vlm_hold.sh")
+
+
+def test_a_running_vlm_is_held_then_started_again(tmp_path):
+    r, state, flag, calls = _hold(tmp_path, "active", "vlm_hold; [ -e $D/flag ] && echo HELD; vlm_restore")
+    assert r.returncode == 0, r.stderr
+    assert "HELD" in r.stdout and not flag and state == "active" and calls == ["start"]
+
+
+def test_a_stopped_vlm_stays_stopped(tmp_path):
+    r, state, flag, calls = _hold(tmp_path, "inactive", "vlm_hold; vlm_restore")
+    assert r.returncode == 0, r.stderr
+    assert not flag and state == "inactive" and calls == []
+
+
+def test_restore_without_a_hold_does_nothing(tmp_path):
+    r, state, flag, calls = _hold(tmp_path, "inactive", ": > $D/flag; vlm_restore")
+    assert r.returncode == 0 and flag and calls == []      # someone else's flag is left
+
+
+def test_a_hold_that_does_not_stop_it_refuses(tmp_path):
+    r, *_ = _hold(tmp_path, "active",
+                  "systemctl() { case $1 in is-active) echo active;; esac; }; vlm_hold; echo GO")
+    assert r.returncode == 2 and "GO" not in r.stdout and "could not hold" in r.stdout
+
+
+def test_the_other_board_scripts_hold_it_too():
+    root = JETSON.parent.parent / "evaluations"
+    for rel in ("tiered-380/S/board/run.sh", "tiered-380/U/board/top5.sh", "inventory-346/mem346.sh"):
+        code = (root / rel).read_text()
+        assert "vlm_hold.sh" in code and "vlm_hold " in code, rel
+        assert code.index("vlm_restore") < code.index("vlm_hold \""), rel   # the trap first
+        assert "picar-local-vlm is running" not in code, rel
+
+
+def test_the_installer_checks_the_lock_and_starts_the_vlm_after_the_stack():
+    code = _code("install_services.sh")
+    assert 'source "$HERE/board_lock_check.sh"' in code
+    assert code.index("brain/health >/dev/null && break") < code.index("restart picar-local-vlm")
+    assert "reset-failed" not in code

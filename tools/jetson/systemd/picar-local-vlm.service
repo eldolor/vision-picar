@@ -6,6 +6,9 @@ After=network-online.target
 # cloud tier answers, rather than a 4 GB load spike every 30 s. The burst
 # counts every start, the first one too: 4 = the start + 3 restarts.
 StartLimitIntervalSec=900
+# 3.108: a bench holds the VLM off for its run with this flag (cleared at
+# every boot): tools/jetson/vlm_hold.sh.
+ConditionPathExists=!/run/picar-vlm-hold
 StartLimitBurst=4
 
 [Service]

@@ -75,9 +75,10 @@ teardown() {
   echo "== torn down; desktop: $(systemctl is-active gdm)" | tee -a "$OUT/run.log"
 }
 PERC=; MEM=; WHL=; NAV=
-# Before the isolate, which would start the VLM now that it is enabled (3.108).
-vlm_hold                     # not in a pipeline: it sets VLM_WAS and VLM_ENABLED here
 trap teardown EXIT
+# After the trap, before the isolate, which would start the enabled VLM (3.108).
+# Not in a pipeline: it sets VLM_WAS and VLM_HELD here.
+vlm_hold "$OUT/vlm_hold.log"
 
 sudo systemctl isolate multi-user.target; sleep 5
 # The production VLM too (3.76 P1): once enabled, multi-user starts it, and
