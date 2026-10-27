@@ -50,7 +50,7 @@ teardown() {
   log "torn down; desktop $(systemctl is-active gdm); twin units $(systemctl is-active picar-stack) $(systemctl is-active picar-ngrok)"
 }
 trap teardown EXIT
-vlm_hold "$OUT/vlm_hold.log"           # before the isolate, which would start it (3.108)
+vlm_hold "$OUT/vlm_hold.log" || { vlm_restore; trap - EXIT; exit 2; }   # refused before touching anything else           # before the isolate, which would start it (3.108)
 
 sudo systemctl isolate multi-user.target; sleep 5
 sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3

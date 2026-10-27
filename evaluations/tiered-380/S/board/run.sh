@@ -28,7 +28,7 @@ stop() {
 # 4 GB is not any arm's "before") and put back as found at exit.
 source "$(dirname "${BASH_SOURCE[0]}")/../../../../tools/jetson/vlm_hold.sh" || { echo "STOP: no vlm_hold.sh"; exit 2; }
 trap vlm_restore EXIT
-vlm_hold "$OUT/$TAG.vlm_hold.log"
+vlm_hold "$OUT/$TAG.vlm_hold.log" || exit 2
 if [ -n "$WANT_VE" ]; then
   ss -ltnH "sport = :8007" | grep -q . && { echo "STOP: :8007 is already in use"; exit 2; }
 fi

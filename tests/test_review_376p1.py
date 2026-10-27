@@ -214,20 +214,21 @@ import subprocess  # noqa: E402
 _STUB = """
 systemctl() { case "$1" in
     is-active) cat "$D/state";; is-enabled) echo enabled;; cat) cat "$D/unit";;
+    show) echo no;;
     stop) echo inactive > "$D/state";;
     start) echo active > "$D/state"; echo start >> "$D/calls";;
     reset-failed) echo reset >> "$D/calls";; esac; }
-sudo() { case "$1" in touch) [ -e "$D/notouch" ] && return 1; : > "$D/flag";;
+sudo() { case "$1" in tee) [ -e "$D/notouch" ] && return 1; cat > "$D/flag";;
                       rm) rm -f "$D/flag";; *) "$@";; esac; }
 source "$HELPER"; VLM_HOLD_FLAG="$D/flag"
 """
 
 
-def _hold(tmp_path, state, body, unit=None, flag=False, notouch=False):
+def _hold(tmp_path, state, body, unit=None, flag=None, notouch=False):
     (tmp_path / "state").write_text(state + "\n")
     (tmp_path / "unit").write_text(unit if unit is not None else _text("systemd/picar-local-vlm.service"))
-    if flag:
-        (tmp_path / "flag").write_text("")
+    if flag is not None:
+        (tmp_path / "flag").write_text(flag)
     if notouch:
         (tmp_path / "notouch").write_text("")
     r = subprocess.run(["bash", "-c", _STUB + body],
@@ -268,32 +269,44 @@ def test_a_stopped_vlm_stays_stopped(tmp_path):
 
 
 def test_restore_without_a_hold_does_nothing(tmp_path):
-    r, state, flag, calls = _hold(tmp_path, "inactive", "vlm_restore", flag=True)
+    r, state, flag, calls = _hold(tmp_path, "inactive", "vlm_restore", flag="1")
     assert r.returncode == 0 and flag and calls == []      # someone else's flag is left
 
 
 def test_a_nested_hold_leaves_the_outer_benchs_flag(tmp_path):
     """Round 4: top5.sh holds, then calls S/board/run.sh, which held again and
     cleared the shared flag at its exit."""
-    r, state, flag, calls = _hold(tmp_path, "inactive", "vlm_hold; vlm_restore", flag=True)
-    assert r.returncode == 0 and flag and calls == [] and "already held" in r.stdout
+    live = subprocess.Popen(["sleep", "30"])
+    try:
+        r, state, flag, calls = _hold(tmp_path, "inactive", "vlm_hold; vlm_restore", flag=str(live.pid))
+    finally:
+        live.kill()
+    assert r.returncode == 0 and flag and calls == [] and "the bench that called" in r.stdout
+
+
+def test_a_stale_hold_is_taken_over_and_cleared(tmp_path):
+    """Round 5: a flag left by a killed bench read as a caller's, so the
+    next bench never cleared it and the VLM stayed off until a reboot."""
+    r, state, flag, calls = _hold(tmp_path, "active", "vlm_hold; vlm_restore", flag="999999999")
+    assert r.returncode == 0 and "stale" in r.stdout
+    assert not flag and state == "active" and calls == ["reset", "start"]
 
 
 def test_a_hold_that_cannot_set_its_flag_stops_nothing(tmp_path):
-    r, state, flag, calls = _hold(tmp_path, "active", "vlm_hold; echo GO", notouch=True)
+    r, state, flag, calls = _hold(tmp_path, "active", "vlm_hold || exit $?; echo GO", notouch=True)
     assert r.returncode == 2 and "GO" not in r.stdout and state == "active"
 
 
 def test_a_hold_that_does_not_stop_it_refuses(tmp_path):
     r, *_ = _hold(tmp_path, "active",
                   'systemctl() { case $1 in is-active) echo active;; is-enabled) echo enabled;;'
-                  ' cat) cat "$D/unit";; esac; }; vlm_hold; echo GO')
+                  ' cat) cat "$D/unit";; show) echo no;; esac; }; vlm_hold || exit $?; echo GO')
     assert r.returncode == 2 and "GO" not in r.stdout and "could not stop" in r.stdout
 
 
 def test_a_board_whose_unit_has_no_condition_refuses(tmp_path):
     old = _text("systemd/picar-local-vlm.service").replace("ConditionPathExists=!/run/picar-vlm-hold\n", "")
-    r, state, flag, calls = _hold(tmp_path, "active", "vlm_hold; echo GO", unit=old)
+    r, state, flag, calls = _hold(tmp_path, "active", "vlm_hold || exit $?; echo GO", unit=old)
     assert r.returncode == 2 and "GO" not in r.stdout and "no hold condition" in r.stdout
     assert state == "active" and not flag
 
@@ -317,3 +330,10 @@ def test_the_installer_checks_the_lock_and_starts_the_vlm_after_the_stack():
     assert code.index("brain/health >/dev/null && break") < code.index("restart picar-local-vlm")
     assert "reset-failed" not in code
     assert "rm -f /run/picar-vlm-hold" in code
+
+
+def test_a_refused_hold_exits_without_the_teardown():
+    """Round 5: a refusal after the trap ran the teardown, which kills the
+    live twin stack's processes before the bench had touched anything."""
+    for name in ("headroom_identity.sh", "headroom_mission.sh", "bench_local_vlm.sh"):
+        assert 'vlm_hold "$OUT/vlm_hold.log" || { vlm_restore; trap - EXIT; exit 2; }' in _code(name), name

@@ -120,7 +120,7 @@ esac
 trap teardown EXIT
 # After the trap, before the isolate, which would start the enabled VLM (3.108).
 # Not in a pipeline: it sets VLM_WAS and VLM_HELD here.
-vlm_hold "$OUT/vlm_hold.log"
+vlm_hold "$OUT/vlm_hold.log" || { vlm_restore; trap - EXIT; exit 2; }   # refused before touching anything else
 
 sudo systemctl isolate multi-user.target; sleep 5
 sudo systemctl stop picar-stack picar-ngrok picar-local-vlm 2>/dev/null; sleep 3

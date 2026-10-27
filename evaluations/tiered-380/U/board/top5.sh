@@ -27,7 +27,7 @@ fi
 # the refusals above, so they cost no reload) and put back as found at exit.
 source "$(dirname "${BASH_SOURCE[0]}")/../../../../tools/jetson/vlm_hold.sh" || { echo "STOP: no vlm_hold.sh"; exit 2; }
 trap vlm_restore EXIT
-vlm_hold "$OUT/$N.vlm_hold.log"
+vlm_hold "$OUT/$N.vlm_hold.log" || exit 2
 ( while :; do echo "$(date +%s) $(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)"; sleep 1; done ) > $OUT/$N.mem &
 SAMP=$!
 trap 'kill $SAMP 2>/dev/null; vlm_restore' EXIT

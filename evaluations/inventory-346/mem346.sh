@@ -16,7 +16,7 @@ H=(-H "x-app-secret: $LOCAL_SECRET")
 # not the namer's baseline) and put back as found at exit.
 source tools/jetson/vlm_hold.sh || { echo "STOP: no vlm_hold.sh"; exit 2; }
 trap vlm_restore EXIT
-vlm_hold "$L/vlm_hold.log"
+vlm_hold "$L/vlm_hold.log" || exit 2
 sudo systemctl isolate multi-user.target; sleep 5
 echo "== $TAG $(date +%T) rev $(git rev-parse --short HEAD) $(sudo nvpmodel -q | head -1) desktop $(systemctl is-active gdm)"
 docker rm -f picar-ros >/dev/null 2>&1

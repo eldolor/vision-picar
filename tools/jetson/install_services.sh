@@ -43,7 +43,14 @@ done
 # stopped until `sudo systemctl reset-failed picar-local-vlm` by hand.
 # A hold flag left by a bench that died (board_lock_check above: no bench
 # holds the board now) would skip the start without a word.
-[ -e /run/picar-vlm-hold ] && { echo "WARNING: clearing a stale /run/picar-vlm-hold"; sudo rm -f /run/picar-vlm-hold; }
+if [ -e /run/picar-vlm-hold ]; then
+  hold_pid=$(cat /run/picar-vlm-hold 2>/dev/null || true)
+  if [ -n "$hold_pid" ] && kill -0 "$hold_pid" 2>/dev/null; then
+    echo "WARNING: a bench (pid $hold_pid) holds the VLM off -- not restarting it"
+  else
+    echo "WARNING: clearing a stale /run/picar-vlm-hold"; sudo rm -f /run/picar-vlm-hold
+  fi
+fi
 if [ -f "$HOME/.vision-picar-local-vlm.env" ]; then
   sudo systemctl enable picar-local-vlm.service || echo "WARNING: picar-local-vlm not enabled"
   sudo systemctl restart picar-local-vlm.service || echo "WARNING: picar-local-vlm did not restart"
