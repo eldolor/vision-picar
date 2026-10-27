@@ -905,6 +905,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   choice is 326-341 ms p90 (bar 100; quiet 316-331, F-large reproducing
   3.96's 313): over half is the ten 3.65 facts' Python loop (185 ms), the
   network 1-2 ms at any width; numpy for `features()` is the first fix.
+  **3.109 (merged 2026-10-26):** `features()` in numpy with one
+  `goal_context` per choice, exactly the old answers (frozen
+  `tests/goal_features_reference.py`; do not "simplify" it): the ten facts
+  187 -> 14.8 ms p90 on the board under the full stack (bar 10: FAILED), the
+  whole choice 326 -> 159 ms (F-large); the map work (~90 ms) and the room
+  cut (~42 ms) are now the cost. **3.110 (stage 1, 2026-10-26):** a copying
+  ladder from 17 to 42 facts (78 clones): one step, at `lidar_gain` (+3.8
+  points), a climb to ~24 facts, a knee at 34; stage 2 (PPO and test for
+  18 / 24 / 34 facts) waits on the user.
 * **Explore's in-sight livelock bounded (3.106), merged 2026-10-26**
   (3.96 criterion 5's house `train:1395`, the user's pick): in the band, the
   target in sight, nothing to close in with (the `explore` policy's frame
