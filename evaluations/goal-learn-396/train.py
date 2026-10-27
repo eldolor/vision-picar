@@ -115,7 +115,8 @@ def dropped_rooms(grid, index: int, share: float) -> frozenset:
 def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float = 0.0) -> dict:
     """spec: "rule" | "net365" (3.65's shipped network, its own ten
     features) | "wired" (`explore_goal_policy: rooms` as the brain runs it,
-    3.96.C) | "oracle" | ("sample"|"greedy", kind, params). `drop`: the
+    3.96.C) | "oracle" | ("sample"|"greedy"|"greedy_log", kind, params);
+    "greedy_log" is greedy with every choice recorded (3.111). `drop`: the
     share of rooms whose labels are withheld (criterion 3)."""
     grid = build_world(f"procthor:{split}:{index}")
     target, dist = pick_target(grid, index, mode)
@@ -173,14 +174,14 @@ def mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float 
             else:
                 s = score_np(params, kind, X, C)
                 s = np.where(np.isfinite(s), s, -1e9)
-                if spec[0] == "greedy":
+                if spec[0] in ("greedy", "greedy_log"):
                     i, lp = int(np.argmax(s)), 0.0
                 else:
                     p = np.exp(s - s.max())
                     p /= p.sum()
                     i = int(min(np.searchsorted(np.cumsum(p), rng.random()), len(p) - 1))
                     lp = float(math.log(max(p[i], 1e-12)))
-            if len(pool) > 1 and (spec == "oracle" or spec[0] == "sample"):
+            if len(pool) > 1 and (spec == "oracle" or spec[0] in ("sample", "greedy_log")):
                 records.append({"X": X, "C": C if want_crops else None, "i": i, "lp": lp,
                                 "oracle": O.oracle_pick(costs),
                                 "costs": np.asarray([-1.0 if c == O.INF else c for c in costs],

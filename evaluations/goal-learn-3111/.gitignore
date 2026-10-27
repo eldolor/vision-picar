@@ -1,0 +1,6 @@
+data/
+run/oracle-*/
+run/*.pkl
+run/*/
+!run/rows/
+run/*.log
