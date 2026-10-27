@@ -63,8 +63,11 @@ def one(k: int, seed: int, root: str) -> None:
         shards = T.stage_oracle("large", root, ex)        # all exist: nothing is run
         st = T.stage_clone(arm(k, seed), out, shards, ex)
     got = {key: st[key] for key in B_CHOICES}
+    inputs = int(st["net"]["lin.weight"].shape[1])   # the patch took effect
+    if inputs != len(c):
+        raise SystemExit(f"{arm(k, seed)}: the net reads {inputs} facts, the rung {len(c)}")
     row = {"k": k, "facts": len(c), "seed": seed, "added": ORDER[k - 1] if k else None,
-           "held_out_agreement": st["held_out_agreement"], **got,
+           "held_out_agreement": st["held_out_agreement"], "net_inputs": inputs, **got,
            "counts_as_B": got == B_CHOICES}
     with open(os.path.join(out, "row.json"), "w") as f:
         json.dump(row, f, indent=1)
