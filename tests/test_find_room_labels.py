@@ -79,18 +79,24 @@ def test_types_are_read_from_the_find_layer_when_the_map_has_none():
 
 
 def test_the_cap_ends_asking_not_the_mission(monkeypatch):
-    """At the cap it stops asking -- and stops coarsening the map for the
-    labeller every tick (review) -- while the mission goes on."""
-    import control.mission_runner as mr
-    calls = []
-    real = mr.coarse
-    monkeypatch.setattr(mr, "coarse", lambda m: calls.append(1) or real(m))
+    """At the cap it stops asking -- and the labeller is handed no map to
+    coarsen from then on (review) -- while the mission goes on."""
+    from brain.room_labels import RoomLabeller
+    maps_after_cap = []
+    real = RoomLabeller.observe
+
+    def observe(self, m, *a, **k):
+        if self.capped:
+            maps_after_cap.append(m)
+        return real(self, m, *a, **k)
+
+    monkeypatch.setattr(RoomLabeller, "observe", observe)
     runner, _nav, _g = _mission(explore_goal_policy="rooms", find_room_labels=True,
                                 room_label_max_calls=1)
     s = runner.status()
     assert s["outcome"] == "found", s["log_tail"]
     assert s["room_labels"]["label_calls"] == 1 and s["room_labels"]["capped"]
-    assert len(calls) < s["step"]          # one per new map version, until the cap
+    assert maps_after_cap and all(m is None for m in maps_after_cap)
 
 
 def test_off_asks_nothing():
@@ -122,6 +128,8 @@ def test_the_server_builds_the_cloud_source_for_a_find_with_its_own_cap(tmp_path
     assert resp.status_code == 200, resp.text
     assert seen["vision_url"] == "https://vision.example"
     assert runner.find_room_labels and runner.room_labeller.max_calls == 9
+    assert runner.metrics_config["find_room_labels"] == "cloud"
+    assert runner.metrics_config["find_room_label_max_calls"] == 9
 
 
 def test_the_server_asks_nothing_for_a_search_explore_does_not_choose(tmp_path, monkeypatch):
@@ -139,6 +147,7 @@ def test_the_server_asks_nothing_for_a_search_explore_does_not_choose(tmp_path, 
         client.post("/mission/stop")
     assert resp.status_code == 200, resp.text
     assert runner.room_labeller is None
+    assert runner.metrics_config["find_room_labels"] == "off"   # this mission asked nothing
 
 
 def test_a_cloud_find_with_no_vision_service_is_refused_at_start(tmp_path, monkeypatch):

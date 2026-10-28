@@ -206,8 +206,8 @@ search). It asks exactly as a survey does, but on the map coarsened to the
 room policy's 0.30 m (`goal_policy.coarse`, made once per map version and
 not at all once asking has ended), and its layer goes only to the agent's
 `goal_labels` as (the coarse map it was cut on, the layer), looked up by
-metres; it is cut again when an answer lands, another map begins or
-`RESEGMENT_S` has passed, never per goal choice. An ask holds the tick as a
+metres; it is cut again whenever the map or the answers change (an older
+cut would leave a frontier goal on new floor untyped). An ask holds the tick as a
 survey's does (3.116 amendment 5: measured on the car before `cloud`);
 `room_labels()` stays None and status reports the asks as `room_labels`,
 not `survey`.

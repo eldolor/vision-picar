@@ -838,8 +838,6 @@ def create_app(
                 "perception_floor_mask", "perception_crop_path",
                 "navigate_model_id", "navigate_prompt_variant",
                 "explore_goal_policy",
-                # 3.116.B (review): whether a find asked room names, and its cap.
-                "find_room_labels", "find_room_label_max_calls",
                 # 3.91.C (review): a no remembered, and the disagreement call.
                 "tier_remember_no", "tier_reject_hold_s", "tier_reject_move_m",
                 "tier_reject_turn_deg", "tier_no_box_range",
@@ -849,6 +847,11 @@ def create_app(
             "tier_tree": json.dumps(config.get("tier_tree") or {}, sort_keys=True,
                                     separators=(",", ":")),
             "explore_ask": asks,
+            # 3.116.B (review): whether THIS mission asked room names, from
+            # where, and its cap -- not the config's setting.
+            "find_room_labels": config["find_room_labels"] if find_labels else "off",
+            "find_room_label_max_calls": (config["find_room_label_max_calls"]
+                                          if find_labels else None),
         }
         if req.policy == "tiered":
             # The mission's own vote, not only the config's (3.90 E).

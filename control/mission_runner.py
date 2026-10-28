@@ -65,7 +65,7 @@ from brain.inventory import DEFAULT_FOV_DEG, Inventory, frame_detections
 from brain.memory import MissionMemory
 from brain.mission_report import map_coverage
 from brain.navigate import CloudUnavailable
-from brain.room_labels import RESEGMENT_S, RoomLabeller, frame_room
+from brain.room_labels import RoomLabeller, frame_room
 from brain.vision_agent import VisionAgent
 from robot.interface import (DRIVER_MANUAL, PERSON_STOP, Preempted, RobotInterface,
                              StoppedByPerson, driver_priority)
@@ -665,14 +665,7 @@ class MissionRunner:
         # types only (the agent's `goal_labels`, below). Useless to any other
         # chooser, and each ask may be a paid call, so refused without one.
         self.find_room_labels = bool(find_room_labels) and job == "find"
-        # The same test as `self.explores` below: tier_search counts only under tiered.
-        searches_by_explore = policy == "explore" or (policy == "tiered"
-                                                      and tier_search == "explore")
-        if self.find_room_labels and (explore_goal_policy != "rooms" or not searches_by_explore):
-            raise ValueError("find_room_labels feeds explore_goal_policy 'rooms' only; "
-                             f"got policy {policy!r}, tier_search {tier_search!r}, "
-                             f"explore_goal_policy {explore_goal_policy!r}")
-        self._goal_layer: Optional[tuple] = None     # (map id, seeds, cut at, coarse map, layer)
+        self._goal_layer: Optional[tuple] = None     # ((map key, seeds), coarse map, layer)
         self._coarse_memo: Optional[tuple] = None    # (map key, coarse map)
         self._label_error_logged = False
         # A paid source's own timeout: an ask that could not finish inside
@@ -803,6 +796,10 @@ class MissionRunner:
         # perception, never from the frame's simulator detections.
         self.tier_search = tier_search if policy == "tiered" else None
         self.explores = policy == "explore" or self.tier_search == "explore"
+        if self.find_room_labels and (explore_goal_policy != "rooms" or not self.explores):
+            raise ValueError("find_room_labels feeds explore_goal_policy 'rooms' only; "
+                             f"got policy {policy!r}, tier_search {tier_search!r}, "
+                             f"explore_goal_policy {explore_goal_policy!r}")
         agent_class = (ExploreAgent if self.explores
                        else VisionAgent if policy in VISION_POLICIES else ObjectSearchAgent)
         extra = {}
@@ -2452,26 +2449,25 @@ class MissionRunner:
     def _goal_labels(self, m: dict) -> Optional[tuple]:
         """3.116.B: the find mission's label layer for the room goal
         policy's types, as (the coarse map it was cut on, the layer) -- the
-        caller looks goals up on that map, by metres. Cut again when an
-        answer lands or another map begins, and otherwise at most every
-        RESEGMENT_S (as the labeller's own cut), not on every map version
-        (review: a cut per goal choice). None before the first answer, or if
-        the cut fails (a label is never worth a mission: no types)."""
+        caller looks goals up on that map, by metres. Cut again only when
+        the map or the answers change: a frontier goal sits on the newest
+        floor, so an older cut would leave it untyped, and 3.116.A measured
+        a cut at every choice. None before the first answer, or if the cut
+        fails (a label is never worth a mission: no types)."""
         rl = self.room_labeller
         if rl is None or not rl.seeds:
             return None
-        now = self.clock()
-        g = self._goal_layer
-        if (g is None or g[0] != m.get("map_id") or g[1] != len(rl.seeds)
-                or now - g[2] >= RESEGMENT_S):
-            cm = self._coarse(m)
+        cm = self._coarse(m)
+        key = (RoomLabeller._key(cm), len(rl.seeds))
+        if self._goal_layer is None or self._goal_layer[0] != key:
             try:
                 layer = rl.layer(cm)
             except Exception:  # noqa: BLE001 -- see above
                 logger.warning("room label layer unavailable", exc_info=True)
                 layer = None
-            self._goal_layer = g = (m.get("map_id"), len(rl.seeds), now, cm, layer)
-        return (g[3], g[4]) if g[4] else None
+            self._goal_layer = (key, cm, layer)
+        _key, cm, layer = self._goal_layer
+        return (cm, layer) if layer else None
 
     def room_labels(self) -> Optional[dict]:
         """3.70 S2: a survey's room labels as the map's `room_labels` block
