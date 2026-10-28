@@ -65,13 +65,26 @@ def _torch():
     return torch
 
 
+CHECK_HOUSES = 8
+
+
+def _checked(k: int) -> str:
+    return os.path.join(RUN, f"check-k{k:02d}.json")
+
+
 def cmd_check(k: int) -> None:
-    """Oracle missions on shard 0's first houses, re-run under the rung's
-    patch, against the stored 42-column choices sliced to the rung."""
+    """Oracle missions on shard 0's first 8 houses (both modes), re-run
+    under the rung's patch, against the stored 42-column choices sliced to
+    the rung: facts, picks and costs equal exactly. Passing writes a marker
+    that clone and PPO require."""
+    if os.path.exists(_checked(k)):
+        return
     PR.check_oracle(RUN)
     use_rung(k)
     c = ladder.cols(k)
-    stored = pickle.load(open(os.path.join(RUN, "oracle-large", "oracle-000.pkl"), "rb"))[:8]
+    stored = pickle.load(open(os.path.join(RUN, "oracle-large", "oracle-000.pkl"), "rb"))
+    houses = list(dict.fromkeys(r["index"] for r in stored))[:CHECK_HOUSES]
+    stored = [r for r in stored if r["index"] in houses]
     jobs = [(r["split"], r["index"], r["mode"], "oracle") for r in stored]
     with ProcessPoolExecutor(min(8, T.WORKERS)) as ex:
         again = list(ex.map(T._job, jobs))
@@ -84,16 +97,30 @@ def cmd_check(k: int) -> None:
             n += 1
             if (q["X"].shape != (len(p["X"]), len(c)) or p["oracle"] != q["oracle"]
                     or not np.array_equal(p["costs"], q["costs"])
-                    or not np.allclose(p["X"][:, c], q["X"])):
+                    or not np.array_equal(p["X"][:, c], q["X"])):
                 bad.append((a["index"], a["mode"], "facts"))
-    out = {"rung": k, "facts": len(c), "missions": len(jobs), "choices": n, "differences": len(bad),
-           "first": bad[:5]}
+    out = {"rung": k, "facts": len(c), "houses": len(houses), "missions": len(jobs), "choices": n,
+           "differences": len(bad), "first": bad[:5]}
     print(json.dumps(out), flush=True)
     if bad or not n:
         raise SystemExit(f"rung {k}: the drive-time facts differ from the oracle sets' columns: not running")
+    T.save_atomic(_checked(k), lambda p: json.dump(out, open(p, "w")))
+
+
+def _need_check(k: int) -> None:
+    if not os.path.exists(_checked(k)):
+        raise SystemExit(f"rung {k}: run `check {k}` first")
+
+
+def _clone_ok(k: int, st: dict) -> None:
+    got = {x: st[x] for x in tie.N_CHOICES}
+    inputs = int(st["net"]["lin.weight"].shape[1])      # the patch took effect
+    if inputs != len(ladder.cols(k)) or (got != tie.N_CHOICES and not T.SMOKE):
+        raise SystemExit(f"{arm(k)}: {got}, {inputs} facts -- not 3.110's sets or not the rung's facts")
 
 
 def cmd_clone(k: int) -> dict:
+    _need_check(k)
     PR.check_oracle(RUN)
     use_rung(k)
     out = os.path.join(RUN, arm(k))
@@ -102,12 +129,9 @@ def cmd_clone(k: int) -> dict:
     with ProcessPoolExecutor(T.WORKERS) as ex:
         shards = T.stage_oracle("large", RUN, ex)        # all exist (check_oracle): nothing is run
         st = T.stage_clone(arm(k), out, shards, ex)
-    got = {x: st[x] for x in tie.N_CHOICES}
-    inputs = int(st["net"]["lin.weight"].shape[1])      # the patch took effect
-    print(f"{arm(k)}: {PR.POOL.size()} numbers, {inputs} facts, {got}, "
-          f"held-out agreement {st['held_out_agreement']}", flush=True)
-    if got != tie.N_CHOICES or inputs != len(ladder.cols(k)):
-        raise SystemExit(f"{arm(k)}: not 3.110's sets or not the rung's facts")
+    print(f"{arm(k)}: {PR.POOL.size()} numbers, {st['net']['lin.weight'].shape[1]} facts, "
+          f"{ {x: st[x] for x in tie.N_CHOICES} }, held-out agreement {st['held_out_agreement']}", flush=True)
+    _clone_ok(k, st)
     return st
 
 
@@ -117,8 +141,10 @@ def cmd_ppo(k: int) -> None:
     if os.path.exists(os.path.join(out, "best.json")):
         print(f"{arm(k)}: PPO already done", flush=True)
         return
+    _need_check(k)
     torch = _torch()
     st = torch.load(os.path.join(out, "clone.pt"), weights_only=False)
+    _clone_ok(k, st)
     with ProcessPoolExecutor(T.WORKERS) as ex:
         T.stage_ppo(arm(k), out, st, ex)
 
@@ -134,8 +160,11 @@ def cmd_diag(k: int) -> None:
             if os.path.exists(path):
                 continue
             rows = list(ex.map(C._job, [(s, h, mode, sp) for s, h in hs], chunksize=2))
+            got = T.summary(rows)
+            print(f"{arm(k)} {mode}: {got}", flush=True)
+            if got["exceptions"]:
+                raise SystemExit(f"{arm(k)} {mode}: {got['exceptions']} missions raised -- not saving")
             T.save_atomic(path, lambda p: json.dump(rows, open(p, "w")))
-            print(f"{arm(k)} {mode}: {T.summary(rows)}", flush=True)
 
 
 def _stage(cmd: str, k: int) -> None:
@@ -148,8 +177,10 @@ def _stage(cmd: str, k: int) -> None:
 
 
 def cmd_all() -> None:
+    for k in RUNGS:                   # every rung's facts check before any training
+        _stage("check", k)
     for k in RUNGS:
-        for cmd in ("check", "clone", "ppo", "diag"):
+        for cmd in ("clone", "ppo", "diag"):
             _stage(cmd, k)
 
 
@@ -176,7 +207,8 @@ def cmd_report() -> dict:
              "selection_R": [(s["it"], s["R"]["mean_reward"]) for s in st["selection"]],
              **{m: T.summary(list(d[m].values())) for m in MODES},
              "own": tie._own({(m, i): r for m in MODES for i, r in d[m].items()}),
-             "minus_W32_R": boot(d["R"], w32["R"]), "minus_W32_U": boot(d["U"], w32["U"])}
+             "minus_W32_R": boot(d["R"], w32["R"]), "minus_W32_U": boot(d["U"], w32["U"]),
+             "oracle_minus": {m: boot(orc[m], d[m]) for m in MODES}}
         rep["arms"][a] = e
         rep["criteria"][a] = {"1_better_R": e["minus_W32_R"]["ci95"][0] > 0,
                               "2_U_not_worse": e["minus_W32_U"]["ci95"][0] > -0.05}
