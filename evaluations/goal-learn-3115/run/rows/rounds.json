@@ -1,0 +1,208 @@
+{
+ "0": {
+  "round": 0,
+  "n_train": 37064,
+  "n_held": 609,
+  "held_out_agreement": 0.3924,
+  "selection": {
+   "R": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 19.8,
+    "mean_reward": 0.2697
+   },
+   "U": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.5,
+    "median_metres_found": 23.25,
+    "mean_reward": 0.112
+   }
+  }
+ },
+ "1": {
+  "round": 1,
+  "n_train": 66601,
+  "n_held": 609,
+  "held_out_agreement": 0.3645,
+  "selection": {
+   "R": {
+    "n": 100,
+    "found": 96,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 18.15,
+    "mean_reward": 0.4163
+   },
+   "U": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 6.0,
+    "median_metres_found": 21.75,
+    "mean_reward": 0.3498
+   }
+  },
+  "drives": {
+   "n": 1992,
+   "found": 1924,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 19.35,
+   "mean_reward": 0.1073
+  },
+  "learner_choices": 29537
+ },
+ "2": {
+  "round": 2,
+  "n_train": 85222,
+  "n_held": 609,
+  "held_out_agreement": 0.3662,
+  "selection": {
+   "R": {
+    "n": 100,
+    "found": 98,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 19.2,
+    "mean_reward": 0.4477
+   },
+   "U": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 20.4,
+    "mean_reward": 0.4106
+   }
+  },
+  "drives": {
+   "n": 1992,
+   "found": 1937,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 19.2,
+   "mean_reward": 0.3063
+  },
+  "learner_choices": 18621
+ },
+ "3": {
+  "round": 3,
+  "n_train": 99345,
+  "n_held": 609,
+  "held_out_agreement": 0.3547,
+  "selection": {
+   "R": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 17.1,
+    "mean_reward": 0.4697
+   },
+   "U": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 21.0,
+    "mean_reward": 0.3671
+   }
+  },
+  "drives": {
+   "n": 1989,
+   "found": 1940,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 19.5,
+   "mean_reward": 0.3542
+  },
+  "learner_choices": 14123
+ },
+ "4": {
+  "round": 4,
+  "n_train": 112523,
+  "n_held": 609,
+  "held_out_agreement": 0.3563,
+  "selection": {
+   "R": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 20.7,
+    "mean_reward": 0.3625
+   },
+   "U": {
+    "n": 100,
+    "found": 99,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 20.4,
+    "mean_reward": 0.1732
+   }
+  },
+  "drives": {
+   "n": 1997,
+   "found": 1958,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 18.3,
+   "mean_reward": 0.3664
+  },
+  "learner_choices": 13178
+ },
+ "5": {
+  "round": 5,
+  "n_train": 125881,
+  "n_held": 609,
+  "held_out_agreement": 0.3498,
+  "selection": {
+   "R": {
+    "n": 100,
+    "found": 97,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.0,
+    "median_metres_found": 17.7,
+    "mean_reward": 0.4506
+   },
+   "U": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 22.049999999999997,
+    "mean_reward": 0.3168
+   }
+  },
+  "drives": {
+   "n": 1996,
+   "found": 1950,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 19.2,
+   "mean_reward": 0.3297
+  },
+  "learner_choices": 13358
+ }
+}

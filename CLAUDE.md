@@ -931,6 +931,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   points: FAILED; hard also drove best on the selection houses (R 0.213 vs
   0.207 / 0.197), so no PPO run. Not labels: DAgger on the learner's
   states or richer facts is next.
+  **3.115 (2026-10-27, records only):** DAgger on W32's own states (5
+  rounds x 1,000 training houses, aggregated, clone from scratch): round
+  3 kept (selection R 0.270 -> 0.470); own-choice near agreement 14.2% ->
+  31.4% (met); clone vs W32's clone on the diagnostic houses R +0.40
+  [0.23, 0.56] (met); then PPO: R -0.091 [-0.203, -0.005] vs W32's
+  `best.json` (FAILED). PPO reaches ~0.59 selection R from either start:
+  not the start state, richer facts next.
 * **Harness missions collect their cycles (3.113), merged 2026-10-27.**
   `evaluations/goal-learn-396/train.py` `mission()` runs `gc.collect()` in
   a `finally` (a mission's runner, agent and house are reference cycles);
