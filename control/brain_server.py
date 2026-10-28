@@ -715,11 +715,18 @@ def create_app(
             # one paid call an ask, only when the config says so. Its timeout
             # is held to half the tick's, and the runner skips an ask that
             # would not end inside what the step left of the tick.
+            # 3.116.B: a find mission's own asks, when find_room_labels says so
+            # and explore chooses its goals (no other search reads them).
+            find_labels = (req.job == "find" and config["find_room_labels"] != "off"
+                           and (req.policy == "explore" or tier_search == "explore"))
+            label_source = (config["find_room_labels"] if find_labels
+                            else config["room_label_source"] if req.job == "survey" else None)
             room_label_fn = room_label_timeout_s = None
-            if req.job == "survey" and config["room_label_source"] == "cloud":
+            if label_source == "cloud":
                 if not config["vision_url"]:
+                    key = "find_room_labels" if find_labels else "room_label_source"
                     raise ValueError(
-                        "brain.room_label_source 'cloud' needs a vision service. Set "
+                        f"brain.{key} 'cloud' needs a vision service. Set "
                         "brain.vision_url in config/robot.yaml (or VISION_URL in the "
                         "environment).")
                 room_label_timeout_s = min(float(config["room_label_timeout_s"]),
@@ -742,10 +749,12 @@ def create_app(
                                   or (config["survey_time_limit_s"] if req.job == "survey"
                                       else config["mission_time_limit_s"]) or None),
             job=req.job,
-            room_label_max_calls=config["room_label_max_calls"] or None,
+            room_label_max_calls=(config["find_room_label_max_calls"] if find_labels
+                                  else config["room_label_max_calls"]) or None,
             room_label_mode=config["room_label_mode"],
             room_label_fn=room_label_fn,
             room_label_timeout_s=room_label_timeout_s,
+            find_room_labels=find_labels,
             battery_floor_v=config["battery_floor_v"] or None,
             vision_max_calls=config["vision_max_calls"] or None,
             stuck_after=config["stuck_after"],

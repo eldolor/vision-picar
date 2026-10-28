@@ -198,6 +198,15 @@ refuses a survey with a target or another policy, and an unknown job, with
 sights one, so it never approaches, never asks the arrival confirmation and
 never ends `found`; it ends `exhausted` (or out of budget, or cancelled).
 Its budget is `survey_time_limit_s` (brain_server picks it for a survey).
+A find mission owns one too when `find_room_labels` (3.116.B: `off` |
+`frame` | `cloud`, `find_room_label_max_calls` 20) is on and explore
+chooses its goals under `explore_goal_policy: rooms` (anything else is
+refused: the config, the runner; brain_server builds none for another
+search). It asks exactly as a survey does, but on the map coarsened to the
+room policy's 0.30 m (`goal_policy.coarse`), and its layer goes only to the
+agent's `goal_labels` (cut again when the map or the asks change);
+`room_labels()` stays None and status reports the asks as `room_labels`,
+not `survey`.
 A survey owns a `RoomLabeller` (`brain/room_labels.py`): once a tick, after
 the step, the runner reads the pose (`world.get_pose()`) and the explore
 agent's last map and calls `observe(map, pose, robot.get_camera_frame)`. It

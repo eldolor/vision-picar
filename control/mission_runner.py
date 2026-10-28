@@ -58,7 +58,7 @@ from brain.explore import OWN_GOAL_TOLERANCE_M, ExploreAgent  # one tolerance fo
 from brain.choice_log import BY_PERSON, GoalAsk
 from brain.intervention_log import (VIA_BRAIN_STOP, VIA_LOOP_CANCELLED, VIA_PREEMPTED,
                                     VIA_ROBOT_STOP)
-from brain.goal_policy import goal_policy_for
+from brain.goal_policy import coarse, goal_policy_for
 from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
 from brain.inventory import MAX_RANGE_M as INVENTORY_RANGE_M
 from brain.inventory import DEFAULT_FOV_DEG, Inventory, frame_detections
@@ -614,6 +614,7 @@ class MissionRunner:
         room_label_max_calls: Optional[int] = None,
         room_label_mode: str = "spacing",
         room_label_timeout_s: Optional[float] = None,
+        find_room_labels: bool = False,
         explore_ask_timeout_s: Optional[float] = None,
         house: Optional[str] = None,
     ):
@@ -658,7 +659,18 @@ class MissionRunner:
                                            max_calls=room_label_max_calls,
                                            mode=room_label_mode,
                                            clock=lambda: self.clock())
-                              if job == "survey" else None)
+                              if job == "survey" or find_room_labels else None)
+        # 3.116.B: a find mission asks as a survey does, on the map coarsened
+        # to the room policy's grid, and its labels feed that policy's room
+        # types only (the agent's `goal_labels`, below). Useless to any other
+        # chooser, and each ask may be a paid call, so refused without one.
+        self.find_room_labels = bool(find_room_labels) and job == "find"
+        if self.find_room_labels and (explore_goal_policy != "rooms"
+                                      or not (policy == "explore" or tier_search == "explore")):
+            raise ValueError("find_room_labels feeds explore_goal_policy 'rooms' only; "
+                             f"got policy {policy!r}, tier_search {tier_search!r}, "
+                             f"explore_goal_policy {explore_goal_policy!r}")
+        self._goal_layer: Optional[tuple] = None     # (map key, seeds, layer)
         self._label_error_logged = False
         # A paid source's own timeout: an ask that could not finish inside
         # what is left of the tick's deadline waits for a later tick (review).
@@ -801,6 +813,8 @@ class MissionRunner:
             extra = {"navigator": self._navigator, "clock": self.clock,
                      # 3.65 phase 2: "rule" (None) or the learned goal choice.
                      "goal_policy": goal_policy_for(explore_goal_policy)}
+            if self.find_room_labels:
+                extra["goal_labels"] = self._goal_labels
             if explore_ask_timeout_s:
                 if policy != "explore":
                     # A tiered search's questions run on through a pause, and
@@ -1087,8 +1101,10 @@ class MissionRunner:
             # worth a survey: any error here (the pose, the frame, the label
             # source, the map cut) skips this step's label and is logged once.
             try:
-                name = self.room_labeller.observe(getattr(self.agent, "_last_map", None),
-                                                  self.world.get_pose(), self._label_frame,
+                m = getattr(self.agent, "_last_map", None)
+                if self.find_room_labels and m and "cells" in m:
+                    m = coarse(m)
+                name = self.room_labeller.observe(m, self.world.get_pose(), self._label_frame,
                                                   alive=self.is_running, fits=self._label_fits)
                 if name is not None:
                     self._log_line(f"room label {self.room_labeller.calls}: {name}")
@@ -1435,7 +1451,10 @@ class MissionRunner:
                 "job": self.job,
                 # 3.70 S2: a survey's room labels -- how many asks, the cap,
                 # whether it was reached, and the names so far.
-                "survey": (self.room_labeller.status() if self.room_labeller else None),
+                "survey": (self.room_labeller.status()
+                           if self.room_labeller and not self.find_room_labels else None),
+                # 3.116.B: a find mission's own asks, the same shape.
+                "room_labels": (self.room_labeller.status() if self.find_room_labels else None),
                 "mission": self.memory.mission,
                 "target_object": self.memory.target_object,
                 "target_room": self.memory.target_room,
@@ -2418,12 +2437,29 @@ class MissionRunner:
         cut asks nobody."""
         return self.robot.get_camera_frame() if self.is_running() else None
 
+    def _goal_labels(self, m: dict) -> Optional[dict]:
+        """3.116.B: the find mission's label layer on `m` (already coarse),
+        for the room goal policy's types; cut again only when the map or the
+        asks change. None before the first answer, or if the cut fails (a
+        label is never worth a mission: the policy reads no types)."""
+        if self.room_labeller is None or not self.room_labeller.seeds:
+            return None
+        key = (RoomLabeller._key(m), len(self.room_labeller.seeds))
+        if self._goal_layer is None or self._goal_layer[0] != key:
+            try:
+                layer = self.room_labeller.layer(m)
+            except Exception:  # noqa: BLE001 -- see above
+                logger.warning("room label layer unavailable", exc_info=True)
+                layer = None
+            self._goal_layer = (key, layer)
+        return self._goal_layer[1]
+
     def room_labels(self) -> Optional[dict]:
         """3.70 S2: a survey's room labels as the map's `room_labels` block
         (`{"names", "cells"}`, what brain/explore.py reads), on the world's
         current map; None for a find mission or with no usable map. Saving
         it with the map is S4's (3.50's map store)."""
-        if self.room_labeller is None:
+        if self.room_labeller is None or self.find_room_labels:
             return None
         try:
             return self.room_labeller.layer(self.world.get_map())

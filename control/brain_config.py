@@ -243,6 +243,14 @@ DEFAULTS = {
     # of tick_timeout_s.
     "room_label_source": "frame",
     "room_label_timeout_s": 15.0,
+    # 3.116.B: a FIND mission names rooms as a survey does, for
+    # explore_goal_policy "rooms"'s room prior only: "off" (today's), "frame"
+    # (the simulator's own `room`, free) or "cloud" (/room, one paid call an
+    # ask). At most `find_room_label_max_calls` asks a mission (3.116.A: a
+    # median of 5, p90 13 on 583 houses; 0 = no cap). Same timeout as a
+    # survey's.
+    "find_room_labels": "off",
+    "find_room_label_max_calls": 20,
     # End a mission `blocked` after this many FORWARDs in a row refused by
     # the safety layer (control/mission_runner.py's BLOCKED). 0 disables.
     # Five because a policy that is merely unlucky gets one or two refusals
@@ -483,6 +491,9 @@ def load_brain_config(config_path=None) -> dict:
     # goal choice per stack without editing this yaml; validated below.
     if os.environ.get("EXPLORE_GOAL_POLICY"):
         merged["explore_goal_policy"] = os.environ["EXPLORE_GOAL_POLICY"]
+    # 3.116.B: the same, for a find mission's own room labels.
+    if os.environ.get("FIND_ROOM_LABELS"):
+        merged["find_room_labels"] = os.environ["FIND_ROOM_LABELS"]
     # 3.88 A: the same, for ask mode and where its choices are written.
     if os.environ.get("EXPLORE_ASK"):
         raw = os.environ["EXPLORE_ASK"].strip().lower()
@@ -596,6 +607,16 @@ def load_brain_config(config_path=None) -> dict:
     if merged["room_label_source"] not in ("frame", "cloud"):
         raise ValueError(f"brain.room_label_source must be 'frame' or 'cloud'; "
                          f"got {merged['room_label_source']!r}")
+    if merged["find_room_labels"] not in ("off", "frame", "cloud"):
+        raise ValueError(f"brain.find_room_labels must be 'off', 'frame' or 'cloud'; "
+                         f"got {merged['find_room_labels']!r}")
+    if merged["find_room_labels"] != "off" and merged["explore_goal_policy"] != "rooms":
+        raise ValueError("brain.find_room_labels feeds explore_goal_policy 'rooms' only; "
+                         f"got {merged['explore_goal_policy']!r}")
+    calls = merged["find_room_label_max_calls"]
+    if isinstance(calls, bool) or not isinstance(calls, int) or calls < 0:
+        raise ValueError(f"brain.find_room_label_max_calls must be a whole number >= 0 "
+                         f"(0 = no cap); got {calls!r}")
     # Above half of tick_timeout_s it is clamped at use, never refused here
     # (3.56's reason: a deployment that lowers only the tick's would fail).
     timeout = merged["room_label_timeout_s"]

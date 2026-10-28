@@ -146,7 +146,8 @@ def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float
              labels=None) -> dict:
     """spec: "rule" | "net365" (3.65's shipped network, its own ten
     features) | "wired" (`explore_goal_policy: rooms` as the brain runs it,
-    3.96.C) | "oracle" | ("sample"|"greedy"|"greedy_log", kind, params);
+    3.96.C) | "wired-ask" (the same with `find_room_labels`, 3.116.B) |
+    "oracle" | ("sample"|"greedy"|"greedy_log", kind, params);
     "greedy_log" is greedy with every choice recorded (3.111). `drop`: the
     share of rooms whose labels are withheld (criterion 3). `labels`: None
     for the stand-in, else a factory `labels(grid, index)` for another
@@ -163,12 +164,14 @@ def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float
     runner = MissionRunner(robot, target_object=target, policy="explore", navigator=nav,
                            world=MockWorld(grid), max_steps=MAX_STEPS,
                            clock=lambda: grid.sim_time, idle=robot.pass_time,
-                           explore_goal_policy="rooms" if spec == "wired" else "rule")
+                           explore_goal_policy="rooms" if spec in ("wired", "wired-ask") else "rule",
+                           # 3.116.B: the find mission's own asks, uncapped as 3.116.A's.
+                           find_room_labels=spec == "wired-ask")
     trail, records = [], []
     labeller = None
     if spec == "net365":
         runner.agent.goal_policy = NetGoalPolicy.load()
-    elif spec == "wired":
+    elif spec in ("wired", "wired-ask"):
         pass                              # built by the runner from the flag, above
     elif spec != "rule":
         agent = runner.agent
@@ -236,6 +239,8 @@ def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float
         s = runner.status()
         if hasattr(labeller, "asks"):
             row["asks"] = labeller.asks
+        if spec == "wired-ask":
+            row["asks"] = runner.room_labeller.calls
         row.update(outcome=s["outcome"], ticks=ticks, capped=ticks >= TICK_CAP,
                    goals=s.get("explore", {}).get("goals_sent") or 0,
                    metres=round(nav.metres + robot._path_m, 2))

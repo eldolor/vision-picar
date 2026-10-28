@@ -776,7 +776,14 @@ room in `_note_room`), area, whether it is another room than the robot's,
 the pool's share in that room, and -- only where the map carries a
 `room_labels` layer -- the room type's prior for the target
 (`_goal_types`; the prior is the training houses', in the weights file). A
-find mission's map has no labels, so those three read 0. Scored
+find mission's map has no labels, so those three read 0 -- unless
+`find_room_labels` is on (3.116.B): then the runner hands the agent
+`goal_labels`, a find mission's own asked layer on the map coarsened to
+0.30 m, which `_goal_types` reads when the map carries none (never written
+into the map, so E3's room goals stay off). Every target in the prior has
+one, the red backpack's nearly flat (0.16-0.23): 3.116.A measured asked
+labels helping a real-object target (paired reward +0.091) and hurting the
+backpack (-0.080). Scored
 `w . f + MLP(f)` (17 -> 32 -> 32 -> 1, tanh) in float32 exactly as the test
 run's `evaluations/goal-learn-396/model.py` `score_np`, argmax with a
 non-finite score last; parameters and prior in
