@@ -1,0 +1,11 @@
+588 test houses
+rule R: {'n': 583, 'found': 570, 'exceptions': 0, 'capped': 0, 'median_goals_found': 7.0, 'median_metres_found': 19.65, 'mean_reward': 0.4497}
+rule U: {'n': 588, 'found': 582, 'exceptions': 0, 'capped': 0, 'median_goals_found': 9.0, 'median_metres_found': 24.515, 'mean_reward': 0.351}
+no-label R: {'n': 583, 'found': 567, 'exceptions': 0, 'capped': 0, 'median_goals_found': 6.0, 'median_metres_found': 19.5, 'mean_reward': 0.404}
+no-label U: {'n': 588, 'found': 581, 'exceptions': 0, 'capped': 0, 'median_goals_found': 7.0, 'median_metres_found': 22.2, 'mean_reward': 0.3777}
+stand-in R: {'n': 583, 'found': 570, 'exceptions': 0, 'capped': 0, 'median_goals_found': 4.0, 'median_metres_found': 14.7, 'mean_reward': 0.5531}
+stand-in U: {'n': 588, 'found': 583, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 19.93, 'mean_reward': 0.4014}
+ask R: {'n': 583, 'found': 571, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 18.9, 'mean_reward': 0.4948}
+ask U: {'n': 588, 'found': 581, 'exceptions': 0, 'capped': 0, 'median_goals_found': 7.0, 'median_metres_found': 26.4, 'mean_reward': 0.2976}
+ask-noisy R: {'n': 583, 'found': 568, 'exceptions': 0, 'capped': 0, 'median_goals_found': 5.0, 'median_metres_found': 19.2, 'mean_reward': 0.4379}
+ask-noisy U: {'n': 588, 'found': 580, 'exceptions': 0, 'capped': 0, 'median_goals_found': 6.0, 'median_metres_found': 26.4, 'mean_reward': 0.2939}

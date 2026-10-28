@@ -1,0 +1,197 @@
+{
+ "houses": "test",
+ "summary": {
+  "rule-R": {
+   "n": 583,
+   "found": 570,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 7.0,
+   "median_metres_found": 19.65,
+   "mean_reward": 0.4497
+  },
+  "rule-U": {
+   "n": 588,
+   "found": 582,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 9.0,
+   "median_metres_found": 24.515,
+   "mean_reward": 0.351
+  },
+  "no-label-R": {
+   "n": 583,
+   "found": 567,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 6.0,
+   "median_metres_found": 19.5,
+   "mean_reward": 0.404
+  },
+  "no-label-U": {
+   "n": 588,
+   "found": 581,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 7.0,
+   "median_metres_found": 22.2,
+   "mean_reward": 0.3777
+  },
+  "stand-in-R": {
+   "n": 583,
+   "found": 570,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 14.7,
+   "mean_reward": 0.5531
+  },
+  "stand-in-U": {
+   "n": 588,
+   "found": 583,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 19.93,
+   "mean_reward": 0.4014
+  },
+  "ask-R": {
+   "n": 583,
+   "found": 571,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 18.9,
+   "mean_reward": 0.4948
+  },
+  "ask-U": {
+   "n": 588,
+   "found": 581,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 7.0,
+   "median_metres_found": 26.4,
+   "mean_reward": 0.2976
+  },
+  "ask-noisy-R": {
+   "n": 583,
+   "found": 568,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 19.2,
+   "mean_reward": 0.4379
+  },
+  "ask-noisy-U": {
+   "n": 588,
+   "found": 580,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 6.0,
+   "median_metres_found": 26.4,
+   "mean_reward": 0.2939
+  }
+ },
+ "verdict": {
+  "1_recovery": {
+   "stand_in_saving": 2.0,
+   "ask_saving": 1.0,
+   "share": 0.5,
+   "met": true
+  },
+  "2_finds": {
+   "ask-R": {
+    "found": 571,
+    "bar": 564.3,
+    "met": true
+   },
+   "ask-U": {
+    "found": 581,
+    "bar": 576.18,
+    "met": true
+   },
+   "ask-noisy-R": {
+    "found": 568,
+    "bar": 564.3,
+    "met": true
+   },
+   "ask-noisy-U": {
+    "found": 580,
+    "bar": 576.18,
+    "met": true
+   }
+  },
+  "3_noise": {
+   "goals": 5.0,
+   "goals_bar": 6.0,
+   "metres": 19.2,
+   "metres_bar": 21.45,
+   "met": true
+  },
+  "4_asks": {
+   "asks": {
+    "ask-R": {
+     "median": 5.0,
+     "p90": 13.0
+    },
+    "ask-U": {
+     "median": 6.0,
+     "p90": 17.0
+    },
+    "ask-noisy-R": {
+     "median": 5.0,
+     "p90": 13.0
+    },
+    "ask-noisy-U": {
+     "median": 6.0,
+     "p90": 17.0
+    }
+   },
+   "met": true
+  }
+ },
+ "lost_vs_rule": {
+  "ask-R": [
+   1096,
+   1126,
+   1148,
+   1310,
+   1473,
+   1661,
+   1768,
+   1811
+  ],
+  "ask-U": [
+   1237,
+   1240,
+   1731,
+   1737,
+   1919,
+   1980
+  ],
+  "ask-noisy-R": [
+   1096,
+   1126,
+   1148,
+   1256,
+   1310,
+   1311,
+   1603,
+   1614,
+   1643,
+   1661,
+   1768,
+   1811
+  ],
+  "ask-noisy-U": [
+   1098,
+   1237,
+   1240,
+   1731,
+   1737,
+   1875,
+   1980
+  ]
+ },
+ "noisy_asks": 9131
+}
