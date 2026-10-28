@@ -56,7 +56,7 @@ from brain.goal_policy import FEATURES as GOAL_FEATURES
 from brain.goal_policy import LinearGoalPolicy
 from brain.goal_policy import features as goal_features
 from brain.goal_policy import goal_context
-from brain.goal_policy import ROOM_FEATURES, ROOM_RES_M, RoomGoalPolicy, coarse, room_type
+from brain.goal_policy import ROOM_FEATURES, ROOM_RES_M, RoomGoalPolicy, room_type
 from brain.memory import MissionMemory
 from robot.interface import VERB_MAX_TAG, ZONE_UNUSABLE, Preempted, RobotInterface
 from robot.safety import CREEP_MARGIN_CM, FOOTPRINT_LENGTH_M, SafetyViolation, verb_speed_m_s
@@ -231,8 +231,9 @@ class ExploreAgent(MissionAgent):
         super().__init__(robot, memory, **kwargs)
         # 3.116.B: a find mission's own room labels (`find_room_labels`),
         # read for the room goal policy's types only -- never as the map's
-        # `room_labels`, so 3.70 E3's room goals stay off. Called with the
-        # map coarsened to ROOM_RES_M; returns a layer on that grid, or None.
+        # `room_labels`, so 3.70 E3's room goals stay off. Called with this
+        # tick's map; returns (the map the layer was cut on, the layer) --
+        # goals are looked up on that map by metres -- or None.
         self.goal_labels = goal_labels
         if navigator is None:
             raise ValueError("the explore policy needs a Navigator (nav2's goals)")
@@ -1058,9 +1059,12 @@ class ExploreAgent(MissionAgent):
         None off every labelled room, and for all of them on a map with no
         labels (a find mission without a survey)."""
         labels = self._labels(m)
-        if labels is None and self.goal_labels is not None:
-            m = coarse(m)
-            labels = self._labels({**m, "room_labels": self.goal_labels(m)})
+        source = getattr(self, "goal_labels", None)
+        if labels is None and source is not None:
+            got = source(m)
+            if got is not None:
+                m = got[0]
+                labels = self._labels({**m, "room_labels": got[1]})
         if labels is None:
             return [None] * len(goals)
         w, h, names = m["width"], m["height"], labels["names"]

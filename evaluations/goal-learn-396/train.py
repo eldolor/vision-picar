@@ -81,6 +81,8 @@ PRIOR = json.load(open(os.path.join(HERE, "prior.json")))
 # 3.101: f(agent, m, pose, pool, feats, trail, now) -> one row per candidate,
 # appended to X. None (the default) leaves every 3.96 run as it was.
 EXTRA_FEATURES = None
+# 3.116.B: the "wired-ask" arm's ask cap (0 or unset: none, as 3.116.A's arms).
+WIRED_ASK_CAP = int(os.environ.get("WIRED_ASK_CAP") or 0) or None
 
 
 def train_houses(arm: str) -> list:
@@ -165,8 +167,10 @@ def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float
                            world=MockWorld(grid), max_steps=MAX_STEPS,
                            clock=lambda: grid.sim_time, idle=robot.pass_time,
                            explore_goal_policy="rooms" if spec in ("wired", "wired-ask") else "rule",
-                           # 3.116.B: the find mission's own asks, uncapped as 3.116.A's.
-                           find_room_labels=spec == "wired-ask")
+                           # 3.116.B: the find mission's own asks, uncapped as 3.116.A's
+                           # unless WIRED_ASK_CAP (the shipped cap is 20).
+                           find_room_labels=spec == "wired-ask",
+                           room_label_max_calls=WIRED_ASK_CAP if spec == "wired-ask" else None)
     trail, records = [], []
     labeller = None
     if spec == "net365":

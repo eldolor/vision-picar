@@ -4,7 +4,6 @@ room types only."""
 import pytest
 from fastapi.testclient import TestClient
 
-from brain.goal_policy import coarse
 from control.brain_config import load_brain_config
 from control.mission_runner import MissionRunner
 from sim.maps import build_world
@@ -32,13 +31,17 @@ def test_the_config_refuses_what_could_not_work(monkeypatch, extra, why):
         load_brain_config()
 
 
-def test_the_runner_refuses_labels_no_chooser_would_read():
+@pytest.mark.parametrize("kw", [
+    {"policy": "explore"},                                   # the rule chooses
+    # tier_search counts under tiered only: frontier never runs explore (review).
+    {"policy": "frontier", "tier_search": "explore", "explore_goal_policy": "rooms"},
+])
+def test_the_runner_refuses_labels_no_chooser_would_read(kw):
     grid = build_world("scaled_house")
     robot = MockRobot(grid, render=False)
     with pytest.raises(ValueError, match="explore_goal_policy 'rooms' only"):
-        MissionRunner(robot, target_object="red backpack", policy="explore",
-                      navigator=FakeNav(robot), world=MockWorld(grid),
-                      find_room_labels=True)
+        MissionRunner(robot, target_object="red backpack", navigator=FakeNav(robot),
+                      world=MockWorld(grid), find_room_labels=True, **kw)
 
 
 def test_a_find_mission_asks_and_its_labels_reach_only_the_room_policy():
@@ -54,8 +57,9 @@ def test_a_find_mission_asks_and_its_labels_reach_only_the_room_policy():
     assert runner.room_labels() is None                # not a survey's labels
     m = runner.world.get_map()
     assert "room_labels" not in m
-    layer = runner.agent.goal_labels(coarse(m))
-    assert layer and layer["names"]
+    cm, layer = runner.agent.goal_labels(m)
+    assert cm["resolution_m"] >= m["resolution_m"] and layer["names"]
+    assert len(layer["cells"]) == cm["width"] * cm["height"]
     assert set(layer["names"]) <= {n for n in grid.rooms}
 
 
@@ -64,18 +68,29 @@ def test_types_are_read_from_the_find_layer_when_the_map_has_none():
     m = {"resolution_m": 0.30, "width": 4, "height": 1, "origin_x_m": 0.0,
          "origin_y_m": 0.0, "cells": [0] * 4}
     agent = ExploreAgent.__new__(ExploreAgent)
-    agent.goal_labels = lambda cm: {"names": ["kitchen"], "cells": [0, 0, -1, -1]}
+    agent.goal_labels = lambda mm: (mm, {"names": ["kitchen"], "cells": [0, 0, -1, -1]})
     assert agent._goal_types(m, [(0.1, 0.1), (1.1, 0.1)]) == ["kitchen", None]
-    agent.goal_labels = lambda cm: None
+    # Looked up by metres on the map the layer was cut on, not this one.
+    wide = {**m, "resolution_m": 0.60, "width": 2}
+    agent.goal_labels = lambda mm: (wide, {"names": ["kitchen"], "cells": [-1, 0]})
+    assert agent._goal_types(m, [(0.1, 0.1), (1.1, 0.1)]) == ["kitchen", "kitchen"]
+    agent.goal_labels = lambda mm: None
     assert agent._goal_types(m, [(0.1, 0.1)]) == [None]
 
 
-def test_the_cap_ends_asking_not_the_mission():
+def test_the_cap_ends_asking_not_the_mission(monkeypatch):
+    """At the cap it stops asking -- and stops coarsening the map for the
+    labeller every tick (review) -- while the mission goes on."""
+    import control.mission_runner as mr
+    calls = []
+    real = mr.coarse
+    monkeypatch.setattr(mr, "coarse", lambda m: calls.append(1) or real(m))
     runner, _nav, _g = _mission(explore_goal_policy="rooms", find_room_labels=True,
                                 room_label_max_calls=1)
     s = runner.status()
     assert s["outcome"] == "found", s["log_tail"]
     assert s["room_labels"]["label_calls"] == 1 and s["room_labels"]["capped"]
+    assert len(calls) < s["step"]          # one per new map version, until the cap
 
 
 def test_off_asks_nothing():
