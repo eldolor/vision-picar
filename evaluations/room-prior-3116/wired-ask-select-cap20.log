@@ -1,0 +1,5 @@
+{"pairs": 200, "R": {"houses": 100, "same": 100, "found": {"reference": 98, "wired": 98}}, "U": {"houses": 100, "same": 96, "found": {"reference": 100, "wired": 100}}}
+DIFF {'split': 'val', 'index': 186, 'mode': 'U', 'reference': ['found', 91, 395.4], 'reference_asks': 48, 'wired': ['found', 49, 214.8], 'wired_asks': 20}
+DIFF {'split': 'val', 'index': 219, 'mode': 'U', 'reference': ['found', 34, 142.5], 'reference_asks': 22, 'wired': ['found', 36, 146.1], 'wired_asks': 20}
+DIFF {'split': 'val', 'index': 261, 'mode': 'U', 'reference': ['found', 93, 448.8], 'reference_asks': 46, 'wired': ['found', 96, 381.9], 'wired_asks': 20}
+DIFF {'split': 'val', 'index': 339, 'mode': 'U', 'reference': ['found', 36, 201.6], 'reference_asks': 27, 'wired': ['found', 38, 202.2], 'wired_asks': 20}

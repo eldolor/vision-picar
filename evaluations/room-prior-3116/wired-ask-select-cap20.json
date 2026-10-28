@@ -1,0 +1,3421 @@
+{
+ "pairs": 200,
+ "R": {
+  "houses": 100,
+  "same": 100,
+  "found": {
+   "reference": 98,
+   "wired": 98
+  }
+ },
+ "U": {
+  "houses": 100,
+  "same": 96,
+  "found": {
+   "reference": 100,
+   "wired": 100
+  }
+ },
+ "rows": [
+  {
+   "split": "val",
+   "index": 179,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    12.6
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    4,
+    12.6
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 179,
+   "mode": "U",
+   "reference": [
+    "found",
+    6,
+    22.8
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    6,
+    22.8
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 182,
+   "mode": "R",
+   "reference": [
+    "found",
+    5,
+    18.3
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    18.3
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 182,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    17.1
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    17.1
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 184,
+   "mode": "R",
+   "reference": [
+    "found",
+    13,
+    42.0
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    13,
+    42.0
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 184,
+   "mode": "U",
+   "reference": [
+    "found",
+    2,
+    5.7
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    5.7
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 185,
+   "mode": "R",
+   "reference": [
+    "found",
+    10,
+    48.3
+   ],
+   "reference_asks": 10,
+   "wired": [
+    "found",
+    10,
+    48.3
+   ],
+   "wired_asks": 10
+  },
+  {
+   "split": "val",
+   "index": 185,
+   "mode": "U",
+   "reference": [
+    "found",
+    12,
+    53.1
+   ],
+   "reference_asks": 10,
+   "wired": [
+    "found",
+    12,
+    53.1
+   ],
+   "wired_asks": 10
+  },
+  {
+   "split": "val",
+   "index": 186,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    14.4
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    14.4
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 186,
+   "mode": "U",
+   "reference": [
+    "found",
+    91,
+    395.4
+   ],
+   "reference_asks": 48,
+   "wired": [
+    "found",
+    49,
+    214.8
+   ],
+   "wired_asks": 20
+  },
+  {
+   "split": "val",
+   "index": 187,
+   "mode": "R",
+   "reference": [
+    "found",
+    25,
+    130.8
+   ],
+   "reference_asks": 21,
+   "wired": [
+    "found",
+    25,
+    130.8
+   ],
+   "wired_asks": 20
+  },
+  {
+   "split": "val",
+   "index": 187,
+   "mode": "U",
+   "reference": [
+    "found",
+    8,
+    38.7
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    8,
+    38.7
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 188,
+   "mode": "R",
+   "reference": [
+    "found",
+    1,
+    0.9
+   ],
+   "reference_asks": 1,
+   "wired": [
+    "found",
+    1,
+    0.9
+   ],
+   "wired_asks": 1
+  },
+  {
+   "split": "val",
+   "index": 188,
+   "mode": "U",
+   "reference": [
+    "found",
+    3,
+    11.7
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    11.7
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 190,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    15.6
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    15.6
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 190,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    22.5
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    22.5
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 191,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    6.6
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    6.6
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 191,
+   "mode": "U",
+   "reference": [
+    "found",
+    2,
+    8.1
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    2,
+    8.1
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 192,
+   "mode": "R",
+   "reference": [
+    "found",
+    11,
+    40.8
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    11,
+    40.8
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 192,
+   "mode": "U",
+   "reference": [
+    "found",
+    9,
+    38.1
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    9,
+    38.1
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 194,
+   "mode": "R",
+   "reference": [
+    "found",
+    15,
+    66.6
+   ],
+   "reference_asks": 12,
+   "wired": [
+    "found",
+    15,
+    66.6
+   ],
+   "wired_asks": 12
+  },
+  {
+   "split": "val",
+   "index": 194,
+   "mode": "U",
+   "reference": [
+    "found",
+    10,
+    43.2
+   ],
+   "reference_asks": 10,
+   "wired": [
+    "found",
+    10,
+    43.2
+   ],
+   "wired_asks": 10
+  },
+  {
+   "split": "val",
+   "index": 195,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    15.6
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    6,
+    15.6
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 195,
+   "mode": "U",
+   "reference": [
+    "found",
+    2,
+    3.6
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    2,
+    3.6
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 197,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    11.1
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    4,
+    11.1
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 197,
+   "mode": "U",
+   "reference": [
+    "found",
+    8,
+    41.1
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    8,
+    41.1
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 198,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    26.1
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    6,
+    26.1
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 198,
+   "mode": "U",
+   "reference": [
+    "found",
+    4,
+    13.2
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    13.2
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 200,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    14.4
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    14.4
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 200,
+   "mode": "U",
+   "reference": [
+    "found",
+    13,
+    59.1
+   ],
+   "reference_asks": 13,
+   "wired": [
+    "found",
+    13,
+    59.1
+   ],
+   "wired_asks": 13
+  },
+  {
+   "split": "val",
+   "index": 201,
+   "mode": "R",
+   "reference": [
+    "found",
+    8,
+    39.3
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    8,
+    39.3
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 201,
+   "mode": "U",
+   "reference": [
+    "found",
+    41,
+    175.2
+   ],
+   "reference_asks": 22,
+   "wired": [
+    "found",
+    41,
+    175.2
+   ],
+   "wired_asks": 20
+  },
+  {
+   "split": "val",
+   "index": 204,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    2.4
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    2.4
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 204,
+   "mode": "U",
+   "reference": [
+    "found",
+    2,
+    3.9
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    3.9
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 207,
+   "mode": "R",
+   "reference": [
+    "found",
+    1,
+    1.5
+   ],
+   "reference_asks": 1,
+   "wired": [
+    "found",
+    1,
+    1.5
+   ],
+   "wired_asks": 1
+  },
+  {
+   "split": "val",
+   "index": 207,
+   "mode": "U",
+   "reference": [
+    "found",
+    9,
+    43.8
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    9,
+    43.8
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 208,
+   "mode": "R",
+   "reference": [
+    "found",
+    24,
+    81.3
+   ],
+   "reference_asks": 16,
+   "wired": [
+    "found",
+    24,
+    81.3
+   ],
+   "wired_asks": 16
+  },
+  {
+   "split": "val",
+   "index": 208,
+   "mode": "U",
+   "reference": [
+    "found",
+    2,
+    4.5
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    4.5
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 211,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    7.5
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    7.5
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 211,
+   "mode": "U",
+   "reference": [
+    "found",
+    17,
+    48.6
+   ],
+   "reference_asks": 11,
+   "wired": [
+    "found",
+    17,
+    48.6
+   ],
+   "wired_asks": 11
+  },
+  {
+   "split": "val",
+   "index": 212,
+   "mode": "R",
+   "reference": [
+    "found",
+    9,
+    32.4
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    9,
+    32.4
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 212,
+   "mode": "U",
+   "reference": [
+    "found",
+    11,
+    50.1
+   ],
+   "reference_asks": 10,
+   "wired": [
+    "found",
+    11,
+    50.1
+   ],
+   "wired_asks": 10
+  },
+  {
+   "split": "val",
+   "index": 217,
+   "mode": "R",
+   "reference": [
+    "found",
+    7,
+    27.0
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    27.0
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 217,
+   "mode": "U",
+   "reference": [
+    "found",
+    11,
+    33.0
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    11,
+    33.0
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 219,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    24.0
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    24.0
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 219,
+   "mode": "U",
+   "reference": [
+    "found",
+    34,
+    142.5
+   ],
+   "reference_asks": 22,
+   "wired": [
+    "found",
+    36,
+    146.1
+   ],
+   "wired_asks": 20
+  },
+  {
+   "split": "val",
+   "index": 221,
+   "mode": "R",
+   "reference": [
+    "found",
+    3,
+    13.2
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    13.2
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 221,
+   "mode": "U",
+   "reference": [
+    "found",
+    3,
+    9.6
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    9.6
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 222,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    17.4
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    17.4
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 222,
+   "mode": "U",
+   "reference": [
+    "found",
+    9,
+    35.1
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    9,
+    35.1
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 225,
+   "mode": "R",
+   "reference": [
+    "found",
+    3,
+    7.2
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    7.2
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 225,
+   "mode": "U",
+   "reference": [
+    "found",
+    2,
+    3.9
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    3.9
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 227,
+   "mode": "R",
+   "reference": [
+    "found",
+    15,
+    54.9
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    15,
+    54.9
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 227,
+   "mode": "U",
+   "reference": [
+    "found",
+    4,
+    13.5
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    13.5
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 228,
+   "mode": "R",
+   "reference": [
+    "found",
+    5,
+    16.5
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    16.5
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 228,
+   "mode": "U",
+   "reference": [
+    "found",
+    6,
+    21.0
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    21.0
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 231,
+   "mode": "R",
+   "reference": [
+    "found",
+    17,
+    40.8
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    17,
+    40.8
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 231,
+   "mode": "U",
+   "reference": [
+    "found",
+    16,
+    40.2
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    16,
+    40.2
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 232,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    20.4
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    20.4
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 232,
+   "mode": "U",
+   "reference": [
+    "found",
+    4,
+    13.8
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    4,
+    13.8
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 233,
+   "mode": "R",
+   "reference": [
+    "found",
+    7,
+    33.3
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    33.3
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 233,
+   "mode": "U",
+   "reference": [
+    "found",
+    13,
+    55.5
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    13,
+    55.5
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 234,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    13.8
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    13.8
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 234,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    20.7
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    20.7
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 235,
+   "mode": "R",
+   "reference": [
+    "exhausted",
+    36,
+    135.3
+   ],
+   "reference_asks": 20,
+   "wired": [
+    "exhausted",
+    36,
+    135.3
+   ],
+   "wired_asks": 20
+  },
+  {
+   "split": "val",
+   "index": 235,
+   "mode": "U",
+   "reference": [
+    "found",
+    3,
+    6.9
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    3,
+    6.9
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 236,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    30.9
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    6,
+    30.9
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 236,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    28.8
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    28.8
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 237,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    16.5
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    6,
+    16.5
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 237,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    15.3
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    5,
+    15.3
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 239,
+   "mode": "R",
+   "reference": [
+    "found",
+    3,
+    11.1
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    11.1
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 239,
+   "mode": "U",
+   "reference": [
+    "found",
+    7,
+    31.2
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    31.2
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 241,
+   "mode": "R",
+   "reference": [
+    "found",
+    3,
+    8.7
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    8.7
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 241,
+   "mode": "U",
+   "reference": [
+    "found",
+    2,
+    8.7
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    8.7
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 243,
+   "mode": "R",
+   "reference": [
+    "found",
+    12,
+    48.0
+   ],
+   "reference_asks": 12,
+   "wired": [
+    "found",
+    12,
+    48.0
+   ],
+   "wired_asks": 12
+  },
+  {
+   "split": "val",
+   "index": 243,
+   "mode": "U",
+   "reference": [
+    "found",
+    1,
+    2.7
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    1,
+    2.7
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 244,
+   "mode": "R",
+   "reference": [
+    "found",
+    25,
+    90.0
+   ],
+   "reference_asks": 12,
+   "wired": [
+    "found",
+    25,
+    90.0
+   ],
+   "wired_asks": 12
+  },
+  {
+   "split": "val",
+   "index": 244,
+   "mode": "U",
+   "reference": [
+    "found",
+    3,
+    15.6
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    3,
+    15.6
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 247,
+   "mode": "R",
+   "reference": [
+    "found",
+    15,
+    43.5
+   ],
+   "reference_asks": 10,
+   "wired": [
+    "found",
+    15,
+    43.5
+   ],
+   "wired_asks": 10
+  },
+  {
+   "split": "val",
+   "index": 247,
+   "mode": "U",
+   "reference": [
+    "found",
+    4,
+    12.6
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    12.6
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 251,
+   "mode": "R",
+   "reference": [
+    "found",
+    20,
+    66.3
+   ],
+   "reference_asks": 10,
+   "wired": [
+    "found",
+    20,
+    66.3
+   ],
+   "wired_asks": 10
+  },
+  {
+   "split": "val",
+   "index": 251,
+   "mode": "U",
+   "reference": [
+    "found",
+    2,
+    4.8
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    4.8
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 254,
+   "mode": "R",
+   "reference": [
+    "found",
+    26,
+    129.6
+   ],
+   "reference_asks": 21,
+   "wired": [
+    "found",
+    26,
+    129.6
+   ],
+   "wired_asks": 20
+  },
+  {
+   "split": "val",
+   "index": 254,
+   "mode": "U",
+   "reference": [
+    "found",
+    17,
+    91.5
+   ],
+   "reference_asks": 16,
+   "wired": [
+    "found",
+    17,
+    91.5
+   ],
+   "wired_asks": 16
+  },
+  {
+   "split": "val",
+   "index": 258,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    7.8
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    7.8
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 258,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    23.4
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    23.4
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 261,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    15.9
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    15.9
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 261,
+   "mode": "U",
+   "reference": [
+    "found",
+    93,
+    448.8
+   ],
+   "reference_asks": 46,
+   "wired": [
+    "found",
+    96,
+    381.9
+   ],
+   "wired_asks": 20
+  },
+  {
+   "split": "val",
+   "index": 265,
+   "mode": "R",
+   "reference": [
+    "found",
+    3,
+    7.2
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    7.2
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 265,
+   "mode": "U",
+   "reference": [
+    "found",
+    3,
+    9.6
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    9.6
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 266,
+   "mode": "R",
+   "reference": [
+    "found",
+    10,
+    28.8
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    10,
+    28.8
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 266,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    18.6
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    5,
+    18.6
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 270,
+   "mode": "R",
+   "reference": [
+    "found",
+    16,
+    64.8
+   ],
+   "reference_asks": 15,
+   "wired": [
+    "found",
+    16,
+    64.8
+   ],
+   "wired_asks": 15
+  },
+  {
+   "split": "val",
+   "index": 270,
+   "mode": "U",
+   "reference": [
+    "found",
+    9,
+    34.5
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    9,
+    34.5
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 271,
+   "mode": "R",
+   "reference": [
+    "found",
+    3,
+    10.2
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    10.2
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 271,
+   "mode": "U",
+   "reference": [
+    "found",
+    6,
+    13.2
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    6,
+    13.2
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 272,
+   "mode": "R",
+   "reference": [
+    "found",
+    7,
+    28.2
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    28.2
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 272,
+   "mode": "U",
+   "reference": [
+    "found",
+    7,
+    25.2
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    25.2
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 273,
+   "mode": "R",
+   "reference": [
+    "found",
+    8,
+    32.4
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    8,
+    32.4
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 273,
+   "mode": "U",
+   "reference": [
+    "found",
+    7,
+    30.0
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    30.0
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 274,
+   "mode": "R",
+   "reference": [
+    "found",
+    7,
+    40.8
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    7,
+    40.8
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 274,
+   "mode": "U",
+   "reference": [
+    "found",
+    44,
+    234.9
+   ],
+   "reference_asks": 31,
+   "wired": [
+    "found",
+    44,
+    234.9
+   ],
+   "wired_asks": 20
+  },
+  {
+   "split": "val",
+   "index": 277,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    7.5
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    7.5
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 277,
+   "mode": "U",
+   "reference": [
+    "found",
+    6,
+    21.0
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    21.0
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 278,
+   "mode": "R",
+   "reference": [
+    "found",
+    5,
+    21.0
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    21.0
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 278,
+   "mode": "U",
+   "reference": [
+    "found",
+    18,
+    74.55
+   ],
+   "reference_asks": 12,
+   "wired": [
+    "found",
+    18,
+    74.55
+   ],
+   "wired_asks": 12
+  },
+  {
+   "split": "val",
+   "index": 282,
+   "mode": "R",
+   "reference": [
+    "found",
+    10,
+    32.7
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    10,
+    32.7
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 282,
+   "mode": "U",
+   "reference": [
+    "found",
+    29,
+    103.5
+   ],
+   "reference_asks": 17,
+   "wired": [
+    "found",
+    29,
+    103.5
+   ],
+   "wired_asks": 17
+  },
+  {
+   "split": "val",
+   "index": 285,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    18.9
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    6,
+    18.9
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 285,
+   "mode": "U",
+   "reference": [
+    "found",
+    3,
+    9.0
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    9.0
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 286,
+   "mode": "R",
+   "reference": [
+    "found",
+    11,
+    34.2
+   ],
+   "reference_asks": 11,
+   "wired": [
+    "found",
+    11,
+    34.2
+   ],
+   "wired_asks": 11
+  },
+  {
+   "split": "val",
+   "index": 286,
+   "mode": "U",
+   "reference": [
+    "found",
+    12,
+    38.7
+   ],
+   "reference_asks": 11,
+   "wired": [
+    "found",
+    12,
+    38.7
+   ],
+   "wired_asks": 11
+  },
+  {
+   "split": "val",
+   "index": 290,
+   "mode": "R",
+   "reference": [
+    "exhausted",
+    35,
+    154.2
+   ],
+   "reference_asks": 16,
+   "wired": [
+    "exhausted",
+    35,
+    154.2
+   ],
+   "wired_asks": 16
+  },
+  {
+   "split": "val",
+   "index": 290,
+   "mode": "U",
+   "reference": [
+    "found",
+    4,
+    19.2
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    4,
+    19.2
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 292,
+   "mode": "R",
+   "reference": [
+    "found",
+    1,
+    3.3
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    1,
+    3.3
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 292,
+   "mode": "U",
+   "reference": [
+    "found",
+    28,
+    90.6
+   ],
+   "reference_asks": 17,
+   "wired": [
+    "found",
+    28,
+    90.6
+   ],
+   "wired_asks": 17
+  },
+  {
+   "split": "val",
+   "index": 293,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    18.6
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    4,
+    18.6
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 293,
+   "mode": "U",
+   "reference": [
+    "found",
+    2,
+    6.9
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    2,
+    6.9
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 296,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    15.0
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    4,
+    15.0
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 296,
+   "mode": "U",
+   "reference": [
+    "found",
+    3,
+    10.2
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    10.2
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 297,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    6.0
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    2,
+    6.0
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 297,
+   "mode": "U",
+   "reference": [
+    "found",
+    3,
+    8.1
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    3,
+    8.1
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 298,
+   "mode": "R",
+   "reference": [
+    "found",
+    3,
+    10.5
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    3,
+    10.5
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 298,
+   "mode": "U",
+   "reference": [
+    "found",
+    6,
+    18.6
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    18.6
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 300,
+   "mode": "R",
+   "reference": [
+    "found",
+    3,
+    10.5
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    10.5
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 300,
+   "mode": "U",
+   "reference": [
+    "found",
+    3,
+    8.4
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    8.4
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 302,
+   "mode": "R",
+   "reference": [
+    "found",
+    20,
+    76.5
+   ],
+   "reference_asks": 13,
+   "wired": [
+    "found",
+    20,
+    76.5
+   ],
+   "wired_asks": 13
+  },
+  {
+   "split": "val",
+   "index": 302,
+   "mode": "U",
+   "reference": [
+    "found",
+    4,
+    13.5
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    13.5
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 305,
+   "mode": "R",
+   "reference": [
+    "found",
+    9,
+    32.7
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    9,
+    32.7
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 305,
+   "mode": "U",
+   "reference": [
+    "found",
+    10,
+    37.5
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    10,
+    37.5
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 306,
+   "mode": "R",
+   "reference": [
+    "found",
+    11,
+    55.8
+   ],
+   "reference_asks": 11,
+   "wired": [
+    "found",
+    11,
+    55.8
+   ],
+   "wired_asks": 11
+  },
+  {
+   "split": "val",
+   "index": 306,
+   "mode": "U",
+   "reference": [
+    "found",
+    20,
+    84.6
+   ],
+   "reference_asks": 16,
+   "wired": [
+    "found",
+    20,
+    84.6
+   ],
+   "wired_asks": 16
+  },
+  {
+   "split": "val",
+   "index": 308,
+   "mode": "R",
+   "reference": [
+    "found",
+    1,
+    1.5
+   ],
+   "reference_asks": 1,
+   "wired": [
+    "found",
+    1,
+    1.5
+   ],
+   "wired_asks": 1
+  },
+  {
+   "split": "val",
+   "index": 308,
+   "mode": "U",
+   "reference": [
+    "found",
+    16,
+    40.2
+   ],
+   "reference_asks": 10,
+   "wired": [
+    "found",
+    16,
+    40.2
+   ],
+   "wired_asks": 10
+  },
+  {
+   "split": "val",
+   "index": 309,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    9.6
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    9.6
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 309,
+   "mode": "U",
+   "reference": [
+    "found",
+    9,
+    36.0
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    9,
+    36.0
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 310,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    12.3
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    4,
+    12.3
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 310,
+   "mode": "U",
+   "reference": [
+    "found",
+    4,
+    18.0
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    18.0
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 311,
+   "mode": "R",
+   "reference": [
+    "found",
+    9,
+    39.0
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    9,
+    39.0
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 311,
+   "mode": "U",
+   "reference": [
+    "found",
+    6,
+    26.4
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    26.4
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 312,
+   "mode": "R",
+   "reference": [
+    "found",
+    16,
+    65.1
+   ],
+   "reference_asks": 15,
+   "wired": [
+    "found",
+    16,
+    65.1
+   ],
+   "wired_asks": 15
+  },
+  {
+   "split": "val",
+   "index": 312,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    18.6
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    18.6
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 313,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    28.5
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    28.5
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 313,
+   "mode": "U",
+   "reference": [
+    "found",
+    7,
+    45.3
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    45.3
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 314,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    6.9
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    2,
+    6.9
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 314,
+   "mode": "U",
+   "reference": [
+    "found",
+    15,
+    66.9
+   ],
+   "reference_asks": 12,
+   "wired": [
+    "found",
+    15,
+    66.9
+   ],
+   "wired_asks": 12
+  },
+  {
+   "split": "val",
+   "index": 317,
+   "mode": "R",
+   "reference": [
+    "found",
+    15,
+    66.3
+   ],
+   "reference_asks": 15,
+   "wired": [
+    "found",
+    15,
+    66.3
+   ],
+   "wired_asks": 15
+  },
+  {
+   "split": "val",
+   "index": 317,
+   "mode": "U",
+   "reference": [
+    "found",
+    6,
+    30.3
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    30.3
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 318,
+   "mode": "R",
+   "reference": [
+    "found",
+    5,
+    22.2
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    5,
+    22.2
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 318,
+   "mode": "U",
+   "reference": [
+    "found",
+    7,
+    31.5
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    31.5
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 319,
+   "mode": "R",
+   "reference": [
+    "found",
+    7,
+    27.9
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    27.9
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 319,
+   "mode": "U",
+   "reference": [
+    "found",
+    18,
+    82.5
+   ],
+   "reference_asks": 16,
+   "wired": [
+    "found",
+    18,
+    82.5
+   ],
+   "wired_asks": 16
+  },
+  {
+   "split": "val",
+   "index": 320,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    24.3
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    24.3
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 320,
+   "mode": "U",
+   "reference": [
+    "found",
+    7,
+    30.9
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    7,
+    30.9
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 322,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    4.2
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    4.2
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 322,
+   "mode": "U",
+   "reference": [
+    "found",
+    1,
+    4.5
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    1,
+    4.5
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 323,
+   "mode": "R",
+   "reference": [
+    "found",
+    14,
+    57.0
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    14,
+    57.0
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 323,
+   "mode": "U",
+   "reference": [
+    "found",
+    14,
+    44.1
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    14,
+    44.1
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 324,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    3.9
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    3.9
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 324,
+   "mode": "U",
+   "reference": [
+    "found",
+    6,
+    18.6
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    18.6
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 325,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    5.1
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    5.1
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 325,
+   "mode": "U",
+   "reference": [
+    "found",
+    9,
+    35.9
+   ],
+   "reference_asks": 8,
+   "wired": [
+    "found",
+    9,
+    35.9
+   ],
+   "wired_asks": 8
+  },
+  {
+   "split": "val",
+   "index": 326,
+   "mode": "R",
+   "reference": [
+    "found",
+    1,
+    4.2
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    1,
+    4.2
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 326,
+   "mode": "U",
+   "reference": [
+    "found",
+    26,
+    117.9
+   ],
+   "reference_asks": 20,
+   "wired": [
+    "found",
+    26,
+    117.9
+   ],
+   "wired_asks": 20
+  },
+  {
+   "split": "val",
+   "index": 327,
+   "mode": "R",
+   "reference": [
+    "found",
+    8,
+    30.0
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    8,
+    30.0
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 327,
+   "mode": "U",
+   "reference": [
+    "found",
+    16,
+    58.2
+   ],
+   "reference_asks": 13,
+   "wired": [
+    "found",
+    16,
+    58.2
+   ],
+   "wired_asks": 13
+  },
+  {
+   "split": "val",
+   "index": 329,
+   "mode": "R",
+   "reference": [
+    "found",
+    9,
+    28.62
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    9,
+    28.62
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 329,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    12.72
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    5,
+    12.72
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 330,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    6.6
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    6.6
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 330,
+   "mode": "U",
+   "reference": [
+    "found",
+    4,
+    14.4
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    14.4
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 334,
+   "mode": "R",
+   "reference": [
+    "found",
+    20,
+    68.4
+   ],
+   "reference_asks": 17,
+   "wired": [
+    "found",
+    20,
+    68.4
+   ],
+   "wired_asks": 17
+  },
+  {
+   "split": "val",
+   "index": 334,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    16.2
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    16.2
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 335,
+   "mode": "R",
+   "reference": [
+    "found",
+    7,
+    28.5
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    28.5
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 335,
+   "mode": "U",
+   "reference": [
+    "found",
+    19,
+    60.3
+   ],
+   "reference_asks": 11,
+   "wired": [
+    "found",
+    19,
+    60.3
+   ],
+   "wired_asks": 11
+  },
+  {
+   "split": "val",
+   "index": 337,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    24.9
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    24.9
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 337,
+   "mode": "U",
+   "reference": [
+    "found",
+    14,
+    64.5
+   ],
+   "reference_asks": 12,
+   "wired": [
+    "found",
+    14,
+    64.5
+   ],
+   "wired_asks": 12
+  },
+  {
+   "split": "val",
+   "index": 338,
+   "mode": "R",
+   "reference": [
+    "found",
+    3,
+    12.9
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    3,
+    12.9
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 338,
+   "mode": "U",
+   "reference": [
+    "found",
+    9,
+    47.1
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    9,
+    47.1
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 339,
+   "mode": "R",
+   "reference": [
+    "found",
+    19,
+    68.4
+   ],
+   "reference_asks": 13,
+   "wired": [
+    "found",
+    19,
+    68.4
+   ],
+   "wired_asks": 13
+  },
+  {
+   "split": "val",
+   "index": 339,
+   "mode": "U",
+   "reference": [
+    "found",
+    36,
+    201.6
+   ],
+   "reference_asks": 27,
+   "wired": [
+    "found",
+    38,
+    202.2
+   ],
+   "wired_asks": 20
+  },
+  {
+   "split": "val",
+   "index": 340,
+   "mode": "R",
+   "reference": [
+    "found",
+    16,
+    67.2
+   ],
+   "reference_asks": 15,
+   "wired": [
+    "found",
+    16,
+    67.2
+   ],
+   "wired_asks": 15
+  },
+  {
+   "split": "val",
+   "index": 340,
+   "mode": "U",
+   "reference": [
+    "found",
+    7,
+    33.6
+   ],
+   "reference_asks": 7,
+   "wired": [
+    "found",
+    7,
+    33.6
+   ],
+   "wired_asks": 7
+  },
+  {
+   "split": "val",
+   "index": 342,
+   "mode": "R",
+   "reference": [
+    "found",
+    17,
+    54.9
+   ],
+   "reference_asks": 9,
+   "wired": [
+    "found",
+    17,
+    54.9
+   ],
+   "wired_asks": 9
+  },
+  {
+   "split": "val",
+   "index": 342,
+   "mode": "U",
+   "reference": [
+    "found",
+    6,
+    26.4
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    26.4
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 344,
+   "mode": "R",
+   "reference": [
+    "found",
+    6,
+    18.3
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    6,
+    18.3
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 344,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    17.1
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    17.1
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 345,
+   "mode": "R",
+   "reference": [
+    "found",
+    10,
+    50.1
+   ],
+   "reference_asks": 10,
+   "wired": [
+    "found",
+    10,
+    50.1
+   ],
+   "wired_asks": 10
+  },
+  {
+   "split": "val",
+   "index": 345,
+   "mode": "U",
+   "reference": [
+    "found",
+    4,
+    12.9
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    12.9
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 346,
+   "mode": "R",
+   "reference": [
+    "found",
+    5,
+    21.0
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    5,
+    21.0
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 346,
+   "mode": "U",
+   "reference": [
+    "found",
+    4,
+    9.3
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    4,
+    9.3
+   ],
+   "wired_asks": 3
+  },
+  {
+   "split": "val",
+   "index": 348,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    15.9
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    15.9
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 348,
+   "mode": "U",
+   "reference": [
+    "found",
+    5,
+    19.2
+   ],
+   "reference_asks": 5,
+   "wired": [
+    "found",
+    5,
+    19.2
+   ],
+   "wired_asks": 5
+  },
+  {
+   "split": "val",
+   "index": 349,
+   "mode": "R",
+   "reference": [
+    "found",
+    4,
+    18.0
+   ],
+   "reference_asks": 4,
+   "wired": [
+    "found",
+    4,
+    18.0
+   ],
+   "wired_asks": 4
+  },
+  {
+   "split": "val",
+   "index": 349,
+   "mode": "U",
+   "reference": [
+    "found",
+    20,
+    63.9
+   ],
+   "reference_asks": 10,
+   "wired": [
+    "found",
+    20,
+    63.9
+   ],
+   "wired_asks": 10
+  },
+  {
+   "split": "val",
+   "index": 350,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    3.9
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    3.9
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 350,
+   "mode": "U",
+   "reference": [
+    "found",
+    6,
+    31.2
+   ],
+   "reference_asks": 6,
+   "wired": [
+    "found",
+    6,
+    31.2
+   ],
+   "wired_asks": 6
+  },
+  {
+   "split": "val",
+   "index": 351,
+   "mode": "R",
+   "reference": [
+    "found",
+    2,
+    4.8
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    2,
+    4.8
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 351,
+   "mode": "U",
+   "reference": [
+    "found",
+    24,
+    111.3
+   ],
+   "reference_asks": 19,
+   "wired": [
+    "found",
+    24,
+    111.3
+   ],
+   "wired_asks": 19
+  },
+  {
+   "split": "val",
+   "index": 352,
+   "mode": "R",
+   "reference": [
+    "found",
+    1,
+    3.3
+   ],
+   "reference_asks": 2,
+   "wired": [
+    "found",
+    1,
+    3.3
+   ],
+   "wired_asks": 2
+  },
+  {
+   "split": "val",
+   "index": 352,
+   "mode": "U",
+   "reference": [
+    "found",
+    3,
+    9.9
+   ],
+   "reference_asks": 3,
+   "wired": [
+    "found",
+    3,
+    9.9
+   ],
+   "wired_asks": 3
+  }
+ ]
+}
