@@ -142,12 +142,16 @@ def mission(*args, **kwargs) -> dict:
         _collect()
 
 
-def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float = 0.0) -> dict:
+def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float = 0.0,
+             labels=None) -> dict:
     """spec: "rule" | "net365" (3.65's shipped network, its own ten
     features) | "wired" (`explore_goal_policy: rooms` as the brain runs it,
     3.96.C) | "oracle" | ("sample"|"greedy"|"greedy_log", kind, params);
     "greedy_log" is greedy with every choice recorded (3.111). `drop`: the
-    share of rooms whose labels are withheld (criterion 3)."""
+    share of rooms whose labels are withheld (criterion 3). `labels`: None
+    for the stand-in, else a factory `labels(grid, index)` for another
+    labeller (3.116.A's asks); one with a `step(runner)` is called after
+    every tick, as MissionRunner calls a survey's."""
     grid = build_world(f"procthor:{split}:{index}")
     target, dist = pick_target(grid, index, mode)
     row = {"split": split, "index": index, "mode": mode, "target": target}
@@ -161,6 +165,7 @@ def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float
                            clock=lambda: grid.sim_time, idle=robot.pass_time,
                            explore_goal_policy="rooms" if spec == "wired" else "rule")
     trail, records = [], []
+    labeller = None
     if spec == "net365":
         runner.agent.goal_policy = NetGoalPolicy.load()
     elif spec == "wired":
@@ -169,7 +174,7 @@ def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float
         agent = runner.agent
         agent.goal_policy = LinearGoalPolicy([0.0] * len(FEATURES))
         dropped = dropped_rooms(grid, index, drop)
-        labeller = Labeller(grid, CELL, drop=dropped)
+        labeller = Labeller(grid, CELL, drop=dropped) if labels is None else labels(grid, index)
         row.update(rooms=len(grid.rooms), dropped=len(dropped))
         prior = PRIOR.get(target, {})
         kind = None if spec == "oracle" else spec[1]
@@ -226,7 +231,11 @@ def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float
         while runner.tick() and ticks < TICK_CAP:
             ticks += 1
             trail.append((grid.x * CELL, grid.y * CELL))
+            if hasattr(labeller, "step"):
+                labeller.step(runner)
         s = runner.status()
+        if hasattr(labeller, "asks"):
+            row["asks"] = labeller.asks
         row.update(outcome=s["outcome"], ticks=ticks, capped=ticks >= TICK_CAP,
                    goals=s.get("explore", {}).get("goals_sent") or 0,
                    metres=round(nav.metres + robot._path_m, 2))
