@@ -8,6 +8,9 @@
 # evaluations/room-prior-3116/live/runs.jsonl; a run that crashes or prints
 # no result is recorded as one that failed, never skipped.
 # Bars: 3/3 found, 0 contact samples, room_labels.label_calls <= 20 each.
+# On Linux, export PICAR_ROS_NETWORK=host first: without it the ROS
+# container cannot reach host.docker.internal and every run is an error row
+# ("stack did not come up"; batch 20261029T053722).
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)"
 eval "$(python tools/plan_section.py env 2>/dev/null || true)"

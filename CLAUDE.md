@@ -965,6 +965,29 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   does (one retry failure, REVERSE). F-large finds 1395; the rule arm on
   3.96's 588 test houses is unchanged house for house; explore sweeps hold.
   Never runs on the car (real frames carry no detections).
+* **Room labels in a find mission, and an LLM's room prior (3.116), A-C
+  merged 2026-10-29; `find_room_labels` OFF by default.** The user's ask
+  (2026-10-28): an LLM's "a knife lives in the kitchen" as a fact for
+  explore. The `rooms` policy already has one (3.96's per-type prior); what
+  a find lacked was room labels.
+  * A (sim, 588 test houses): labels asked as a survey asks them (true room
+    at the robot) keep half the stand-in's goal saving (met at the bar;
+    paired reward +0.091 [+0.032, +0.151], ~61% of the stand-in's), median
+    5 asks; 15% wrong answers erase most of the gain. They HURT the red
+    backpack (-0.080 [-0.154, -0.004], +19% metres): its learned prior is
+    near-flat, and the brain reads it.
+  * B: `brain.find_room_labels` (`off`/`frame`/`cloud`, cap
+    `find_room_label_max_calls` 20; env `FIND_ROOM_LABELS`), only with
+    `explore_goal_policy: rooms` and an explore search; the layer feeds the
+    policy's types only (never the map). Same answers as A 100/100; off =
+    0 of 200 differ; live 3/3 found, 0 contacts, 2 of 3 at the cap. On Linux
+    a live run needs `PICAR_ROS_NETWORK=host`.
+  * C: Opus 5.5's prior (29 cached calls, `evaluations/room-prior-3116/`):
+    criterion 8 FAILED (cart; garbage can by a tie), sim swap met at the bar
+    (paired -0.045 [-0.095, +0.007]). Not adopted until D (the user).
+  * Open for the user: labels for a flat-prior target. Before `cloud` on the
+    car, D measures the ask holding the tick (~2-3 s), choice time on the
+    Jetson and real labels; the twin does not show a find's asks.
 * **Fast goal choice (3.77), merged 2026-10-13.** `brain/frontier.py`'s
   grid work in numpy with **exactly** the old answers (0 differences
   against the frozen `tests/frontier_reference.py`; do not "simplify" its
