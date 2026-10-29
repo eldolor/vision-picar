@@ -225,7 +225,11 @@ space no earlier ask covers, at most `room_label_max_calls` times; reaching
 the cap sets `capped` and leaves the rest unlabelled (the survey goes on).
 Coverage is by `room_label_mode`. Both start from a cut of the map into
 rooms by its shape (a watershed of clearance split at necks under
-`NECK_RATIO` 0.75 of the lower peak: doorways). `spacing`, the default --
+`NECK_RATIO` 0.75 of the lower peak: doorways; since 3.118 the clearance is
+a vectorised relaxation over only the cells that changed, and the watershed
+a loop over flat lists, with exactly the old answers -- the frozen copy is
+`tests/room_cut_reference.py`, compared by `tests/test_room_cut.py` and
+`tests/test_room_cut_sweep.py`). `spacing`, the default --
 whenever the robot is more than `SPACING_M` (2.0 m) from every earlier ask,
 by walking distance over the cut where each step from one of its rooms into
 another costs `DOOR_M` (3.0 m) more; each cell takes the answer of the ask
