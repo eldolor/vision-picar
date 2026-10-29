@@ -1,0 +1,3 @@
+run/*.log
+run/check1-group/
+run/F-pool-W32-*/ckpt.pt

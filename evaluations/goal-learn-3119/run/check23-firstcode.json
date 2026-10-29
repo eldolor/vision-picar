@@ -1,0 +1,16 @@
+{
+ "missions": 8,
+ "choices": 104,
+ "outcomes": [
+  "found",
+  "found",
+  "found",
+  "found",
+  "found",
+  "found",
+  "found",
+  "found"
+ ],
+ "differences": 0,
+ "first": []
+}
