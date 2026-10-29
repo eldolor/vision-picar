@@ -1,0 +1,293 @@
+{
+ "W32": {
+  "best_it": 59,
+  "best_selection": {
+   "R": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.0,
+    "median_metres_found": 17.165,
+    "mean_reward": 0.5942
+   },
+   "U": {
+    "n": 100,
+    "found": 100,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.5,
+    "median_metres_found": 18.15,
+    "mean_reward": 0.5651
+   }
+  },
+  "R": {
+   "n": 196,
+   "found": 195,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 17.4,
+   "mean_reward": 0.6041
+  },
+  "U": {
+   "n": 200,
+   "found": 194,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 6.0,
+   "median_metres_found": 22.8,
+   "mean_reward": 0.3555
+  },
+  "own": {
+   "choices": 2859,
+   "near_1m": 0.3085,
+   "mean_regret_m": 5.768
+  }
+ },
+ "oracle_minus_W32": {
+  "R": {
+   "diff": 0.113,
+   "ci95": [
+    0.0122,
+    0.2017
+   ]
+  },
+  "U": {
+   "diff": 0.4173,
+   "ci95": [
+    0.3076,
+    0.5342
+   ]
+  }
+ },
+ "arms": {
+  "F-pool-W32-k07": {
+   "facts": 24,
+   "clone_agreement": 0.4138,
+   "best_it": 49,
+   "best_selection": {
+    "R": {
+     "n": 100,
+     "found": 97,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 4.0,
+     "median_metres_found": 16.2,
+     "mean_reward": 0.544
+    },
+    "U": {
+     "n": 100,
+     "found": 99,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 5.0,
+     "median_metres_found": 20.1,
+     "mean_reward": 0.4927
+    }
+   },
+   "selection_R": [
+    [
+     -1,
+     0.2799
+    ],
+    [
+     9,
+     0.2715
+    ],
+    [
+     19,
+     0.4804
+    ],
+    [
+     29,
+     0.4397
+    ],
+    [
+     39,
+     0.5273
+    ],
+    [
+     49,
+     0.544
+    ],
+    [
+     59,
+     0.505
+    ]
+   ],
+   "R": {
+    "n": 196,
+    "found": 192,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 4.0,
+    "median_metres_found": 16.8,
+    "mean_reward": 0.5024
+   },
+   "U": {
+    "n": 200,
+    "found": 199,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7.0,
+    "median_metres_found": 25.8,
+    "mean_reward": 0.2375
+   },
+   "own": {
+    "choices": 3575,
+    "near_1m": 0.2425,
+    "mean_regret_m": 7.76
+   },
+   "minus_W32_R": {
+    "diff": -0.1016,
+    "ci95": [
+     -0.2156,
+     -0.0057
+    ]
+   },
+   "minus_W32_U": {
+    "diff": -0.118,
+    "ci95": [
+     -0.2482,
+     0.0067
+    ]
+   },
+   "oracle_minus": {
+    "R": {
+     "diff": 0.2146,
+     "ci95": [
+      0.096,
+      0.3351
+     ]
+    },
+    "U": {
+     "diff": 0.5353,
+     "ci95": [
+      0.3974,
+      0.6886
+     ]
+    }
+   }
+  },
+  "F-pool-W32-k17": {
+   "facts": 34,
+   "clone_agreement": 0.4401,
+   "best_it": 49,
+   "best_selection": {
+    "R": {
+     "n": 100,
+     "found": 99,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 5.0,
+     "median_metres_found": 16.93,
+     "mean_reward": 0.5716
+    },
+    "U": {
+     "n": 100,
+     "found": 99,
+     "exceptions": 0,
+     "capped": 0,
+     "median_goals_found": 5.0,
+     "median_metres_found": 18.9,
+     "mean_reward": 0.446
+    }
+   },
+   "selection_R": [
+    [
+     -1,
+     0.0902
+    ],
+    [
+     9,
+     0.3409
+    ],
+    [
+     19,
+     0.5235
+    ],
+    [
+     29,
+     0.5337
+    ],
+    [
+     39,
+     0.514
+    ],
+    [
+     49,
+     0.5716
+    ],
+    [
+     59,
+     0.5604
+    ]
+   ],
+   "R": {
+    "n": 196,
+    "found": 194,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 5.0,
+    "median_metres_found": 16.8,
+    "mean_reward": 0.5566
+   },
+   "U": {
+    "n": 200,
+    "found": 197,
+    "exceptions": 0,
+    "capped": 0,
+    "median_goals_found": 7.0,
+    "median_metres_found": 24.3,
+    "mean_reward": 0.3076
+   },
+   "own": {
+    "choices": 3423,
+    "near_1m": 0.2422,
+    "mean_regret_m": 7.248
+   },
+   "minus_W32_R": {
+    "diff": -0.0475,
+    "ci95": [
+     -0.1254,
+     0.0246
+    ]
+   },
+   "minus_W32_U": {
+    "diff": -0.0479,
+    "ci95": [
+     -0.1649,
+     0.0695
+    ]
+   },
+   "oracle_minus": {
+    "R": {
+     "diff": 0.1604,
+     "ci95": [
+      0.044,
+      0.2679
+     ]
+    },
+    "U": {
+     "diff": 0.4652,
+     "ci95": [
+      0.357,
+      0.5861
+     ]
+    }
+   }
+  }
+ },
+ "criteria": {
+  "F-pool-W32-k07": {
+   "1_better_R": false,
+   "2_U_not_worse": false
+  },
+  "F-pool-W32-k17": {
+   "1_better_R": false,
+   "2_U_not_worse": false
+  }
+ },
+ "test_gate": []
+}

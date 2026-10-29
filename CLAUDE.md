@@ -941,6 +941,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   [0.23, 0.56] (met); then PPO: R -0.091 [-0.203, -0.005] vs W32's
   `best.json` (FAILED). PPO reaches ~0.59 selection R from either start:
   not the start state, richer facts next.
+  **3.117 (2026-10-28, records only, desktop):** 3.110's stage 2: W32 at
+  24 and 34 facts (rungs k07, k17), clone then PPO, on the 200 diagnostic
+  houses vs W32's `best.json`: clones copy better (41.4 / 44.0% vs 39.2%)
+  but PPO drives no better -- R -0.102 [-0.216, -0.006] and -0.048
+  [-0.125, +0.025], U -0.118 and -0.048 (criteria 1-2 FAILED for both).
+  No test houses spent; facts from the 42 are closed as a lever. Next
+  candidates: steadier PPO steps, or the target's room from the detector
+  or VLM (mode U's gap).
 * **Harness missions collect their cycles (3.113), merged 2026-10-27.**
   `evaluations/goal-learn-396/train.py` `mission()` runs `gc.collect()` in
   a `finally` (a mission's runner, agent and house are reference cycles);
