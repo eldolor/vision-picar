@@ -1,0 +1,29 @@
+{
+ "summary": {
+  "learned": {
+   "n": 583,
+   "found": 570,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 4.0,
+   "median_metres_found": 14.7,
+   "mean_reward": 0.5531
+  },
+  "llm": {
+   "n": 583,
+   "found": 573,
+   "exceptions": 0,
+   "capped": 0,
+   "median_goals_found": 5.0,
+   "median_metres_found": 15.6,
+   "mean_reward": 0.5084
+  }
+ },
+ "criterion_9": {
+  "found": 573,
+  "found_bar": 564.3,
+  "goals": 5.0,
+  "goals_bar": 5.0,
+  "met": true
+ }
+}
