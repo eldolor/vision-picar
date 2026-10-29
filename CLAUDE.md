@@ -419,10 +419,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   bedroom, office; 6-145 tokens out, 1.7-2.9 s; ~$0.006-0.009 a call,
   ~$0.18-0.27 a median survey, ~$0.36-0.55 at the cap, approved by the
   user 2026-10-24; left: the labels' accuracy on the Rover. The map cut
-  (`segment()`, every 5 s on the mission thread) timed on the Jetson
-  2026-10-28: 1.45 s on `home_first_floor` at 0.05 m, up to 2.78 s on a
-  large ProcTHOR house (no bar; moving it off the thread or into numpy is
-  the user's call). Missions on a
+  (`segment()`, every 5 s on the mission thread): 1.45-2.77 s on the
+  Jetson at 0.05 m (2026-10-28), **0.18-0.37 s since 3.118** (merged
+  2026-10-29: numpy with exactly the old answers, frozen
+  `tests/room_cut_reference.py`; do not "simplify" it); `spacing`'s walk
+  (`_walk()`, 0.35-0.79 s) is now the larger part of the ~11-23% pause.
+  Missions on a
   saved map (S4, M1-M3) wait on 3.50's build. **S5, merged and the twin
   deployed 2026-10-14:** the Sim tab's Remote brain panel picks Find or
   Survey; a survey reads "Surveying the house" with its rooms named
