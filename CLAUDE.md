@@ -985,9 +985,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   * C: Opus 5.5's prior (29 cached calls, `evaluations/room-prior-3116/`):
     criterion 8 FAILED (cart; garbage can by a tie), sim swap met at the bar
     (paired -0.045 [-0.095, +0.007]). Not adopted until D (the user).
-  * Open for the user: labels for a flat-prior target. Before `cloud` on the
-    car, D measures the ask holding the tick (~2-3 s), choice time on the
-    Jetson and real labels; the twin does not show a find's asks.
+  * Amendment 7 (the user's yes, 2026-10-29): a target whose prior does not
+    single out a room (max < 2 x min; only the red backpack, and any name
+    the prior lacks) asks nothing: R unchanged, U back to no labels (0 of
+    588 differ each). Before `cloud` on the car, D measures the ask holding
+    the tick (~2-3 s), choice time on the Jetson and real labels; the twin
+    does not show a find's asks.
 * **Fast goal choice (3.77), merged 2026-10-13.** `brain/frontier.py`'s
   grid work in numpy with **exactly** the old answers (0 differences
   against the frozen `tests/frontier_reference.py`; do not "simplify" its

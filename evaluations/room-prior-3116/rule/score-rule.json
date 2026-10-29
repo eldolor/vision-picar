@@ -1,0 +1,16 @@
+{
+ "11": {
+  "mode": "R",
+  "against": "ask",
+  "houses": 588,
+  "differ": [],
+  "met": true
+ },
+ "12": {
+  "mode": "U",
+  "against": "no-label",
+  "houses": 588,
+  "differ": [],
+  "met": true
+ }
+}
