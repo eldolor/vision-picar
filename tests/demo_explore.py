@@ -296,6 +296,8 @@ def run_mission(robot, house, policy="explore", target=TARGET, max_steps=200):
             "stuck_episodes": status.get("stuck_episodes"), "travel_m": round(travel, 1),
             "min_gap_cm": round(min_gap, 1), "contact_samples": contacts,
             "inside_samples": inside, "samples": samples,
+            # 3.116.B: a find mission's own room-name asks, when it made any.
+            "room_labels": status.get("room_labels"),
             "last_log": (status.get("log_tail") or [])[-3:]}
 
 
