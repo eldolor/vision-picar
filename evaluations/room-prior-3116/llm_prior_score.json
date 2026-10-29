@@ -1,0 +1,305 @@
+{
+ "model_id": "us.anthropic.claude-opus-5-5",
+ "criterion_8": {
+  "sure_categories": {
+   "cart": false,
+   "garbage bag": true,
+   "garbage can": false,
+   "plunger": true
+  },
+  "mean_abs_diff": 0.1715,
+  "met": false,
+  "missing": []
+ },
+ "criterion_10": {
+  "parsed": 20,
+  "of": 20,
+  "met": true
+ },
+ "procthor": [
+  {
+   "target": "basketball",
+   "learned_top": "bedroom",
+   "learned_share": 0.5304,
+   "llm_top": "bedroom",
+   "llm": {
+    "bathroom": 0.005,
+    "bedroom": 0.1,
+    "kitchen": 0.02,
+    "living room": 0.06
+   },
+   "learned": {
+    "kitchen": 0.0,
+    "living room": 0.0,
+    "bedroom": 0.5304,
+    "bathroom": 0.0
+   }
+  },
+  {
+   "target": "box",
+   "learned_top": "bedroom",
+   "learned_share": 0.3831,
+   "llm_top": "kitchen",
+   "llm": {
+    "bathroom": 0.3,
+    "bedroom": 0.5,
+    "kitchen": 0.55,
+    "living room": 0.4
+   },
+   "learned": {
+    "kitchen": 0.004,
+    "living room": 0.3657,
+    "bedroom": 0.3831,
+    "bathroom": 0.0029
+   }
+  },
+  {
+   "target": "cart",
+   "learned_top": "living room",
+   "learned_share": 0.6609,
+   "llm_top": "kitchen",
+   "llm": {
+    "bathroom": 0.06,
+    "bedroom": 0.04,
+    "kitchen": 0.15,
+    "living room": 0.05
+   },
+   "learned": {
+    "kitchen": 0.0,
+    "living room": 0.6609,
+    "bedroom": 0.0,
+    "bathroom": 0.0
+   }
+  },
+  {
+   "target": "dog bed",
+   "learned_top": "living room",
+   "learned_share": 0.4088,
+   "llm_top": "living room",
+   "llm": {
+    "bathroom": 0.02,
+    "bedroom": 0.15,
+    "kitchen": 0.07,
+    "living room": 0.22
+   },
+   "learned": {
+    "kitchen": 0.0,
+    "living room": 0.4088,
+    "bedroom": 0.328,
+    "bathroom": 0.0
+   }
+  },
+  {
+   "target": "garbage bag",
+   "learned_top": "kitchen",
+   "learned_share": 1.0,
+   "llm_top": "kitchen",
+   "llm": {
+    "bathroom": 0.3,
+    "bedroom": 0.12,
+    "kitchen": 0.55,
+    "living room": 0.1
+   },
+   "learned": {
+    "kitchen": 1.0,
+    "living room": 0.0,
+    "bedroom": 0.0,
+    "bathroom": 0.0
+   }
+  },
+  {
+   "target": "garbage can",
+   "learned_top": "bathroom",
+   "learned_share": 0.8999,
+   "llm_top": "kitchen",
+   "llm": {
+    "bathroom": 0.85,
+    "bedroom": 0.5,
+    "kitchen": 0.85,
+    "living room": 0.3
+   },
+   "learned": {
+    "kitchen": 0.3221,
+    "living room": 0.1853,
+    "bedroom": 0.2047,
+    "bathroom": 0.8999
+   }
+  },
+  {
+   "target": "house plant",
+   "learned_top": "kitchen",
+   "learned_share": 0.4304,
+   "llm_top": "living room",
+   "llm": {
+    "bathroom": 0.15,
+    "bedroom": 0.25,
+    "kitchen": 0.35,
+    "living room": 0.5
+   },
+   "learned": {
+    "kitchen": 0.4304,
+    "living room": 0.3669,
+    "bedroom": 0.3114,
+    "bathroom": 0.0
+   }
+  },
+  {
+   "target": "laundry hamper",
+   "learned_top": "bathroom",
+   "learned_share": 0.4762,
+   "llm_top": "bedroom",
+   "llm": {
+    "bathroom": 0.4,
+    "bedroom": 0.55,
+    "kitchen": 0.03,
+    "living room": 0.06
+   },
+   "learned": {
+    "kitchen": 0.0,
+    "living room": 0.0,
+    "bedroom": 0.0632,
+    "bathroom": 0.4762
+   }
+  },
+  {
+   "target": "plunger",
+   "learned_top": "bathroom",
+   "learned_share": 0.8143,
+   "llm_top": "bathroom",
+   "llm": {
+    "bathroom": 0.55,
+    "bedroom": 0.01,
+    "kitchen": 0.03,
+    "living room": 0.01
+   },
+   "learned": {
+    "kitchen": 0.0231,
+    "living room": 0.0243,
+    "bedroom": 0.0368,
+    "bathroom": 0.8143
+   }
+  }
+ ],
+ "everyday": {
+  "knife": {
+   "bathroom": 0.02,
+   "bedroom": 0.04,
+   "kitchen": 0.75,
+   "living room": 0.08
+  },
+  "keys": {
+   "bathroom": 0.05,
+   "bedroom": 0.3,
+   "kitchen": 0.45,
+   "living room": 0.35
+  },
+  "phone charger": {
+   "bathroom": 0.12,
+   "bedroom": 0.8,
+   "kitchen": 0.45,
+   "living room": 0.55
+  },
+  "toothbrush": {
+   "bathroom": 0.9,
+   "bedroom": 0.05,
+   "kitchen": 0.05,
+   "living room": 0.02
+  },
+  "remote control": {
+   "bathroom": 0.03,
+   "bedroom": 0.45,
+   "kitchen": 0.15,
+   "living room": 0.85
+  },
+  "red backpack": {
+   "bathroom": 0.005,
+   "bedroom": 0.07,
+   "kitchen": 0.03,
+   "living room": 0.05
+  },
+  "shoes": {
+   "bathroom": 0.1,
+   "bedroom": 0.7,
+   "kitchen": 0.2,
+   "living room": 0.45
+  },
+  "reading glasses": {
+   "bathroom": 0.08,
+   "bedroom": 0.3,
+   "kitchen": 0.15,
+   "living room": 0.25
+  },
+  "wallet": {
+   "bathroom": 0.04,
+   "bedroom": 0.35,
+   "kitchen": 0.25,
+   "living room": 0.2
+  },
+  "laptop": {
+   "bathroom": 0.02,
+   "bedroom": 0.4,
+   "kitchen": 0.15,
+   "living room": 0.35
+  },
+  "cat toy": {
+   "bathroom": 0.06,
+   "bedroom": 0.15,
+   "kitchen": 0.1,
+   "living room": 0.22
+  },
+  "baby bottle": {
+   "bathroom": 0.01,
+   "bedroom": 0.04,
+   "kitchen": 0.08,
+   "living room": 0.04
+  },
+  "water bottle": {
+   "bathroom": 0.1,
+   "bedroom": 0.4,
+   "kitchen": 0.6,
+   "living room": 0.35
+  },
+  "umbrella": {
+   "bathroom": 0.04,
+   "bedroom": 0.12,
+   "kitchen": 0.08,
+   "living room": 0.15
+  },
+  "towel": {
+   "bathroom": 0.95,
+   "bedroom": 0.3,
+   "kitchen": 0.75,
+   "living room": 0.12
+  },
+  "frying pan": {
+   "bathroom": 0.005,
+   "bedroom": 0.01,
+   "kitchen": 0.6,
+   "living room": 0.02
+  },
+  "book": {
+   "bathroom": 0.15,
+   "bedroom": 0.7,
+   "kitchen": 0.45,
+   "living room": 0.75
+  },
+  "headphones": {
+   "bathroom": 0.03,
+   "bedroom": 0.45,
+   "kitchen": 0.08,
+   "living room": 0.25
+  },
+  "hair dryer": {
+   "bathroom": 0.3,
+   "bedroom": 0.15,
+   "kitchen": 0.02,
+   "living room": 0.03
+  },
+  "pillow": {
+   "bathroom": 0.03,
+   "bedroom": 0.95,
+   "kitchen": 0.08,
+   "living room": 0.8
+  }
+ }
+}
