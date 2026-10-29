@@ -8,6 +8,10 @@
 # evaluations/room-prior-3116/live/runs.jsonl; a run that crashes or prints
 # no result is recorded as one that failed, never skipped.
 # Bars: 3/3 found, 0 contact samples, room_labels.label_calls <= 20 each.
+# Since 3.116 amendment 7 the red backpack (demo_explore's target, a flat
+# prior) asks nothing: its runs report room_labels {"skipped": "flat_prior",
+# "label_calls": 0}, so a re-run no longer exercises asking. Criterion 6 was
+# met before the rule (batch 20261029T054430-4bae7a9).
 # On Linux, export PICAR_ROS_NETWORK=host first: without it the ROS
 # container cannot reach host.docker.internal and every run is an error row
 # ("stack did not come up"; batch 20261029T053722).

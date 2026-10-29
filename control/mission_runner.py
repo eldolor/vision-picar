@@ -59,6 +59,7 @@ from brain.choice_log import BY_PERSON, GoalAsk
 from brain.intervention_log import (VIA_BRAIN_STOP, VIA_LOOP_CANCELLED, VIA_PREEMPTED,
                                     VIA_ROBOT_STOP)
 from brain.goal_policy import coarse, goal_policy_for
+from brain.goal_policy import rooms_prior_informative as flat_prior_ok
 from brain.frontier import RETRY_COOLDOWN_S, RETRY_LIMIT
 from brain.inventory import MAX_RANGE_M as INVENTORY_RANGE_M
 from brain.inventory import DEFAULT_FOV_DEG, Inventory, frame_detections
@@ -655,11 +656,23 @@ class MissionRunner:
         # most `room_label_max_calls` (brain/room_labels.py). The label
         # source defaults to the frame's own `room`, which only a simulated
         # frame carries; on the car it is the cloud (a paid call each).
+        # 3.116 amendment 7: no labels for a find whose target's room prior is
+        # flat (or missing): they cannot tell its rooms apart and cost it
+        # metres, so it asks nothing -- no paid call -- and runs as with the
+        # flag off. Decided before anything is built (review).
+        self._labels_skipped: Optional[str] = (
+            "flat_prior" if (find_room_labels and job == "find"
+                             and explore_goal_policy == "rooms"
+                             and not flat_prior_ok(target_object)) else None)
+        if self._labels_skipped:
+            logger.info("find_room_labels: no asks for %r (flat or no room prior)",
+                        target_object)
         self.room_labeller = (RoomLabeller(room_label_fn or frame_room,
                                            max_calls=room_label_max_calls,
                                            mode=room_label_mode,
                                            clock=lambda: self.clock())
-                              if job == "survey" or find_room_labels else None)
+                              if job == "survey" or (find_room_labels and not self._labels_skipped)
+                              else None)
         # 3.116.B: a find mission asks as a survey does, on the map coarsened
         # to the room policy's grid, and its labels feed that policy's room
         # types only (the agent's `goal_labels`, below). Useless to any other
@@ -813,7 +826,7 @@ class MissionRunner:
             extra = {"navigator": self._navigator, "clock": self.clock,
                      # 3.65 phase 2: "rule" (None) or the learned goal choice.
                      "goal_policy": goal_policy_for(explore_goal_policy)}
-            if self.find_room_labels:
+            if self.find_room_labels and self.room_labeller is not None:
                 extra["goal_labels"] = self._goal_labels
             if explore_ask_timeout_s:
                 if policy != "explore":
@@ -1456,7 +1469,11 @@ class MissionRunner:
                 "survey": (self.room_labeller.status()
                            if self.room_labeller and not self.find_room_labels else None),
                 # 3.116.B: a find mission's own asks, the same shape.
-                "room_labels": (self.room_labeller.status() if self.find_room_labels else None),
+                # A skipped find keeps the count's key, at 0 (review).
+                "room_labels": ({"skipped": self._labels_skipped, "label_calls": 0}
+                                if self._labels_skipped
+                                else self.room_labeller.status() if self.find_room_labels
+                                else None),
                 "mission": self.memory.mission,
                 "target_object": self.memory.target_object,
                 "target_room": self.memory.target_room,

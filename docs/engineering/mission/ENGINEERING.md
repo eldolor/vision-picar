@@ -210,7 +210,12 @@ metres; it is cut again whenever the map or the answers change (an older
 cut would leave a frontier goal on new floor untyped). An ask holds the tick as a
 survey's does (3.116 amendment 5: measured on the car before `cloud`);
 `room_labels()` stays None and status reports the asks as `room_labels`,
-not `survey`.
+not `survey`. A target whose room prior is flat or missing
+(`goal_policy.rooms_prior_informative`: highest rate under 2x the lowest,
+floored at 0.01; on the shipped prior only the red backpack) asks nothing
+(3.116 amendment 7): brain_server builds no source and records the mission
+`find_room_labels: off`, the runner builds no labeller, and status reads
+`room_labels: {"skipped": "flat_prior", "label_calls": 0}`.
 A survey owns a `RoomLabeller` (`brain/room_labels.py`): once a tick, after
 the step, the runner reads the pose (`world.get_pose()`) and the explore
 agent's last map and calls `observe(map, pose, robot.get_camera_frame)`. It

@@ -244,7 +244,8 @@ def _mission(split: str, index: int, mode: str, spec, seed: int = 0, drop: float
         if hasattr(labeller, "asks"):
             row["asks"] = labeller.asks
         if spec == "wired-ask":
-            row["asks"] = runner.room_labeller.calls
+            # None when 3.116's flat-prior rule asked nothing (not "asked 0").
+            row["asks"] = runner.room_labeller.calls if runner.room_labeller else None
         row.update(outcome=s["outcome"], ticks=ticks, capped=ticks >= TICK_CAP,
                    goals=s.get("explore", {}).get("goals_sent") or 0,
                    metres=round(nav.metres + robot._path_m, 2))

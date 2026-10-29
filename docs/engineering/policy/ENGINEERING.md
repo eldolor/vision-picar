@@ -783,7 +783,9 @@ find mission's map has no labels, so those three read 0 -- unless
 into the map, so E3's room goals stay off). Every target in the prior has
 one, the red backpack's nearly flat (0.16-0.23): 3.116.A measured asked
 labels helping a real-object target (paired reward +0.091) and hurting the
-backpack (-0.080). Scored
+backpack (-0.080), so a target whose prior does not single out a room
+(`prior_is_informative`, `FLAT_PRIOR_RATIO` 2.0: only the backpack today, and
+any target the prior does not name) gets no labels at all (amendment 7). Scored
 `w . f + MLP(f)` (17 -> 32 -> 32 -> 1, tanh) in float32 exactly as the test
 run's `evaluations/goal-learn-396/model.py` `score_np`, argmax with a
 non-finite score last; parameters and prior in

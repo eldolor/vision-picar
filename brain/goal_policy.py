@@ -292,6 +292,37 @@ def room_features(m: dict, pose: dict, goals: list, *, trail, types: list,
     return out
 
 
+# 3.116 amendment 7: a target's prior is informative -- worth room labels --
+# when its highest rate is at least this many times its lowest, the lowest
+# floored at FLAT_PRIOR_FLOOR. On the shipped prior only the red backpack
+# (0.228 / 0.163 = 1.4, placed in a random room in training) is flat; the
+# nearest other target is 4.9 (garbage can).
+FLAT_PRIOR_RATIO = 2.0
+FLAT_PRIOR_FLOOR = 0.01
+
+
+def prior_is_informative(rates: Optional[dict]) -> bool:
+    """Whether a target's per-type rates single some room type out (3.116:
+    asked labels cost a flat-prior target metres and gave nothing)."""
+    vals = [float(v) for v in (rates or {}).values()]
+    if not vals:
+        return False
+    return max(vals) >= FLAT_PRIOR_RATIO * max(min(vals), FLAT_PRIOR_FLOOR)
+
+
+@functools.lru_cache(maxsize=1)
+def _shipped_rooms_prior() -> dict:
+    data = json.loads(Path(ROOMS_PATH).read_text())
+    return {t.lower(): dict(p) for t, p in data["prior"].items()}
+
+
+def rooms_prior_informative(target: Optional[str]) -> bool:
+    """`prior_is_informative` on the shipped `rooms` policy's prior for this
+    target (`ROOMS_PATH`), without building the policy: what a find with
+    `find_room_labels` decides before it builds anything (3.116)."""
+    return prior_is_informative(_shipped_rooms_prior().get((target or "").lower()))
+
+
 def room_type(name: str) -> str:
     """'bedroom 2' -> 'bedroom'."""
     return re.sub(r" \d+$", "", name)
@@ -316,6 +347,10 @@ class RoomGoalPolicy:
             if self.P[k].shape != shape:
                 raise ValueError(f"{k}: shape {self.P[k].shape}, expected {shape}")
         self.prior = {t.lower(): dict(p) for t, p in prior.items()}
+
+    def informative_for(self, target: Optional[str]) -> bool:
+        """Whether room labels can tell this target's rooms apart (3.116)."""
+        return prior_is_informative(self.prior.get((target or "").lower()))
 
     def extend(self, m: dict, pose: dict, goals: list, feats: list, *, trail,
                types: list, target: Optional[str]) -> list:

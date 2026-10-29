@@ -30,10 +30,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import c as C                                                 # noqa: E402
 import train as T                                             # noqa: E402
+from a import pick_target                                     # noqa: E402
 from ask_labels import AskLabeller                            # noqa: E402
+from brain.goal_policy import rooms_prior_informative         # noqa: E402
+from features import Labeller                                 # noqa: E402
 from tests.test_explore import CELL                           # noqa: E402
 
 ARMS = ("rule", "no-label", "stand-in", "ask", "ask-noisy")
+# 3.116 amendment 7: `ask` with no labels for a flat-prior target. Not in
+# ARMS (A's run is done); run it with `run OUT test ask-rule,ask,no-label`.
+RULE_ARM = "ask-rule"
 NOISE = 0.15
 MODES = ("R", "U")
 
@@ -42,7 +48,17 @@ def _ask(grid, index, noise):
     return AskLabeller(grid, CELL, index, noise=noise)
 
 
-def _spec(arm: str):
+def _ask_rule(grid, index, mode):
+    """`ask`, or no labels at all when the target's prior is flat (the
+    brain's rule: `goal_policy.prior_is_informative`)."""
+    target, _dist = pick_target(grid, index, mode)
+    # The brain's own decision, on the shipped prior (review).
+    if not rooms_prior_informative(target):
+        return Labeller(grid, CELL, drop=frozenset(grid.rooms))
+    return AskLabeller(grid, CELL, index)
+
+
+def _spec(arm: str, mode: str = None):
     """(spec, drop, labels factory) for an arm."""
     if arm == "rule":
         return "rule", 0.0, None
@@ -51,6 +67,10 @@ def _spec(arm: str):
         return f_large, 1.0, None
     if arm == "stand-in":
         return f_large, 0.0, None
+    if arm == RULE_ARM:
+        return f_large, 0.0, functools.partial(_ask_rule, mode=mode)
+    if arm not in ("ask", "ask-noisy"):
+        raise ValueError(f"unknown arm {arm!r}")       # a typo never runs `ask` (review)
     return f_large, 0.0, functools.partial(_ask, noise=NOISE if arm == "ask-noisy" else 0.0)
 
 
@@ -60,7 +80,7 @@ def houses(which: str) -> list:
 
 def _job(args):
     s, h, mode, arm = args
-    spec, drop, labels = _spec(arm)
+    spec, drop, labels = _spec(arm, mode)
     try:
         r = T.mission(s, h, mode, spec, 0, drop, labels=labels)
     except Exception as e:  # noqa: BLE001 -- a house that cannot even start is a row, not a lost run
@@ -71,13 +91,25 @@ def _job(args):
     return r
 
 
-def cmd_run(out: str, which: str) -> None:
+def cmd_run(out: str, which: str, arms=ARMS) -> None:
     os.makedirs(out, exist_ok=True)
     hs = houses(which)
-    json.dump({"houses": which, "n": len(hs), "noise": NOISE}, open(os.path.join(out, "run.json"), "w"))
+    for arm in arms:
+        _spec(arm, "R")                                  # refuse a bad name before any run
+    meta = os.path.join(out, "run.json")
+    if os.path.exists(meta):
+        # Never overwrite an earlier run's record (review): add to it.
+        old = json.load(open(meta))
+        if old["houses"] != which:
+            raise SystemExit(f"{out} holds {old['houses']} houses, not {which}")
+        arms_all = list(dict.fromkeys(old.get("arms", ARMS) + list(arms)))
+    else:
+        arms_all = list(arms)
+    T.save_atomic(meta, lambda p: json.dump({"houses": which, "n": len(hs), "noise": NOISE,
+                                             "arms": arms_all}, open(p, "w")))
     print(f"{len(hs)} {which} houses", flush=True)
     with ProcessPoolExecutor(T.WORKERS) as ex:
-        for arm in ARMS:
+        for arm in arms:
             for mode in MODES:
                 path = os.path.join(out, f"{arm}-{mode}.json")
                 if os.path.exists(path):
@@ -88,7 +120,7 @@ def cmd_run(out: str, which: str) -> None:
 
 
 def _asks(rows: list) -> dict:
-    a = [r["asks"] for r in rows if r["outcome"] == "found" and "asks" in r]
+    a = [r["asks"] for r in rows if r["outcome"] == "found" and r.get("asks") is not None]
     return {"median": float(np.median(a)) if a else None,
             "p90": float(np.percentile(a, 90)) if a else None}
 
@@ -136,8 +168,30 @@ def cmd_score(out: str) -> dict:
     return report
 
 
+def cmd_score_rule(out: str) -> dict:
+    """3.116 criteria 11-12: `ask-rule` against `ask` (R) and no labels (U),
+    house for house on (outcome, goals, metres)."""
+    def key(rs):
+        return {r["index"]: [r["outcome"], r.get("goals"), r.get("metres")] for r in rs}
+    rows = {(a, m): key(json.load(open(os.path.join(out, f"{a}-{m}.json"))))
+            for a, m in ((RULE_ARM, "R"), ("ask", "R"), (RULE_ARM, "U"), ("no-label", "U"))}
+    v = {}
+    for n, m, ref in (("11", "R", "ask"), ("12", "U", "no-label")):
+        a, b = rows[(RULE_ARM, m)], rows[(ref, m)]
+        if sorted(a) != sorted(b):
+            raise SystemExit(f"criterion {n}: different houses -- not scoring")
+        differ = sorted(h for h in a if a[h] != b[h])
+        v[n] = {"mode": m, "against": ref, "houses": len(a), "differ": differ,
+                "met": not differ}
+    T.save_atomic(os.path.join(out, "score-rule.json"), lambda p: json.dump(v, open(p, "w"), indent=1))
+    print(json.dumps(v, indent=1))
+    return v
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "run":
-        cmd_run(sys.argv[2], sys.argv[3])
+        cmd_run(sys.argv[2], sys.argv[3], *([sys.argv[4].split(",")] if len(sys.argv) > 4 else []))
+    elif sys.argv[1] == "score-rule":
+        cmd_score_rule(sys.argv[2])
     else:
         cmd_score(sys.argv[2])

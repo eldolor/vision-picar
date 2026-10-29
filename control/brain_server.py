@@ -86,6 +86,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
+from brain.goal_policy import rooms_prior_informative
 from brain.navigate import MAX_TARGET_CHARS, room_label_fn_for, vision_fn_for
 from brain.perceive import (DEFAULT_CLIP, DEFAULT_DETECTOR,
                             DEFAULT_MATCH_PROBABILITY, PerceptionUnavailable)
@@ -717,8 +718,11 @@ def create_app(
             # would not end inside what the step left of the tick.
             # 3.116.B: a find mission's own asks, when find_room_labels says so
             # and explore chooses its goals (no other search reads them).
+            # 3.116 amendment 7: and not for a target whose room prior is
+            # flat (nothing built, no vision service needed, metrics "off").
             find_labels = (req.job == "find" and config["find_room_labels"] != "off"
-                           and (req.policy == "explore" or tier_search == "explore"))
+                           and (req.policy == "explore" or tier_search == "explore")
+                           and rooms_prior_informative(req.target_object))
             label_source = (config["find_room_labels"] if find_labels
                             else config["room_label_source"] if req.job == "survey" else None)
             room_label_fn = room_label_timeout_s = None

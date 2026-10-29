@@ -44,7 +44,16 @@ def test_the_runner_refuses_labels_no_chooser_would_read(kw):
                       world=MockWorld(grid), find_room_labels=True, **kw)
 
 
-def test_a_find_mission_asks_and_its_labels_reach_only_the_room_policy():
+@pytest.fixture
+def backpack_informative(monkeypatch):
+    """The houses here hide the red backpack, whose shipped prior is flat
+    (3.116 amendment 7 asks nothing for it); tests of the asking itself
+    give it a prior that singles out a room."""
+    import control.mission_runner as mr
+    monkeypatch.setattr(mr, "flat_prior_ok", lambda target: True)
+
+
+def test_a_find_mission_asks_and_its_labels_reach_only_the_room_policy(backpack_informative):
     """It asks (free, from the sim's frames), reports its asks under
     `room_labels` (never `survey`), keeps them out of the map explore reads
     for its room goals, and gives the policy a layer with names."""
@@ -78,7 +87,7 @@ def test_types_are_read_from_the_find_layer_when_the_map_has_none():
     assert agent._goal_types(m, [(0.1, 0.1)]) == [None]
 
 
-def test_the_cap_ends_asking_not_the_mission(monkeypatch):
+def test_the_cap_ends_asking_not_the_mission(monkeypatch, backpack_informative):
     """At the cap it stops asking -- and the labeller is handed no map to
     coarsen from then on (review) -- while the mission goes on."""
     from brain.room_labels import RoomLabeller
@@ -97,6 +106,35 @@ def test_the_cap_ends_asking_not_the_mission(monkeypatch):
     assert s["outcome"] == "found", s["log_tail"]
     assert s["room_labels"]["label_calls"] == 1 and s["room_labels"]["capped"]
     assert maps_after_cap and all(m is None for m in maps_after_cap)
+
+
+def test_the_flat_prior_rule():
+    """3.116 amendment 7: a rate that singles out a room (max >= 2 x min,
+    the min floored at 0.01); on the shipped prior only the red backpack is
+    flat, and a target with no prior is not informative either."""
+    from brain.goal_policy import RoomGoalPolicy, prior_is_informative
+    assert prior_is_informative({"kitchen": 1.0, "bedroom": 0.0})
+    assert prior_is_informative({"kitchen": 0.02, "bedroom": 0.0})       # 0 reads as 0.01
+    assert not prior_is_informative({"kitchen": 0.019, "bedroom": 0.01})
+    assert not prior_is_informative({}) and not prior_is_informative(None)
+    pol = RoomGoalPolicy.load()
+    flat = sorted(t for t in pol.prior if not pol.informative_for(t))
+    assert flat == ["red backpack"]
+    assert pol.informative_for("Garbage Bag") and not pol.informative_for("a sock")
+
+
+@pytest.mark.parametrize("source", ["frame", "cloud"])
+def test_a_flat_prior_target_asks_nothing(source, monkeypatch):
+    """The backpack (flat) builds no labeller -- no paid call -- reports why,
+    and searches exactly as with the flag off."""
+    kw = {} if source == "frame" else {"room_label_fn": lambda frame: pytest.fail("asked")}
+    runner, _nav, _g = _mission(explore_goal_policy="rooms", find_room_labels=True, **kw)
+    off, _nav2, _g2 = _mission(explore_goal_policy="rooms")
+    s, o = runner.status(), off.status()
+    assert runner.room_labeller is None and runner.agent.goal_labels is None
+    assert s["room_labels"] == {"skipped": "flat_prior", "label_calls": 0}
+    assert (s["outcome"], s["step"], s["explore"]["goals_sent"]) == \
+        (o["outcome"], o["step"], o["explore"]["goals_sent"])
 
 
 def test_off_asks_nothing():
@@ -150,7 +188,12 @@ def test_the_server_asks_nothing_for_a_search_explore_does_not_choose(tmp_path, 
     assert runner.metrics_config["find_room_labels"] == "off"   # this mission asked nothing
 
 
-def test_a_cloud_find_with_no_vision_service_is_refused_at_start(tmp_path, monkeypatch):
+def test_the_server_builds_nothing_for_a_flat_prior_find(tmp_path, monkeypatch):
+    """No cloud source, no vision service needed, and the metrics row says
+    this mission asked nothing (review)."""
+    import control.brain_server as bs
+    monkeypatch.setattr(bs, "room_label_fn_for",
+                        lambda **k: pytest.fail("a flat-prior find builds no source"))
     monkeypatch.delenv("EXPLORE_GOAL_POLICY", raising=False)
     monkeypatch.delenv("FIND_ROOM_LABELS", raising=False)
     monkeypatch.delenv("VISION_URL", raising=False)
@@ -159,5 +202,21 @@ def test_a_cloud_find_with_no_vision_service_is_refused_at_start(tmp_path, monke
     with TestClient(app) as client:
         resp = client.post("/mission/start", json={"policy": "explore",
                                                    "target_object": "red backpack"})
+        runner = app.state.brain_state["runner"]
+        client.post("/mission/stop")
+    assert resp.status_code == 200, resp.text
+    assert runner.room_labeller is None
+    assert runner.metrics_config["find_room_labels"] == "off"
+
+
+def test_a_cloud_find_with_no_vision_service_is_refused_at_start(tmp_path, monkeypatch):
+    monkeypatch.delenv("EXPLORE_GOAL_POLICY", raising=False)
+    monkeypatch.delenv("FIND_ROOM_LABELS", raising=False)
+    monkeypatch.delenv("VISION_URL", raising=False)
+    app = _survey_app(tmp_path, monkeypatch, explore_goal_policy="rooms",
+                      find_room_labels="cloud")
+    with TestClient(app) as client:
+        resp = client.post("/mission/start", json={"policy": "explore",
+                                                   "target_object": "garbage bag"})
     assert resp.status_code == 400, resp.text
     assert "find_room_labels" in resp.text

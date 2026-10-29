@@ -25,7 +25,9 @@ import train as T                                             # noqa: E402
 def _pair(args):
     s, h, mode = args
     out = {"split": s, "index": h, "mode": mode}
-    spec, drop, labels = A._spec("ask")
+    # 3.116 amendment 7: the wired brain asks nothing for a flat-prior
+    # target, so its reference is the harness arm with the same rule.
+    spec, drop, labels = A._spec(A.RULE_ARM, mode)
     ref = T.mission(s, h, mode, spec, 0, drop, labels=labels)
     new = T.mission(s, h, mode, "wired-ask", 0)
     for name, r in (("reference", ref), ("wired", new)):
