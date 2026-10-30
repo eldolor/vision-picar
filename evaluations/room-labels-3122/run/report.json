@@ -1,0 +1,110 @@
+{
+ "calls": 734,
+ "chosen": 734,
+ "usd": 5.31,
+ "cut_replies": 2,
+ "errors": 0,
+ "frame_error": {
+  "n": 734,
+  "walks": 15,
+  "error": 0.5136,
+  "ci95": [
+   0.3425,
+   0.6618
+  ]
+ },
+ "frame_error_lenient": {
+  "n": 734,
+  "walks": 15,
+  "error": 0.4728,
+  "ci95": [
+   0.3169,
+   0.6051
+  ]
+ },
+ "per_room": {
+  "basement": {
+   "n": 226,
+   "walks": 5,
+   "error": 0.9381,
+   "ci95": [
+    0.8931,
+    0.9901
+   ],
+   "judged": true
+  },
+  "hallway": {
+   "n": 30,
+   "walks": 1,
+   "error": 0.0,
+   "ci95": null,
+   "judged": false
+  },
+  "home gym": {
+   "n": 396,
+   "walks": 9,
+   "error": 0.4091,
+   "ci95": [
+    0.2817,
+    0.4859
+   ],
+   "judged": true
+  },
+  "home office": {
+   "n": 5,
+   "walks": 1,
+   "error": 0.4,
+   "ci95": null,
+   "judged": false
+  },
+  "living room": {
+   "n": 77,
+   "walks": 4,
+   "error": 0.013,
+   "ci95": [
+    0.0,
+    0.0205
+   ],
+   "judged": true
+  }
+ },
+ "answers": {
+  "living room": {
+   "living room": 76,
+   "foyer": 1
+  },
+  "hallway": {
+   "foyer": 19,
+   "hallway": 11
+  },
+  "home office": {
+   "office": 3,
+   "living room": 2
+  },
+  "basement": {
+   "home gym": 68,
+   "bedroom": 57,
+   "hallway": 40,
+   "family room": 21,
+   "basement": 14,
+   "living room": 9,
+   "office": 8,
+   "staircase": 7,
+   "stairway": 1,
+   "unclear": 1
+  },
+  "home gym": {
+   "home gym": 233,
+   "living room": 47,
+   "family room": 33,
+   "unclear": 30,
+   "hallway": 24,
+   "office": 13,
+   "basement": 10,
+   "bedroom": 4,
+   "kitchen": 1,
+   "exercise room": 1
+  }
+ },
+ "decision": "wait for the Rover"
+}

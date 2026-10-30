@@ -964,6 +964,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   (shaping) not run by its rule. No test houses spent. **The learned
   chooser line is closed until the Rover's data**; next lever, the
   target's room from real perception.
+  **3.122 (2026-10-30, records only, $5.31):** `/room` (Opus 5.5) on 734
+  room-labelled frames of the 15 recorded rig walks: 51.4% wrong [34.3,
+  66.2] over walks (bar for a sim noise model 15%), so room labels wait
+  for the Rover. Living room 1.3% and stair hall 0/30 wrong; the basement
+  (93.8%) and home gym (40.9%), one open space, carry it. No kitchen,
+  bedroom or bathroom frames exist; the reference is unadjudicated.
 * **Harness missions collect their cycles (3.113), merged 2026-10-27.**
   `evaluations/goal-learn-396/train.py` `mission()` runs `gc.collect()` in
   a `finally` (a mission's runner, agent and house are reference cycles);
