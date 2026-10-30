@@ -21,6 +21,10 @@ pytest-playwright
 # Coverage, for the command in CLAUDE.md section 6.
 pytest-cov
 
+# The push gate's fast tier runs on several cores (3.121,
+# tools/plan_section.py `parallel_args`); without it the tier runs serially.
+pytest-xdist==3.8.0
+
 # tests/chassis_fit.py (ndimage, signal), which tests/test_mission_ends.py's
 # coverage tests import. Was only in requirements-perception.txt, so a venv
 # from this file alone failed them.

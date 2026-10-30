@@ -71,6 +71,43 @@ def test_the_fast_tier_leaves_out_only_the_slow_files():
     assert set(ps.SLOW_FILES) <= set(tests)
 
 
+
+def test_the_fast_tier_runs_on_half_the_cores_by_default(monkeypatch):
+    """3.121: xdist workers from `PICAR_TEST_WORKERS`, else half the cores,
+    each file whole on one worker."""
+    monkeypatch.delenv("PICAR_TEST_WORKERS", raising=False)
+    monkeypatch.setattr(ps.os, "cpu_count", lambda: 12)
+    assert ps.test_workers() == 6
+    assert ps.parallel_args(sys.executable) == ["-n", "6", "--dist", "loadfile"]
+    monkeypatch.setenv("PICAR_TEST_WORKERS", "3")
+    assert ps.parallel_args(sys.executable) == ["-n", "3", "--dist", "loadfile"]
+    monkeypatch.setattr(ps.os, "cpu_count", lambda: None)
+    monkeypatch.setenv("PICAR_TEST_WORKERS", "x")
+    assert ps.test_workers() == 1
+
+
+def test_one_worker_or_no_xdist_runs_serially(monkeypatch, capsys):
+    monkeypatch.setenv("PICAR_TEST_WORKERS", "1")
+    assert ps.parallel_args(sys.executable) == []
+    monkeypatch.setenv("PICAR_TEST_WORKERS", "4")
+    assert ps.parallel_args("/bin/false") == []          # an interpreter with no xdist
+    assert "runs serially" in capsys.readouterr().out
+
+
+def test_only_the_fast_tier_runs_in_parallel(monkeypatch):
+    """`ready --full` (and so the nightly's browser and live-stack tests)
+    stays one process; the fast tier gets the xdist arguments."""
+    ran = []
+    monkeypatch.setenv("PICAR_TEST_WORKERS", "4")
+    monkeypatch.setattr(ps, "venv_python", lambda root: sys.executable)
+    monkeypatch.setattr(ps.subprocess, "run", lambda cmd, **kw: ran.append(cmd) or
+                        type("R", (), {"returncode": 0, "stdout": ""})())
+    assert ps.run_tests(ROOT, full=True)
+    assert ps.run_tests(ROOT, full=False)
+    full, fast = [c for c in ran if "pytest" in c]
+    assert "-n" not in full and not any(a.startswith("--ignore") for a in full)
+    assert fast[fast.index("-n"):][:4] == ["-n", "4", "--dist", "loadfile"]
+
 def test_a_clean_rebase_keeps_the_change_id(tmp_path, monkeypatch):
     """The gate keys a pass on the change, so a rebase onto another
     session's push does not rerun the tier; a different change does."""

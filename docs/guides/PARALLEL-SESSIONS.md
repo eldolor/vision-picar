@@ -95,7 +95,10 @@ Continuing an existing section: work in its worktree
    the live-stack ones (`*_live.py`) and the measurement sweeps
    (`SLOW_FILES` in `tools/plan_section.py`, which held ~45 of the full
    run's 51 minutes), unless `ready` already recorded a pass for that
-   commit. Both run on the working tree, so the gate and `ready` refuse
+   commit. Since 3.121 the fast tier runs on pytest-xdist workers (half
+   the cores, or `PICAR_TEST_WORKERS`; 1 is serial), each test file whole
+   on one worker; without xdist in the venv it runs serially and says so.
+   `ready --full` and the nightly stay serial. Both run on the working tree, so the gate and `ready` refuse
    one that is not the commit: a different HEAD, uncommitted changes, or
    an untracked file that is not ignored (it could be a module the commit
    imports). A pass is recorded for the CHANGE (its diff without blob ids

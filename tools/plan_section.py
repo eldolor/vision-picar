@@ -438,9 +438,38 @@ def scrubbed_env() -> dict:
     return {k: v for k, v in os.environ.items() if k not in drop}
 
 
+def test_workers() -> int:
+    """How many pytest-xdist workers the fast tier runs on (3.121):
+    `PICAR_TEST_WORKERS`, else half the cores -- never all of them (the
+    desktop stopped dead on 2026-10-28 under hours of full-CPU load). 1 or
+    less is serial."""
+    try:
+        return int(os.environ["PICAR_TEST_WORKERS"])
+    except (KeyError, ValueError):
+        return max(1, (os.cpu_count() or 2) // 2)
+
+
+def parallel_args(py: str) -> list:
+    """The fast tier's xdist arguments (3.121), or [] -- serial, as before --
+    when the venv has no xdist or one worker is asked for. `--dist loadfile`
+    keeps each test file whole on one worker, in its own order; only files
+    run side by side."""
+    n = test_workers()
+    if n <= 1:
+        return []
+    if subprocess.run([py, "-c", "import xdist"], capture_output=True).returncode:
+        print("fast tier: pytest-xdist is not installed in the venv, so it runs serially "
+              "(pip install -r requirements.txt)", flush=True)
+        return []
+    return ["-n", str(n), "--dist", "loadfile"]
+
+
 def run_tests(root: str, full: bool) -> bool:
-    args = [] if full else SLOW_TESTS
-    return subprocess.run([venv_python(root), "-m", "pytest", "tests/", "-q",
+    py = venv_python(root)
+    # The full suite (`ready --full`, the nightly) stays serial: it holds the
+    # browser and live-stack tests, timed alone.
+    args = [] if full else [*SLOW_TESTS, *parallel_args(py)]
+    return subprocess.run([py, "-m", "pytest", "tests/", "-q",
                            "-p", "no:cacheprovider", *args], cwd=root,
                           env=scrubbed_env()).returncode == 0
 
