@@ -124,6 +124,6 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.116](3.116-room-prior-in-find.md) | Room labels in a find mission, and an LLM's room prior |
 | [3.117](3.117-ladder-rungs-ppo.md) | 3.110 stage 2 on the desktop: F-pool-W32 at 24 and 34 facts |
 | [3.118](3.118-room-cut-numpy.md) | The map's room cut in numpy, exactly the old answers |
-| [3.120](3.120-walk-numpy.md) | spacing's walking distance in numpy, exactly the old distances |
 | [3.119](3.119-ppo-per-choice-credit.md) | PPO with per-choice credit: a learned critic, then a critic that sees the truth |
+| [3.120](3.120-walk-numpy.md) | spacing's walking distance in numpy, exactly the old distances |
 <!-- /sections -->
