@@ -439,12 +439,20 @@ def scrubbed_env() -> dict:
 
 
 def usable_cores() -> int:
-    """The cores this process may run on (its affinity: a container's or
-    cloud session's limit, not the host's count)."""
+    """The cores this process may run on: its affinity, and a cgroup CPU
+    quota under it if one is set (a container's or cloud session's limit,
+    not the host's count)."""
     try:
-        return len(os.sched_getaffinity(0))
+        n = len(os.sched_getaffinity(0))
     except (AttributeError, OSError):          # macOS has no affinity call
-        return os.cpu_count() or 2
+        n = os.cpu_count() or 2
+    try:
+        quota, period = open("/sys/fs/cgroup/cpu.max").read().split()[:2]
+        if quota != "max":
+            n = min(n, max(1, int(quota) // int(period)))
+    except (OSError, ValueError):
+        pass
+    return n
 
 
 def worker_count() -> int:
@@ -453,8 +461,8 @@ def worker_count() -> int:
     hours of full-CPU load) -- or fewer by `PICAR_TEST_WORKERS`. 1 or less
     is serial."""
     half = max(1, usable_cores() // 2)
-    asked = os.environ.get("PICAR_TEST_WORKERS")
-    if asked is None:
+    asked = os.environ.get("PICAR_TEST_WORKERS", "").strip()
+    if not asked:
         return half
     try:
         n = int(asked)
@@ -468,25 +476,30 @@ def worker_count() -> int:
     return min(n, half)
 
 
-def has_xdist(py: str, root: str) -> bool:
-    """Whether `py` imports xdist where and as the suite will run."""
-    return subprocess.run([py, "-c", "import xdist"], cwd=root, env=scrubbed_env(),
-                          capture_output=True).returncode == 0
+def xdist_starts(py: str, root: str, load: list) -> bool:
+    """Whether pytest under `py`, where and as the suite will run, can start
+    an xdist worker: one worker collecting one small file. An import of
+    xdist alone passes without execnet, or with the plugin turned off in
+    PYTEST_ADDOPTS."""
+    return subprocess.run([py, "-m", "pytest", "-q", "-p", "no:cacheprovider", *load,
+                           "-n", "1", "--collect-only", "tests/test_plan_section.py"],
+                          cwd=root, env=scrubbed_env(), capture_output=True).returncode == 0
 
 
 def parallel_args(py: str, root: str) -> list:
     """The fast tier's xdist arguments (3.121), or [] -- serial, as before --
-    when the venv has no xdist or one worker is asked for. `--dist loadfile`
-    keeps each test file whole on one worker, in its own order; only files
-    run side by side. With plugin autoloading off, xdist is named."""
+    when pytest cannot start xdist workers here or one worker is asked for.
+    `--dist loadfile` keeps each test file whole on one worker, in its own
+    order; only files run side by side. With plugin autoloading off, xdist
+    is named."""
     n = worker_count()
     if n <= 1:
         return []
-    if not has_xdist(py, root):
-        print("fast tier: pytest-xdist is not installed in the venv, so it runs serially "
-              "(pip install -r requirements.txt)", flush=True)
-        return []
     load = ["-p", "xdist.plugin"] if os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") else []
+    if not xdist_starts(py, root, load):
+        print("fast tier: pytest cannot start xdist workers in this venv, so it runs "
+              "serially (pip install -r requirements.txt)", flush=True)
+        return []
     return [*load, "-n", str(n), "--dist", "loadfile"]
 
 

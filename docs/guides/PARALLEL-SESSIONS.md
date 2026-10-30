@@ -98,7 +98,8 @@ Continuing an existing section: work in its worktree
    commit. Since 3.121 the fast tier runs on pytest-xdist workers (half
    the usable cores, fewer with `PICAR_TEST_WORKERS`; 1 is serial), each
    test file whole on one worker; without xdist in the venv it runs
-   serially and says so. `ready --full` and the nightly stay serial.
+   serially and says so. `ready --full` and the nightly stay serial. On
+   the Jetson beside the stack, `PICAR_TEST_WORKERS=1` (memory).
    Both run on the working tree, so the gate and `ready` refuse one that
    is not the commit: a different HEAD, uncommitted changes, or
    an untracked file that is not ignored (it could be a module the commit

@@ -77,7 +77,7 @@ def test_the_fast_tier_runs_on_half_the_cores_by_default(monkeypatch, capsys):
     monkeypatch.delenv("PICAR_TEST_WORKERS", raising=False)
     monkeypatch.delenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", raising=False)
     monkeypatch.setattr(ps, "usable_cores", lambda: 12)
-    monkeypatch.setattr(ps, "has_xdist", lambda py, root: True)
+    monkeypatch.setattr(ps, "xdist_starts", lambda py, root, load: True)
     assert ps.worker_count() == 6
     assert ps.parallel_args(sys.executable, ROOT) == ["-n", "6", "--dist", "loadfile"]
     monkeypatch.setenv("PICAR_TEST_WORKERS", "3")
@@ -86,6 +86,8 @@ def test_the_fast_tier_runs_on_half_the_cores_by_default(monkeypatch, capsys):
     assert ps.worker_count() == 6 and "over half" in capsys.readouterr().out
     monkeypatch.setenv("PICAR_TEST_WORKERS", "x")
     assert ps.worker_count() == 6 and "not a number" in capsys.readouterr().out
+    monkeypatch.setenv("PICAR_TEST_WORKERS", "")
+    assert ps.worker_count() == 6 and capsys.readouterr().out == ""
     monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
     assert ps.parallel_args(sys.executable, ROOT)[:2] == ["-p", "xdist.plugin"]
 
@@ -95,9 +97,21 @@ def test_one_worker_or_no_xdist_runs_serially(monkeypatch, capsys):
     monkeypatch.setenv("PICAR_TEST_WORKERS", "1")
     assert ps.parallel_args(sys.executable, ROOT) == []
     monkeypatch.setenv("PICAR_TEST_WORKERS", "4")
-    assert not ps.has_xdist("/bin/false", ROOT)            # an interpreter with no xdist
-    assert ps.parallel_args("/bin/false", ROOT) == []
+    assert ps.parallel_args("/bin/false", ROOT) == []      # an interpreter that cannot
     assert "runs serially" in capsys.readouterr().out
+    # The real check, in this venv: pytest starts one worker if xdist is
+    # installed, and says no -- never raises -- if it is not.
+    import importlib.util
+    assert ps.xdist_starts(sys.executable, ROOT, []) == bool(importlib.util.find_spec("xdist"))
+
+
+def test_the_core_count_without_an_affinity_call(monkeypatch):
+    """macOS has no `sched_getaffinity`: the host's count, or 2 without one."""
+    monkeypatch.delattr(ps.os, "sched_getaffinity", raising=False)
+    monkeypatch.setattr(ps.os, "cpu_count", lambda: 10)
+    assert ps.usable_cores() <= 10
+    monkeypatch.setattr(ps.os, "cpu_count", lambda: None)
+    assert 1 <= ps.usable_cores() <= 2
 
 
 def test_only_the_fast_tier_runs_in_parallel(monkeypatch):
@@ -105,7 +119,7 @@ def test_only_the_fast_tier_runs_in_parallel(monkeypatch):
     stays one process; the fast tier gets the xdist arguments."""
     ran = []
     monkeypatch.setattr(ps, "usable_cores", lambda: 12)
-    monkeypatch.setattr(ps, "has_xdist", lambda py, root: True)
+    monkeypatch.setattr(ps, "xdist_starts", lambda py, root, load: True)
     monkeypatch.setenv("PICAR_TEST_WORKERS", "4")
     monkeypatch.delenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", raising=False)
     monkeypatch.setattr(ps, "venv_python", lambda root: sys.executable)
