@@ -1172,7 +1172,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     WARNING comment naming an active section on yours.
   * `overlap` before editing a shared file.
   * `ready` (rebase check + full suite) before pushing to `dev`; a
-    pre-push hook enforces it.
+    pre-push hook enforces it. Since 3.121 (merged 2026-10-30) the fast
+    tier runs on pytest-xdist workers, half the cores: ~3.5 min, was
+    ~17.6 (`pip install -r requirements.txt` once; without xdist it runs
+    serially).
   * **Each session pushes to `dev` on its own judgement; no go-ahead is
     asked** (the user, 2026-10-15): a finished, reviewed step that passes
     the gate. Spending, deploys, force pushes and `PICAR_SKIP_GATE=1` are
