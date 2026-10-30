@@ -954,6 +954,16 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   No test houses spent; facts from the 42 are closed as a lever. Next
   candidates: steadier PPO steps, or the target's room from the detector
   or VLM (mode U's gap).
+  **3.119 (2026-10-30, records only, desktop):** per-choice credit in W32's
+  PPO (3.96's trainer gives every choice in a mission one group-relative
+  advantage): A1 a learned critic with GAE, A2 a critic that also sees the
+  truth (true distance, oracle's best cost, target room). The critic fits
+  (explained variance up to 0.46 / 0.75) but neither drives better than
+  W32 on the 200 diagnostic houses: R -0.116 [-0.213, -0.030] and -0.053
+  [-0.130, +0.018], U level but wide (criteria 1-2 FAILED for both); A3
+  (shaping) not run by its rule. No test houses spent. **The learned
+  chooser line is closed until the Rover's data**; next lever, the
+  target's room from real perception.
 * **Harness missions collect their cycles (3.113), merged 2026-10-27.**
   `evaluations/goal-learn-396/train.py` `mission()` runs `gc.collect()` in
   a `finally` (a mission's runner, agent and house are reference cycles);
