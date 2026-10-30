@@ -668,3 +668,38 @@ job, on a phone.
    * **Target: Q1 2027**, after the car's first data-driven phases close,
      so (a) lands with margin before May 2027. If (b) is not ready then,
      (a) goes alone.
+13. **The safety loop in another language (Rust): not now; a trigger
+   written before the car's numbers (raised 2026-10-30 by the user; the
+   trigger agreed the same day).** The robot server's wheel loop
+   (`WHEEL_LOOP_INTERVAL_S` 0.05 s; a tick is late past 2x that) meets its
+   bar in Python:
+   * **The record.** 0 late in 14,289 on the Jetson under the stack (3.33),
+     0 in 18,273 (3.87 H3, max 99 ms) and 0 in 12,367 under 3.80 G3's
+     configuration (3.80.E `A1-noload`, max 85 ms).
+   * **No late tick so far was the safety arithmetic.** 3.81.G3's 1,196 came
+     from other work on the same event loop holding the GIL (the map reply's
+     `jsonable_encoder`, `RosWorld._resample`'s per-cell loop); 3.87 fixed
+     both in Python. 3.80.E criterion 6's one 0.127 s tick came as memory ran
+     out, which a compiled loop in the same process would wait on too.
+     Porting `robot/safety.py` behind PyO3, inside the robot server, would
+     have changed none of them.
+   * **The cost.** `safety.py` (~1,200 lines) is pinned by ground-truth
+     sweeps (3.18, 3.19, 3.44, 3.74 B1), the contract suite and 3.76's
+     A/K1 fixes; the simulator runs the same path. A port re-opens all of
+     it, adds an aarch64 toolchain and splits the review passes.
+   * **The board's own stop is the ESP32's 1.5 s heartbeat** (section 3c of
+     CLAUDE.md). A harder guarantee belongs in the firmware fork, not a
+     second host language.
+   * **Trigger, decided on the Rover, not before:** over a full tiered or
+     explore mission with the whole stack (nav2, SLAM, YOLOE + CLIP, VE
+     resident), **more than 0 late wheel ticks per 10,000** that are traced
+     to the interpreter or the GIL (not to memory pressure, which 3.81.F
+     owns, and not to a route doing work on the loop, which is fixed as
+     3.87 was). Read `/health`'s `wheel_loop` (`late_ticks`, `max_dt_s`).
+   * **Then, in order:** (a) move the vet and the wheel loop into their own
+     small process (real-time priority, `mlockall`, a protective
+     `oom_score_adj`), still Python, behind the same `SafetyController`
+     tests; (b) only if (a) still runs late, write that process in Rust,
+     with `tests/footprint_sweep.py` and the contract suite run against
+     it unchanged. Hot spots elsewhere keep 3.77's pattern: numpy with
+     exactly the old answers and a frozen reference test.
