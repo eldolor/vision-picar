@@ -207,9 +207,12 @@ Four are deliberately not "failed":
   same way.
 - **arrived_unconfirmed** -- the vision budget ran out while the robot was
   parked at an arrival whose identity the cloud never answered (3.47). Not
-  "found" either: only a cloud yes makes "found"
-  ([policy](../policy/ARCHITECTURE.md), "The cloud confirms identity at
-  arrival").
+  "found" either: an arrival the local tier could not settle needs a cloud
+  yes to be "found" ([policy](../policy/ARCHITECTURE.md), "The cloud
+  confirms identity at arrival"). Since 3.80 the local VLM on the board
+  answers first, and its yes makes "found" without the cloud, except for an
+  arrival led by its own box, which only the cloud may confirm (3.80.O). In
+  the simulator the frame's geometry answers (3.98).
 
 ### A survey is a mission with no target
 
@@ -283,8 +286,10 @@ by 3.49's live run, criterion 7):
 
 - the safety veto and the watchdog: the robot server imports no cloud
   client;
-- the tiered policy's local search, steering and arrival, ending
-  **arrived_unconfirmed** at the target rather than **found** or **failed**;
+- the tiered policy's local search, steering and arrival, ending **found**
+  when the local VLM (3.80) or, in the simulator, geometry (3.98) confirms
+  the target, and **arrived_unconfirmed** rather than **failed** when only
+  the cloud could;
 - the twin, served by the robot server on the LAN, loading nothing from the
   internet;
 - mission start (an unreachable model allow-list is tolerated) and
@@ -298,8 +303,10 @@ simulator. The `vision` policy is cloud-only and ends **failed** at once.
 (`PLAN-onboard-perception.md` 2.5): on the car it has no detector, and the
 tiered policy already searches without the cloud.
 
-**Trade-off.** Offline, no mission ends **found**: identity is the cloud's
-question. A hanging cloud costs up to the failure budget times the
+**Trade-off.** Offline, a mission ends **found** only on a local answer: on
+the board the local VLM's yes, in the simulator geometry. Without the local
+VLM (off the board, or killed for memory), or on an arrival only the cloud
+may confirm, identity stays the cloud's question. A hanging cloud costs up to the failure budget times the
 confirmation's deadline of parked time at arrival: about 25 s at the 8 s
 `arrival_confirm_timeout_s` (3.56, the user's choice), down from 60 s when
 the confirmation shared the 20 s vision timeout. 8 s sits above the slowest
@@ -368,11 +375,6 @@ tools, a tool runner belongs inside the vision function, below the runner.
   home moved from a Pi to the Jetson on 2026-09-19. Decided by the user on
   hardware day; settled when a mission starts from a phone after a reboot with
   no laptop on the network.
-- **Degraded mode when the cloud is unreachable** is decided for the
-  tiered policy (see "Offline is a mode, not a failure"). Still open: whether
-  status should say "cloud unreachable" before a mission fails or parks, and
-  whether a parked **arrived_unconfirmed** robot re-asks the cloud when the
-  link returns.
 - **Mission persistence.** A brain restart loses the mission. Worth revisiting
   only if a field run shows restarts happen.
 - **Chaos and soak (S7).** Added latency, dropped requests and a 1000-step run
