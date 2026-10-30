@@ -2,15 +2,17 @@
 
 vision-picar is an indoor robot that finds things in a house. It is five
 cooperating processes: a phone UI, a brain, a robot server, a ROS 2
-container and a body. The code that drives the simulator today is the code
-that will drive the car, so moving onto hardware is a config change.
+container and a body. On the Jetson a sixth, a small local vision model,
+answers the brain's identity question before the cloud is asked. The code
+that drives the simulator today is the code that will drive the car, so
+moving onto hardware is a config change.
 
 This page is the map. Each component's own specification sits under
 `docs/<domain>/` and is listed in the [index](README.md). The
 `PLAN-*.md` documents in [plans/](plans/) hold the dated history and every
 measured number. This overview is adapted from the "ROS 2 for vision-picar"
-explainer (checked against the repo on 2026-09-30) and re-checked on
-2026-10-03.
+explainer (checked against the repo on 2026-09-30), re-checked on
+2026-10-03, and brought up to `PLAN-ros-alignment.md` 3.122 on 2026-10-30.
 
 ## The system on one page
 
@@ -25,7 +27,8 @@ time before the body moves.
 ```mermaid
 flowchart LR
     phone["Phone: the twin<br/>web-twin/<br/>D-pad, map view, missions"]
-    brain["Brain<br/>control/brain_server.py<br/>policies: tiered, vision, frontier<br/>arrival check"]
+    brain["Brain<br/>control/brain_server.py<br/>policies: tiered, explore, vision, frontier<br/>arrival check"]
+    vlm["Local VLM (Jetson only)<br/>service/local_vlm/<br/>is this the target?"]
 
     subgraph rs["Robot server: robot/server.py"]
         action["POST /action: a verb<br/>who may drive: person over brain"]
@@ -49,6 +52,7 @@ flowchart LR
     phone -->|HTTP| action
     phone -->|HTTP| brain
     brain -->|"RemoteRobot (HTTP)"| action
+    brain -->|"identity at arrival (HTTP)"| vlm
     action --> rosdrive
     rosdrive -->|/cmd_vel| bridge
     bridge --> mux --> cm --> dd --> plugin
@@ -65,6 +69,7 @@ flowchart LR
 | **Robot server** | Safety, who is driving, the watchdog; the only process that touches the body | Plan routes or build maps |
 | **ROS 2 container** | Velocity arbitration, wheel kinematics, map-building (SLAM), path planning (nav2) | Touch the body directly |
 | **The body** | Wheels, encoders, camera, lidar: anything that implements `RobotInterface` | Know who is driving it |
+| **Local VLM** (Jetson) | One question at arrival: does this frame show the target? (`service/local_vlm/`, Qwen2.5-VL-3B, 3.80) | Drive, steer, or keep anything safe: it is the first process the kernel kills when memory runs out, and when it is gone the question goes to the cloud |
 
 ROS is **off by default in the simulator**: the twin works without Docker,
 and the robot server then runs verbs straight through `robot/safety.py` to
@@ -97,7 +102,12 @@ by memory. Together they are why hardware day is a config change.
 4. **Safety sits in series, with the robot server last.** ROS's
    `collision_monitor` checks every command first, then `robot/safety.py`.
    Each can only slow or stop, never speed up, so they cannot disagree about
-   what is allowed. Spec: [safety](safety/ARCHITECTURE.md).
+   what is allowed. Inside `robot/safety.py` the checks are also in series:
+   the camera's path cone, the chassis' swept corridor against the scan,
+   and, since 3.74, the depth camera's floor band for what lies under the
+   lidar's plane. The stopping distance follows the speed a move was asked
+   at (3.44). A detector may steer but never vetoes: measurement vetoes.
+   Spec: [safety](safety/ARCHITECTURE.md).
 
 **Rule 4 changed the hardware plan.** The original plan had a ROS plugin
 talking to the motor board directly. That would have taken `robot/safety.py`
@@ -119,6 +129,7 @@ piece that must keep working when ROS hangs.
 | Motor control, odometry (`diff_drive_controller`) | Inside ROS | Inside |
 | SLAM (`slam_toolbox`), planning (nav2) | Inside ROS | Inside |
 | Perception (detector + CLIP, `brain/perceive.py`) | Outside, in the brain | Outside for now; a candidate to move in |
+| The local VLM (`service/local_vlm/`) | Outside, its own service on the Jetson | Outside: it answers the brain, not ROS |
 | Mission logic, the LLM calls | Outside (the brain) | Outside |
 | Safety veto (`robot/safety.py`), watchdog | Outside (the robot server) | Outside, always |
 | The phone | Outside (HTTP) | Outside |
@@ -196,10 +207,11 @@ the move is done.
 2. **Robot server, arbitration.** A person outranks the brain, so a running
    mission is told it was preempted. Authority lapses after a second of
    silence, so there is no release call to forget.
-3. **Robot server, safety.** The path cone along the heading and the
-   chassis' swept corridor against the 360-degree scan are checked in
-   series. Anything inside the stopping distance refuses the move, with a
-   reason.
+3. **Robot server, safety.** The path cone along the heading, the
+   chassis' swept corridor against the 360-degree scan and, going forward,
+   the depth camera's floor band are checked in series. Anything inside the
+   stopping distance refuses the move, with a reason. If a nav2 goal is
+   live, a person's move also ends it, under either drive (3.97).
 4. **`robot/ros_drive.py`** reads the encoders, works out how far is left,
    and sends a velocity to the bridge, ramping down as the target nears
    because the chain has 40-150 ms of variable delay.
@@ -231,17 +243,61 @@ asks a policy for one move:
 
 - **tiered** (the hardware path): local perception, a detector then CLIP
   (`brain/perceive.py`), runs on every frame for free, and the cloud vision
-  model is called only on triggers (`brain/tiered.py`).
+  model is called only on triggers (`brain/tiered.py`). Its decisions are
+  behavior trees on `py_trees` (3.94-3.95, `brain/tree.py`): what to do this
+  frame, when to ask, and who to ask. The hard rules (the safety veto, a
+  person's Stop, the arrival rule, the failsafes) sit outside the trees,
+  where no setting reaches them.
+- **explore**: a search over SLAM's map (`brain/explore.py`). It sends
+  frontier, view and approach goals to nav2, and only to places the robot
+  can drive away from again (3.45). Which goal goes next may come from a
+  learned ranker (`explore_goal_policy`, default `rule`; 3.65 onward). The
+  ranker only orders places the rules already allow, so a bad weight makes
+  a search slower, never a move unsafe.
 - **vision**: every move is one call to the cloud `/navigate` route
   (`brain/navigate.py`), served by the vision service on Amazon Bedrock.
 - **frontier**: the free rule-based policy (`brain/agent.py`), kept for
   testing safety and mission memory.
 
-A mission ends `found` only when the target is centred and the lidar, never
-the detector, reads it within 0.40 m (`brain/arrival.py`). Three failsafes
-are kept apart on purpose: the robot server's watchdog, the mission runner's
-vision timeout and failure budget, and the brain server's hung-tick guard.
-None of the three can see the failures the others catch.
+**Where to look is chosen from the map, never from a frame** (3.80.I). With
+the target out of view, every model tested, local and cloud, did worse
+than always naming the more common side. Out-of-view search therefore runs
+on the map, with memory and room knowledge as inputs to the ranker; seeing
+the target once it is in view is the model's job.
+
+**Arrival.** The target must be centred and the lidar, never the detector,
+must read it within 0.40 m (`brain/arrival.py`). Then one question settles
+identity, asked in a strict order (3.80): perception first, then the local
+VLM on the Jetson, then the cloud only if the local model is absent or
+cannot say. In the simulator, arrival is confirmed from geometry by default
+and the paid cloud call is opt-in (3.98).
+
+**How a mission ends** (3.70). It ends in one of four end states: `found`,
+`exhausted` (nowhere reachable left to look), `out_of_budget` (the time
+limit or the battery floor; the budget is time, not steps) or `cancelled`
+(a person's Stop or takeover). Beside these are `room_reached`, `blocked`,
+`arrived_unconfirmed` and `failed`. The first outcome wins. A **survey** is
+a mission with no target: it maps the house and names its rooms, asking
+the cloud for a room's name only where no earlier answer covers it.
+
+**Offline is a mode, not a failure** (3.49). With the cloud unreachable,
+the safety layer, the watchdog, the twin on the LAN and the tiered search
+all keep working. A mission that reaches the target ends
+`arrived_unconfirmed`, never `found`. The brain re-asks once when the cloud
+returns, recording the answer beside the outcome without rewriting it
+(3.53), and reports `status.cloud` so the phone shows whether the cloud is
+reachable (3.56).
+
+**Recorded, never acted on.** Each mission keeps an **object inventory**
+(3.46): every object seen, placed by the lidar and weighted by independent
+looks. It is stored as labels and positions only, never images, and a test
+pins that a mission moves identically with it on or off. A local log
+records each time a person stepped in (3.99), so interventions per hour of
+autonomy can be counted.
+
+Three failsafes are kept apart on purpose: the robot server's watchdog, the
+mission runner's vision timeout and failure budget, and the brain server's
+hung-tick guard. None of the three can see the failures the others catch.
 
 Specs: [mission](mission/ARCHITECTURE.md), [policy](policy/ARCHITECTURE.md),
 [perception](perception/ARCHITECTURE.md),
@@ -263,8 +319,22 @@ empty floor. In the simulator the world is **discovered**, not copied
 (`sim/mock_world.py`), and SLAM's error can be graded against the truth,
 which a real house can never offer. With one encoder made to read 3% long,
 odometry alone ended up to 99 cm off over a lap, and SLAM ended 1-4.5 cm
-off (`PLAN-ros-alignment.md` 3.14). Saving the map and backing it up are
-proposed, not built.
+off (`PLAN-ros-alignment.md` 3.14).
+
+**The map survives a restart** (3.50.D, option D, chosen by the user):
+* The bridge saves slam_toolbox's pose graph at every mission end into a
+  private volume, keeping three versions.
+* A container start with a saved map localises on it from the dock, checks
+  the scans against it, and falls back to a fresh map if they disagree.
+* A reloaded map is mapped again when the robot enters space the saved map
+  calls unknown, or when a person asks ("Re-map now" on the twin).
+* A trigger for scans that contradict the saved map is built but ships off,
+  because live it also fired on a fixed wall.
+* Goals wait until nav2 is active (3.105).
+
+Maps are a home's floor plan, so they are never uploaded unasked. In large
+furnished rooms SLAM can still drift 0.45-0.86 m while odometry stays
+right (3.39, open).
 
 ## What the wall costs
 
@@ -309,6 +379,17 @@ changes:
   items no simulator can answer (lidar against glass, mirrors and dark
   surfaces).
 
+The Jetson half is already running (3.71, 3.108). systemd units in
+`tools/jetson/systemd/`, installed by `tools/jetson/install_services.sh`,
+start everything at boot:
+* `picar-stack`: the robot server and brain, in sim mode until the Rover is
+  attached, kept away from the kernel's out-of-memory killer;
+* `picar-ngrok`: the tunnel;
+* `picar-local-vlm`: the local VLM, the first process killed when memory
+  runs out.
+
+Only one session uses the board at a time, enforced by a lock (3.93).
+
 Platform: a Jetson Orin Nano Super on a Waveshare UGV Rover. Specs:
 [platform](platform/ARCHITECTURE.md),
 [motor-board](motor-board/ARCHITECTURE.md).
@@ -316,7 +397,10 @@ Platform: a Jetson Orin Nano Super on a Waveshare UGV Rover. Specs:
 ## Around the robot
 
 - **[simulator](simulator/ARCHITECTURE.md)**: the grid-world sim, its
-  renderer, maps and movers; it drives the same API the car will.
+  renderer, maps and movers; it drives the same API the car will. Beyond
+  the hand-drawn houses it loads 1,000 ProcTHOR floor plans as houses no
+  policy was tuned to (3.66), and objects may sit below the lidar's plane
+  so the floor band can be tested (3.74).
 - **[twin](twin/ARCHITECTURE.md)**: the phone UI over both servers.
 - **[control-api](control-api/ARCHITECTURE.md)**: the robot server's HTTP
   API.
