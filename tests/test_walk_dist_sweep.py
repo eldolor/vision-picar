@@ -36,8 +36,7 @@ def test_procthor_houses_give_the_old_distances():
         bad += [(name, 1, *b) for b in wc.map_differences(rng, rc.house_map(name))]
         if i < 20:
             m = rc.house_map(name, k=6, pad=20)
-            bad += [(name, 6, *b) for b in wc.map_differences(rng, m, counts=(20,),
-                                                              doors=(rl.DOOR_M,))]
+            bad += [(name, 6, *b) for b in wc.map_differences(rng, m, doors=(rl.DOOR_M,))]
     assert bad == []
 
 
@@ -66,5 +65,7 @@ def test_every_walk_of_the_sim_surveys_gives_the_old_distances(monkeypatch):
     monkeypatch.setattr(rl, "_walk_dist", both)
     rows = [sw.run(h, st, mode="spacing") for h in sw.HOUSES for st in sw.starts(h)]
     assert [r["outcome"] for r in rows] == ["exhausted"] * 9, rows
+    # Each survey's label calls as on dev before 3.120 (607bcbc).
+    assert [r["label_calls"] for r in rows] == [6, 6, 6, 33, 29, 28, 42, 44, 37]
     assert len(seen) > 50
     assert bad == []

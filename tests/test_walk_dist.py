@@ -67,3 +67,10 @@ def test_wants_reads_the_fast_walk(monkeypatch):
     assert calls
     d0, _ = ref._walk(seg, [(int(fl[0][0]), int(fl[0][1]))], m["resolution_m"], rl.DOOR_M)
     assert got == [bool(d0[j, i] > lab.spacing_m) for j, i in fl]
+
+
+def test_an_unsigned_cut_walks_as_the_old_one():
+    """Review of 3.120.A: the padding is signed whatever the cut's dtype, so
+    an unsigned cut neither leaks off the map nor fails to fill."""
+    seg = np.array([[0, 0, 1], [255, 1, 1], [1, 1, 0]], dtype=np.uint8)
+    assert wc.differences(seg, [(0, 0), (2, 2)], 0.1) == []

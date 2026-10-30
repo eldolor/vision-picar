@@ -324,7 +324,7 @@ def _walk_dist(seg: np.ndarray, sources: list, res: float, door_m: float) -> np.
     `tests/test_walk_dist.py` checks it against the frozen copy."""
     h, w = seg.shape
     W = w + 2
-    room = np.full((h + 2, W), -1, dtype=seg.dtype)
+    room = np.full((h + 2, W), -1, dtype=int)       # signed, whatever the cut's dtype
     room[1:-1, 1:-1] = seg
     room = room.ravel()
     floor = room >= 0

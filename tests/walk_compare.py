@@ -34,12 +34,15 @@ def seeds(rng: random.Random, seg: np.ndarray, n: int) -> list:
 
 
 def differences(seg: np.ndarray, sources: list, res: float, doors=DOORS) -> list:
-    """The door costs at which `_walk_dist()` differs from the reference."""
+    """The door costs at which `_walk_dist()` differs from the reference, or
+    from the live `_walk()` that `layer()` keeps (so the two copies cannot
+    drift apart)."""
     bad = []
     for door in doors:
         d0, _ = ref._walk(seg, sources, res, door)
         d1 = rl._walk_dist(seg, sources, res, door)
-        if not (d0.dtype == d1.dtype and np.array_equal(d0, d1)):
+        live, _ = rl._walk(seg, sources, res, door)
+        if not (d0.dtype == d1.dtype and np.array_equal(d0, d1) and np.array_equal(live, d1)):
             bad.append(door)
     return bad
 
