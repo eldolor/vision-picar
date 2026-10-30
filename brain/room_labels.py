@@ -313,6 +313,48 @@ def _walk(seg: np.ndarray, sources: list, res: float, door_m: float):
     return d, owner
 
 
+def _walk_dist(seg: np.ndarray, sources: list, res: float, door_m: float) -> np.ndarray:
+    """`_walk()`'s distances alone (what `_wants()` reads), the same array
+    bit for bit: a relaxation from the same snapped sources over a flat cut
+    padded by one cell of non-floor, revisiting only the cells that changed
+    in the last pass, each step costing `(d + res) + door` as the Dijkstra's
+    does. Each cell ends at the least left-to-right float sum over every
+    path, which is the Dijkstra's answer, since adding a positive step is
+    monotone in floats (3.118's argument for `clearance()`; 3.120).
+    `tests/test_walk_dist.py` checks it against the frozen copy."""
+    h, w = seg.shape
+    W = w + 2
+    room = np.full((h + 2, W), -1, dtype=seg.dtype)
+    room[1:-1, 1:-1] = seg
+    room = room.ravel()
+    floor = room >= 0
+    d = np.full(room.size, np.inf)
+    snap = max(1, int(round(SNAP_M / res)))
+    for src in sources:
+        c = _floor_near(seg, src, snap)
+        if c is not None:
+            d[(c[0] + 1) * W + c[1] + 1] = 0.0
+    front = np.flatnonzero(d == 0.0)
+    while front.size:
+        changed = []
+        for off in (W, -W, 1, -1):
+            t = front + off
+            cand = d[front] + res
+            cand += np.where(room[t] != room[front], door_m, 0.0)
+            better = floor[t] & (cand < d[t])
+            if better.any():
+                t = t[better]
+                d[t] = cand[better]
+                changed.append(t)
+        if not changed:
+            break
+        hit = np.zeros(d.size, dtype=bool)
+        for t in changed:
+            hit[t] = True
+        front = np.flatnonzero(hit)
+    return d.reshape(h + 2, W)[1:-1, 1:-1].copy()
+
+
 MODES = ("rooms", "spacing")
 SPACING_M = 2.0
 # `spacing`: walking from one of the cut's rooms into another counts this
@@ -422,8 +464,8 @@ class RoomLabeller:
             if not self.seeds:
                 return True
             if self._geo is None or self._geo[0] is not cut or self._geo[1] != len(self.seeds):
-                d, _ = _walk(cut.seg, [cut.cell(sx, sy) or (-1, -1) for sx, sy, _ in self.seeds],
-                             cut.res, self.door_m)
+                d = _walk_dist(cut.seg, [cut.cell(sx, sy) or (-1, -1) for sx, sy, _ in self.seeds],
+                               cut.res, self.door_m)
                 self._geo = (cut, len(self.seeds), d)
             return bool(self._geo[2][c] > self.spacing_m)
         c = cut.cell(x, y)

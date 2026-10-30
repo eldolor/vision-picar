@@ -356,6 +356,7 @@ SLOW_FILES = [
     "test_startup_race.py", "test_wheel_feedback.py",
     "test_survey_sweep.py",
     "test_room_cut_sweep.py",          # 3.118: the frozen cut on 120 houses, 500 grids, 9 surveys (~4 min)
+    "test_walk_dist_sweep.py",         # 3.120: the frozen walk on the same maps and surveys (~8 min)
     "test_review_376j_nightly.py",     # 3.76 J: the nightly script's stops and limits (~35 s)
     "test_board_lock.py",              # 3.93: real waits for the silence limit and the maximum (~70 s)
 ]

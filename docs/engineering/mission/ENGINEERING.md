@@ -285,7 +285,12 @@ map changes size and origin about once a second while exploring. Between
 cuts a place is looked up by POSITION in the last cut's own grid (`_Cut`),
 and floor that cut has not seen is never asked about until the next;
 `spacing` mode's walking distances are kept with the cut they were
-measured on and redone for a new cut or a new ask. A call is
+measured on and redone for a new cut or a new ask; since 3.120 that check
+reads `_walk_dist()`, a relaxation over only the cells that changed with
+exactly the old Dijkstra's distances (the frozen copy is
+`tests/walk_reference.py`, compared by `tests/test_walk_dist.py` and
+`tests/test_walk_dist_sweep.py`), while `layer()` keeps `_walk()` for which
+ask reached a cell first. A call is
 counted when sent. `_label_frame()` returns None once the mission has
 stopped, and `alive` (`is_running`) is checked again after the frame, so a
 stop landing during a cut or a frame read asks nobody. Any error in the
