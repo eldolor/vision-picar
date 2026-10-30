@@ -1,0 +1,33 @@
+{
+ "code": "7a0f98a9f35c6521",
+ "iteration_0": {
+  "mean_reward": -0.282,
+  "found": 364,
+  "n": 384,
+  "choices": 6684,
+  "loss": 0.4001,
+  "entropy": 1.557,
+  "clipped": 0.024
+ },
+ "w32": {
+  "mean_reward": -0.282,
+  "found": 364,
+  "n": 384,
+  "choices": 6684,
+  "loss": 0.4001,
+  "entropy": 1.557,
+  "clipped": 0.024
+ },
+ "differences": {},
+ "selection_patched_vs_plain": {},
+ "selection_vs_w32_log": {
+  "R": [
+   0.2697,
+   0.2697
+  ],
+  "U": [
+   0.112,
+   0.1108
+  ]
+ }
+}
