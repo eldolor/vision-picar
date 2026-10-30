@@ -970,6 +970,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   for the Rover. Living room 1.3% and stair hall 0/30 wrong; the basement
   (93.8%) and home gym (40.9%), one open space, carry it. No kitchen,
   bedroom or bathroom frames exist; the reference is unadjudicated.
+* **The map is sent only when it changed (3.123), merged 2026-10-30 with
+  criteria 2-3 failed (the user's call).** `/world/map` carries an ETag
+  (the server's start token, `map_id`, `map_version`); `RemoteWorld`
+  revalidates and a 304 skips the encode, transfer and decode. Live only
+  43% of reads were 304s (bar 80%): the ROS bridge bumps `map_version` on
+  every SLAM message, changed or not -- the next fix.
 * **Harness missions collect their cycles (3.113), merged 2026-10-27.**
   `evaluations/goal-learn-396/train.py` `mission()` runs `gc.collect()` in
   a `finally` (a mission's runner, agent and house are reference cycles);
