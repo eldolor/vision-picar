@@ -150,8 +150,11 @@ def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None, drive=
                # The robot server at WARNING (its refusals, now time-stamped):
                # at INFO the sim logs every STOP, ten a second.
                PICAR_LOG_LEVEL="WARNING")
+    # EXPLORE_ROBOT_ACCESS_LOG=1: uvicorn's access log too, one line a
+    # request, to count replies by route and status (3.123's 304s).
+    robot_log = "info" if os.environ.get("EXPLORE_ROBOT_ACCESS_LOG") == "1" else "warning"
     procs = [subprocess.Popen([PY, "-m", "uvicorn", "robot.server:app", "--port", str(ROBOT),
-                      "--host", "127.0.0.1", "--log-level", "warning"], cwd=ROOT, env=env,
+                      "--host", "127.0.0.1", "--log-level", robot_log], cwd=ROOT, env=env,
                      stdout=open(f"{run_dir}/explore_robot.log", "w"), stderr=subprocess.STDOUT)]
     benv = dict(env, ROBOT_URL=f"http://127.0.0.1:{ROBOT}",
                 PICAR_LOG_LEVEL="INFO")       # every mission line and explore decision
