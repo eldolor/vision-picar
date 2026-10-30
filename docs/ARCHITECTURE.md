@@ -11,8 +11,7 @@ This page is the map. Each component's own specification sits under
 `docs/<domain>/` and is listed in the [index](README.md). The
 `PLAN-*.md` documents in [plans/](plans/) hold the dated history and every
 measured number. This overview is adapted from the "ROS 2 for vision-picar"
-explainer (checked against the repo on 2026-09-30), re-checked on
-2026-10-03, and brought up to `PLAN-ros-alignment.md` 3.122 on 2026-10-30.
+explainer and was last checked against the repo on 2026-10-30.
 
 ## The system on one page
 
@@ -29,6 +28,7 @@ flowchart LR
     phone["Phone: the twin<br/>web-twin/<br/>D-pad, map view, missions"]
     brain["Brain<br/>control/brain_server.py<br/>policies: tiered, explore, vision, frontier<br/>arrival check"]
     vlm["Local VLM (Jetson only)<br/>service/local_vlm/<br/>is this the target?"]
+    cloud["Cloud vision service<br/>Amazon Bedrock<br/>/navigate, /room"]
 
     subgraph rs["Robot server: robot/server.py"]
         action["POST /action: a verb<br/>who may drive: person over brain"]
@@ -53,6 +53,7 @@ flowchart LR
     phone -->|HTTP| brain
     brain -->|"RemoteRobot (HTTP)"| action
     brain -->|"identity at arrival (HTTP)"| vlm
+    brain -->|"HTTPS, on triggers"| cloud
     action --> rosdrive
     rosdrive -->|/cmd_vel| bridge
     bridge --> mux --> cm --> dd --> plugin
@@ -124,15 +125,15 @@ solved problems where ROS's packages beat anything the project would write.
 Outside stays everything that makes this robot this robot, plus the one
 piece that must keep working when ROS hangs.
 
-| Piece | Runs | Belongs |
-|---|---|---|
-| Motor control, odometry (`diff_drive_controller`) | Inside ROS | Inside |
-| SLAM (`slam_toolbox`), planning (nav2) | Inside ROS | Inside |
-| Perception (detector + CLIP, `brain/perceive.py`) | Outside, in the brain | Outside for now; a candidate to move in |
-| The local VLM (`service/local_vlm/`) | Outside, its own service on the Jetson | Outside: it answers the brain, not ROS |
-| Mission logic, the LLM calls | Outside (the brain) | Outside |
-| Safety veto (`robot/safety.py`), watchdog | Outside (the robot server) | Outside, always |
-| The phone | Outside (HTTP) | Outside |
+| Piece | Side of the line |
+|---|---|
+| Motor control, odometry (`diff_drive_controller`) | Inside ROS |
+| SLAM (`slam_toolbox`), planning (nav2) | Inside ROS |
+| Perception (detector + CLIP, `brain/perceive.py`) | Outside, in the brain; a candidate to move in |
+| The local VLM (`service/local_vlm/`) | Outside, its own service; it answers the brain, not ROS |
+| Mission logic, the LLM calls | Outside, in the brain |
+| Safety veto (`robot/safety.py`), watchdog | Outside, in the robot server, always |
+| The phone | Outside, over HTTP |
 
 The line moves only when one of these shows up in data from the car: the
 bridge grows into a copy of ROS's own interface; debugging needs one
@@ -243,57 +244,44 @@ asks a policy for one move:
 
 - **tiered** (the hardware path): local perception, a detector then CLIP
   (`brain/perceive.py`), runs on every frame for free, and the cloud vision
-  model is called only on triggers (`brain/tiered.py`). Its decisions are
-  behavior trees on `py_trees` (3.94-3.95, `brain/tree.py`): what to do this
-  frame, when to ask, and who to ask. The hard rules (the safety veto, a
-  person's Stop, the arrival rule, the failsafes) sit outside the trees,
-  where no setting reaches them.
-- **explore**: a search over SLAM's map (`brain/explore.py`). It sends
-  frontier, view and approach goals to nav2, and only to places the robot
-  can drive away from again (3.45). Which goal goes next may come from a
-  learned ranker (`explore_goal_policy`, default `rule`; 3.65 onward). The
-  ranker only orders places the rules already allow, so a bad weight makes
-  a search slower, never a move unsafe.
+  model is called only on triggers (`brain/tiered.py`). Its choices are
+  small behavior trees (`brain/tree.py`); the hard rules (safety, a
+  person's Stop, arrival, the failsafes) sit outside them, where no
+  setting reaches.
+- **explore**: a search over SLAM's map (`brain/explore.py`) that sends
+  goals to nav2, only to places the robot can drive away from again. A
+  learned ranker may choose which goal goes next, but only among places
+  the rules already allow, so a bad weight makes a search slower, never a
+  move unsafe.
 - **vision**: every move is one call to the cloud `/navigate` route
   (`brain/navigate.py`), served by the vision service on Amazon Bedrock.
 - **frontier**: the free rule-based policy (`brain/agent.py`), kept for
   testing safety and mission memory.
 
-**Where to look is chosen from the map, never from a frame** (3.80.I). With
-the target out of view, every model tested, local and cloud, did worse
-than always naming the more common side. Out-of-view search therefore runs
-on the map, with memory and room knowledge as inputs to the ranker; seeing
-the target once it is in view is the model's job.
+**Where to look comes from the map; what is seen comes from a model.**
+With the target out of view, no model tested, local or cloud, picked a
+search direction better than chance, so out-of-view search runs on the
+map. Once the target is in view, models steer well.
 
 **Arrival.** The target must be centred and the lidar, never the detector,
 must read it within 0.40 m (`brain/arrival.py`). Then one question settles
-identity, asked in a strict order (3.80): perception first, then the local
-VLM on the Jetson, then the cloud only if the local model is absent or
-cannot say. In the simulator, arrival is confirmed from geometry by default
-and the paid cloud call is opt-in (3.98).
+identity: perception first, the local VLM on the Jetson next, and the
+cloud only when the local model is absent or cannot say. In the simulator
+the frame's own geometry answers it, and the paid call is opt-in.
 
-**How a mission ends** (3.70). It ends in one of four end states: `found`,
-`exhausted` (nowhere reachable left to look), `out_of_budget` (the time
-limit or the battery floor; the budget is time, not steps) or `cancelled`
-(a person's Stop or takeover). Beside these are `room_reached`, `blocked`,
-`arrived_unconfirmed` and `failed`. The first outcome wins. A **survey** is
-a mission with no target: it maps the house and names its rooms, asking
-the cloud for a room's name only where no earlier answer covers it.
+**Offline is a mode, not a failure.** With the cloud unreachable, safety,
+the watchdog, the twin on the LAN and the tiered search keep working. An
+arrival the local tier (or, in the simulator, geometry) confirms still ends
+`found`. One that only the cloud could settle ends `arrived_unconfirmed`,
+never `found`, and the brain asks again once the cloud returns, recording
+the answer beside the outcome rather than rewriting it.
 
-**Offline is a mode, not a failure** (3.49). With the cloud unreachable,
-the safety layer, the watchdog, the twin on the LAN and the tiered search
-all keep working. A mission that reaches the target ends
-`arrived_unconfirmed`, never `found`. The brain re-asks once when the cloud
-returns, recording the answer beside the outcome without rewriting it
-(3.53), and reports `status.cloud` so the phone shows whether the cloud is
-reachable (3.56).
-
-**Recorded, never acted on.** Each mission keeps an **object inventory**
-(3.46): every object seen, placed by the lidar and weighted by independent
-looks. It is stored as labels and positions only, never images, and a test
-pins that a mission moves identically with it on or off. A local log
-records each time a person stepped in (3.99), so interventions per hour of
-autonomy can be counted.
+A mission ends `found`, `exhausted` (nowhere reachable left to look),
+`out_of_budget` (time or battery) or `cancelled` (a person stepped in),
+or in a fault beside them; the first outcome wins. A **survey** is a
+mission with no target that maps the house and names its rooms. Every
+mission also records an object inventory (labels and positions, never
+images) and any person's intervention; nothing acts on either yet.
 
 Three failsafes are kept apart on purpose: the robot server's watchdog, the
 mission runner's vision timeout and failure budget, and the brain server's
@@ -322,15 +310,15 @@ odometry alone ended up to 99 cm off over a lap, and SLAM ended 1-4.5 cm
 off (`PLAN-ros-alignment.md` 3.14).
 
 **The map survives a restart** (3.50.D, option D, chosen by the user):
-* The bridge saves slam_toolbox's pose graph at every mission end into a
+- The bridge saves slam_toolbox's pose graph at every mission end into a
   private volume, keeping three versions.
-* A container start with a saved map localises on it from the dock, checks
+- A container start with a saved map localises on it from the dock, checks
   the scans against it, and falls back to a fresh map if they disagree.
-* A reloaded map is mapped again when the robot enters space the saved map
+- A reloaded map is mapped again when the robot enters space the saved map
   calls unknown, or when a person asks ("Re-map now" on the twin).
-* A trigger for scans that contradict the saved map is built but ships off,
+- A trigger for scans that contradict the saved map is built but ships off,
   because live it also fired on a fixed wall.
-* Goals wait until nav2 is active (3.105).
+- Goals wait until nav2 is active (3.105).
 
 Maps are a home's floor plan, so they are never uploaded unasked. In large
 furnished rooms SLAM can still drift 0.45-0.86 m while odometry stays
@@ -382,10 +370,10 @@ changes:
 The Jetson half is already running (3.71, 3.108). systemd units in
 `tools/jetson/systemd/`, installed by `tools/jetson/install_services.sh`,
 start everything at boot:
-* `picar-stack`: the robot server and brain, in sim mode until the Rover is
+- `picar-stack`: the robot server and brain, in sim mode until the Rover is
   attached, kept away from the kernel's out-of-memory killer;
-* `picar-ngrok`: the tunnel;
-* `picar-local-vlm`: the local VLM, the first process killed when memory
+- `picar-ngrok`: the tunnel;
+- `picar-local-vlm`: the local VLM, the first process killed when memory
   runs out.
 
 Only one session uses the board at a time, enforced by a lock (3.93).
