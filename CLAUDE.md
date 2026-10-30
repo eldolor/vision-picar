@@ -423,7 +423,10 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   Jetson at 0.05 m (2026-10-28), **0.18-0.37 s since 3.118** (merged
   2026-10-29: numpy with exactly the old answers, frozen
   `tests/room_cut_reference.py`; do not "simplify" it); `spacing`'s walk
-  (`_walk()`, 0.35-0.79 s) is now the larger part of the ~11-23% pause.
+  0.35-0.79 s -> **0.04-0.07 s since 3.120** (merged 2026-10-29:
+  `_wants()` reads `_walk_dist()`, exactly the old distances, frozen
+  `tests/walk_reference.py`; `layer()` keeps `_walk()`), so the pause is
+  ~4-9% (was ~11-23%). 3.120's live survey waits for a quiet desktop.
   Missions on a
   saved map (S4, M1-M3) wait on 3.50's build. **S5, merged and the twin
   deployed 2026-10-14:** the Sim tab's Remote brain panel picks Find or
