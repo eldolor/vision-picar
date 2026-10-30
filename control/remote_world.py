@@ -68,6 +68,8 @@ class RemoteWorld(WorldInterface):
         # (httpx.ASGITransport) with no socket; production passes nothing.
         self._client = client or httpx.Client(base_url=self.base_url, timeout=timeout)
         self._owns_client = client is None
+        # (ETag, map) of the last map the server tagged (3.123, get_map()).
+        self._last_map = None
 
     def get_pose(self) -> dict:
         """A 404 means this server predates the route, which is a real
@@ -110,14 +112,35 @@ class RemoteWorld(WorldInterface):
         and a backend that silently served a stale map would make
         `map_version` a lie rather than a tool. The field is published; the
         decision to skip a fetch is the caller's.
+
+        **Revalidation is not that cache (3.123).** Every call still asks
+        the server, naming the ETag of the last map received; the server
+        answers 304 only when that map is still its current one (the same
+        `map_id` and `map_version`), and then that map -- the same object --
+        is returned. Never stale: only the transfer and the decode are
+        skipped. Callers must not modify a map they are given.
         """
+        last = self._last_map
+        headers = dict(self.headers)
+        if last is not None:
+            headers["if-none-match"] = last[0]
         try:
-            return self._request("/world/map")
-        except WorldTransportError as e:
-            if "HTTP 404" in str(e):
-                logger.info("server has no /world/map route -- reporting no map")
-                return unusable_map()
-            raise
+            response = self._client.request(
+                "GET", f"{self.base_url}/world/map", headers=headers
+            )
+        except httpx.HTTPError as e:
+            raise WorldTransportError(f"GET /world/map failed: {e}") from e
+        if response.status_code == 304 and last is not None:
+            return last[1]
+        if response.status_code == 404:
+            logger.info("server has no /world/map route -- reporting no map")
+            return unusable_map()
+        if response.status_code >= 300:
+            raise WorldTransportError(f"GET /world/map failed: HTTP {response.status_code}")
+        m = response.json()
+        tag = response.headers.get("etag")
+        self._last_map = (tag, m) if tag else None
+        return m
 
     def _request(self, path: str) -> dict:
         try:

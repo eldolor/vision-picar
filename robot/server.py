@@ -102,7 +102,7 @@ from typing import Annotated, List, Optional
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from robot.factory import get_robot, load_config
@@ -217,6 +217,23 @@ def watchdog_should_stop(last_command_at: float, now: float, timeout_s: float) -
     """Pure decision logic -- see module docstring for why this is
     tested separately from the async polling loop that calls it."""
     return (now - last_command_at) > timeout_s
+
+
+def map_etag(m: dict) -> Optional[str]:
+    """`/world/map`'s ETag for a usable map (3.123): its `map_id` and
+    `map_version`, which change whenever its cells do; None for a map that
+    is unusable or does not name both."""
+    mid, ver = m.get("map_id"), m.get("map_version")
+    if m.get("usable") is not True or not isinstance(mid, str) or '"' in mid \
+            or not isinstance(ver, int) or isinstance(ver, bool):
+        return None
+    return f'"{mid}:{ver}"'
+
+
+def _etags(header: str) -> set:
+    """The tags an `If-None-Match` header names (weak ones as strong: a map
+    is the same bytes or a new version)."""
+    return {t.strip().removeprefix("W/") for t in header.split(",")}
 
 
 def create_app(config_path: Optional[str] = None) -> FastAPI:
@@ -1639,8 +1656,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         """
         return world_model.get_pose()
 
+    map_body = [None]      # (ETag, encoded body) of the last usable map sent (3.123)
+
     @app.get(prefix + "/world/map", dependencies=[Depends(require_secret)])
-    def world_map():
+    def world_map(if_none_match: Optional[str] = Header(default=None)):
         """The house, as discovered so far -- phase N1.
 
         Also a pass-through. Note the payload is the big one on this
@@ -1657,8 +1676,28 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         bytes FastAPI's default response would have sent.
         Its C `json.dumps` still holds the GIL while it runs (8.6-14 ms on
         the board), well inside the 50 ms period.
+
+        Sent only when it has changed (3.123): a usable map carries an ETag
+        of its `map_id` and `map_version`, a request naming that tag in
+        `If-None-Match` gets a bodiless 304, and the last body is kept for
+        its tag so a client that sends none is not encoded again either.
+        The world is asked every time -- the simulator's map observes as it
+        is read -- so the answer is always now; `map_version`'s contract
+        (it bumps whenever `cells` changes) is what makes the tag honest.
+        An unusable map has no tag and is never reused.
         """
-        return JSONResponse(world_model.get_map())
+        m = world_model.get_map()
+        tag = map_etag(m)
+        if tag is None:
+            return JSONResponse(m)
+        headers = {"ETag": tag, "Cache-Control": "no-cache"}
+        if if_none_match and tag in _etags(if_none_match):
+            return Response(status_code=304, headers=headers)
+        kept = map_body[0]
+        if kept is None or kept[0] != tag:
+            kept = (tag, JSONResponse(m).body)
+            map_body[0] = kept
+        return Response(content=kept[1], media_type="application/json", headers=headers)
 
     @app.post(prefix + "/sim/house/random", dependencies=[Depends(require_secret)])
     def sim_house_random():
