@@ -1668,6 +1668,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
     map_body = [None]      # (ETag, encoded body) of the last usable map sent (3.123)
     map_boot = os.urandom(4).hex()       # this server's part of every map ETag
+    map_untagged_logged = [False]        # a usable map with no tag: said once
 
     @app.get(prefix + "/world/map", dependencies=[Depends(require_secret)])
     def world_map(if_none_match: Optional[str] = Header(default=None)):
@@ -1703,6 +1704,10 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         m = world_model.get_map()
         tag = map_etag(m, map_boot)
         if tag is None:
+            if m.get("usable") is True and not map_untagged_logged[0]:
+                map_untagged_logged[0] = True
+                logger.warning("map %r version %r cannot be tagged: every /world/map "
+                               "is sent in full (3.123)", m.get("map_id"), m.get("map_version"))
             return JSONResponse(m)
         headers = {"ETag": tag, "Cache-Control": "no-cache"}
         if if_none_match and _not_modified(if_none_match, tag):

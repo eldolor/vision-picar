@@ -116,8 +116,9 @@ def test_the_world_contract_over_remote_world_twice(world_over_asgi):
     c = world_over_asgi.get_map()
     assert a["usable"] and c["usable"] and c["map_version"] >= a["map_version"]
     assert len(c["cells"]) == c["width"] * c["height"]
-    # The robot has not moved, so the map settles; from then on it is a 304.
-    assert b["map_version"] == c["map_version"] and c["cells"] is b["cells"]
+    # The robot has not moved, so the map settles and the next read is a
+    # 304 (unless a mover, SIM_MOVERS, changed what it sees: then a new map).
+    assert (c["cells"] is b["cells"]) == (b["map_version"] == c["map_version"])
 
 
 def test_a_restarted_server_never_answers_304_to_the_old_tag(monkeypatch):
@@ -133,3 +134,29 @@ def test_a_restarted_server_never_answers_304_to_the_old_tag(monkeypatch):
     world.map = SwitchWorld.make("house", 1, (1, 1, 1, 1))     # same id and version
     remote._client = TestClient(server.create_app(), base_url="http://robot.test")
     assert remote.get_map()["cells"] == [1, 1, 1, 1]
+
+
+def test_a_redirect_or_an_error_on_the_map_is_a_transport_error():
+    """Review of 3.123's fixes: anything but a 200, a 304 for the map held,
+    or a 404 (no route) raises `WorldTransportError`, as before -- a proxy's
+    redirect page is never decoded as a map."""
+    import pytest
+    from fastapi import FastAPI
+    from fastapi.responses import HTMLResponse
+    from control.remote_world import WorldTransportError
+
+    app = FastAPI()
+    status = {"code": 302}
+
+    @app.get("/world/map")
+    def odd():
+        return HTMLResponse("<html>moved</html>", status_code=status["code"],
+                            headers={"location": "http://elsewhere/"})
+
+    client = TestClient(app, base_url="http://proxy.test", raise_server_exceptions=False,
+                        follow_redirects=False)
+    remote = RemoteWorld("http://proxy.test", client=client)
+    for code in (302, 307, 304, 500):
+        status["code"] = code
+        with pytest.raises(WorldTransportError, match=f"HTTP {code}"):
+            remote.get_map()

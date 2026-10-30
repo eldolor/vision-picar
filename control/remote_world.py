@@ -47,7 +47,14 @@ class WorldTransportError(RuntimeError):
     that cannot be reached is a degraded mission -- the reactive tier
     still has a lidar ring and a safety collar. Collapsing them would
     make a map outage look like a runaway robot.
+
+    `status` is the HTTP status the server answered, or None when it could
+    not be reached.
     """
+
+    def __init__(self, message: str, status: Optional[int] = None):
+        super().__init__(message)
+        self.status = status
 
 
 class RemoteWorld(WorldInterface):
@@ -86,7 +93,7 @@ class RemoteWorld(WorldInterface):
         try:
             return self._request("/world/pose")
         except WorldTransportError as e:
-            if "HTTP 404" in str(e):
+            if e.status == 404:
                 logger.info("server has no /world/pose route -- reporting no pose")
                 return unusable_pose()
             raise
@@ -98,7 +105,7 @@ class RemoteWorld(WorldInterface):
         try:
             return self._request("/world/truth")
         except WorldTransportError as e:
-            if "HTTP 404" in str(e):
+            if e.status == 404:
                 logger.info("server has no /world/truth route -- reporting no truth")
                 return unusable_truth()
             raise
@@ -116,23 +123,25 @@ class RemoteWorld(WorldInterface):
         **Revalidation is not that cache (3.123).** Every call still asks
         the server, naming the ETag of the last map received; the server
         answers 304 only when that map is still its current one (the same
-        `map_id` and `map_version`), and then that map -- the same object --
-        is returned. Never stale: only the transfer and the decode are
-        skipped. Callers must not modify a map they are given.
+        `map_id` and `map_version`, from the same server start), and then
+        that map is returned again: a new dict whose `cells` is the same
+        list. Never stale: only the transfer and the decode are skipped.
+        Callers must not modify a map's `cells` in place.
         """
         last = self._last_map
         try:
             response = self._send("/world/map",
                                   {"if-none-match": last[0]} if last else None)
         except WorldTransportError as e:
-            if "HTTP 404" in str(e):
+            if e.status == 404:
                 logger.info("server has no /world/map route -- reporting no map")
                 return unusable_map()
             raise
         if response.status_code == 304 and last is not None:
             return dict(last[1])          # a key added by one caller stays its own
-        if response.status_code == 304:
-            raise WorldTransportError("GET /world/map failed: HTTP 304 with no map held")
+        if response.status_code != 200:     # a redirect, or a 304 with no map held
+            raise WorldTransportError(f"GET /world/map failed: HTTP {response.status_code}",
+                                      response.status_code)
         m = response.json()
         tag = response.headers.get("etag")
         self._last_map = (tag, m) if tag else None
@@ -147,7 +156,8 @@ class RemoteWorld(WorldInterface):
         except httpx.HTTPError as e:
             raise WorldTransportError(f"GET {path} failed: {e}") from e
         if response.status_code >= 400:
-            raise WorldTransportError(f"GET {path} failed: HTTP {response.status_code}")
+            raise WorldTransportError(f"GET {path} failed: HTTP {response.status_code}",
+                                      response.status_code)
         return response
 
     def _request(self, path: str) -> dict:
