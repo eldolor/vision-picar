@@ -137,9 +137,10 @@ class RemoteWorld(WorldInterface):
                 logger.info("server has no /world/map route -- reporting no map")
                 return unusable_map()
             raise
-        if response.status_code == 304 and last is not None:
+        if response.status_code == 304 and last is not None \
+                and response.headers.get("etag", last[0]) == last[0]:
             return dict(last[1])          # a key added by one caller stays its own
-        if response.status_code != 200:     # a redirect, or a 304 with no map held
+        if response.status_code != 200:     # a redirect, or a 304 for no map held
             raise WorldTransportError(f"GET /world/map failed: HTTP {response.status_code}",
                                       response.status_code)
         m = response.json()

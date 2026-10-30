@@ -160,3 +160,27 @@ def test_a_redirect_or_an_error_on_the_map_is_a_transport_error():
         status["code"] = code
         with pytest.raises(WorldTransportError, match=f"HTTP {code}"):
             remote.get_map()
+
+
+def test_a_304_naming_another_tag_is_not_taken(monkeypatch):
+    """Review of 3.123: a 304 from something in between (a proxy answering
+    for its own cached validator) that names another tag is not this map."""
+    import pytest
+    from fastapi import FastAPI, Response
+    from control.remote_world import WorldTransportError
+
+    app = FastAPI()
+    replies = iter([("200", '"t:1"'), ("304", '"proxy:9"')])
+
+    @app.get("/world/map")
+    def odd():
+        code, tag = next(replies)
+        if code == "200":
+            return Response(content=json.dumps(SwitchWorld.make("house", 1)),
+                            media_type="application/json", headers={"ETag": tag})
+        return Response(status_code=304, headers={"ETag": tag})
+
+    remote = RemoteWorld("http://p.test", client=TestClient(app, base_url="http://p.test"))
+    remote.get_map()
+    with pytest.raises(WorldTransportError, match="HTTP 304"):
+        remote.get_map()
