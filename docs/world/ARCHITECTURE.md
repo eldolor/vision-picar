@@ -248,7 +248,7 @@ plausible.
 | Neighbour | Direction | Protocol | Ownership |
 |---|---|---|---|
 | Robot server | Server calls the world backend | In-process interface | The backend owns pose, map and truth. The server only passes them through, plus the error readout it derives from pose and truth. |
-| Brain, twin | They call the robot server | HTTP/JSON, read-only for pose, map, truth and error | Consumers may cache. The world client does not, so the map version stays honest. |
+| Brain, twin | They call the robot server | HTTP/JSON, read-only for pose, map, truth and error | Consumers may cache. The world client does not: it revalidates, sending the last map's ETag (the server's start token, `map_id` and `map_version`), and is answered 304 only while that map is the server's current one, so the map version stays honest and an unchanged map is not sent again (3.123). |
 | ROS container (SLAM, nav2) | The SLAM world calls the bridge | HTTP/JSON, in ROS's own frame, tagged with a session | ROS owns the estimate and the grid. The SLAM world owns the conversion and the anchor. See [ros](../ros/ARCHITECTURE.md). |
 | Goals | Twin or a future brain policy, through the robot server, to the SLAM world, to nav2 | HTTP/JSON, in the house frame | nav2 owns the goal's state. The robot server owns the arbitration, by the driver order in [safety](../safety/ARCHITECTURE.md). |
 | Body | None at run time | -- | Shares one simulated house in the simulator. Body and world never import each other. |

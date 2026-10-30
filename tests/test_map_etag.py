@@ -46,7 +46,7 @@ def test_a_plain_fetch_gets_the_same_bytes_and_a_tag(monkeypatch):
     r = client.get("/world/map")
     assert r.status_code == 200
     assert r.content == JSONResponse(world.map).body
-    assert r.headers["etag"] == '"house:1"'
+    assert r.headers["etag"].endswith(':house:1"')
     assert r.headers["cache-control"] == "no-cache"
     r2 = client.get("/world/map")               # a client sending no tag: full again
     assert r2.status_code == 200 and r2.content == r.content
@@ -55,11 +55,11 @@ def test_a_plain_fetch_gets_the_same_bytes_and_a_tag(monkeypatch):
 def test_a_304_only_for_the_same_tag(monkeypatch):
     client, world, _ = _setup(monkeypatch)
     tag = client.get("/world/map").headers["etag"]
-    for header in (tag, f"W/{tag}", f'"other:1", {tag}'):
+    for header in (tag, f"W/{tag}", f'"other:1", {tag}', "*"):
         r = client.get("/world/map", headers={"if-none-match": header})
         assert r.status_code == 304 and r.content == b"", header
         assert r.headers["etag"] == tag
-    for header in ('"house:2"', '"other:1"', "*", ""):
+    for header in (tag.replace(':1"', ':2"'), tag.replace("house", "other"), ""):
         r = client.get("/world/map", headers={"if-none-match": header})
         assert r.status_code == 200 and json.loads(r.content) == world.map, header
     assert world.reads == 8                      # the world is asked every time
@@ -69,7 +69,10 @@ def test_remote_world_returns_the_current_map_and_never_a_stale_one(monkeypatch)
     client, world, remote = _setup(monkeypatch)
     first = remote.get_map()
     assert first == world.map
-    assert remote.get_map() is first             # a 304: the same map, not decoded again
+    again = remote.get_map()                     # a 304: the same map, not decoded again
+    assert again == first and again["cells"] is first["cells"]
+    again["mine"] = 1                            # a caller's key stays its own
+    assert "mine" not in remote.get_map()
     # A new version, a new map (another house or SLAM session), a map gone
     # unusable, then usable again: each comes back in full, the current one.
     for m in (SwitchWorld.make("house", 2, (1, 1, 1, 1)),
@@ -78,9 +81,9 @@ def test_remote_world_returns_the_current_map_and_never_a_stale_one(monkeypatch)
               SwitchWorld.make("other", 2, (0, 0, 0, 0))):
         world.map = m
         got = remote.get_map()
-        assert got == m and got is not first
+        assert got == m and got["cells"] is not first["cells"]
         first = got
-    assert world.reads == 6
+    assert world.reads == 7
 
 
 def test_an_unusable_or_unnamed_map_is_never_tagged(monkeypatch):
@@ -88,7 +91,8 @@ def test_an_unusable_or_unnamed_map_is_never_tagged(monkeypatch):
     for m in ({**unusable_map()},
               {**SwitchWorld.make("house", 1), "map_version": True},
               {**SwitchWorld.make("house", 1), "map_id": None},
-              {**SwitchWorld.make('ho"use', 1)}):
+              {**SwitchWorld.make('ho"use', 1)}, {**SwitchWorld.make("a,b", 1)},
+              {**SwitchWorld.make("a b", 1)}, {**SwitchWorld.make("caf\u00e9", 1)}):
         world.map = m
         r = client.get("/world/map", headers={"if-none-match": '"house:1"'})
         assert r.status_code == 200 and "etag" not in r.headers
@@ -109,5 +113,23 @@ def test_the_world_contract_over_remote_world_twice(world_over_asgi):
     when nothing moved) answers the same contract."""
     a = world_over_asgi.get_map()
     b = world_over_asgi.get_map()
-    assert a["usable"] and b["usable"] and b["map_version"] >= a["map_version"]
-    assert len(b["cells"]) == b["width"] * b["height"]
+    c = world_over_asgi.get_map()
+    assert a["usable"] and c["usable"] and c["map_version"] >= a["map_version"]
+    assert len(c["cells"]) == c["width"] * c["height"]
+    # The robot has not moved, so the map settles; from then on it is a 304.
+    assert b["map_version"] == c["map_version"] and c["cells"] is b["cells"]
+
+
+def test_a_restarted_server_never_answers_304_to_the_old_tag(monkeypatch):
+    """Review of 3.123.A: the simulator's `map_id` is fixed and its version
+    starts at 0 again in a new robot server -- the sim's one reset -- so the
+    same id and version can name another house's map. Each server's tags
+    carry its own token: a brain that outlived the restart gets the new map."""
+    world = SwitchWorld()
+    monkeypatch.setattr(server, "get_world", lambda *a, **k: world)
+    old = TestClient(server.create_app(), base_url="http://robot.test")
+    remote = RemoteWorld("http://robot.test", client=old)
+    remote.get_map()
+    world.map = SwitchWorld.make("house", 1, (1, 1, 1, 1))     # same id and version
+    remote._client = TestClient(server.create_app(), base_url="http://robot.test")
+    assert remote.get_map()["cells"] == [1, 1, 1, 1]

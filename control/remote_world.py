@@ -121,37 +121,37 @@ class RemoteWorld(WorldInterface):
         skipped. Callers must not modify a map they are given.
         """
         last = self._last_map
-        headers = dict(self.headers)
-        if last is not None:
-            headers["if-none-match"] = last[0]
         try:
-            response = self._client.request(
-                "GET", f"{self.base_url}/world/map", headers=headers
-            )
-        except httpx.HTTPError as e:
-            raise WorldTransportError(f"GET /world/map failed: {e}") from e
+            response = self._send("/world/map",
+                                  {"if-none-match": last[0]} if last else None)
+        except WorldTransportError as e:
+            if "HTTP 404" in str(e):
+                logger.info("server has no /world/map route -- reporting no map")
+                return unusable_map()
+            raise
         if response.status_code == 304 and last is not None:
-            return last[1]
-        if response.status_code == 404:
-            logger.info("server has no /world/map route -- reporting no map")
-            return unusable_map()
-        if response.status_code >= 300:
-            raise WorldTransportError(f"GET /world/map failed: HTTP {response.status_code}")
+            return dict(last[1])          # a key added by one caller stays its own
+        if response.status_code == 304:
+            raise WorldTransportError("GET /world/map failed: HTTP 304 with no map held")
         m = response.json()
         tag = response.headers.get("etag")
         self._last_map = (tag, m) if tag else None
-        return m
+        return dict(m)
 
-    def _request(self, path: str) -> dict:
+    def _send(self, path: str, extra_headers: Optional[dict] = None) -> httpx.Response:
+        """One GET; any transport failure or status of 400 and over raises
+        `WorldTransportError` naming it."""
+        headers = {**self.headers, **(extra_headers or {})}
         try:
-            response = self._client.request(
-                "GET", f"{self.base_url}{path}", headers=self.headers
-            )
+            response = self._client.request("GET", f"{self.base_url}{path}", headers=headers)
         except httpx.HTTPError as e:
             raise WorldTransportError(f"GET {path} failed: {e}") from e
         if response.status_code >= 400:
             raise WorldTransportError(f"GET {path} failed: HTTP {response.status_code}")
-        return response.json()
+        return response
+
+    def _request(self, path: str) -> dict:
+        return self._send(path).json()
 
     def close(self) -> None:
         if self._owns_client:

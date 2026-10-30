@@ -87,6 +87,7 @@ README), not in the automated unit suite.
 """
 
 import gc
+import re
 import os
 import threading
 import math
@@ -219,21 +220,30 @@ def watchdog_should_stop(last_command_at: float, now: float, timeout_s: float) -
     return (now - last_command_at) > timeout_s
 
 
-def map_etag(m: dict) -> Optional[str]:
-    """`/world/map`'s ETag for a usable map (3.123): its `map_id` and
-    `map_version`, which change whenever its cells do; None for a map that
-    is unusable or does not name both."""
+# A map id that can sit inside an ETag as it is (no quote, comma or space).
+_TAG_SAFE = re.compile(r"[A-Za-z0-9._:-]+")
+
+
+def map_etag(m: dict, boot: str = "") -> Optional[str]:
+    """`/world/map`'s ETag for a usable map (3.123): this server's `boot`
+    token, its `map_id` and `map_version`, which change whenever its cells
+    do -- the token because a restarted server (the simulator's one reset)
+    numbers its versions from 0 again under the same `map_id`. None for a
+    map that is unusable or does not name both."""
     mid, ver = m.get("map_id"), m.get("map_version")
-    if m.get("usable") is not True or not isinstance(mid, str) or '"' in mid \
+    if m.get("usable") is not True or not isinstance(mid, str) \
+            or not _TAG_SAFE.fullmatch(mid) \
             or not isinstance(ver, int) or isinstance(ver, bool):
         return None
-    return f'"{mid}:{ver}"'
+    return f'"{boot}:{mid}:{ver}"'
 
 
-def _etags(header: str) -> set:
-    """The tags an `If-None-Match` header names (weak ones as strong: a map
-    is the same bytes or a new version)."""
-    return {t.strip().removeprefix("W/") for t in header.split(",")}
+def _not_modified(header: str, tag: str) -> bool:
+    """Whether an `If-None-Match` header names `tag` (weak tags as strong: a
+    map is the same bytes or a new version), or is `*`, which any current
+    map matches (RFC 9110 13.1.2)."""
+    tags = {t.strip().removeprefix("W/") for t in header.split(",")}
+    return tag in tags or "*" in tags
 
 
 def create_app(config_path: Optional[str] = None) -> FastAPI:
@@ -1657,6 +1667,7 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
         return world_model.get_pose()
 
     map_body = [None]      # (ETag, encoded body) of the last usable map sent (3.123)
+    map_boot = os.urandom(4).hex()       # this server's part of every map ETag
 
     @app.get(prefix + "/world/map", dependencies=[Depends(require_secret)])
     def world_map(if_none_match: Optional[str] = Header(default=None)):
@@ -1679,19 +1690,22 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
 
         Sent only when it has changed (3.123): a usable map carries an ETag
         of its `map_id` and `map_version`, a request naming that tag in
-        `If-None-Match` gets a bodiless 304, and the last body is kept for
-        its tag so a client that sends none is not encoded again either.
+        `If-None-Match` gets a bodiless 304 (a browser's HTTP cache, the
+        twin's, sends it by itself), and the last body is kept for its tag
+        so a client that sends none is not encoded again either. The tag
+        starts with this server's own token: a restarted simulator numbers
+        its versions from 0 again under the same `map_id`.
         The world is asked every time -- the simulator's map observes as it
         is read -- so the answer is always now; `map_version`'s contract
         (it bumps whenever `cells` changes) is what makes the tag honest.
         An unusable map has no tag and is never reused.
         """
         m = world_model.get_map()
-        tag = map_etag(m)
+        tag = map_etag(m, map_boot)
         if tag is None:
             return JSONResponse(m)
         headers = {"ETag": tag, "Cache-Control": "no-cache"}
-        if if_none_match and tag in _etags(if_none_match):
+        if if_none_match and _not_modified(if_none_match, tag):
             return Response(status_code=304, headers=headers)
         kept = map_body[0]
         if kept is None or kept[0] != tag:
