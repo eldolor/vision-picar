@@ -426,7 +426,7 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   0.35-0.79 s -> **0.04-0.07 s since 3.120** (merged 2026-10-29:
   `_wants()` reads `_walk_dist()`, exactly the old distances, frozen
   `tests/walk_reference.py`; `layer()` keeps `_walk()`), so the pause is
-  ~4-9% (was ~11-23%). 3.120's live survey waits for a quiet desktop.
+  ~4-9% (was ~11-23%). Live survey: `out_of_budget`, 43 calls, 0 contacts.
   Missions on a
   saved map (S4, M1-M3) wait on 3.50's build. **S5, merged and the twin
   deployed 2026-10-14:** the Sim tab's Remote brain panel picks Find or
