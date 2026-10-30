@@ -438,37 +438,63 @@ def scrubbed_env() -> dict:
     return {k: v for k, v in os.environ.items() if k not in drop}
 
 
-def test_workers() -> int:
-    """How many pytest-xdist workers the fast tier runs on (3.121):
-    `PICAR_TEST_WORKERS`, else half the cores -- never all of them (the
-    desktop stopped dead on 2026-10-28 under hours of full-CPU load). 1 or
-    less is serial."""
+def usable_cores() -> int:
+    """The cores this process may run on (its affinity: a container's or
+    cloud session's limit, not the host's count)."""
     try:
-        return int(os.environ["PICAR_TEST_WORKERS"])
-    except (KeyError, ValueError):
-        return max(1, (os.cpu_count() or 2) // 2)
+        return len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):          # macOS has no affinity call
+        return os.cpu_count() or 2
 
 
-def parallel_args(py: str) -> list:
+def worker_count() -> int:
+    """How many pytest-xdist workers the fast tier runs on (3.121): half the
+    usable cores -- never more (the desktop stopped dead on 2026-10-28 under
+    hours of full-CPU load) -- or fewer by `PICAR_TEST_WORKERS`. 1 or less
+    is serial."""
+    half = max(1, usable_cores() // 2)
+    asked = os.environ.get("PICAR_TEST_WORKERS")
+    if asked is None:
+        return half
+    try:
+        n = int(asked)
+    except ValueError:
+        print(f"fast tier: PICAR_TEST_WORKERS={asked!r} is not a number; using {half}",
+              flush=True)
+        return half
+    if n > half:
+        print(f"fast tier: PICAR_TEST_WORKERS={n} is over half the cores; using {half}",
+              flush=True)
+    return min(n, half)
+
+
+def has_xdist(py: str, root: str) -> bool:
+    """Whether `py` imports xdist where and as the suite will run."""
+    return subprocess.run([py, "-c", "import xdist"], cwd=root, env=scrubbed_env(),
+                          capture_output=True).returncode == 0
+
+
+def parallel_args(py: str, root: str) -> list:
     """The fast tier's xdist arguments (3.121), or [] -- serial, as before --
     when the venv has no xdist or one worker is asked for. `--dist loadfile`
     keeps each test file whole on one worker, in its own order; only files
-    run side by side."""
-    n = test_workers()
+    run side by side. With plugin autoloading off, xdist is named."""
+    n = worker_count()
     if n <= 1:
         return []
-    if subprocess.run([py, "-c", "import xdist"], capture_output=True).returncode:
+    if not has_xdist(py, root):
         print("fast tier: pytest-xdist is not installed in the venv, so it runs serially "
               "(pip install -r requirements.txt)", flush=True)
         return []
-    return ["-n", str(n), "--dist", "loadfile"]
+    load = ["-p", "xdist.plugin"] if os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") else []
+    return [*load, "-n", str(n), "--dist", "loadfile"]
 
 
 def run_tests(root: str, full: bool) -> bool:
     py = venv_python(root)
     # The full suite (`ready --full`, the nightly) stays serial: it holds the
     # browser and live-stack tests, timed alone.
-    args = [] if full else [*SLOW_TESTS, *parallel_args(py)]
+    args = [] if full else [*SLOW_TESTS, *parallel_args(py, root)]
     return subprocess.run([py, "-m", "pytest", "tests/", "-q",
                            "-p", "no:cacheprovider", *args], cwd=root,
                           env=scrubbed_env()).returncode == 0

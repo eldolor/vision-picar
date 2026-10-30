@@ -71,26 +71,32 @@ def test_the_fast_tier_leaves_out_only_the_slow_files():
     assert set(ps.SLOW_FILES) <= set(tests)
 
 
-
-def test_the_fast_tier_runs_on_half_the_cores_by_default(monkeypatch):
-    """3.121: xdist workers from `PICAR_TEST_WORKERS`, else half the cores,
-    each file whole on one worker."""
+def test_the_fast_tier_runs_on_half_the_cores_by_default(monkeypatch, capsys):
+    """3.121: xdist workers are half the usable cores, fewer by
+    `PICAR_TEST_WORKERS`, never more; each file whole on one worker."""
     monkeypatch.delenv("PICAR_TEST_WORKERS", raising=False)
-    monkeypatch.setattr(ps.os, "cpu_count", lambda: 12)
-    assert ps.test_workers() == 6
-    assert ps.parallel_args(sys.executable) == ["-n", "6", "--dist", "loadfile"]
+    monkeypatch.delenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", raising=False)
+    monkeypatch.setattr(ps, "usable_cores", lambda: 12)
+    monkeypatch.setattr(ps, "has_xdist", lambda py, root: True)
+    assert ps.worker_count() == 6
+    assert ps.parallel_args(sys.executable, ROOT) == ["-n", "6", "--dist", "loadfile"]
     monkeypatch.setenv("PICAR_TEST_WORKERS", "3")
-    assert ps.parallel_args(sys.executable) == ["-n", "3", "--dist", "loadfile"]
-    monkeypatch.setattr(ps.os, "cpu_count", lambda: None)
+    assert ps.parallel_args(sys.executable, ROOT) == ["-n", "3", "--dist", "loadfile"]
+    monkeypatch.setenv("PICAR_TEST_WORKERS", "24")
+    assert ps.worker_count() == 6 and "over half" in capsys.readouterr().out
     monkeypatch.setenv("PICAR_TEST_WORKERS", "x")
-    assert ps.test_workers() == 1
+    assert ps.worker_count() == 6 and "not a number" in capsys.readouterr().out
+    monkeypatch.setenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+    assert ps.parallel_args(sys.executable, ROOT)[:2] == ["-p", "xdist.plugin"]
 
 
 def test_one_worker_or_no_xdist_runs_serially(monkeypatch, capsys):
+    monkeypatch.setattr(ps, "usable_cores", lambda: 12)
     monkeypatch.setenv("PICAR_TEST_WORKERS", "1")
-    assert ps.parallel_args(sys.executable) == []
+    assert ps.parallel_args(sys.executable, ROOT) == []
     monkeypatch.setenv("PICAR_TEST_WORKERS", "4")
-    assert ps.parallel_args("/bin/false") == []          # an interpreter with no xdist
+    assert not ps.has_xdist("/bin/false", ROOT)            # an interpreter with no xdist
+    assert ps.parallel_args("/bin/false", ROOT) == []
     assert "runs serially" in capsys.readouterr().out
 
 
@@ -98,15 +104,19 @@ def test_only_the_fast_tier_runs_in_parallel(monkeypatch):
     """`ready --full` (and so the nightly's browser and live-stack tests)
     stays one process; the fast tier gets the xdist arguments."""
     ran = []
+    monkeypatch.setattr(ps, "usable_cores", lambda: 12)
+    monkeypatch.setattr(ps, "has_xdist", lambda py, root: True)
     monkeypatch.setenv("PICAR_TEST_WORKERS", "4")
+    monkeypatch.delenv("PYTEST_DISABLE_PLUGIN_AUTOLOAD", raising=False)
     monkeypatch.setattr(ps, "venv_python", lambda root: sys.executable)
     monkeypatch.setattr(ps.subprocess, "run", lambda cmd, **kw: ran.append(cmd) or
                         type("R", (), {"returncode": 0, "stdout": ""})())
     assert ps.run_tests(ROOT, full=True)
     assert ps.run_tests(ROOT, full=False)
-    full, fast = [c for c in ran if "pytest" in c]
+    full, fast = [c for c in ran if c[1:3] == ["-m", "pytest"]]
     assert "-n" not in full and not any(a.startswith("--ignore") for a in full)
     assert fast[fast.index("-n"):][:4] == ["-n", "4", "--dist", "loadfile"]
+
 
 def test_a_clean_rebase_keeps_the_change_id(tmp_path, monkeypatch):
     """The gate keys a pass on the change, so a rebase onto another
