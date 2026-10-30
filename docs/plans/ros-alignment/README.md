@@ -129,4 +129,5 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.121](3.121-parallel-suite.md) | The push gate's suite in parallel (pytest-xdist), the same tests passing |
 | [3.122](3.122-room-labels-real-frames.md) | Room labels on the recorded walks: a first real error rate |
 | [3.123](3.123-map-etag.md) | The map is sent only when it has changed (an ETag on /world/map) |
+| [3.124](3.124-bridge-map-version.md) | The bridge's map_version moves only when the grid changes |
 <!-- /sections -->
