@@ -102,6 +102,7 @@ def test_one_worker_or_no_xdist_runs_serially(monkeypatch, capsys):
     # The real check, in this venv: pytest starts one worker if xdist is
     # installed, and says no -- never raises -- if it is not.
     import importlib.util
+    monkeypatch.delenv("PYTEST_ADDOPTS", raising=False)
     assert ps.xdist_starts(sys.executable, ROOT, []) == bool(importlib.util.find_spec("xdist"))
 
 

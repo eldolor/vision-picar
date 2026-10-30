@@ -450,7 +450,7 @@ def usable_cores() -> int:
         quota, period = open("/sys/fs/cgroup/cpu.max").read().split()[:2]
         if quota != "max":
             n = min(n, max(1, int(quota) // int(period)))
-    except (OSError, ValueError):
+    except (OSError, ValueError, ZeroDivisionError):
         pass
     return n
 
@@ -481,9 +481,13 @@ def xdist_starts(py: str, root: str, load: list) -> bool:
     an xdist worker: one worker collecting one small file. An import of
     xdist alone passes without execnet, or with the plugin turned off in
     PYTEST_ADDOPTS."""
-    return subprocess.run([py, "-m", "pytest", "-q", "-p", "no:cacheprovider", *load,
-                           "-n", "1", "--collect-only", "tests/test_plan_section.py"],
-                          cwd=root, env=scrubbed_env(), capture_output=True).returncode == 0
+    try:
+        return subprocess.run([py, "-m", "pytest", "-q", "-p", "no:cacheprovider", *load,
+                               "-n", "1", "--collect-only", "tests/test_plan_section.py"],
+                              cwd=root, env=scrubbed_env(), capture_output=True,
+                              timeout=120).returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
 
 
 def parallel_args(py: str, root: str) -> list:
@@ -497,8 +501,8 @@ def parallel_args(py: str, root: str) -> list:
         return []
     load = ["-p", "xdist.plugin"] if os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD") else []
     if not xdist_starts(py, root, load):
-        print("fast tier: pytest cannot start xdist workers in this venv, so it runs "
-              "serially (pip install -r requirements.txt)", flush=True)
+        print("fast tier: pytest could not start an xdist worker here (is pytest-xdist "
+              "installed? pip install -r requirements.txt), so it runs serially", flush=True)
         return []
     return [*load, "-n", str(n), "--dist", "loadfile"]
 
