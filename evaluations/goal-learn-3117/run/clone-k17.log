@@ -1,0 +1,8 @@
+clone epoch 4: held-out loss 1.6120
+clone epoch 9: held-out loss 1.6077
+clone epoch 14: held-out loss 1.5851
+clone epoch 19: held-out loss 1.5813
+clone epoch 24: held-out loss 1.5770
+clone epoch 29: held-out loss 1.5643
+clone: 37064 choices, held-out agreement 0.4401
+F-pool-W32-k17: 5411 numbers, 34 facts, {'n_train': 37064, 'n_held': 609}, held-out agreement 0.4401

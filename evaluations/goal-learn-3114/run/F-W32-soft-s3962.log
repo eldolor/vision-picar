@@ -1,0 +1,8 @@
+clone epoch 4: held-out loss 1.9701
+clone epoch 9: held-out loss 1.9394
+clone epoch 14: held-out loss 1.9273
+clone epoch 19: held-out loss 1.9217
+clone epoch 24: held-out loss 1.9191
+clone epoch 29: held-out loss 1.9097
+clone: 37064 choices, held-out agreement 0.3941
+{"arm": "F-W32-soft-s3962", "loss": "soft", "seed": 3962, "n_train": 37064, "n_held": 609, "held_exact": 0.3941, "held_near_1m": 0.6453, "held_out_agreement": 0.3941}
