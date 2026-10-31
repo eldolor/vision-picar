@@ -536,12 +536,16 @@ def stage_ppo(arm: str, out: str, clone: dict, ex) -> None:
     train = train_houses(arm)
     t0 = time.time()
     # The desktop lock (3.128-3.129): training is shared work; between
-    # iterations it steps aside for a queued live run, then carries on.
+    # iterations it steps aside for a queued live run, then carries on. The
+    # command line takes it first (the selection and oracle runs load the
+    # machine too); a harness calling this directly takes it here.
     sys.path.append(os.path.join(ROOT, "tools"))
     import desktop_lock
     desktop_lock.hold_for_life("shared", f"PPO {os.path.basename(out)} ({__file__})")
     for it in range(start, ITERS):
-        desktop_lock.step_aside()
+        w = time.time()
+        if desktop_lock.step_aside():
+            t0 += time.time() - w            # "s" is training time, never the wait
         hs = rng.sample(train, HOUSES)
         params = net.export()
         jobs = []
@@ -583,6 +587,9 @@ def stage_ppo(arm: str, out: str, clone: dict, ex) -> None:
 
 def main(arm: str, out: str) -> None:
     os.makedirs(out, exist_ok=True)
+    sys.path.append(os.path.join(ROOT, "tools"))
+    import desktop_lock                  # 3.129: the whole job is shared work
+    desktop_lock.hold_for_life("shared", f"goal-learn train.py {arm}")
     import torch
     # Three arms share one machine; the workers do the simulating.
     torch.set_num_threads(int(os.environ.get("TORCH_THREADS", "4")))

@@ -228,20 +228,56 @@ def _describe(d: str) -> str:
         return "held"
 
 
-def _take(fd: int, op: int, d: str, wait: bool, out) -> None:
+def _take(fd: int, op: int, d: str, wait: bool, out, until=None, stop=None) -> None:
+    """Take one flock. `wait`: block; else retry for GRACE_S, then Busy.
+    With `until` (a monotonic deadline) or `stop` (a callable), wait by
+    polling instead, so a caller can give up at its deadline or on its own
+    stop (the nightly), raising Busy; a blocking flock hears neither."""
+    polled = until is not None or stop is not None
     end = time.monotonic() + GRACE_S
+    told = False
     while True:
         try:
             fcntl.flock(fd, op | fcntl.LOCK_NB)
             return
         except BlockingIOError:
-            if wait:
+            if wait and not polled:
                 break
-            if time.monotonic() >= end:
+            if not wait and time.monotonic() >= end:
                 raise Busy(_describe(d))
-            time.sleep(0.05)
+            if polled:
+                if stop is not None and stop():
+                    raise Busy("stopped while waiting")
+                if until is not None and time.monotonic() >= until:
+                    raise Busy(_describe(d))
+                if not told:
+                    print(f"{WAIT_LINE} ({os.path.join(d, LOCK)}): {_describe(d)}",
+                          file=out, flush=True)
+                    told = True
+                time.sleep(0.2)
+            else:
+                time.sleep(0.05)
     print(f"{WAIT_LINE} ({os.path.join(d, LOCK)}): {_describe(d)}", file=out, flush=True)
     fcntl.flock(fd, op)
+
+
+def _queue_and_take(fd: int, mode: str, d: str, wait: bool, out, queue: bool = True,
+                    until=None, stop=None) -> None:
+    """The one protocol: through the gate (unless a shared job skips the
+    queue), then the lock; the gate is let go either way. An exclusive
+    acquirer holds the gate for its whole wait, so shared ones queue behind
+    it and `step_aside()` sees it."""
+    gate = os.open(os.path.join(d, GATE), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        if queue or mode == "exclusive":
+            if gate_waiting(d) and wait:
+                print(f"{WAIT_LINE} ({os.path.join(d, LOCK)}): another job is queued "
+                      f"ahead; holding now: {_describe(d)}", file=out, flush=True)
+            _take(gate, fcntl.LOCK_EX, d, wait, out, until, stop)
+        _take(fd, fcntl.LOCK_EX if mode == "exclusive" else fcntl.LOCK_SH, d, wait, out,
+              until, stop)
+    finally:
+        os.close(gate)                  # closing lets the gate go
 
 
 class Hold:
@@ -255,7 +291,10 @@ class Hold:
         """3.129: for a long shared job, between its steps. If an exclusive
         job is queued, let it run first: let go, wait for it to finish, take
         the lock back (through the gate, so behind it). True if it did.
-        Forked workers share this hold's descriptor, so they let go too."""
+        Call it only when no work of the job is running: forked workers
+        share this hold's descriptor and lose the lock with it, but nothing
+        stops them computing (between `ex.map` calls, never with jobs in
+        flight)."""
         d = os.path.dirname(self._path)
         if self._fd is None or self.mode != "shared" or not exclusive_queued(d):
             return False
@@ -267,12 +306,13 @@ class Hold:
         except OSError:
             pass
         fcntl.flock(self._fd, fcntl.LOCK_UN)
-        gate = os.open(os.path.join(d, GATE), os.O_CREAT | os.O_RDWR, 0o644)
         try:
-            _take(gate, fcntl.LOCK_EX, d, True, out)
-            _take(self._fd, fcntl.LOCK_SH, d, True, out)
-        finally:
-            os.close(gate)
+            _queue_and_take(self._fd, "shared", d, True, out)
+        except BaseException:           # holding nothing now: say so, never pretend
+            os.close(self._fd)
+            self._fd = None
+            raise
+        self._line = self._line.split(" since ")[0] + f" since {time.ctime()} (resumed)"
         with open(self._note, "w") as f:
             f.write(self._line + "\n")
         print(f"desktop lock: resumed ({time.strftime('%H:%M:%S')})", file=out, flush=True)
@@ -295,7 +335,8 @@ class Hold:
 _seq = 0
 
 
-def acquire(mode: str, why: str = "", wait: bool = True, out=None, queue: bool = True):
+def acquire(mode: str, why: str = "", wait: bool = True, out=None, queue: bool = True,
+            until=None, stop=None):
     """A Hold, or None when an ancestor's hold already covers `mode` (or
     PICAR_HEAVY_LOCK=0). Raises Busy (wait=False) or Nested.
 
@@ -304,7 +345,8 @@ def acquire(mode: str, why: str = "", wait: bool = True, out=None, queue: bool =
     one, which would make it wait for whatever that one waits for (a long
     training run). Still never beside an exclusive holder; the queued job
     starts a few minutes later at most, and pushes are too rare to starve
-    it."""
+    it. `until` / `stop`: wait in the queue by polling, giving up (Busy) at
+    a monotonic deadline or when `stop()` says so."""
     global _seq
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
@@ -319,16 +361,7 @@ def acquire(mode: str, why: str = "", wait: bool = True, out=None, queue: bool =
         return None
     fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        gate = os.open(os.path.join(d, GATE), os.O_CREAT | os.O_RDWR, 0o644)
-        try:
-            if queue or mode == "exclusive":
-                if gate_waiting(d) and wait:
-                    print(f"{WAIT_LINE} ({path}): another job is queued ahead; "
-                          f"holding now: {_describe(d)}", file=out, flush=True)
-                _take(gate, fcntl.LOCK_EX, d, wait, out)
-            _take(fd, fcntl.LOCK_EX if mode == "exclusive" else fcntl.LOCK_SH, d, wait, out)
-        finally:
-            os.close(gate)              # closing lets the gate go
+        _queue_and_take(fd, mode, d, wait, out, queue, until, stop)
         _seq += 1
         line = (f"{mode} pid {os.getpid()} {why or ' '.join(sys.argv)[:200]} "
                 f"since {time.ctime()}")
@@ -403,16 +436,20 @@ def state(d: str) -> str:
         os.close(fd)
 
 
-def exclusive_queued(d: str, probes: int = 3) -> bool:
+def exclusive_queued(d: str) -> bool:
     """For a shared holder: an exclusive job is waiting. With a shared hold
-    in place no shared acquirer waits at the gate, so a gate held across a
-    few probes is an exclusive acquirer, not one passing through."""
-    for i in range(probes):
+    in place no shared acquirer waits at the gate; one passing through
+    holds it for microseconds and a `--no-wait` one for at most GRACE_S. So
+    a gate held at probes spanning longer than that is an exclusive job
+    waiting in the queue."""
+    span, step = GRACE_S + 0.3, 0.3
+    end = time.monotonic() + span
+    while True:
         if not gate_waiting(d):
             return False
-        if i + 1 < probes:
-            time.sleep(0.1)
-    return True
+        if time.monotonic() >= end:
+            return True
+        time.sleep(step)
 
 
 def gate_waiting(d: str) -> bool:

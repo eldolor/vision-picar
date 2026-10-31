@@ -317,6 +317,11 @@ def test_a_long_shared_job_steps_aside_for_a_queued_exclusive(box):
     until(lambda: "T start" in log(box))
     time.sleep(0.5)
     assert "T back" not in log(box), "stepped aside with nothing queued"
+    for _ in range(2):                 # a --no-wait grab holds the gate <= GRACE_S
+        r = subprocess.run([sys.executable, TOOL, "exclusive", "--no-wait", "--", "true"],
+                           env=env(), capture_output=True, timeout=20)
+        assert r.returncode == dl.BUSY
+    assert "T back" not in log(box), "stepped aside for a job that was not waiting"
     e = start(box, "exclusive", "E", "gE")
     until(lambda: "E start" in log(box))
     time.sleep(0.3)

@@ -254,7 +254,7 @@ unset NIGHTLY_LOCKED NIGHTLY_SH NIGHTLY_UNLOCKED   # not into pytest, nor any sc
 wt="$common/nightly-worktree"
 day="$(date +%Y-%m-%d)"
 log="$logs/nightly-$day.log"
-rc=0; sha="-"; was_stopped=0       # sha: the commit tested; none until the refresh holds
+rc=0; sha="-"; was_stopped=0; nodesk=""       # sha: the commit tested; none until the refresh holds
 drv=""; job=""; stopped=0
 # TERM now and once more a second later (round 16): a TERM that lands in a
 # job between its fork and its exec meets the sh's own trap there and is
@@ -345,15 +345,19 @@ if [ $rc -eq 0 ]; then
   # The desktop lock (3.129): the full suite is timed (live and browser
   # tests), so the driver holds `.git/heavy-run.lock` exclusive for it, as a
   # session's live run does: never beside another session's live run, suite
-  # or training. A busy desktop is retried every NIGHTLY_LOCK_RETRY_S (30) for
-  # NIGHTLY_LOCK_WAIT_S (7200), a stop still heard; then the night is
-  # SKIPPED, not a FAIL, and nothing is emailed. The wait is outside the
-  # time limit. A commit without tools/desktop_lock.py runs unlocked.
+  # or training. It waits in the lock's queue (so new shared jobs line up
+  # behind it and long ones step aside for it) for NIGHTLY_LOCK_WAIT_S
+  # (7200), polling so a stop is still heard; then the night is SKIPPED, not
+  # a FAIL, nothing is emailed, and the script exits 0. The wait is outside
+  # the time limit. Asked for under a shared hold (Nested, a setup error
+  # that never clears) it is a FAIL at once. A commit without
+  # tools/desktop_lock.py, or a lock that cannot be used, runs unlocked,
+  # said in the report.
   "$main/.venv/bin/python" - "$wt" "${NIGHTLY_TIMEOUT_S:-7000}" "$main/.venv/bin/python" \
-    "${NIGHTLY_LOCK_WAIT_S:-7200}" "${NIGHTLY_LOCK_RETRY_S:-30}" >> "$log" 2>&1 <<'PY' &
+    "${NIGHTLY_LOCK_WAIT_S:-7200}" >> "$log" 2>&1 <<'PY' &
 import os, signal, subprocess, sys, time
 wt, limit, py = sys.argv[1], float(sys.argv[2]), sys.argv[3]
-lock_wait, lock_retry = float(sys.argv[4]), float(sys.argv[5])
+lock_wait = float(sys.argv[4])
 
 # A stop only records itself; the driver polls. Nothing is raised from the
 # handler, so no stop can land inside Popen, inside a wait that has reaped
@@ -383,21 +387,21 @@ try:
     import desktop_lock
 except ImportError:
     desktop_lock = None
-    print("desktop lock: none in this commit; the suite runs unlocked", flush=True)
+    print("desktop lock: none in this commit; the suite runs without it", flush=True)
 if desktop_lock is not None:
-    wait_end, busy = time.monotonic() + lock_wait, "held"
-    while stop["sig"] is None:
-        try:
-            hold = desktop_lock.acquire("exclusive", "nightly full suite", wait=False)
-            break
-        except (desktop_lock.Busy, desktop_lock.Nested) as e:
-            busy = str(e)
-        if time.monotonic() >= wait_end:
-            print(f"\nnightly: desktop busy for {lock_wait:.0f} s: {busy}")
+    try:
+        hold = desktop_lock.acquire("exclusive", "nightly full suite",
+                                    until=time.monotonic() + lock_wait,
+                                    stop=lambda: stop["sig"] is not None)
+    except desktop_lock.Busy as e:
+        if stop["sig"] is None:              # a stop goes to its own check below
+            print(f"\nnightly: desktop busy for {lock_wait:.0f} s: {e}")
             sys.exit(126)
-        retry = min(wait_end, time.monotonic() + lock_retry)
-        while stop["sig"] is None and time.monotonic() < retry:
-            time.sleep(0.2)
+    except desktop_lock.Nested as e:
+        print(f"\nnightly: desktop lock: {e}")
+        sys.exit(1)
+    except OSError as e:                     # a read-only .git, a filesystem with no flock
+        print(f"desktop lock: unusable ({e}); the suite runs without it", flush=True)
     if hold is not None:                 # the live tests' own locks pass through
         env[desktop_lock.ENV] = desktop_lock.token("exclusive")
 if stop["sig"] is not None:              # stopped before pytest started (round 18)
@@ -449,6 +453,9 @@ PY
     else summary="nightly: the driver died of signal $((rc - 128))"; fi
   fi
   [ -n "$summary" ] || summary="$(tail -n 1 "$log")"
+  # The suite ran without the desktop lock (3.129): said in the report, apart
+  # from "(unlocked: ...)", which is the nightly's own lock.
+  nodesk="$(grep -m 1 -E '^desktop lock: (none|unusable)' "$log" | sed 's/^desktop lock: //')"
 fi
 # STOPPED only when the stop ended the run: the driver's own line decides
 # when it wrote one; otherwise it died of the signal. A FAIL or a timeout a
@@ -461,8 +468,8 @@ case "$summary" in
   *) by_stop=0; [ $was_stopped -eq 1 ] && [ $rc -gt 128 ] && by_stop=1 ;;
 esac
 if [ $rc -eq 0 ]; then verdict=PASS; elif [ $by_stop -eq 1 ]; then verdict=STOPPED
-elif [ $busy -eq 1 ]; then verdict=SKIPPED; else verdict=FAIL; fi
-report "$day $sha $verdict  $summary${unlocked:+  (unlocked: $unlocked)}"
+elif [ $busy -eq 1 ]; then verdict=SKIPPED; rc=0; else verdict=FAIL; fi
+report "$day $sha $verdict  $summary${unlocked:+  (unlocked: $unlocked)}${nodesk:+  (no desktop lock: $nodesk)}"
 head -n 1 "$logs/nightly-latest.txt"
 
 # On failure only, an email through Amazon SES (user, 2026-10-09) to $to.

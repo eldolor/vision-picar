@@ -294,12 +294,16 @@ def stage_ppo(name: str, out: str, clone: dict, ex, credit: str, iters: int = No
     train = T.train_houses(name)
     t0 = time.time()
     # The desktop lock (3.128-3.129): training is shared work; between
-    # iterations it steps aside for a queued live run, then carries on.
+    # iterations it steps aside for a queued live run, then carries on. The
+    # command line takes it first (the selection and oracle runs load the
+    # machine too); a harness calling this directly takes it here.
     sys.path.append(os.path.join(HERE, "..", "..", "tools"))
     import desktop_lock
     desktop_lock.hold_for_life("shared", f"PPO {os.path.basename(out)} ({__file__})")
     for it in range(start, iters):
-        desktop_lock.step_aside()
+        w = time.time()
+        if desktop_lock.step_aside():
+            t0 += time.time() - w            # "s" is training time, never the wait
         hs = rng.sample(train, T.HOUSES)
         params = net.export()
         jobs = []
@@ -565,6 +569,10 @@ def cmd_report() -> dict:
 if __name__ == "__main__":
     multiprocessing.set_start_method("fork", force=True)
     cmd = sys.argv[1]
+    if cmd != "report":                  # 3.129: the whole job is shared work
+        sys.path.append(os.path.join(HERE, "..", "..", "tools"))
+        import desktop_lock
+        desktop_lock.hold_for_life("shared", f"3.119 credit.py {' '.join(sys.argv[1:])}")
     if cmd in ("ppo", "diag"):
         if sys.argv[2] not in ARMS:
             raise SystemExit(f"arm {sys.argv[2]}: 3.119's arms are {ARMS}")

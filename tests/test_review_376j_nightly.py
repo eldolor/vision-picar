@@ -62,6 +62,9 @@ def nightly(tmp_path, monkeypatch):
     sp.run(["git", "clone", "-q", str(bare), str(main)], check=True, capture_output=True)
     (main / "tools").mkdir()
     shutil.copy(NIGHTLY, main / "tools" / "nightly_suite.sh")
+    # 3.129: dev carries the desktop lock the nightly takes; in a lock
+    # directory of this test's own (`base` below drops the suite's token).
+    shutil.copy(os.path.join(TOOLS, "desktop_lock.py"), main / "tools" / "desktop_lock.py")
     (main / "tests").mkdir()
     (main / "tests" / "f.txt").write_text("one\n")
     (main / ".gitignore").write_text(".venv/\n")
@@ -90,8 +93,10 @@ def nightly(tmp_path, monkeypatch):
         f'exec {shutil.which("git")} "$@"\n')
     (bindir / "git").chmod(0o755)
     base = {k: v for k, v in os.environ.items()          # round 12: a nightly run's own
-            if not k.startswith("NIGHTLY_")}             # settings are not this test's
-    env = {**base, "HOME": str(home), "NIGHTLY_EMAIL": "", "FAKE_OUT": str(out),
+            if not k.startswith("NIGHTLY_")              # settings are not this test's
+            and k != "PICAR_DESKTOP_LOCK"}               # nor the suite's own lock hold
+    (tmp_path / "desklock").mkdir()
+    env = {**base, "HOME": str(home), "PICAR_DESKTOP_LOCK_DIR": str(tmp_path / "desklock"), "NIGHTLY_EMAIL": "", "FAKE_OUT": str(out),
            "PATH": f"{bindir}:{os.environ['PATH']}",
            "REAL_PY": sys.executable, "FAKE_HANG": str(tmp_path / "hang"),
            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
