@@ -1,5 +1,5 @@
 """3.96.C: explore's goal choice with room features, behind
-`explore_goal_policy: rooms` (default "rule")."""
+`explore_goal_policy: rooms` (the default since 3.125)."""
 import importlib.util
 import json
 import os
@@ -25,8 +25,11 @@ def _model():
     return mod
 
 
-def test_the_flag_selects_it_and_the_default_stays_the_rule(monkeypatch):
+def test_it_is_the_default_and_the_flag_can_set_the_rule(monkeypatch):
+    """3.125 (the user, 2026-10-31): `rooms` is the default."""
     monkeypatch.delenv("EXPLORE_GOAL_POLICY", raising=False)
+    assert load_brain_config()["explore_goal_policy"] == "rooms"
+    monkeypatch.setenv("EXPLORE_GOAL_POLICY", "rule")
     assert load_brain_config()["explore_goal_policy"] == "rule"
     monkeypatch.setenv("EXPLORE_GOAL_POLICY", "rooms")
     assert load_brain_config()["explore_goal_policy"] == "rooms"

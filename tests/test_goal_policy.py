@@ -1,5 +1,5 @@
 """3.65 phase 2: explore's learned goal choice, behind
-`explore_goal_policy` (default "rule")."""
+`explore_goal_policy` (default "rooms" since 3.125)."""
 import json
 
 import pytest
@@ -17,8 +17,9 @@ def _sets(nav):
     return [c for c in nav.calls if c[0] == "set"]
 
 
-def test_the_default_is_the_rule_and_changes_nothing(monkeypatch):
-    monkeypatch.delenv("EXPLORE_GOAL_POLICY", raising=False)
+def test_the_rule_changes_nothing(monkeypatch):
+    """`rule` (the default until 3.125) gives explore no goal policy."""
+    monkeypatch.setenv("EXPLORE_GOAL_POLICY", "rule")
     assert load_brain_config()["explore_goal_policy"] == "rule"
     runner, _nav, _grid = _mission()
     assert runner.agent.goal_policy is None

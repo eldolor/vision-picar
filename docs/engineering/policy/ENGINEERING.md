@@ -735,7 +735,7 @@ cloud alone.
   (`SIM_PERCEPTION_BLIND=1` on the brain server) never reports the target.
 
 **Explore's learned goal choice (3.65 phase 2).** `explore_goal_policy`
-(`brain:` block; `rule` | `learned` | `network` | `rooms`, default `rule`; the
+(`brain:` block; `rule` | `learned` | `network` | `rooms`, default `rooms` since 3.125; the
 `EXPLORE_GOAL_POLICY` environment variable overrides it for live runs; validated by
 `load_brain_config`) reaches `MissionRunner(explore_goal_policy=...)`, which
 gives `ExploreAgent` a `goal_policy` from `brain/goal_policy.goal_policy_for`

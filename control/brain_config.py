@@ -277,8 +277,9 @@ DEFAULTS = {
     # 3.65 phase 2 -- how explore picks its next goal: "rule" (3.45/3.69's
     # hand-written order), "learned" (brain/explore_goal_weights.json) or
     # "network" (that plus a small network, brain/explore_goal_net.json); 3.96:
-    # "rooms" (seven room features more, brain/explore_goal_rooms.json).
-    "explore_goal_policy": "rule",
+    # "rooms" (seven room features more, brain/explore_goal_rooms.json), the
+    # default since 3.125 (the user, 2026-10-31).
+    "explore_goal_policy": "rooms",
     # 3.88 A -- ask mode: explore pauses at each goal choice for a person's
     # pick among the candidates the rules allow (POST /mission/explore/pick),
     # takes the rule's pick after explore_ask_timeout_s, and records every
