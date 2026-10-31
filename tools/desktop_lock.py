@@ -160,7 +160,7 @@ def ancestor_mode(path: str):
     return held
 
 
-def _token(mode: str) -> str:
+def token(mode: str) -> str:
     """PICAR_DESKTOP_LOCK's value for children: the mode and the holder's
     pid, so a value that outlived its hold (a daemon, a tmux started under
     it) is not trusted."""
@@ -247,8 +247,36 @@ def _take(fd: int, op: int, d: str, wait: bool, out) -> None:
 class Hold:
     """One hold, released by `release()` or when the process exits."""
 
-    def __init__(self, mode, fd, note, path):
+    def __init__(self, mode, fd, note, path, line=""):
         self.mode, self._fd, self._note, self._path = mode, fd, note, path
+        self._line = line
+
+    def step_aside(self, out=None) -> bool:
+        """3.129: for a long shared job, between its steps. If an exclusive
+        job is queued, let it run first: let go, wait for it to finish, take
+        the lock back (through the gate, so behind it). True if it did.
+        Forked workers share this hold's descriptor, so they let go too."""
+        d = os.path.dirname(self._path)
+        if self._fd is None or self.mode != "shared" or not exclusive_queued(d):
+            return False
+        out = out or sys.stderr
+        print(f"desktop lock: an exclusive job is queued; stepping aside "
+              f"({time.strftime('%H:%M:%S')})", file=out, flush=True)
+        try:
+            os.unlink(self._note)
+        except OSError:
+            pass
+        fcntl.flock(self._fd, fcntl.LOCK_UN)
+        gate = os.open(os.path.join(d, GATE), os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            _take(gate, fcntl.LOCK_EX, d, True, out)
+            _take(self._fd, fcntl.LOCK_SH, d, True, out)
+        finally:
+            os.close(gate)
+        with open(self._note, "w") as f:
+            f.write(self._line + "\n")
+        print(f"desktop lock: resumed ({time.strftime('%H:%M:%S')})", file=out, flush=True)
+        return True
 
     def release(self) -> None:
         if self._fd is None:
@@ -267,9 +295,16 @@ class Hold:
 _seq = 0
 
 
-def acquire(mode: str, why: str = "", wait: bool = True, out=None):
+def acquire(mode: str, why: str = "", wait: bool = True, out=None, queue: bool = True):
     """A Hold, or None when an ancestor's hold already covers `mode` (or
-    PICAR_HEAVY_LOCK=0). Raises Busy (wait=False) or Nested."""
+    PICAR_HEAVY_LOCK=0). Raises Busy (wait=False) or Nested.
+
+    `queue=False` (shared only; 3.129) skips the gate: a short shared job --
+    the push gate's fast tier -- does not line up behind a queued exclusive
+    one, which would make it wait for whatever that one waits for (a long
+    training run). Still never beside an exclusive holder; the queued job
+    starts a few minutes later at most, and pushes are too rare to starve
+    it."""
     global _seq
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, not {mode!r}")
@@ -286,10 +321,11 @@ def acquire(mode: str, why: str = "", wait: bool = True, out=None):
     try:
         gate = os.open(os.path.join(d, GATE), os.O_CREAT | os.O_RDWR, 0o644)
         try:
-            if gate_waiting(d) and wait:
-                print(f"{WAIT_LINE} ({path}): another job is queued ahead; "
-                      f"holding now: {_describe(d)}", file=out, flush=True)
-            _take(gate, fcntl.LOCK_EX, d, wait, out)
+            if queue or mode == "exclusive":
+                if gate_waiting(d) and wait:
+                    print(f"{WAIT_LINE} ({path}): another job is queued ahead; "
+                          f"holding now: {_describe(d)}", file=out, flush=True)
+                _take(gate, fcntl.LOCK_EX, d, wait, out)
             _take(fd, fcntl.LOCK_EX if mode == "exclusive" else fcntl.LOCK_SH, d, wait, out)
         finally:
             os.close(gate)              # closing lets the gate go
@@ -297,7 +333,7 @@ def acquire(mode: str, why: str = "", wait: bool = True, out=None):
         line = (f"{mode} pid {os.getpid()} {why or ' '.join(sys.argv)[:200]} "
                 f"since {time.ctime()}")
         note = os.path.join(d, NOTES, f"{os.getpid()}.{_seq}")
-        h = Hold(mode, fd, note, path)
+        h = Hold(mode, fd, note, path, line)
         with open(note, "w") as f:
             f.write(line + "\n")
         if mode == "exclusive":         # for readers that predate 3.128
@@ -314,13 +350,13 @@ def acquire(mode: str, why: str = "", wait: bool = True, out=None):
 
 
 @contextmanager
-def held(mode: str, why: str = "", wait: bool = True):
+def held(mode: str, why: str = "", wait: bool = True, queue: bool = True):
     """Hold the lock for a block; yields PICAR_DESKTOP_LOCK's value for
     children: this hold's token, the inherited value, or None when nothing
     is held (PICAR_HEAVY_LOCK=0)."""
-    h = acquire(mode, why, wait)
+    h = acquire(mode, why, wait, queue=queue)
     try:
-        yield _token(mode) if h is not None else os.environ.get(ENV)
+        yield token(mode) if h is not None else os.environ.get(ENV)
     finally:
         if h is not None:
             h.release()
@@ -336,8 +372,16 @@ def hold_for_life(mode: str, why: str = "") -> None:
     h = acquire(mode, why)
     _LIFE[:] = [mode, h]
     if h is not None:
-        os.environ[ENV] = _token(mode)
+        os.environ[ENV] = token(mode)
         atexit.register(h.release)     # its note, and the main file's line
+
+
+def step_aside(out=None) -> bool:
+    """`Hold.step_aside` for this process's `hold_for_life` hold; False when
+    it holds none of its own (a parent's covers it, which this process
+    cannot let go)."""
+    h = _LIFE[1] if _LIFE else None
+    return h.step_aside(out) if h is not None else False
 
 
 def state(d: str) -> str:
@@ -357,6 +401,18 @@ def state(d: str) -> str:
         return "EXCLUSIVE"
     finally:
         os.close(fd)
+
+
+def exclusive_queued(d: str, probes: int = 3) -> bool:
+    """For a shared holder: an exclusive job is waiting. With a shared hold
+    in place no shared acquirer waits at the gate, so a gate held across a
+    few probes is an exclusive acquirer, not one passing through."""
+    for i in range(probes):
+        if not gate_waiting(d):
+            return False
+        if i + 1 < probes:
+            time.sleep(0.1)
+    return True
 
 
 def gate_waiting(d: str) -> bool:
@@ -380,8 +436,8 @@ def cmd_status() -> int:
     d = lock_dir()
     s = state(d)
     print(s)
+    lines = holders(d)                  # prunes dead holders' notes either way
     if s != "FREE":
-        lines = holders(d)
         for line in lines or [_describe(d)]:
             print(f"  {line}")
     if gate_waiting(d):
@@ -400,7 +456,7 @@ def cmd_run(mode: str, why: str, cmd: list, wait: bool) -> int:
         return 1
     env = dict(os.environ)
     if h is not None:
-        env[ENV] = _token(mode)
+        env[ENV] = token(mode)
     try:
         p = subprocess.Popen(cmd, env=env)
         signal.signal(signal.SIGTERM, lambda *_: p.send_signal(signal.SIGTERM))

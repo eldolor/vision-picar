@@ -293,7 +293,13 @@ def stage_ppo(name: str, out: str, clone: dict, ex, credit: str, iters: int = No
         start = 0
     train = T.train_houses(name)
     t0 = time.time()
+    # The desktop lock (3.128-3.129): training is shared work; between
+    # iterations it steps aside for a queued live run, then carries on.
+    sys.path.append(os.path.join(HERE, "..", "..", "tools"))
+    import desktop_lock
+    desktop_lock.hold_for_life("shared", f"PPO {os.path.basename(out)} ({__file__})")
     for it in range(start, iters):
+        desktop_lock.step_aside()
         hs = rng.sample(train, T.HOUSES)
         params = net.export()
         jobs = []

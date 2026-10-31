@@ -121,8 +121,8 @@ def _no_desktop_lock(monkeypatch, held):
     import desktop_lock
 
     @contextlib.contextmanager
-    def fake(mode, why="", wait=True):
-        held.append(mode)
+    def fake(mode, why="", wait=True, queue=True):
+        held.append(mode if queue else f"{mode}, unqueued")
         yield mode
     monkeypatch.setattr(desktop_lock, "held", fake)
 
@@ -139,7 +139,7 @@ def test_the_suite_runs_under_the_desktop_lock(monkeypatch):
                         type("R", (), {"returncode": 0, "stdout": ""})())
     _no_desktop_lock(monkeypatch, held)
     assert ps.run_tests(ROOT, full=False) and ps.run_tests(ROOT, full=True)
-    assert held == ["shared", "exclusive"]
+    assert held == ["shared, unqueued", "exclusive"]     # 3.129: a push skips the queue
     assert [e["PICAR_DESKTOP_LOCK"] for e in envs] == ["shared", "exclusive"]
 
 

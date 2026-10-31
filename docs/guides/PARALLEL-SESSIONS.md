@@ -153,8 +153,14 @@ Continuing an existing section: work in its worktree
    too), except exclusive under shared, which fails at once. Do not wrap
    a run that takes or probes the lock itself (`demo_explore` and the
    harnesses built on it, an evaluation's `heavy_lock_free()` wait): it
-   locks on its own, and a probe under a wrapper waits for ever. Known
-   gap: the nightly's full suite holds only its own lock (3.128). *Why:* late ticks, scan skew and
+   locks on its own, and a probe under a wrapper waits for ever.
+   Since 3.129: a push's fast tier skips the queue (it never waits behind a
+   queued live run, only beside-free of a running one); a long shared job
+   that takes the lock itself (`desktop_lock.hold_for_life("shared", ...)`)
+   calls `desktop_lock.step_aside()` between its steps, letting a queued
+   exclusive job go first (the goal-learn PPO loops do); and the nightly
+   holds the lock exclusive for its full suite, SKIPPED after 2 h of a busy
+   desktop. *Why:* late ticks, scan skew and
    nav2 smoothness are timing measurements; on 2026-10-31 one session's
    fast tier ran beside another's live run (load 3.7-5.8 for ~4 minutes)
    and the run had to be redone. Long runs can go to the Jetson instead

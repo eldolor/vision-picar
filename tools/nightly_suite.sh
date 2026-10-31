@@ -10,7 +10,8 @@
 #                        "?" if the run's own report never landed),
 #                        RUNNING (written at the start, so a run that dies
 #                        leaves that, never yesterday's verdict), then PASS,
-#                        FAIL or STOPPED, and pytest's summary or the
+#                        FAIL, STOPPED or SKIPPED (the desktop lock stayed
+#                        busy, 3.129), and pytest's summary or the
 #                        script's own ("fetch failed", "could not refresh",
 #                        "nightly: ..."), with "(unlocked: why)" when the run
 #                        had no lock. Lines may be ADDED after it: a refused
@@ -341,10 +342,18 @@ if [ $rc -eq 0 ]; then
   # then SIGKILL. A stopped run reads STOPPED and sends no email (someone
   # stopped it; launchd allows 20 s). Known limit: a driver killed by SIGKILL
   # itself leaves the group running.
+  # The desktop lock (3.129): the full suite is timed (live and browser
+  # tests), so the driver holds `.git/heavy-run.lock` exclusive for it, as a
+  # session's live run does: never beside another session's live run, suite
+  # or training. A busy desktop is retried every NIGHTLY_LOCK_RETRY_S (30) for
+  # NIGHTLY_LOCK_WAIT_S (7200), a stop still heard; then the night is
+  # SKIPPED, not a FAIL, and nothing is emailed. The wait is outside the
+  # time limit. A commit without tools/desktop_lock.py runs unlocked.
   "$main/.venv/bin/python" - "$wt" "${NIGHTLY_TIMEOUT_S:-7000}" "$main/.venv/bin/python" \
-    >> "$log" 2>&1 <<'PY' &
+    "${NIGHTLY_LOCK_WAIT_S:-7200}" "${NIGHTLY_LOCK_RETRY_S:-30}" >> "$log" 2>&1 <<'PY' &
 import os, signal, subprocess, sys, time
 wt, limit, py = sys.argv[1], float(sys.argv[2]), sys.argv[3]
+lock_wait, lock_retry = float(sys.argv[4]), float(sys.argv[5])
 
 # A stop only records itself; the driver polls. Nothing is raised from the
 # handler, so no stop can land inside Popen, inside a wait that has reaped
@@ -368,11 +377,36 @@ def kill(sig):
     except OSError:                      # gone, or a member we may not signal
         pass
 
+env, hold = dict(os.environ), None
+sys.path.append(os.path.join(wt, "tools"))
+try:
+    import desktop_lock
+except ImportError:
+    desktop_lock = None
+    print("desktop lock: none in this commit; the suite runs unlocked", flush=True)
+if desktop_lock is not None:
+    wait_end, busy = time.monotonic() + lock_wait, "held"
+    while stop["sig"] is None:
+        try:
+            hold = desktop_lock.acquire("exclusive", "nightly full suite", wait=False)
+            break
+        except (desktop_lock.Busy, desktop_lock.Nested) as e:
+            busy = str(e)
+        if time.monotonic() >= wait_end:
+            print(f"\nnightly: desktop busy for {lock_wait:.0f} s: {busy}")
+            sys.exit(126)
+        retry = min(wait_end, time.monotonic() + lock_retry)
+        while stop["sig"] is None and time.monotonic() < retry:
+            time.sleep(0.2)
+    if hold is not None:                 # the live tests' own locks pass through
+        env[desktop_lock.ENV] = desktop_lock.token("exclusive")
 if stop["sig"] is not None:              # stopped before pytest started (round 18)
+    if hold is not None:
+        hold.release()
     print(f"\nnightly: stopped by signal {stop['sig']}")
     sys.exit(124)
 p = subprocess.Popen([py, "-m", "pytest", "tests/", "-q", "-p", "no:cacheprovider"], cwd=wt,
-                     stdin=subprocess.DEVNULL, start_new_session=True)
+                     stdin=subprocess.DEVNULL, start_new_session=True, env=env)
 why, deadline = None, time.monotonic() + limit
 while p.poll() is None and stop["sig"] is None and time.monotonic() < deadline:
     time.sleep(0.2)
@@ -388,6 +422,8 @@ if p.poll() is None:                     # the limit, or a stop: SIGINT (pytest'
         time.sleep(0.2)
 kill(signal.SIGKILL)                     # whatever the run left behind in its group
 rc = p.wait()
+if hold is not None:                     # the desktop lock: its note, then the lock
+    hold.release()
 # Its own line: pytest -q killed mid-line leaves no newline (round 7).
 if why:
     print(f"\nnightly: {why}")
@@ -417,13 +453,15 @@ fi
 # STOPPED only when the stop ended the run: the driver's own line decides
 # when it wrote one; otherwise it died of the signal. A FAIL or a timeout a
 # late stop landed on is still a FAIL.
+busy=0
 case "$summary" in
   "nightly: stopped "*) by_stop=1 ;;      # by a signal, or before the suite ran
+  "nightly: desktop busy "*) by_stop=0; [ $rc -eq 126 ] && busy=1 ;;   # 3.129
   "nightly: "*) by_stop=0 ;;
   *) by_stop=0; [ $was_stopped -eq 1 ] && [ $rc -gt 128 ] && by_stop=1 ;;
 esac
 if [ $rc -eq 0 ]; then verdict=PASS; elif [ $by_stop -eq 1 ]; then verdict=STOPPED
-else verdict=FAIL; fi
+elif [ $busy -eq 1 ]; then verdict=SKIPPED; else verdict=FAIL; fi
 report "$day $sha $verdict  $summary${unlocked:+  (unlocked: $unlocked)}"
 head -n 1 "$logs/nightly-latest.txt"
 

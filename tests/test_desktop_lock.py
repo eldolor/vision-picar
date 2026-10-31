@@ -244,3 +244,97 @@ def test_heavy_lock_is_the_exclusive_hold_and_keeps_its_line(box):
     assert r.returncode == 0 and r.stdout.strip() == "None"
     release(box, "gE")
     finish(e)
+
+
+UNQUEUED = """
+import os, sys
+sys.path.insert(0, sys.argv[1])
+import desktop_lock as dl
+log, name = sys.argv[2:4]
+def w(s):
+    fd = os.open(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+    os.write(fd, (s + "\\n").encode())
+    os.close(fd)
+with dl.held("shared", name, queue=False):
+    w(name + " start")
+    w(name + " end")
+"""
+
+
+def unqueued(box, name):
+    return subprocess.Popen([sys.executable, "-c", UNQUEUED, os.path.join(ROOT, "tools"),
+                             str(box / "log"), name], env=env(), stderr=subprocess.PIPE,
+                            text=True)
+
+
+def test_an_unqueued_shared_job_passes_a_queued_exclusive_but_never_runs_beside_one(box):
+    """3.129: the push gate's fast tier does not wait behind a queued live
+    run (which waits behind someone's training), and still never runs
+    beside a live run that holds the lock."""
+    s1 = start(box, "shared", "S1", "g1")
+    until(lambda: "S1 start" in log(box))
+    e = start(box, "exclusive", "E", "gE")
+    until(lambda: dl.gate_waiting(str(box / "git")))
+    u = unqueued(box, "PUSH")
+    finish(u)                                  # passed the queue while S1 still holds
+    assert "E start" not in log(box)
+    release(box, "g1")
+    until(lambda: "E start" in log(box))
+    u2 = unqueued(box, "PUSH2")
+    time.sleep(0.5)
+    assert "PUSH2 start" not in log(box), "an unqueued job ran beside an exclusive holder"
+    release(box, "gE")
+    finish(s1, e, u2)
+    L = log(box)
+    assert L.index("PUSH start") < L.index("E start") and L.index("PUSH2 start") > L.index("E end")
+
+
+TRAINER = """
+import os, sys, time
+sys.path.insert(0, sys.argv[1])
+import desktop_lock as dl
+log, go = sys.argv[2:4]
+def w(s):
+    fd = os.open(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+    os.write(fd, (s + "\\n").encode())
+    os.close(fd)
+dl.hold_for_life("shared", "a trainer")
+w("T start")
+while not os.path.exists(go):
+    if dl.step_aside():
+        w("T back")
+    time.sleep(0.05)
+w("T end")
+"""
+
+
+def test_a_long_shared_job_steps_aside_for_a_queued_exclusive(box):
+    """3.129: a training loop calling step_aside() between iterations lets
+    a queued live run go first, then carries on."""
+    t = subprocess.Popen([sys.executable, "-c", TRAINER, os.path.join(ROOT, "tools"),
+                          str(box / "log"), str(box / "gT")], env=env(),
+                         stderr=subprocess.PIPE, text=True)
+    until(lambda: "T start" in log(box))
+    time.sleep(0.5)
+    assert "T back" not in log(box), "stepped aside with nothing queued"
+    e = start(box, "exclusive", "E", "gE")
+    until(lambda: "E start" in log(box))
+    time.sleep(0.3)
+    assert "T back" not in log(box), "took the lock back while the exclusive job ran"
+    release(box, "gE")
+    until(lambda: "T back" in log(box))
+    release(box, "gT")
+    finish(e, t)
+    L = log(box)
+    assert L.index("E end") < L.index("T back")
+    assert "stepping aside" in t.stderr.read()
+
+
+def test_step_aside_is_a_no_op_without_a_hold_of_its_own(box):
+    """Under a wrapper the parent holds the lock; the child cannot let it go."""
+    r = subprocess.run([sys.executable, TOOL, "shared", "--", sys.executable, "-c",
+                        f"import sys; sys.path.insert(0, {os.path.join(ROOT, 'tools')!r}); "
+                        "import desktop_lock as dl; dl.hold_for_life('shared'); "
+                        "print(dl.step_aside())"],
+                       env=env(), capture_output=True, text=True, timeout=20)
+    assert r.returncode == 0 and r.stdout.strip() == "False", r.stderr

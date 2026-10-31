@@ -509,16 +509,19 @@ def parallel_args(py: str, root: str) -> list:
 
 def run_tests(root: str, full: bool) -> bool:
     """The suite under the desktop lock (3.128): the fast tier shared, so it
-    waits for a live run but not for another session's suite; the full
-    suite exclusive, as its live and browser tests are timed."""
+    waits for a live run but not for another session's suite, and not in
+    the queue (3.129); the full suite exclusive, as its live and browser
+    tests are timed."""
     here = os.path.dirname(os.path.abspath(__file__))
     if here not in sys.path:
         sys.path.append(here)
     import desktop_lock
     mode = "exclusive" if full else "shared"
     try:
+        # The fast tier skips the queue (3.129): a push never waits behind
+        # a queued live run that waits behind someone's training.
         with desktop_lock.held(mode, f"plan_section {'full suite' if full else 'fast tier'} "
-                                     f"in {root}") as seen:
+                                     f"in {root}", queue=full) as seen:
             py = venv_python(root)
             # The full suite (`ready --full`, the nightly) stays serial: it
             # holds the browser and live-stack tests, timed alone.
