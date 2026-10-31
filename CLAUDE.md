@@ -974,8 +974,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   criteria 2-3 failed (the user's call).** `/world/map` carries an ETag
   (the server's start token, `map_id`, `map_version`); `RemoteWorld`
   revalidates and a 304 skips the encode, transfer and decode. Live only
-  43% of reads were 304s (bar 80%): the ROS bridge bumps `map_version` on
-  every SLAM message, changed or not -- the next fix.
+  43% of reads were 304s (bar 80%): the ROS bridge bumped `map_version` on
+  every SLAM message, changed or not. **3.124 (merged 2026-10-31 with
+  criterion 3 failed, the user's call):** the bridge keeps the version when
+  a `/map` repeats the held grid (`picar_bridge/mapversion.py`; 44% of
+  messages did, now 0); live 63.3% 304s (bar 80%), `found`, 0 contacts.
+  The map really changes ~0.6/s while driving against explore's ~1.7
+  reads/s, so ~2 in 3 is this fix's ceiling. Open: `RosWorld` still fetches
+  the whole `/slam/map` from the bridge on every read.
 * **Harness missions collect their cycles (3.113), merged 2026-10-27.**
   `evaluations/goal-learn-396/train.py` `mission()` runs `gc.collect()` in
   a `finally` (a mission's runner, agent and house are reference cycles);
