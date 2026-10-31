@@ -38,8 +38,11 @@ def map_tag(m) -> str | None:
 
 
 def not_modified(header, tag) -> bool:
-    """Whether a request's If-None-Match names `tag` (exactly, as RosWorld
-    sends back what it was given; a weak `W/` prefix and lists tolerated)."""
+    """Whether a request's If-None-Match names `tag` (weak tags as strong,
+    lists) or is `*`, which any current map matches -- the robot server's
+    `_not_modified` rules (robot/server.py, 3.123), pinned together by
+    tests/test_bridge_map_304.py."""
     if not header or not tag:
         return False
-    return any(t.strip().removeprefix("W/") == tag for t in header.split(","))
+    tags = {t.strip().removeprefix("W/") for t in header.split(",")}
+    return tag in tags or "*" in tags

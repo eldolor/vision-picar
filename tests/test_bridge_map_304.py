@@ -45,9 +45,14 @@ def test_the_tag_names_session_and_version_and_nothing_unusable():
 
 @pytest.mark.parametrize("header,hit", [
     ('"ab:3"', True), ('W/"ab:3"', True), ('"x:1", "ab:3"', True),
-    ('"ab:4"', False), ('"ab:3', False), ("*", False), ("", False), (None, False)])
+    ('"ab:4"', False), ('"ab:3', False), ("*", True), (' "ab:4" , * ', True), ("", False),
+    (None, False)])
 def test_if_none_match(header, hit):
     assert mapversion.not_modified(header, '"ab:3"') is hit
+    if header is not None:
+        # One rule on both sides of the wall (review): the robot server's own parser.
+        from robot.server import _not_modified
+        assert _not_modified(header, '"ab:3"') is hit
 
 
 # ---------- the bridge's handler, over real HTTP ----------
@@ -177,15 +182,35 @@ def test_a_304_naming_another_tag_is_followed_by_one_full_read():
     assert bridge.sent == [None, '"s1:1"', None]
 
 
-def test_a_304_to_an_untagged_request_is_a_bridge_error():
+def test_a_304_to_an_untagged_request_is_a_retryable_bridge_fault():
+    # Review: a non-retryable fault ends explore's mission on one stray reply.
     bridge = Scripted([(304, '"s1:1"', None)])
     got = _world(bridge).get_map()
-    assert got["usable"] is False and got["bridge_status"] == 304 and got["retryable"] is False
+    assert got["usable"] is False and got["retryable"] is True
     bridge = Scripted([(200, '"s1:1"', Scripted.MAP), (304, '"s1:9"', None), (304, '"s1:9"', None)])
     world = _world(bridge)
     world.get_map()
     got = world.get_map()
-    assert got["usable"] is False and got["bridge_status"] == 304
+    assert got["usable"] is False and got["retryable"] is True
+
+
+def test_a_304_without_an_etag_means_the_tag_sent():
+    bridge = Scripted([(200, '"s1:1"', Scripted.MAP), (304, None, None)])
+    world = _world(bridge)
+    assert world.get_map() == world.get_map()
+    assert bridge.sent == [None, '"s1:1"']
+
+
+def test_an_older_reply_never_replaces_a_newer_kept_map():
+    world = _world(Scripted([]))
+    new, old = {**Scripted.MAP, "version": 6}, {**Scripted.MAP, "version": 5}
+    world._keep_map(('"s1:6"', new))
+    world._keep_map(('"s1:5"', old))                     # a slow reader landing late
+    assert world._raw_map[0] == '"s1:6"'
+    world._keep_map(None, drop=('"s1:5"', old))          # a drop of what it no longer holds
+    assert world._raw_map[0] == '"s1:6"'
+    world._keep_map(('"s2:1"', {**Scripted.MAP, "session": "s2"}))   # a new session always
+    assert world._raw_map[0] == '"s2:1"'
 
 
 def test_an_untagged_reply_is_not_kept():

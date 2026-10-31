@@ -116,10 +116,15 @@ The bridge's routes and their fields are specified once, in the
   reply and its `ETag` (`"<session>:<version>"`) and sends it in
   `If-None-Match`; a 304 naming it means the kept reply is still the map,
   so an unchanged map is neither encoded by the bridge nor decoded here (a
-  400 x 400 grid: 13.5 -> 0.68 ms a read). A 304 naming another tag drops
-  the kept reply and asks once in full; a 304 to an untagged request is a
-  bridge error (`classify`: not retryable). A bridge with no `ETag` is read
-  in full every time.
+  400 x 400 grid: 13.5 -> 0.68 ms a read). A 304 with no `ETag` means the
+  tag sent (as `RemoteWorld` reads one). A 304 naming another tag drops the
+  kept reply and asks once in full; a 304 to that untagged request is a
+  `RemoteProtocolError`, which `classify` reads as retryable, so explore
+  waits rather than ending its mission. The kept reply is replaced under a
+  lock and never by an older version of the same session (FastAPI's
+  threadpool reads concurrently). A bridge with no `ETag` is read in full
+  every time. The kept raw grid stays in memory beside the resampled one
+  (~1.3 MB for 400 x 400).
 
 ### The conversion and the anchor
 

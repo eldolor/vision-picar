@@ -1805,7 +1805,8 @@ def _handler(bridge):
                     # 3.126: the reader already holds this grid -- no body.
                     tag = mapversion.map_tag(m)
                     same = mapversion.not_modified(self.headers.get("If-None-Match"), tag)
-                    bridge.map_replies["not_modified" if same else "full"] += 1
+                    if tag:          # a grid sent or spared (review: not "no map yet")
+                        bridge.map_replies["not_modified" if same else "full"] += 1
                 if same:
                     self.send_response(304)
                     self.send_header("etag", tag)

@@ -129,6 +129,7 @@ class RosWorld(WorldInterface):
         # 3.126: the last full /slam/map reply and its ETag, replaced whole,
         # so an unchanged map is answered 304 and not sent again.
         self._raw_map = None
+        self._raw_lock = threading.Lock()
         # The last first-contact truth read, (session, monotonic time), so an
         # unanchored session asks the truth at most every TRUTH_RETRY_S
         # rather than on every pose read on the motion path (round 7), and
@@ -331,28 +332,49 @@ class RosWorld(WorldInterface):
 
     def _fetch_map(self) -> dict:
         """The bridge's `/slam/map`, revalidated (3.126): the kept reply's
-        tag goes in `If-None-Match`, and a 304 naming it means that reply is
-        still the map. A 304 naming anything else drops the kept reply and
-        asks once more in full: a 304 is never answered with another map,
-        and a non-retryable fault would end explore's mission (3.82). A
-        second 304 is the bridge's fault."""
+        tag goes in `If-None-Match`, and a 304 naming it (or naming none: we
+        sent the tag, as `RemoteWorld` reads it) means that reply is still
+        the map. A 304 naming another tag drops the kept reply and asks once
+        more in full: a 304 is never answered with another map. A 304 to that
+        plain request breaks the protocol, raised as a transport fault, which
+        explore waits out (3.82) rather than ending its mission."""
         held = self._raw_map
         if held:
             r = self._http.get("/slam/map", headers={"if-none-match": held[0]})
-            if r.status_code == 304 and r.headers.get("etag") == held[0]:
+            if r.status_code == 304 and r.headers.get("etag", held[0]) == held[0]:
                 return held[1]
             if r.status_code == 304:
-                self._raw_map = held = None
+                self._keep_map(None, drop=held)
+                held = None
         if not held:
             r = self._http.get("/slam/map")
             if r.status_code == 304:
-                raise httpx.HTTPStatusError(
+                raise httpx.RemoteProtocolError(
                     "the ROS bridge answered 304 to GET /slam/map without a tag",
-                    request=r.request, response=r)
+                    request=r.request)
         m = _json_object(r)
         tag = r.headers.get("etag")
-        self._raw_map = (tag, m) if tag else None
+        if tag:
+            self._keep_map((tag, m))
         return m
+
+    def _keep_map(self, entry, drop=None) -> None:
+        """Replace the kept reply under a lock, never with an older one: on
+        FastAPI's threadpool a slow full read must not overwrite a newer map
+        another reader kept, nor a drop wipe one (review). Older means the
+        same session at a lower version."""
+        with self._raw_lock:
+            cur = self._raw_map
+            if entry is None:
+                if cur is drop:
+                    self._raw_map = None
+                return
+            m, old = entry[1], cur[1] if cur else None
+            if old is not None and old.get("session") == m.get("session") \
+                    and isinstance(old.get("version"), int) and isinstance(m.get("version"), int) \
+                    and m["version"] < old["version"]:
+                return
+            self._raw_map = entry
 
     def _resample(self, m: dict, anchor=None) -> dict:
         """SLAM's grid, re-expressed in the house frame at the same
