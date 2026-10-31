@@ -479,6 +479,8 @@ class Bridge(Node):
         info = msg.info
         yaw, _, _ = _yaw_pitch_roll(info.origin.orientation)
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        # 3.124 review: the grid-sized copy before the lock every callback takes.
+        data = list(msg.data)
         with self.lock:
             # 3.50.D3: a map the previous slam_toolbox published (a reload
             # that fell back) is not this frame's.
@@ -489,9 +491,13 @@ class Bridge(Node):
                 "session": self.session,
                 "resolution_m": info.resolution, "width": info.width, "height": info.height,
                 "origin_x_m": info.origin.position.x, "origin_y_m": info.origin.position.y,
-                "origin_yaw_rad": yaw, "data": list(msg.data), "at": time.time()}
-            # 3.124: a repeat of the held grid keeps its version (the ETag's key).
-            self.map_version = mapversion.next_version(self.last_map, self.map_version, new)
+                "origin_yaw_rad": yaw, "data": data, "at": time.time()}
+            # 3.124: a repeat of the held grid keeps its version (the ETag's
+            # key) and its cells list; `last_map` is still replaced whole.
+            held, version = self.last_map, self.map_version
+            self.map_version = mapversion.next_version(held, version, new)
+            if self.map_version == version:
+                new["data"] = held["data"]
             self.last_map = {**new, "version": self.map_version}
             if first_of_reload:
                 # 3.50.D4 (review): the saved graph's own map, before the

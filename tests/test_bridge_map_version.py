@@ -17,6 +17,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "service/slam/src/picar_bridge"))
 from picar_bridge import mapversion  # noqa: E402
+from tests.test_review_376h1 import _Msg, bridge_mod  # noqa: E402,F401 -- the stubbed bridge
 
 BRIDGE = ROOT / "service/slam/src/picar_bridge/picar_bridge/bridge.py"
 
@@ -67,11 +68,42 @@ def test_versions_never_go_down_over_a_stream():
     assert seen == [1, 1, 2, 2, 3, 4]
 
 
-def test_the_bridge_uses_the_rule():
-    src = BRIDGE.read_text()
-    body = src[src.index("def _on_map(self, msg):"):src.index("# ---------- R6: goals")]
-    assert "mapversion.next_version(self.last_map, self.map_version" in body
-    assert not re.search(r"self\.map_version\s*\+=", src)
+def _map_msg(cells, width=None, sec=100):
+    return _Msg(header=_Msg(stamp=_Msg(sec=sec, nanosec=0)),
+                info=_Msg(resolution=0.05, width=width or len(cells), height=1,
+                          origin=_Msg(position=_Msg(x=0.0, y=0.0),
+                                      orientation=_Msg(x=0.0, y=0.0, z=0.0, w=1.0))),
+                data=list(cells))
+
+
+def test_the_bridge_keeps_the_version_of_a_repeated_map(bridge_mod):
+    """Through `_on_map` itself (review: a source grep passes code that
+    stores the new map before comparing)."""
+    from tests.test_review_376h1 import _bridge
+    b = _bridge(bridge_mod)
+    seen = []
+    for cells in ([0, -1, 100], [0, -1, 100], [0, 0, 100], [0, 0, 100]):
+        b._on_map(_map_msg(cells))
+        seen.append(b.last_map["version"])
+    assert seen == [1, 1, 2, 2] and b.map_version == 2
+    first = b.last_map
+    b._on_map(_map_msg([0, 0, 100]))
+    assert b.last_map is not first and b.last_map["data"] is first["data"]   # replaced whole
+    assert b.last_map["data"] == [0, 0, 100]
+    with b.lock:
+        b.last_map = None                                   # as a reload or re-map does
+    b._on_map(_map_msg([0, 0, 100]))
+    assert b.last_map["version"] == 3
+
+
+def test_the_bridge_never_rewinds_the_version(bridge_mod):
+    from tests.test_review_376h1 import _bridge
+    b = _bridge(bridge_mod)
+    b._on_map(_map_msg([0]))
+    b._on_map(_map_msg([0, 0], width=2))
+    b._on_map(_map_msg([0]))
+    assert [b.map_version, b.last_map["version"]] == [3, 3]
+    assert not re.search(r"self\.map_version\s*\+=", BRIDGE.read_text())
 
 
 def test_mapversion_needs_no_rclpy():
