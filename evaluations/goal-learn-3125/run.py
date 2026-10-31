@@ -106,10 +106,10 @@ def cmd_score(out: str) -> dict:
     old = os.path.join(ROOT, "evaluations", "goal-learn-396", "test-c")
     drift = {}
     for m in MODES:
-        then = {r["index"]: (r["outcome"], r["goals"], r["metres"])
+        then = {r["index"]: (r["outcome"], r.get("goals"), r.get("metres"))
                 for r in json.load(open(os.path.join(old, f"rule-{m}.json")))}
         drift[m] = sum(1 for r in rows[("rule", m)]
-                       if then.get(r["index"]) != (r["outcome"], r["goals"], r["metres"]))
+                       if then.get(r["index"]) != (r["outcome"], r.get("goals"), r.get("metres")))
     report = {"summary": res, "verdict": verdict, "all_met": all(v["met"] for v in verdict.values()),
               "found_by_one_arm": only, "rule_rows_differing_from_396": drift}
     T.save_atomic(os.path.join(out, "score.json"), lambda p: json.dump(report, open(p, "w"), indent=1))
