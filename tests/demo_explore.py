@@ -108,7 +108,9 @@ def heavy_lock():
     lock's exclusive hold (`tools/desktop_lock.py`): it waits for shared
     holders (suites, builds, training) too, and passes through under a
     parent that holds it exclusively. PICAR_HEAVY_LOCK=0 skips it."""
-    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    tools = os.path.join(ROOT, "tools")
+    if tools not in sys.path:
+        sys.path.append(tools)
     import desktop_lock
     desktop_lock.hold_for_life("exclusive", " ".join(sys.argv)[:200])
 

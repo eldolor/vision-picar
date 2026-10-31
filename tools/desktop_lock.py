@@ -38,6 +38,7 @@ PICAR_DESKTOP_LOCK_DIR moves the files (tests).
 """
 
 import argparse
+import atexit
 import fcntl
 import os
 import signal
@@ -50,6 +51,9 @@ BUSY = 75
 ENV = "PICAR_DESKTOP_LOCK"
 MODES = ("shared", "exclusive")
 LOCK, GATE, NOTES = "heavy-run.lock", "heavy-run.gate", "heavy-run.d"
+# A probe (`status`) or another acquirer passing the gate holds a lock for
+# microseconds: --no-wait retries this long before it calls the lock busy.
+GRACE_S = 1.5
 # Evaluations grep stderr for this line (3.79, 3.88, 3.96 harnesses).
 WAIT_LINE = "waiting for the heavy-run lock"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -225,12 +229,17 @@ def _describe(d: str) -> str:
 
 
 def _take(fd: int, op: int, d: str, wait: bool, out) -> None:
-    try:
-        fcntl.flock(fd, op | fcntl.LOCK_NB)
-        return
-    except BlockingIOError:
-        if not wait:
-            raise Busy(_describe(d))
+    end = time.monotonic() + GRACE_S
+    while True:
+        try:
+            fcntl.flock(fd, op | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            if wait:
+                break
+            if time.monotonic() >= end:
+                raise Busy(_describe(d))
+            time.sleep(0.05)
     print(f"{WAIT_LINE} ({os.path.join(d, LOCK)}): {_describe(d)}", file=out, flush=True)
     fcntl.flock(fd, op)
 
@@ -278,7 +287,7 @@ def acquire(mode: str, why: str = "", wait: bool = True, out=None):
         gate = os.open(os.path.join(d, GATE), os.O_CREAT | os.O_RDWR, 0o644)
         try:
             if gate_waiting(d) and wait:
-                print(f"{WAIT_LINE} ({path}): an exclusive job is queued ahead; "
+                print(f"{WAIT_LINE} ({path}): another job is queued ahead; "
                       f"holding now: {_describe(d)}", file=out, flush=True)
             _take(gate, fcntl.LOCK_EX, d, wait, out)
             _take(fd, fcntl.LOCK_EX if mode == "exclusive" else fcntl.LOCK_SH, d, wait, out)
@@ -328,6 +337,7 @@ def hold_for_life(mode: str, why: str = "") -> None:
     _LIFE[:] = [mode, h]
     if h is not None:
         os.environ[ENV] = _token(mode)
+        atexit.register(h.release)     # its note, and the main file's line
 
 
 def state(d: str) -> str:
@@ -350,7 +360,8 @@ def state(d: str) -> str:
 
 
 def gate_waiting(d: str) -> bool:
-    """Whether an exclusive acquirer is queued (it holds the gate)."""
+    """Whether a job is queued: an exclusive one waiting for holders, or a
+    shared one waiting behind an exclusive holder (each holds the gate)."""
     path = os.path.join(d, GATE)
     if not os.path.exists(path):
         return False
@@ -374,7 +385,7 @@ def cmd_status() -> int:
         for line in lines or [_describe(d)]:
             print(f"  {line}")
     if gate_waiting(d):
-        print("  an exclusive job is queued; new shared jobs wait behind it")
+        print("  a job is queued (holding the gate); new jobs wait behind it")
     return 0
 
 

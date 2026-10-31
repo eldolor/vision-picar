@@ -511,20 +511,24 @@ def run_tests(root: str, full: bool) -> bool:
     """The suite under the desktop lock (3.128): the fast tier shared, so it
     waits for a live run but not for another session's suite; the full
     suite exclusive, as its live and browser tests are timed."""
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.append(here)
     import desktop_lock
     mode = "exclusive" if full else "shared"
-    with desktop_lock.held(mode, f"plan_section {'full suite' if full else 'fast tier'} "
-                                 f"in {root}") as seen:
-        py = venv_python(root)
-        # The full suite (`ready --full`, the nightly) stays serial: it holds
-        # the browser and live-stack tests, timed alone.
-        args = [] if full else [*SLOW_TESTS, *parallel_args(py, root)]
-        return subprocess.run([py, "-m", "pytest", "tests/", "-q",
-                               "-p", "no:cacheprovider", *args], cwd=root,
-                              env={**scrubbed_env(), **({desktop_lock.ENV: seen}
-                                                         if seen else {})}).returncode == 0
-
+    try:
+        with desktop_lock.held(mode, f"plan_section {'full suite' if full else 'fast tier'} "
+                                     f"in {root}") as seen:
+            py = venv_python(root)
+            # The full suite (`ready --full`, the nightly) stays serial: it
+            # holds the browser and live-stack tests, timed alone.
+            args = [] if full else [*SLOW_TESTS, *parallel_args(py, root)]
+            env = {**scrubbed_env(), **({desktop_lock.ENV: seen} if seen else {})}
+            return subprocess.run([py, "-m", "pytest", "tests/", "-q",
+                                   "-p", "no:cacheprovider", *args], cwd=root,
+                                  env=env).returncode == 0
+    except desktop_lock.Nested as e:      # only acquiring raises it
+        raise SystemExit(f"desktop lock: {e}")
 
 # ---------- review records (CLAUDE.md section 6, "Code review") ----------
 #

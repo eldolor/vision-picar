@@ -234,6 +234,8 @@ def test_heavy_lock_is_the_exclusive_hold_and_keeps_its_line(box):
     assert p.returncode == 0, err
     assert out.strip() == f"exclusive:{p.pid}" and dl.WAIT_LINE in err and "shared pid" in err
     finish(s)
+    assert not os.listdir(box / "git" / dl.NOTES), "a finished run left its note"
+    assert (box / "git" / dl.LOCK).read_text() == ""
     # PICAR_HEAVY_LOCK=0 skips it, even beside an exclusive holder.
     e = start(box, "exclusive", "E", "gE")
     until(lambda: "E start" in log(box))

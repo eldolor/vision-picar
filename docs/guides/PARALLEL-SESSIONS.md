@@ -150,8 +150,11 @@ Continuing an existing section: work in its worktree
    Light work (git, docs, reading, one test file) needs no lock. A
    request under a holder passes through (its children see
    `PICAR_DESKTOP_LOCK`; on Linux a parent's `flock` on the file counts
-   too), except exclusive under shared, which fails at once. Never wrap a
-   `demo_explore` run in the shared lock. *Why:* late ticks, scan skew and
+   too), except exclusive under shared, which fails at once. Do not wrap
+   a run that takes or probes the lock itself (`demo_explore` and the
+   harnesses built on it, an evaluation's `heavy_lock_free()` wait): it
+   locks on its own, and a probe under a wrapper waits for ever. Known
+   gap: the nightly's full suite holds only its own lock (3.128). *Why:* late ticks, scan skew and
    nav2 smoothness are timing measurements; on 2026-10-31 one session's
    fast tier ran beside another's live run (load 3.7-5.8 for ~4 minutes)
    and the run had to be redone. Long runs can go to the Jetson instead
