@@ -976,7 +976,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   readers-writer lock with a fairness gate: timed runs alone, other heavy
   jobs together; children pass through by a `<mode>:<pid>` token or a
   parent's flock (/proc/locks). Criteria 1-8 met; live, its own `ready`
-  waited for 3.126's rerun. Open: the nightly holds only its own lock.
+  waited for 3.126's rerun. **3.129 (merged 2026-10-31):** a push's fast
+  tier skips the queue (never beside a live run, never behind a queued
+  one); long shared jobs that hold the lock themselves call
+  `desktop_lock.step_aside()` between steps (the goal-learn PPO loops do);
+  the nightly waits in the queue for the exclusive lock, SKIPPED (exit 0, no
+  email) after 2 h of a busy desktop. The nightly runs on the Mac only.
 * **The map is sent only when it changed (3.123), merged 2026-10-30 with
   criteria 2-3 failed (the user's call).** `/world/map` carries an ETag
   (the server's start token, `map_id`, `map_version`); `RemoteWorld`
@@ -1220,7 +1225,8 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     fast tier -- `ready` and the push gate take it themselves --, training,
     evaluations, builds), which runs together but never beside an exclusive
     holder. `python tools/desktop_lock.py status | shared --why W -- CMD |
-    exclusive --why W -- CMD`; PARALLEL-SESSIONS rule 7.
+    exclusive --why W -- CMD`; a long shared job calls
+    `desktop_lock.step_aside()` between its steps; PARALLEL-SESSIONS rule 7.
   * **One session on the Jetson at a time (3.93):**
     `python tools/jetson/board_lock.py status | run --why ... -- <cmd> | hold | release`.
     Take it before anything that changes or measures the board. The lock
