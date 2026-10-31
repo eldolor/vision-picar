@@ -970,6 +970,13 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   for the Rover. Living room 1.3% and stair hall 0/30 wrong; the basement
   (93.8%) and home gym (40.9%), one open space, carry it. No kitchen,
   bedroom or bathroom frames exist; the reference is unadjudicated.
+* **A shared/exclusive desktop lock (3.128), merged 2026-10-31.** After one
+  session's fast tier ran beside another's live run (load 3.7-5.8 for ~4
+  min; the run was redone), `tools/desktop_lock.py` makes rule 7's lock a
+  readers-writer lock with a fairness gate: timed runs alone, other heavy
+  jobs together; children pass through by a `<mode>:<pid>` token or a
+  parent's flock (/proc/locks). Criteria 1-8 met; live, its own `ready`
+  waited for 3.126's rerun. Open: the nightly holds only its own lock.
 * **The map is sent only when it changed (3.123), merged 2026-10-30 with
   criteria 2-3 failed (the user's call).** `/world/map` carries an ETag
   (the server's start token, `map_id`, `map_version`); `RemoteWorld`
@@ -1206,7 +1213,14 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
     `dev`**; a stale branch whose content is already in `dev` may be
     deleted by anyone, one with work not in `dev` only on the user's word
     (the user, 2026-10-15). `PARALLEL-SESSIONS.md` rule 11.
-  * One heavy live run at a time (a lock in `tests/demo_explore.stack()`).
+  * **The desktop lock (3.128, the user 2026-10-31):** every heavy job on
+    the desktop holds `.git/heavy-run.lock`. Exclusive for anything whose
+    numbers depend on timing (live runs -- `demo_explore.stack()` takes it
+    itself --, `ready --full`, benches); shared for other heavy work (the
+    fast tier -- `ready` and the push gate take it themselves --, training,
+    evaluations, builds), which runs together but never beside an exclusive
+    holder. `python tools/desktop_lock.py status | shared --why W -- CMD |
+    exclusive --why W -- CMD`; PARALLEL-SESSIONS rule 7.
   * **One session on the Jetson at a time (3.93):**
     `python tools/jetson/board_lock.py status | run --why ... -- <cmd> | hold | release`.
     Take it before anything that changes or measures the board. The lock
