@@ -100,35 +100,17 @@ def _listeners(port):
                           capture_output=True, text=True).stdout.split()
 
 
-_HEAVY = None
-
-
 def heavy_lock():
     """One heavy live run on this machine at a time, held until the process
     exits (docs/guides/PARALLEL-SESSIONS.md, rule 7): parallel sessions
     measuring timing -- late ticks, scan skew, nav2 smoothness -- on one
-    laptop would skew each other's numbers. The lock lives in the shared
-    .git, so every worktree sees it. PICAR_HEAVY_LOCK=0 skips it."""
-    global _HEAVY
-    if _HEAVY is not None or os.environ.get("PICAR_HEAVY_LOCK") == "0":
-        return
-    import fcntl
-    common = subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True,
-                            text=True, cwd=ROOT).stdout.strip() or "/tmp"
-    path = os.path.join(os.path.abspath(os.path.join(ROOT, common)), "heavy-run.lock")
-    f = open(path, "a+")
-    try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        f.seek(0)
-        print(f"waiting for the heavy-run lock ({path}): {f.read().strip() or 'held'}",
-              file=sys.stderr, flush=True)
-        fcntl.flock(f, fcntl.LOCK_EX)
-    f.seek(0)
-    f.truncate()
-    f.write(f"pid {os.getpid()} {' '.join(sys.argv)[:200]} since {time.ctime()}\n")
-    f.flush()
-    _HEAVY = f
+    laptop would skew each other's numbers. Since 3.128 it is the desktop
+    lock's exclusive hold (`tools/desktop_lock.py`): it waits for shared
+    holders (suites, builds, training) too, and passes through under a
+    parent that holds it exclusively. PICAR_HEAVY_LOCK=0 skips it."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import desktop_lock
+    desktop_lock.hold_for_life("exclusive", " ".join(sys.argv)[:200])
 
 
 def stack(house, movers="", slam_yaml=None, odom_drift="", nav_yaml=None, drive="ros"):

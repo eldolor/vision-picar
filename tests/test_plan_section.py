@@ -115,6 +115,34 @@ def test_the_core_count_without_an_affinity_call(monkeypatch):
     assert 1 <= ps.usable_cores() <= 2
 
 
+def _no_desktop_lock(monkeypatch, held):
+    """Record the desktop lock's modes instead of taking it (3.128)."""
+    import contextlib
+    import desktop_lock
+
+    @contextlib.contextmanager
+    def fake(mode, why="", wait=True):
+        held.append(mode)
+        yield mode
+    monkeypatch.setattr(desktop_lock, "held", fake)
+
+
+def test_the_suite_runs_under_the_desktop_lock(monkeypatch):
+    """3.128: the fast tier (`ready`, the push gate) holds the desktop lock
+    shared, waiting for a live run but not for another suite; `ready
+    --full` holds it exclusive. pytest sees the mode, so its own heavy runs
+    pass through."""
+    held, envs = [], []
+    monkeypatch.setattr(ps, "parallel_args", lambda py, root: [])
+    monkeypatch.setattr(ps, "venv_python", lambda root: sys.executable)
+    monkeypatch.setattr(ps.subprocess, "run", lambda cmd, **kw: (cmd[1:3] == ["-m", "pytest"] and envs.append(kw["env"])) or
+                        type("R", (), {"returncode": 0, "stdout": ""})())
+    _no_desktop_lock(monkeypatch, held)
+    assert ps.run_tests(ROOT, full=False) and ps.run_tests(ROOT, full=True)
+    assert held == ["shared", "exclusive"]
+    assert [e["PICAR_DESKTOP_LOCK"] for e in envs] == ["shared", "exclusive"]
+
+
 def test_only_the_fast_tier_runs_in_parallel(monkeypatch):
     """`ready --full` (and so the nightly's browser and live-stack tests)
     stays one process; the fast tier gets the xdist arguments."""
@@ -126,6 +154,7 @@ def test_only_the_fast_tier_runs_in_parallel(monkeypatch):
     monkeypatch.setattr(ps, "venv_python", lambda root: sys.executable)
     monkeypatch.setattr(ps.subprocess, "run", lambda cmd, **kw: ran.append(cmd) or
                         type("R", (), {"returncode": 0, "stdout": ""})())
+    _no_desktop_lock(monkeypatch, [])
     assert ps.run_tests(ROOT, full=True)
     assert ps.run_tests(ROOT, full=False)
     full, fast = [c for c in ran if c[1:3] == ["-m", "pytest"]]

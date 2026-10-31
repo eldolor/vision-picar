@@ -131,11 +131,30 @@ Continuing an existing section: work in its worktree
    push, and a pass named one commit, so each rebase onto another
    session's push started it over; two timing-sensitive tests then failed
    one run in two. The user called that too heavy (2026-10-09).
-7. **One heavy run at a time.** `tests/demo_explore.stack()` takes a lock
-   (`.git/heavy-run.lock`) held until the run's process exits; a second
-   heavy run waits and prints who holds it. *Why:* late ticks, scan skew
-   and nav2 smoothness are timing measurements, and two stacks on one
-   laptop skew each other. Long runs can go to the Jetson instead
+7. **The desktop lock: timed runs alone, other heavy work together**
+   (3.128, the user 2026-10-31). Every heavy job on this machine holds
+   `.git/heavy-run.lock` for as long as it runs, one of two ways:
+   * **exclusive**, for anything whose numbers depend on timing: live runs
+     (`tests/demo_explore.stack()` takes it itself, until its process
+     exits), `ready --full`, benches, any run with a wall-clock bar. It
+     waits for every holder, then has the machine alone;
+   * **shared**, for other heavy work: the fast tier (`ready` and the push
+     gate take it themselves), training, evaluations, sweeps, docker
+     builds. Any number together; none while an exclusive holder runs, and
+     none jumps an exclusive job already queued.
+   ```bash
+   python tools/desktop_lock.py status                        # FREE, or who holds it
+   python tools/desktop_lock.py shared --why "<what>" -- <command>
+   python tools/desktop_lock.py exclusive --why "<what>" -- <command>
+   ```
+   Light work (git, docs, reading, one test file) needs no lock. A
+   request under a holder passes through (its children see
+   `PICAR_DESKTOP_LOCK`; on Linux a parent's `flock` on the file counts
+   too), except exclusive under shared, which fails at once. Never wrap a
+   `demo_explore` run in the shared lock. *Why:* late ticks, scan skew and
+   nav2 smoothness are timing measurements; on 2026-10-31 one session's
+   fast tier ran beside another's live run (load 3.7-5.8 for ~4 minutes)
+   and the run had to be redone. Long runs can go to the Jetson instead
    (`tools/jetson/README.md`). `PICAR_HEAVY_LOCK=0` skips the lock, for
    in-process work only.
    **The Jetson has its own lock, held on the board** (3.93). Take it before
