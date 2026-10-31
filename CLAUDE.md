@@ -980,8 +980,12 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   a `/map` repeats the held grid (`picar_bridge/mapversion.py`; 44% of
   messages did, now 0); live 63.3% 304s (bar 80%), `found`, 0 contacts.
   The map really changes ~0.6/s while driving against explore's ~1.7
-  reads/s, so ~2 in 3 is this fix's ceiling. Open: `RosWorld` still fetches
-  the whole `/slam/map` from the bridge on every read.
+  reads/s, so ~2 in 3 is this fix's ceiling. **3.126 (merged 2026-10-31,
+  all criteria met):** the bridge tags `/slam/map` `"<session>:<version>"`
+  and answers 304 to `RosWorld`'s `If-None-Match`, so an unchanged map
+  crosses neither hop (a 400 x 400 read 13.5 -> 0.68 ms; live 72% of the
+  bridge's map replies 304s, `found`, 0 contacts). `/health`
+  `map_replies`.
 * **Harness missions collect their cycles (3.113), merged 2026-10-27.**
   `evaluations/goal-learn-396/train.py` `mission()` runs `gc.collect()` in
   a `finally` (a mission's runner, agent and house are reference cycles);
