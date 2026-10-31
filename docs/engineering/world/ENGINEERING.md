@@ -103,14 +103,15 @@ The bridge's routes and their fields are specified once, in the
 
 - **Goals carry no heading.** `RosWorld` always sends `yaw_rad` 0.0, because
   nav2's yaw tolerance is 6.28: position goals only.
-- **`map_version` is the bridge's `version`, passed through.** The bridge
-  increments it on every `/map` message it receives
-  (`service/slam/src/picar_bridge/picar_bridge/bridge.py`, `_on_map()`), not
-  when the cells change. slam_toolbox's `map_update_interval` is 1.0 s, so
-  the version probably climbs about once a second even at rest. UNCONFIRMED,
-  by reading only. The architecture spec's D4 allows this (a version may
-  change without a cell change); it makes "refetch on a new version" cost a
-  full map about once a second under SLAM.
+- **`map_version` is the bridge's `version`, passed through.** Since 3.124
+  the bridge bumps it only when a `/map` message's grid differs from the one
+  it holds -- session, resolution, size, origin or any cell -- or it holds
+  none (cleared at every reload, fresh start and re-map;
+  `service/slam/src/picar_bridge/picar_bridge/mapversion.py`, called from
+  `_on_map()`).
+  slam_toolbox republishes every `map_update_interval` (1.0 s) changed or
+  not; measured, 44% of a live mission's messages repeated the previous grid,
+  and each cost a full map through 3.123's ETag.
 
 ### The conversion and the anchor
 
@@ -303,8 +304,6 @@ Checklist for a change here:
 - **A non-JSON bridge reply** on a goal route still fails as a 500 (a
   `ValueError`, not an `httpx` error). `goal_in_progress()` catches it, so
   arbitration fails open as the architecture spec says.
-- **`map_version` under SLAM counts publications, not cell changes.** See
-  "What RosWorld reads from the bridge". UNCONFIRMED.
 - **`start_truth` has a window.** The bridge's own thread retries for
   `START_TRUTH_WINDOW_S` (30 s) from node start, then gives up for the
   container's life and logs an error; see `service/slam/README.md`

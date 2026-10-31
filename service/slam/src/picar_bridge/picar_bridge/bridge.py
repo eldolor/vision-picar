@@ -87,7 +87,8 @@ from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
-from picar_bridge import brain_view, convert, keepout, mapstore, relocalise, remap, slam_process
+from picar_bridge import (brain_view, convert, keepout, mapstore, mapversion, relocalise, remap,
+                          slam_process)
 from picar_bridge.keepalive import KeepAliveClient
 
 # Driver (robot/interface.py DRIVER_PRIORITY names) -> twist_mux input.
@@ -483,13 +484,15 @@ class Bridge(Node):
             # that fell back) is not this frame's.
             if self.slam_started_at is not None and stamp < self.slam_started_at:
                 return
-            self.map_version += 1
             first_of_reload = self.slam_state == "checking" and self._reload_map is None
-            self.last_map = {
-                "session": self.session, "version": self.map_version,
+            new = {
+                "session": self.session,
                 "resolution_m": info.resolution, "width": info.width, "height": info.height,
                 "origin_x_m": info.origin.position.x, "origin_y_m": info.origin.position.y,
                 "origin_yaw_rad": yaw, "data": list(msg.data), "at": time.time()}
+            # 3.124: a repeat of the held grid keeps its version (the ETag's key).
+            self.map_version = mapversion.next_version(self.last_map, self.map_version, new)
+            self.last_map = {**new, "version": self.map_version}
             if first_of_reload:
                 # 3.50.D4 (review): the saved graph's own map, before the
                 # localisation node's rolling buffer fills any unknown cell.
