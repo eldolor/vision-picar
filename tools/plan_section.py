@@ -522,7 +522,8 @@ def run_tests(root: str, full: bool) -> bool:
         args = [] if full else [*SLOW_TESTS, *parallel_args(py, root)]
         return subprocess.run([py, "-m", "pytest", "tests/", "-q",
                                "-p", "no:cacheprovider", *args], cwd=root,
-                              env={**scrubbed_env(), desktop_lock.ENV: seen}).returncode == 0
+                              env={**scrubbed_env(), **({desktop_lock.ENV: seen}
+                                                         if seen else {})}).returncode == 0
 
 
 # ---------- review records (CLAUDE.md section 6, "Code review") ----------

@@ -97,14 +97,39 @@ def _ancestors() -> set:
     return out
 
 
-def ancestor_mode(path: str):
-    """"exclusive" or "shared" when a parent process holds `path` with
-    flock, else None (and always None without /proc/locks)."""
+def _rows(path: str):
+    """(pid, "exclusive"|"shared") for each granted flock on `path`, or
+    None without /proc/locks (macOS). A waiter's row starts "->" and is
+    skipped by the field check."""
     try:
         st = os.stat(path)
         rows = open("/proc/locks").read().splitlines()
     except OSError:
         return None
+    out = []
+    for row in rows:
+        f = row.split()
+        if len(f) < 6 or f[1] != "FLOCK":
+            continue
+        try:
+            pid = int(f[4])
+            major, minor, ino = f[5].split(":")
+            if (int(ino), int(major, 16), int(minor, 16)) != (
+                    st.st_ino, os.major(st.st_dev), os.minor(st.st_dev)):
+                continue
+        except ValueError:
+            continue
+        out.append((pid, "exclusive" if f[3] == "WRITE" else "shared"))
+    return out
+
+
+def ancestor_mode(path: str):
+    """"exclusive" or "shared" when a parent process holds `path` with
+    flock, else None (and always None without /proc/locks)."""
+    rows = _rows(path)
+    if not rows:
+        return None
+    st = os.stat(path)
     mine = _ancestors()
     # A descriptor inherited from the shell (`exec 9>lock; flock 9`): the
     # row names the flock(1) process, long gone, but the lock is on our fd.
@@ -118,30 +143,43 @@ def ancestor_mode(path: str):
         except OSError:
             continue
         if (s.st_ino, s.st_dev) == (st.st_ino, st.st_dev):
-            mine = None                 # every row on this file is ours
+            inherited_fd = True
             break
+    else:
+        inherited_fd = False
     held = None
-    for row in rows:
-        f = row.split()
-        if len(f) < 6 or f[1] != "FLOCK":
-            continue
-        try:
-            pid = int(f[4])
-            major, minor, ino = f[5].split(":")
-            if (int(ino), int(major, 16), int(minor, 16)) != (
-                    st.st_ino, os.major(st.st_dev), os.minor(st.st_dev)):
-                continue
-        except ValueError:
-            continue
-        if mine is None or pid in mine:
-            held = "exclusive" if f[3] == "WRITE" else held or "shared"
+    for pid, m in rows:
+        # With such a descriptor, a row whose taker is gone is ours too;
+        # a live stranger's row never is.
+        if pid in mine or (inherited_fd and not _alive(pid)):
+            held = "exclusive" if m == "exclusive" else held or "shared"
     return held
+
+
+def _token(mode: str) -> str:
+    """PICAR_DESKTOP_LOCK's value for children: the mode and the holder's
+    pid, so a value that outlived its hold (a daemon, a tmux started under
+    it) is not trusted."""
+    return f"{mode}:{os.getpid()}"
+
+
+def env_mode(path: str):
+    """The mode PICAR_DESKTOP_LOCK names, if its holder still holds `path`
+    (alive, and on Linux holding a flock on it), else None."""
+    mode, _, pid = os.environ.get(ENV, "").partition(":")
+    if mode not in MODES or not pid.isdigit() or not _alive(int(pid)):
+        return None
+    rows = _rows(path)
+    if rows is not None and not any(p == int(pid) and (m == mode or m == "exclusive")
+                                    for p, m in rows):
+        return None
+    return mode
 
 
 def inherited(mode: str, path: str):
     """The mode an ancestor already holds that covers `mode`, else None.
     Raises Nested when only a shared hold covers an exclusive request."""
-    held = os.environ.get(ENV) if os.environ.get(ENV) in MODES else None
+    held = env_mode(path)
     if held != "exclusive":
         held = ancestor_mode(path) or held
     if held == "exclusive" or (held == "shared" and mode == "shared"):
@@ -235,35 +273,45 @@ def acquire(mode: str, why: str = "", wait: bool = True, out=None):
     open(path, "a").close()
     if inherited(mode, path):
         return None
-    gate = os.open(os.path.join(d, GATE), os.O_CREAT | os.O_RDWR, 0o644)
     fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        _take(gate, fcntl.LOCK_EX, d, wait, out)
-        _take(fd, fcntl.LOCK_EX if mode == "exclusive" else fcntl.LOCK_SH, d, wait, out)
+        gate = os.open(os.path.join(d, GATE), os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            if gate_waiting(d) and wait:
+                print(f"{WAIT_LINE} ({path}): an exclusive job is queued ahead; "
+                      f"holding now: {_describe(d)}", file=out, flush=True)
+            _take(gate, fcntl.LOCK_EX, d, wait, out)
+            _take(fd, fcntl.LOCK_EX if mode == "exclusive" else fcntl.LOCK_SH, d, wait, out)
+        finally:
+            os.close(gate)              # closing lets the gate go
+        _seq += 1
+        line = (f"{mode} pid {os.getpid()} {why or ' '.join(sys.argv)[:200]} "
+                f"since {time.ctime()}")
+        note = os.path.join(d, NOTES, f"{os.getpid()}.{_seq}")
+        h = Hold(mode, fd, note, path)
+        with open(note, "w") as f:
+            f.write(line + "\n")
+        if mode == "exclusive":         # for readers that predate 3.128
+            os.ftruncate(fd, 0)
+            os.pwrite(fd, (line + "\n").encode(), 0)
+        return h
     except BaseException:
-        os.close(fd)
+        try:
+            os.unlink(note)
+        except (NameError, OSError):
+            pass
+        os.close(fd)                    # closing lets the lock go
         raise
-    finally:
-        os.close(gate)                  # closing lets the gate go
-    _seq += 1
-    line = (f"{mode} pid {os.getpid()} {why or ' '.join(sys.argv)[:200]} "
-            f"since {time.ctime()}")
-    note = os.path.join(d, NOTES, f"{os.getpid()}.{_seq}")
-    with open(note, "w") as f:
-        f.write(line + "\n")
-    if mode == "exclusive":             # for readers that predate 3.128
-        os.ftruncate(fd, 0)
-        os.pwrite(fd, (line + "\n").encode(), 0)
-    return Hold(mode, fd, note, path)
 
 
 @contextmanager
 def held(mode: str, why: str = "", wait: bool = True):
-    """Hold the lock for a block; yields the mode children should see in
-    PICAR_DESKTOP_LOCK (the inherited one, or `mode`)."""
+    """Hold the lock for a block; yields PICAR_DESKTOP_LOCK's value for
+    children: this hold's token, the inherited value, or None when nothing
+    is held (PICAR_HEAVY_LOCK=0)."""
     h = acquire(mode, why, wait)
     try:
-        yield os.environ.get(ENV) if h is None and os.environ.get(ENV) in MODES else mode
+        yield _token(mode) if h is not None else os.environ.get(ENV)
     finally:
         if h is not None:
             h.release()
@@ -279,7 +327,7 @@ def hold_for_life(mode: str, why: str = "") -> None:
     h = acquire(mode, why)
     _LIFE[:] = [mode, h]
     if h is not None:
-        os.environ[ENV] = mode
+        os.environ[ENV] = _token(mode)
 
 
 def state(d: str) -> str:
@@ -341,7 +389,7 @@ def cmd_run(mode: str, why: str, cmd: list, wait: bool) -> int:
         return 1
     env = dict(os.environ)
     if h is not None:
-        env[ENV] = mode
+        env[ENV] = _token(mode)
     try:
         p = subprocess.Popen(cmd, env=env)
         signal.signal(signal.SIGTERM, lambda *_: p.send_signal(signal.SIGTERM))

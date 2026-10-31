@@ -165,6 +165,22 @@ def test_requests_under_a_holder_pass_through_or_fail_at_once(box):
     assert r.returncode == 1 and "under a shared one" in r.stderr
 
 
+def test_a_token_whose_holder_is_gone_or_holds_nothing_is_not_trusted(box):
+    """A PICAR_DESKTOP_LOCK that outlived its hold (a daemon or tmux started
+    under it) must not let a later job past a live holder."""
+    e = start(box, "exclusive", "E", "gE")
+    until(lambda: "E start" in log(box))
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    for token in (f"exclusive:{dead.pid}", f"exclusive:{os.getpid()}", "exclusive"):
+        r = subprocess.run([sys.executable, TOOL, "shared", "--no-wait", "--", "true"],
+                           env={**env(), dl.ENV: token}, capture_output=True, text=True,
+                           timeout=20)
+        assert r.returncode == dl.BUSY, (token, r.stderr)
+    release(box, "gE")
+    finish(e)
+
+
 @pytest.mark.skipif(not shutil.which("flock") or not os.path.exists("/proc/locks"),
                     reason="flock(1) and /proc/locks are Linux's")
 def test_a_shell_flock_around_the_tool_is_seen_not_deadlocked(box):
@@ -216,7 +232,7 @@ def test_heavy_lock_is_the_exclusive_hold_and_keeps_its_line(box):
     release(box, "gS")
     out, err = p.communicate(timeout=60)
     assert p.returncode == 0, err
-    assert out.strip() == "exclusive" and dl.WAIT_LINE in err and "shared pid" in err
+    assert out.strip() == f"exclusive:{p.pid}" and dl.WAIT_LINE in err and "shared pid" in err
     finish(s)
     # PICAR_HEAVY_LOCK=0 skips it, even beside an exclusive holder.
     e = start(box, "exclusive", "E", "gE")
