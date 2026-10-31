@@ -232,7 +232,7 @@ General Driver board (ESP32-WROOM-32)
 | B5 | NVMe SSD, M.2 2280 (optional) | Team MP33 256GB | 1 | **$68.99** `[V]` | Newegg, sold by Newegg, free shipping, limit 2 | 5-year warranty. 512GB is $93.99 `[V]`. ADATA Legend 700 256GB is $54.99 + $4.99 shipping `[V]`. Earlier Kingston NV3 500GB baseline is stale: now $137.99. Avoid Newegg marketplace sellers shipping from Hong Kong. |
 | B6 | DisplayPort cable | 6ft DP 1.2 | 1 | about $10 `[I]` | Micro Center SKU 625860 (Inland, price unverified) or StarTech DISPLPORT6L $7.95 at B&H `[V]` | Devkit has DisplayPort only, no HDMI. For an HDMI-only monitor: Plugable active DP→HDMI $18.95 `[V]` or Micro Center QVS active adapter SKU 442151. |
 | B7 | Barrel pigtail 5.5×2.5mm, 18AWG | Tensility 10-02220 (6ft, rated 8A) | 1 | about $7 `[I]` | DigiKey (price not readable) | Micro Center alternative: Philmore 2.5mm DC plug to terminal, SKU 662088. **A 5.5×2.1mm plug will not seat.** Avoid 24AWG pigtails (Tensility 10-02227). |
-| B8 | USB flash drive, 16GB or larger | any | 1 | about $10 `[I]` | Micro Center | Needed for NVIDIA's current JetPack 7.2.1 installer. Skip if already owned. Not in totals. |
+| B8 | USB flash drive, 16GB or larger | any | 1 | about $10 `[I]` | Micro Center | Needed only for NVIDIA's JetPack 7.2.1 installer; not needed for JetPack 6.2.1, the chosen version (section 8, item 2). Skip if already owned. Not in totals. |
 
 ### Part A — chassis, sensing, power
 
@@ -290,7 +290,7 @@ B6, B7, A5 and A9 are estimates. B3b and B8 are excluded (B8 adds about $10.88 w
 - Power modes: default 25W. `sudo /usr/sbin/nvpmodel -q` to query, `sudo /usr/sbin/nvpmodel -m <id>` to set. MAXN SUPER is selectable `[V]`. Mode IDs were not read: query on the device.
 - CSI camera: use **CAM0**, 22-contact end to the Jetson, **gold contacts facing down** `[V]`. Check with `v4l2-ctl --list-devices`; capture with a `gst-launch-1.0 nvarguscamerasrc ! 'video/x-raw(memory:NVMM), ...'` pipeline `[V]`. IMX219 typically needs enabling through `jetson-io` `[U]`. Use the Arducam-supplied cable: a forum user's generic 22-22 cable had to be flipped and caused shorts `[V]`.
 - 40-pin header `[U]`: UART on pins 8/10 is usually `/dev/ttyTHS1` on JetPack 6; I2C on pins 3/5 is usually bus 7, pins 27/28 bus 1. 3.3V logic. Confirm on the device.
-- **JetPack version is an open decision** (section 8). NVIDIA's current quick start installs **JetPack 7.2.1** from a bootable USB drive onto microSD or NVMe; any Windows, Mac or Linux laptop can prepare the drive with Balena Etcher `[V]`. JetPack 6.2.1 remains available as an SD-card image `[V]`. The Wi-Fi and camera checks above were made against JetPack 6.x. JetPack 6.x is Ubuntu 22.04 (ROS 2 Humble); JetPack 7.x is believed to be Ubuntu 24.04 (ROS 2 Jazzy) `[U]`. Confirm with `cat /etc/nv_tegra_release` and `lsb_release -a`.
+- **JetPack version: decided, JetPack 6.2.1** (section 8, item 2). The board runs JetPack 6.2.1 (Ubuntu 22.04) from the NVMe, and the ROS container is ROS 2 Humble (`service/slam/Dockerfile`: `FROM ros:humble-ros-base`); every R-phase and gates G1-G4 were proven on that stack (`PLAN-ros-alignment.md` 3.33). The Wi-Fi and camera checks above were made against JetPack 6.x. NVIDIA's current quick start installs **JetPack 7.2.1** (Ubuntu 24.04) from a bootable USB drive `[V]`; moving to it, and off Humble, is a later planned phase, not part of bring-up (`PLAN-ros-alignment.md` section 6, item 12). Confirm a board's release with `cat /etc/nv_tegra_release` and `lsb_release -a`.
 
 ### 4.2 Waveshare General Driver for Robots (ESP32)
 - ESP32-WROOM-32; TB6612FNG; INA219 voltage/current monitor; 9-axis IMU (product page: QMI8658C + AK09918C); ST3215 bus-servo interface; lidar interface; TF card slot; two CP2102 USB-UART bridges; two 40-pin headers; onboard 5V DC-DC meant to power a Raspberry Pi or Jetson Nano through the header `[V]`.
@@ -442,7 +442,7 @@ Inline 10A fuse at the pack. Balance-charge at 1C or less (2.2A) in a LiPo bag, 
 | # | Item | Status |
 |---|---|---|
 | 1 | Yahboom bundled battery (ASIN B0F3CYDQ21) | **Unknown.** Spec exists only in listing images. Probably 12.6V 3S (about 75% confidence): Yahboom says 520 motors want a 12.6V supply and sells only 12.6V chargers. Capacity, connector, protection, charger model all unknown. |
-| 2 | JetPack 6.2.1 vs 7.2.1, and therefore ROS 2 Humble vs Jazzy | Undecided. Driver checks in this file were against JetPack 6.x. |
+| 2 | JetPack 6.2.1 vs 7.2.1, and therefore ROS 2 Humble vs Jazzy | **Decided: JetPack 6.2.1 with ROS 2 Humble** (correction 6; on the board since 2026-10-04, `PLAN-ros-alignment.md` 3.33). Driver checks in this file were against JetPack 6.x. Leaving Humble before its EOL (JetPack 7.2, Jazzy or Lyrical) is planned separately, after the Rover's bring-up: `PLAN-ros-alignment.md` section 6, item 12. |
 | 3 | Where the VL53L1X pair and bumper switches connect | Undecided: ESP32 I2C expansion and spare GPIO (shares the bus with INA219/IMU/OLED; needs firmware changes, firmware is GPL-3.0) or the Jetson 40-pin header (I2C bus numbers `[U]`). |
 | 4 | Which IMU chip is on the delivered driver board | Check on arrival (4.2). |
 | 5 | Motor connector pin order, Yahboom cable vs Waveshare port | Verify before first power-up. |
