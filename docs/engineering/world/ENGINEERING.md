@@ -112,6 +112,14 @@ The bridge's routes and their fields are specified once, in the
   slam_toolbox republishes every `map_update_interval` (1.0 s) changed or
   not; measured, 44% of a live mission's messages repeated the previous grid,
   and each cost a full map through 3.123's ETag.
+- **`/slam/map` is revalidated (3.126).** `RosWorld` keeps the last full
+  reply and its `ETag` (`"<session>:<version>"`) and sends it in
+  `If-None-Match`; a 304 naming it means the kept reply is still the map,
+  so an unchanged map is neither encoded by the bridge nor decoded here (a
+  400 x 400 grid: 13.5 -> 0.68 ms a read). A 304 naming another tag drops
+  the kept reply and asks once in full; a 304 to an untagged request is a
+  bridge error (`classify`: not retryable). A bridge with no `ETag` is read
+  in full every time.
 
 ### The conversion and the anchor
 

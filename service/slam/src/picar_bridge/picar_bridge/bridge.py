@@ -246,6 +246,7 @@ class Bridge(Node):
                          name="start-truth").start()
         self.last_map = None
         self.map_version = 0
+        self.map_replies = {"full": 0, "not_modified": 0}     # 3.126
         # slam_toolbox publishes /map latched (transient local).
         self.create_subscription(
             OccupancyGrid, "/map", self._on_map,
@@ -1730,6 +1731,7 @@ class Bridge(Node):
                          "scans_published": self.scan_count, "twists": dict(self.twists),
                          "pan_rad": self.pan_rad, "session": self.session,
                          "map_version": self.map_version,
+                         "map_replies": dict(self.map_replies),
                          # 3.105: goals are held until nav2 answers active
                          "nav2": self._nav2_view(),
                          "brain_url": self.brain_url,
@@ -1759,9 +1761,11 @@ class Bridge(Node):
 
 def _handler(bridge):
     class Handler(BaseHTTPRequestHandler):
-        def _send(self, code, obj):
+        def _send(self, code, obj, headers=None):
             data = json.dumps(obj).encode()
             self.send_response(code)
+            for k, v in (headers or {}).items():
+                self.send_header(k, v)
             self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(data)))
             self.end_headers()
@@ -1796,9 +1800,18 @@ def _handler(bridge):
             if url.path == "/slam/map":
                 with bridge.lock:
                     # 3.50.D3: no map until the frame is decided, as /slam/pose
-                    reply = (bridge.last_map if bridge.slam_state == "ready" else None) \
-                        or {"session": bridge.session, "version": 0, "usable": False}
-                return self._send(200, reply)
+                    m = bridge.last_map if bridge.slam_state == "ready" else None
+                    reply = m or {"session": bridge.session, "version": 0, "usable": False}
+                    # 3.126: the reader already holds this grid -- no body.
+                    tag = mapversion.map_tag(m)
+                    same = mapversion.not_modified(self.headers.get("If-None-Match"), tag)
+                    bridge.map_replies["not_modified" if same else "full"] += 1
+                if same:
+                    self.send_response(304)
+                    self.send_header("etag", tag)
+                    self.end_headers()
+                    return None
+                return self._send(200, reply, {"etag": tag} if tag else None)
             if url.path == "/goal":
                 return self._send(*bridge.goal_state())
             if url.path == "/nav/stats":

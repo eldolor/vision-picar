@@ -126,6 +126,9 @@ class RosWorld(WorldInterface):
         # R8): a late reply from an older session must not re-install it.
         self._anchor_at: Optional[float] = None
         self._map_cache = None
+        # 3.126: the last full /slam/map reply and its ETag, replaced whole,
+        # so an unchanged map is answered 304 and not sent again.
+        self._raw_map = None
         # The last first-contact truth read, (session, monotonic time), so an
         # unanchored session asks the truth at most every TRUTH_RETRY_S
         # rather than on every pose read on the motion path (round 7), and
@@ -310,8 +313,7 @@ class RosWorld(WorldInterface):
         try:
             if self._session is None:
                 self._ensure_session(self._fetch_pose())
-            r = self._http.get("/slam/map")
-            m = _json_object(r)
+            m = self._fetch_map()
         except httpx.HTTPError as e:
             # No map, and whether waiting can bring one (3.82): explore ends
             # its mission on `retryable: false` instead of waiting it out.
@@ -326,6 +328,31 @@ class RosWorld(WorldInterface):
         out = self._resample(m, anchor)
         self._map_cache = (key, out)
         return out
+
+    def _fetch_map(self) -> dict:
+        """The bridge's `/slam/map`, revalidated (3.126): the kept reply's
+        tag goes in `If-None-Match`, and a 304 naming it means that reply is
+        still the map. A 304 naming anything else drops the kept reply and
+        asks once more in full: a 304 is never answered with another map,
+        and a non-retryable fault would end explore's mission (3.82). A
+        second 304 is the bridge's fault."""
+        held = self._raw_map
+        if held:
+            r = self._http.get("/slam/map", headers={"if-none-match": held[0]})
+            if r.status_code == 304 and r.headers.get("etag") == held[0]:
+                return held[1]
+            if r.status_code == 304:
+                self._raw_map = held = None
+        if not held:
+            r = self._http.get("/slam/map")
+            if r.status_code == 304:
+                raise httpx.HTTPStatusError(
+                    "the ROS bridge answered 304 to GET /slam/map without a tag",
+                    request=r.request, response=r)
+        m = _json_object(r)
+        tag = r.headers.get("etag")
+        self._raw_map = (tag, m) if tag else None
+        return m
 
     def _resample(self, m: dict, anchor=None) -> dict:
         """SLAM's grid, re-expressed in the house frame at the same

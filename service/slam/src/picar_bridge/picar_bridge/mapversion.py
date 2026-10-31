@@ -25,3 +25,21 @@ def next_version(held, version: int, new: dict) -> int:
     if held is not None and all(held.get(k) == new.get(k) for k in GRID_FIELDS):
         return version
     return version + 1
+
+
+def map_tag(m) -> str | None:
+    """3.126: the ETag of a map reply, `"<session>:<version>"`, or None for
+    no usable map. Within one bridge the pair names one grid (a session is
+    a fresh id each start; versions only rise within it, and only when the
+    grid changes)."""
+    if not m or not m.get("data") or m.get("session") is None or m.get("version") is None:
+        return None
+    return f'"{m["session"]}:{m["version"]}"'
+
+
+def not_modified(header, tag) -> bool:
+    """Whether a request's If-None-Match names `tag` (exactly, as RosWorld
+    sends back what it was given; a weak `W/` prefix and lists tolerated)."""
+    if not header or not tag:
+        return False
+    return any(t.strip().removeprefix("W/") == tag for t in header.split(","))
