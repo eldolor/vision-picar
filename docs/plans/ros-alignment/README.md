@@ -130,6 +130,7 @@ numbered 3.18 here. New sections: `python tools/plan_section.py new`
 | [3.122](3.122-room-labels-real-frames.md) | Room labels on the recorded walks: a first real error rate |
 | [3.123](3.123-map-etag.md) | The map is sent only when it has changed (an ETag on /world/map) |
 | [3.124](3.124-bridge-map-version.md) | The bridge's map_version moves only when the grid changes |
+| [3.125](3.125-rooms-no-label-test.md) | The rooms policy without room labels, on the 588 test houses |
 | [3.126](3.126-bridge-map-304.md) | The bridge answers 304 for an unchanged map |
 | [3.128](3.128-desktop-lock.md) | A shared/exclusive desktop lock: timing-sensitive runs alone, other heavy jobs together |
 | [3.129](3.129-desktop-lock-followups.md) | The desktop lock's open items: pushes skip the queue, long jobs step aside, the nightly takes it |
