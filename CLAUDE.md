@@ -998,6 +998,15 @@ Phase IDs: `R*`/`3.*` = `PLAN-ros-alignment.md` (the governing plan since
   crosses neither hop (a 400 x 400 read 13.5 -> 0.68 ms; live 72% of the
   bridge's map replies 304s, `found`, 0 contacts). `/health`
   `map_replies`.
+* **Explore's goal choice defaults to `rooms` (3.125), merged 2026-10-31**
+  (the user's call). On 3.96's 588 test houses with NO room labels (what a
+  find mission has), `rooms` against the rule: median goals -14% (R) and
+  -22% (U), metres -1% / -9%, finds within 1%, 0 unclean; R's mean metres
+  are +10% (the long searches get longer). On the Jetson under the full
+  stack the choice is 132.9 ms p90 (3.109: 158.9; 3.118 halved the room
+  facts), bar 100 FAILED: the map work (reach, frontiers, view gaps) is
+  98.6 ms alone -- the next fix. In-process sweeps keep their `rule`
+  constructor default. `evaluations/goal-learn-3125/`.
 * **Harness missions collect their cycles (3.113), merged 2026-10-27.**
   `evaluations/goal-learn-396/train.py` `mission()` runs `gc.collect()` in
   a `finally` (a mission's runner, agent and house are reference cycles);
